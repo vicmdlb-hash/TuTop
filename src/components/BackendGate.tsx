@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, ArrowRight, CheckCircle2, Database, KeyRound, Loader2, LockKeyhole, Phone, RefreshCw, Server, ShieldCheck, Sparkles, Wifi } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Database, KeyRound, Loader2, LockKeyhole, Phone, ShieldCheck, Wifi } from 'lucide-react';
 import { onlineBackend } from '../services/onlineBackend';
 import { clearFirebaseConfig, getFirebaseConfig, parseFirebaseConfig, saveFirebaseConfig } from '../services/runtimeConfig';
 import { useAppStore } from '../store/useAppStore';
