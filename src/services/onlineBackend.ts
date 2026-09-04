@@ -192,7 +192,7 @@ export class TuTopOnlineBackend {
     if (publicVerification) this.verificationCache.set(session.uid, { approved: publicVerification.data?.approved === true, expiresAt: Date.now() + this.publicCacheTtlMs });
     const verified = await this.loadVerifiedSellers(productsDocs.map(asProduct).map((product) => product.vendedor_id));
 
-    let products = productsDocs.map(asProduct).map((product) => ({
+    let products: Product[] = productsDocs.map(asProduct).map((product) => ({
       ...product,
       vendedor_verificado: verified.has(product.vendedor_id),
     }));
@@ -347,7 +347,7 @@ export class TuTopOnlineBackend {
   private deriveNotifications(chats: Chat[], products: Product[], bids: FirestoreDocument<any>[], uid: string): AppNotification[] {
     const notifications: AppNotification[] = [];
     for (const chat of chats) {
-      const last = chat.mensajes.at(-1);
+      const last = chat.mensajes.length ? chat.mensajes[chat.mensajes.length - 1] : undefined;
       if (last && last.sender_id !== uid) notifications.push({ id: `msg-${last.id || chat.id}`, kind: 'message', title: `Mensaje de ${chat.nombre_otro_usuario}`, body: last.texto.slice(0, 90), created_at: last.hora, read: (chat.sin_leer || 0) === 0, chat_id: chat.id, product_id: chat.producto_id });
     }
     const ownProductIds = new Set(products.filter((product) => product.vendedor_id === uid).map((product) => product.id));
