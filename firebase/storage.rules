@@ -1,0 +1,34 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function validImage() {
+      return request.resource != null
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|heic|heif)');
+    }
+
+    match /product-images/{uid}/{allPaths=**} {
+      allow read: if signedIn();
+      allow create, update: if owner(uid) && validImage();
+      allow delete: if owner(uid);
+    }
+
+    // Credential/evidence is private: only the owner client may see it; admin SDK
+    // bypasses rules for moderation Functions/admin tooling.
+    match /verification/{uid}/{allPaths=**} {
+      allow read: if owner(uid);
+      allow create, update: if owner(uid) && validImage();
+      allow delete: if owner(uid);
+    }
+
+    match /avatars/{uid}/{allPaths=**} {
+      allow read: if signedIn();
+      allow create, update: if owner(uid) && validImage();
+      allow delete: if owner(uid);
+    }
+
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}

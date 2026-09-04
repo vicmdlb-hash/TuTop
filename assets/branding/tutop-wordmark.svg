@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 260" role="img" aria-label="TuTop">
+  <defs><linearGradient id="p" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a855f7"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs>
+  <rect width="920" height="260" fill="none"/>
+  <text x="28" y="190" font-family="Inter, Arial, sans-serif" font-size="180" font-weight="900" letter-spacing="-12" fill="#f8fafc">Tu</text>
+  <text x="245" y="190" font-family="Inter, Arial, sans-serif" font-size="180" font-weight="900" letter-spacing="-12" fill="url(#p)">Top</text>
+  <path d="M760 30l12 31 31 12-31 12-12 31-12-31-31-12 31-12z" fill="#d946ef"/>
+</svg>

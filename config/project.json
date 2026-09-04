@@ -1,0 +1,10 @@
+{
+  "applicationId": "mx.tutop.app",
+  "applicationIdConfirmed": true,
+  "confirmedAt": "2026-09-03",
+  "distributionTarget": "github-actions-debug-apk-first",
+  "productionPublishingAllowed": false,
+  "futureDistributionTarget": "google-play-internal-app-sharing",
+  "zeroInvestmentMode": true,
+  "billingAllowed": false
+}

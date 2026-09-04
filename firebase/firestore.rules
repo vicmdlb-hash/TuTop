@@ -1,0 +1,327 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function adminDoc() { return /databases/$(database)/documents/admins/$(request.auth.uid); }
+    function statusDoc(uid) { return /databases/$(database)/documents/moderationStatus/$(uid); }
+    function isAdmin() { return signedIn() && exists(adminDoc()) && get(adminDoc()).data.active == true; }
+    function notSuspended() { return signedIn() && (!exists(statusDoc(request.auth.uid)) || get(statusDoc(request.auth.uid)).data.suspended != true); }
+    function chatDoc(chatId) { return get(/databases/$(database)/documents/chats/$(chatId)); }
+    function participant(chatId) { return signedIn() && request.auth.uid in chatDoc(chatId).data.participants; }
+    function fresh(ts) {
+      return ts is timestamp && ts <= request.time + duration.value(5, 'm') && ts >= request.time - duration.value(10, 'm');
+    }
+    function validCategory(value) {
+      return value in ['Comida','Postres','Apuntes & Guías','Ropa & Accesorios','Servicios','Otros'];
+    }
+    function validMeetingPoint(value) {
+      return value in ['Cafetería Central','Puerta Principal','Salón de Clases','Coordinar por Chat'];
+    }
+    function validProductContent(data) {
+      return data.titulo is string && data.titulo.size() >= 2 && data.titulo.size() <= 120
+        && data.descripcion is string && data.descripcion.size() <= 1000
+        && data.precio_mxn is number && data.precio_mxn >= 0 && data.precio_mxn <= 1000000
+        && validCategory(data.categoria)
+        && data.facultad is string && data.facultad.size() >= 2 && data.facultad.size() <= 100
+        && validMeetingPoint(data.punto_encuentro)
+        && data.imagen_url is string && data.imagen_url.size() <= 180000
+        && data.imagen_url.matches('^data:image/.*');
+    }
+
+    // Public profile: phone number is intentionally NOT stored here.
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly(['uid','nombre','facultad','esta_verificado','created_at','updated_at'])
+        && request.resource.data.uid == uid
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() >= 2 && request.resource.data.nombre.size() <= 80
+        && request.resource.data.facultad is string && request.resource.data.facultad.size() <= 100
+        && request.resource.data.esta_verificado == false
+        && fresh(request.resource.data.created_at)
+        && fresh(request.resource.data.updated_at);
+      allow update: if owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre','facultad','avatar_url','updated_at'])
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() >= 2 && request.resource.data.nombre.size() <= 80
+        && request.resource.data.facultad is string && request.resource.data.facultad.size() <= 100
+        && (!('avatar_url' in request.resource.data) || (request.resource.data.avatar_url is string && request.resource.data.avatar_url.size() <= 120000))
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    // Private profile with the beta phone identifier.
+    match /user_private/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly(['uid','telefono','created_at','auth_mode'])
+        && request.resource.data.uid == uid
+        && request.resource.data.telefono is string && request.resource.data.telefono.size() >= 11 && request.resource.data.telefono.size() <= 16
+        && request.resource.data.auth_mode == 'phone_password_beta'
+        && fresh(request.resource.data.created_at);
+      allow update, delete: if false;
+    }
+
+    // UCoins remain closed-loop points. No direct top-up exists in the no-cost beta.
+    match /wallets/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly(['owner_uid','balance','prestige','welcome_granted','last_op_id','updated_at'])
+        && request.resource.data.owner_uid == uid
+        && request.resource.data.balance == 10
+        && request.resource.data.prestige == 0
+        && request.resource.data.welcome_granted == true
+        && request.resource.data.last_op_id == 'welcome-' + uid
+        && fresh(request.resource.data.updated_at)
+        && getAfter(/databases/$(database)/documents/wallet_transactions/$(request.resource.data.last_op_id)).data.user_id == uid
+        && getAfter(/databases/$(database)/documents/wallet_transactions/$(request.resource.data.last_op_id)).data.amount == 10;
+      allow update: if owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance','prestige','last_op_id','updated_at'])
+        && request.resource.data.owner_uid == resource.data.owner_uid
+        && request.resource.data.welcome_granted == resource.data.welcome_granted
+        && request.resource.data.balance is int && request.resource.data.balance >= 0
+        && request.resource.data.prestige is int && request.resource.data.prestige >= resource.data.prestige
+        && resource.data.balance - request.resource.data.balance > 0
+        && request.resource.data.prestige - resource.data.prestige == resource.data.balance - request.resource.data.balance
+        && request.resource.data.last_op_id is string
+        && fresh(request.resource.data.updated_at)
+        && getAfter(/databases/$(database)/documents/bids/$(request.resource.data.last_op_id)).data.uid == uid
+        && getAfter(/databases/$(database)/documents/bids/$(request.resource.data.last_op_id)).data.amount == resource.data.balance - request.resource.data.balance
+        && getAfter(/databases/$(database)/documents/wallet_transactions/$(request.resource.data.last_op_id)).data.amount == -(resource.data.balance - request.resource.data.balance);
+      allow delete: if false;
+    }
+
+    match /wallet_transactions/{transactionId} {
+      allow read: if signedIn() && (resource.data.user_id == request.auth.uid || isAdmin());
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['user_id','type','description','amount','operation_id','created_at'])
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.operation_id == transactionId
+        && request.resource.data.description is string && request.resource.data.description.size() <= 180
+        && fresh(request.resource.data.created_at)
+        && (
+          (transactionId == 'welcome-' + request.auth.uid
+            && request.resource.data.type == 'income'
+            && request.resource.data.amount == 10
+            && getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.balance == 10)
+          ||
+          (request.resource.data.type == 'expense'
+            && request.resource.data.amount < 0
+            && getAfter(/databases/$(database)/documents/bids/$(transactionId)).data.uid == request.auth.uid
+            && getAfter(/databases/$(database)/documents/bids/$(transactionId)).data.amount == -request.resource.data.amount)
+        );
+      allow update, delete: if false;
+    }
+
+    match /products/{productId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['vendedor_id','vendedor_nombre','vendedor_handle','titulo','descripcion','precio_mxn','categoria','facultad','punto_encuentro','imagen_url','estado','likes','fecha_creacion','updated_at'])
+        && request.resource.data.vendedor_id == request.auth.uid
+        && request.resource.data.vendedor_nombre is string && request.resource.data.vendedor_nombre.size() <= 80
+        && request.resource.data.vendedor_nombre == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.nombre
+        && request.resource.data.facultad == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.facultad
+        && request.resource.data.vendedor_handle is string && request.resource.data.vendedor_handle.size() <= 80
+        && validProductContent(request.resource.data)
+        && request.resource.data.estado == 'Activo'
+        && request.resource.data.likes == 0
+        && fresh(request.resource.data.fecha_creacion)
+        && fresh(request.resource.data.updated_at);
+      allow update: if signedIn() && notSuspended() && resource.data.vendedor_id == request.auth.uid
+        && request.resource.data.vendedor_id == resource.data.vendedor_id
+        && request.resource.data.vendedor_nombre == resource.data.vendedor_nombre
+        && (request.resource.data.facultad == resource.data.facultad
+          || request.resource.data.facultad == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.facultad)
+        && request.resource.data.fecha_creacion == resource.data.fecha_creacion
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['titulo','descripcion','precio_mxn','categoria','facultad','punto_encuentro','imagen_url','estado','updated_at'])
+        && request.resource.data.estado in ['Activo','Pausado','Vendido']
+        && validProductContent(request.resource.data)
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    match /favorites/{favoriteId} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['uid','product_id','created_at'])
+        && request.resource.data.uid == request.auth.uid
+        && favoriteId == request.auth.uid + '_' + request.resource.data.product_id
+        && exists(/databases/$(database)/documents/products/$(request.resource.data.product_id))
+        && fresh(request.resource.data.created_at);
+      allow delete: if signedIn() && notSuspended() && resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
+    match /chats/{chatId} {
+      allow read: if signedIn() && (request.auth.uid in resource.data.participants || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['product_id','producto_id','buyer_id','comprador_id','seller_id','vendedor_id','participants','nombre_otro_usuario','created_at','updated_at','last_message','last_message_at'])
+        && request.resource.data.buyer_id == request.auth.uid
+        && request.resource.data.comprador_id == request.auth.uid
+        && request.resource.data.product_id == request.resource.data.producto_id
+        && request.resource.data.seller_id == request.resource.data.vendedor_id
+        && request.resource.data.seller_id != request.auth.uid
+        && chatId == 'chat-' + request.auth.uid + '-' + request.resource.data.product_id
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.seller_id in request.resource.data.participants
+        && get(/databases/$(database)/documents/products/$(request.resource.data.product_id)).data.vendedor_id == request.resource.data.seller_id
+        && get(/databases/$(database)/documents/products/$(request.resource.data.product_id)).data.estado == 'Activo'
+        && request.resource.data.last_message is string && request.resource.data.last_message.size() <= 180
+        && fresh(request.resource.data.last_message_at)
+        && fresh(request.resource.data.created_at)
+        && fresh(request.resource.data.updated_at);
+      allow update: if participant(chatId) && notSuspended()
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updated_at','last_message','last_message_at'])
+        && request.resource.data.last_message is string && request.resource.data.last_message.size() <= 180
+        && fresh(request.resource.data.updated_at)
+        && fresh(request.resource.data.last_message_at);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if participant(chatId) || isAdmin();
+        allow create: if participant(chatId) && notSuspended()
+          && request.resource.data.keys().hasOnly(['sender_id','text','created_at'])
+          && request.resource.data.sender_id == request.auth.uid
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1500
+          && fresh(request.resource.data.created_at);
+        allow update, delete: if false;
+      }
+
+      match /confirmations/{uid} {
+        allow read: if participant(chatId) || isAdmin();
+        allow create: if participant(chatId) && owner(uid) && notSuspended()
+          && request.resource.data.keys().hasOnly(['user_id','created_at'])
+          && request.resource.data.user_id == uid
+          && fresh(request.resource.data.created_at);
+        allow update, delete: if false;
+      }
+
+      match /reads/{uid} {
+        allow read: if participant(chatId) || isAdmin();
+        allow create, update: if participant(chatId) && owner(uid) && notSuspended()
+          && request.resource.data.keys().hasOnly(['user_id','read_at'])
+          && request.resource.data.user_id == uid
+          && fresh(request.resource.data.read_at);
+        allow delete: if false;
+      }
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if signedIn() && (resource.data.evaluador_id == request.auth.uid || resource.data.evaluado_id == request.auth.uid || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['chat_id','evaluador_id','evaluado_id','calificacion','comentario','fecha'])
+        && request.resource.data.evaluador_id == request.auth.uid
+        && request.resource.data.calificacion in ['positive','negative']
+        && request.resource.data.comentario is string && request.resource.data.comentario.size() <= 500
+        && participant(request.resource.data.chat_id)
+        && reviewId == request.resource.data.chat_id + '_' + request.auth.uid
+        && request.resource.data.evaluado_id != request.auth.uid
+        && request.resource.data.evaluado_id in chatDoc(request.resource.data.chat_id).data.participants
+        && exists(/databases/$(database)/documents/chats/$(request.resource.data.chat_id)/confirmations/$(chatDoc(request.resource.data.chat_id).data.buyer_id))
+        && exists(/databases/$(database)/documents/chats/$(request.resource.data.chat_id)/confirmations/$(chatDoc(request.resource.data.chat_id).data.seller_id))
+        && fresh(request.resource.data.fecha);
+      allow update, delete: if false;
+    }
+
+    match /bids/{bidId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['uid','product_id','facultad','categoria','amount','week_id','created_at'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.amount is int && request.resource.data.amount >= 1 && request.resource.data.amount <= 5000
+        && request.resource.data.week_id is string && request.resource.data.week_id.size() <= 10
+        && fresh(request.resource.data.created_at)
+        && get(/databases/$(database)/documents/products/$(request.resource.data.product_id)).data.vendedor_id == request.auth.uid
+        && get(/databases/$(database)/documents/products/$(request.resource.data.product_id)).data.estado == 'Activo'
+        && request.resource.data.facultad == get(/databases/$(database)/documents/products/$(request.resource.data.product_id)).data.facultad
+        && request.resource.data.categoria == get(/databases/$(database)/documents/products/$(request.resource.data.product_id)).data.categoria
+        && getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.last_op_id == bidId
+        && get(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.balance - getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.balance == request.resource.data.amount;
+      allow update, delete: if false;
+    }
+
+    match /verificationRequests/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow create: if owner(uid) && notSuspended()
+        && request.resource.data.keys().hasOnly(['uid','status','image_data','created_at','updated_at'])
+        && request.resource.data.uid == uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.image_data is string && request.resource.data.image_data.size() <= 230000
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if (
+        owner(uid) && notSuspended()
+        && resource.data.status in ['pending','rejected']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','image_data','updated_at'])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.image_data is string && request.resource.data.image_data.size() <= 230000
+        && fresh(request.resource.data.updated_at)
+      ) || (
+        isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+        && request.resource.data.status in ['approved','rejected']
+        && fresh(request.resource.data.updated_at)
+      );
+      allow delete: if false;
+    }
+
+    match /publicVerifications/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['approved','updated_at','reviewed_by'])
+        && request.resource.data.approved is bool
+        && request.resource.data.reviewed_by == request.auth.uid
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    match /reports/{reportId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.created_by == request.auth.uid);
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['created_by','target_type','target_id','reason','status','created_at','updated_at'])
+        && request.resource.data.created_by == request.auth.uid
+        && request.resource.data.target_type in ['product','user','chat']
+        && request.resource.data.target_id is string && request.resource.data.target_id.size() >= 2 && request.resource.data.target_id.size() <= 180
+        && request.resource.data.reason is string && request.resource.data.reason.size() >= 3 && request.resource.data.reason.size() <= 500
+        && (
+          (request.resource.data.target_type == 'product'
+            && exists(/databases/$(database)/documents/products/$(request.resource.data.target_id))
+            && get(/databases/$(database)/documents/products/$(request.resource.data.target_id)).data.vendedor_id != request.auth.uid)
+          ||
+          (request.resource.data.target_type == 'user'
+            && request.resource.data.target_id != request.auth.uid
+            && exists(/databases/$(database)/documents/users/$(request.resource.data.target_id)))
+          ||
+          (request.resource.data.target_type == 'chat'
+            && exists(/databases/$(database)/documents/chats/$(request.resource.data.target_id))
+            && request.auth.uid in get(/databases/$(database)/documents/chats/$(request.resource.data.target_id)).data.participants)
+        )
+        && request.resource.data.status == 'open'
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+        && request.resource.data.status in ['resolved','dismissed']
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    match /moderationStatus/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['suspended','reason','updated_at','admin_uid'])
+        && request.resource.data.suspended is bool
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 300
+        && request.resource.data.admin_uid == request.auth.uid
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    // Bootstrap this document manually once from Firebase Console. Client writes are denied.
+    match /admins/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow write: if false;
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}

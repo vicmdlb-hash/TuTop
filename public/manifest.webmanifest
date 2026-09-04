@@ -1,0 +1,13 @@
+{
+  "name": "TuTop — Marketplace universitario",
+  "short_name": "TuTop",
+  "description": "Compra y vende dentro de tu facultad.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050a13",
+  "theme_color": "#050a13",
+  "lang": "es-MX",
+  "icons": [
+    { "src": "/tutop-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
