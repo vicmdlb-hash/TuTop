@@ -1,0 +1,42 @@
+name: Reporte de bug
+about: Registrar un fallo reproducible de TuTop
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Gracias por documentar el problema. No pegues contraseñas, tokens ni datos personales."
+  - type: textarea
+    id: what
+    attributes:
+      label: Qué pasó
+      description: Describe el fallo.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducir
+      placeholder: "1. Abrir...\n2. Tocar...\n3. Ver..."
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      options:
+        - Feed / productos
+        - Publicación asistida
+        - Chat
+        - Wallet / UCoins
+        - Perfil / verificación
+        - Administración
+        - Firebase / seguridad
+        - Android / APK
+        - Otro
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versión
+      placeholder: "0.6.2-beta.0"
