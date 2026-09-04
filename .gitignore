@@ -1,0 +1,25 @@
+node_modules/
+.next/
+dist/
+build/
+*.log
+
+# TuTop local secrets / Android signing
+.env
+.env.local
+*.jks
+*.keystore
+service-account*.json
+google-play*.json
+android/key.properties
+release/
+android/app/google-services.json
+functions/lib/
+firebase-debug.log
+.firebaserc.local
+
+# Generated locally/CI in the Spark beta
+android/
+ios/
+.firebase/
+.gradle/

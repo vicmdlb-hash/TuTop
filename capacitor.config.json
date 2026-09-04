@@ -1,0 +1,12 @@
+{
+  "appId": "mx.tutop.app",
+  "appName": "TuTop",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
