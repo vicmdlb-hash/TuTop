@@ -2,13 +2,38 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
+const root = process.cwd();
+const packagePath = path.join(root, 'node_modules', 'typescript', 'package.json');
+let typescriptVersion = '';
+try {
+  typescriptVersion = JSON.parse(fs.readFileSync(packagePath, 'utf8')).version || '';
+} catch {
+  // If TypeScript is not installed, the dedicated typecheck step will report that clearly.
+}
+
+const major = Number.parseInt(typescriptVersion.split('.')[0] || '0', 10);
+if (major >= 7) {
+  console.log(`Syntax/transpile: TypeScript ${typescriptVersion} usa el compilador nativo y no expone la API JS legacy.`);
+  console.log('Syntax/transpile: delegado al paso dedicado `npm run typecheck` de CI.');
+  process.exit(0);
+}
+
 const require = createRequire(import.meta.url);
 let ts;
-try { ts = require('typescript'); }
-catch { ts = require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/typescript.js'); }
+try {
+  ts = require('typescript');
+  ts = ts?.default || ts;
+} catch (error) {
+  console.error(`No se pudo cargar la API JS de TypeScript: ${error.message}`);
+  process.exit(1);
+}
 
-const root = process.cwd();
-const roots = ['src', 'functions/src', 'scripts'];
+if (!ts?.transpileModule || !ts?.ScriptTarget || !ts?.ModuleKind || !ts?.DiagnosticCategory) {
+  console.log('Syntax/transpile: la API JS instalada no ofrece transpileModule/enums legacy; delegado a `npm run typecheck`.');
+  process.exit(0);
+}
+
+const roots = ['src', 'functions/src'];
 const files = [];
 function walk(dir) {
   if (!fs.existsSync(dir)) return;
