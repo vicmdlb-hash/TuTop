@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, AlertTriangle, BadgeCheck, BarChart3, Bell, Boxes, CheckCircle2, ChevronRight, CircleDollarSign, Gauge, RefreshCw, Search, ShieldAlert, ShieldCheck, Store, Users, WalletCards, XCircle } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Activity, AlertTriangle, BarChart3, Bell, Boxes, CheckCircle2, ChevronRight, CircleDollarSign, Gauge, RefreshCw, Search, ShieldAlert, ShieldCheck, Store, Users, WalletCards, XCircle } from 'lucide-react';
 import { onlineBackend } from '../services/onlineBackend';
 import { useAppStore } from '../store/useAppStore';
 
