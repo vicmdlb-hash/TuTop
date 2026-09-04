@@ -1,18 +1,21 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import path from 'node:path';
 
-const require = createRequire(import.meta.url);
-let ts;
-try { ts = require('typescript'); }
-catch { ts = require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript/lib/typescript.js'); }
-const source = fs.readFileSync(path.resolve('src/lib/productAssistant.ts'), 'utf8');
-const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-const temp = path.join(os.tmpdir(), `tutop-product-assistant-${process.pid}.cjs`);
-fs.writeFileSync(temp, js);
-const logic = require(temp);
+// TypeScript 7 no longer ships the legacy JavaScript compiler API. Node 22 can
+// execute erasable TypeScript directly, so the smoke test re-runs itself with
+// type stripping enabled and imports the real source module.
+if (process.env.TUTOP_NODE_TS_STRIP !== '1') {
+  const result = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url)], {
+    stdio: 'inherit',
+    env: { ...process.env, TUTOP_NODE_TS_STRIP: '1', NODE_NO_WARNINGS: '1' },
+  });
+  process.exit(result.status ?? 1);
+}
+
+const sourceUrl = pathToFileURL(path.resolve('src/lib/productAssistant.ts')).href;
+const logic = await import(`${sourceUrl}?t=${Date.now()}`);
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
@@ -66,6 +69,5 @@ for (const [name, fn] of tests) {
   try { fn(); console.log(`PASS ${name}`); }
   catch (error) { failures += 1; console.error(`FAIL ${name}: ${error.message}`); }
 }
-fs.rmSync(temp, { force: true });
 console.log(`Logic smoke tests: ${tests.length - failures}/${tests.length} PASS.`);
 process.exit(failures ? 1 : 0);
