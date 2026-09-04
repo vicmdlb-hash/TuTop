@@ -101,7 +101,7 @@ jobs:
         run: npm run android:doctor
 
       - name: Cache Gradle dependencies
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Build debug APK
         working-directory: android
