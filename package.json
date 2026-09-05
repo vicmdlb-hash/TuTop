@@ -33,6 +33,7 @@
     "firebase:emulators:spark": "firebase emulators:start --only auth,firestore,hosting",
     "v2:catalog:plan": "node scripts/seed-v2-catalog.mjs",
     "v2:catalog:seed": "node scripts/seed-v2-catalog.mjs --apply",
+    "v2:staging:readiness:test": "node scripts/staging-v2-readiness-tests.mjs",
     "reputation:test": "node scripts/reputation-evidence-tests.mjs",
     "trusted-reputation:test": "node scripts/trusted-reputation-tests.mjs",
     "reservation-reconciliation:test": "node scripts/reservation-reconciliation-tests.mjs",
