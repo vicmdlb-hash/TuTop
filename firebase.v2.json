@@ -3,6 +3,11 @@
     "rules": "firebase/firestore.v2.generated.rules",
     "indexes": "firebase/firestore.indexes.json"
   },
+  "auth": {
+    "providers": {
+      "emailPassword": true
+    }
+  },
   "emulators": {
     "auth": { "port": 9099 },
     "firestore": { "port": 8080 },
