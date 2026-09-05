@@ -69,6 +69,9 @@ jobs:
       - name: Saved-search notification eligibility
         run: npm run saved-search-notification:test
 
+      - name: Marketplace observability privacy
+        run: npm run marketplace-observability:test
+
       - name: Public seller profile privacy
         run: npm run seller-profile:privacy:test
 
