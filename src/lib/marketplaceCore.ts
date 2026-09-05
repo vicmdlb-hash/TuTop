@@ -1,4 +1,4 @@
-import type { MarketplaceTransactionStatus, Offer, OfferStatus, Product, ReputationMetrics, User } from '../types';
+import type { DemandRequest, MarketplaceTransactionStatus, Offer, OfferStatus, Product, ReputationMetrics, User } from '../types';
 
 export type OfferAction = 'accept' | 'reject' | 'counter' | 'withdraw' | 'expire';
 
@@ -96,6 +96,39 @@ export function marketplaceRelevance(product: Product, context: RankingContext) 
 
 export function sortMarketplace(products: Product[], context: RankingContext) {
   return [...products].sort((a, b) => marketplaceRelevance(b, context) - marketplaceRelevance(a, context));
+}
+
+export function demandMatchScore(request: Pick<DemandRequest, 'title' | 'description' | 'category' | 'max_price_mxn' | 'institution_id' | 'campus_id' | 'city_id' | 'visibility_scope'>, product: Product) {
+  if (product.estado !== 'Activo') return 0;
+  if (typeof request.max_price_mxn === 'number' && product.precio_mxn > request.max_price_mxn) return 0;
+  if (request.category && product.categoria !== request.category) return 0;
+
+  const demandText = normalizeSearchText(`${request.title} ${request.description || ''}`);
+  const listingText = normalizeSearchText(`${product.titulo} ${product.descripcion || ''} ${product.categoria} ${product.marca || ''} ${product.modelo || ''} ${(product.etiquetas || []).join(' ')}`);
+  const textFit = tokenScore(demandText, listingText);
+  if (textFit < 0.25) return 0;
+
+  let locality = 0.35;
+  if (request.campus_id && product.campus_id === request.campus_id) locality = 1;
+  else if (request.institution_id && product.institution_id === request.institution_id) locality = 0.78;
+  else if (request.city_id && product.city_id === request.city_id) locality = 0.62;
+  else if (request.visibility_scope === 'national' && product.shipping_available) locality = 0.45;
+  else if (request.visibility_scope === 'campus' || request.visibility_scope === 'institution') return 0;
+
+  const budgetFit = typeof request.max_price_mxn === 'number' && request.max_price_mxn > 0
+    ? Math.max(0, 1 - product.precio_mxn / request.max_price_mxn * 0.35)
+    : 0.7;
+  const verified = product.vendedor_verificado ? 1 : 0;
+  const freshness = Math.max(0, 1 - Math.max(0, Date.now() - Date.parse(product.fecha_creacion)) / (45 * 86400000));
+  return Math.min(1, textFit * 0.52 + locality * 0.23 + budgetFit * 0.12 + freshness * 0.08 + verified * 0.05);
+}
+
+export function matchDemandToListings(request: Pick<DemandRequest, 'title' | 'description' | 'category' | 'max_price_mxn' | 'institution_id' | 'campus_id' | 'city_id' | 'visibility_scope'>, products: Product[], limit = 6) {
+  return products
+    .map((product) => ({ product, score: demandMatchScore(request, product) }))
+    .filter((match) => match.score >= 0.35)
+    .sort((a, b) => b.score - a.score || Date.parse(b.product.fecha_creacion) - Date.parse(a.product.fecha_creacion))
+    .slice(0, Math.max(1, limit));
 }
 
 export const prohibitedMarketplacePatterns: Array<{ code: string; pattern: RegExp; reason: string }> = [
