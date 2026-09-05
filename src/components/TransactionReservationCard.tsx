@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Clock3, Loader2, PackageCheck, RotateCcw } from 'lucide-react';
+import { Clock3, Loader2, MapPin, PackageCheck, RotateCcw, ShieldCheck } from 'lucide-react';
+import { safeMeetingPointsFor } from '../lib/universityNetwork';
 import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
-import type { MarketplaceTransaction } from '../types';
+import type { MarketplaceTransaction, UniversityIdentity } from '../types';
+
+const IDENTITY_KEY = 'tutop.university-identity.v1';
 
 function remainingLabel(expiresAt?: string, now = Date.now()) {
   if (!expiresAt) return null;
@@ -15,11 +18,20 @@ function remainingLabel(expiresAt?: string, now = Date.now()) {
   return `${hours} h${rest ? ` ${rest} min` : ''} restantes`;
 }
 
+function readIdentity(): UniversityIdentity | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(IDENTITY_KEY) || 'null');
+    return value && typeof value === 'object' ? value as UniversityIdentity : null;
+  } catch { return null; }
+}
+
 export default function TransactionReservationCard({ chatId, currentUserId, onReleased }: { chatId: string; currentUserId: string; onReleased?: () => void }) {
   const [transaction, setTransaction] = useState<MarketplaceTransaction | null>(null);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const identity = useMemo(readIdentity, []);
+  const safePoints = useMemo(() => safeMeetingPointsFor(identity?.campus_id, identity?.institution_id).slice(0, 3), [identity?.campus_id, identity?.institution_id]);
 
   useEffect(() => {
     if (!nationalSchemaEnabled()) return;
@@ -52,6 +64,13 @@ export default function TransactionReservationCard({ chatId, currentUserId, onRe
     finally { setBusy(false); }
   };
 
+  const copyPoint = async (name: string) => {
+    try {
+      await navigator.clipboard.writeText(`Propongo encontrarnos en ${name}. Confirmemos día y hora por este chat.`);
+      setMessage('Punto seguro copiado. Pégalo en el chat para proponerlo.');
+    } catch { setMessage(`Punto sugerido: ${name}`); }
+  };
+
   const statusLabel = transaction.status === 'reserved' ? 'En trato' : transaction.status === 'completed' ? 'Completada' : transaction.status === 'expired' ? 'Reserva vencida' : transaction.status.replace('_', ' ');
 
   return (
@@ -64,6 +83,12 @@ export default function TransactionReservationCard({ chatId, currentUserId, onRe
           <p className="mt-1 text-[8px] leading-4 text-slate-600">La reserva aparta temporalmente el artículo; no representa un pago ni una garantía de entrega.</p>
         </div>
       </div>
+
+      {transaction.status === 'reserved' && !expired && <div className="mt-3 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.045] p-2.5">
+        <div className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5 text-emerald-300" /><div><strong className="block text-[9px] text-emerald-200">Plan de encuentro seguro</strong><span className="text-[8px] text-slate-600">Lugar público + horario confirmado + entrega revisada antes de confirmar.</span></div></div>
+        {safePoints.length > 0 ? <div className="mt-2 space-y-1.5">{safePoints.map((point) => <button key={point.id} onClick={() => void copyPoint(point.name)} className="flex w-full items-start gap-2 rounded-lg bg-white/[0.035] px-2.5 py-2 text-left"><MapPin className="mt-0.5 h-3 w-3 shrink-0 text-emerald-300" /><span className="min-w-0"><strong className="block text-[8px] text-slate-300">{point.name}</strong><small className="mt-0.5 block text-[7px] leading-3 text-slate-600">{point.description}</small></span></button>)}</div> : <p className="mt-2 text-[8px] leading-4 text-slate-600">Aún no hay un Punto TuTop validado para este campus. Elijan un lugar público, concurrido y dentro de horario seguro.</p>}
+      </div>}
+
       {expired && isSeller && <button disabled={busy} onClick={() => void release()} className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-rose-500/10 text-[9px] font-black text-rose-200 disabled:opacity-50">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}Liberar producto</button>}
       {message && <p className="mt-2 text-[9px] text-slate-400">{message}</p>}
     </section>
