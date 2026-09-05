@@ -33,6 +33,10 @@ assert.match(rules, /\['accepted','rejected','countered'\]/);
 assert.match(rules, /\['accepted','reserved','meetup_scheduled','completed','cancelled','expired','no_show','disputed'\]/);
 assert.match(rules, /data\.country_code == 'MX'/);
 assert.match(rules, /image_data\.size\(\) <= 230000/);
+assert.match(rules, /visibility_scope != 'national'.*shipping_available/s);
+assert.match(rules, /exists\(\/databases\/\$\(database\)\/documents\/institutions\/\$\(data\.institution_id\)\)/);
+assert.match(rules, /exists\(\/databases\/\$\(database\)\/documents\/campuses\/\$\(data\.campus_id\)\)/);
+assert.match(rules, /transactionId == 'tx-' \+ request\.resource\.data\.accepted_offer_id/);
 
 assert.match(nationalBackend, /SCHEMA_V2_DISABLED/);
 assert.match(nationalBackend, /createOffer/);
@@ -44,7 +48,8 @@ assert.match(nationalBackend, /releaseExpiredReservation/);
 assert.match(nationalBackend, /const transactionId = `tx-\$\{offer\.id\}`/);
 
 console.log('PASS Firestore V2 remains isolated from firebase.json');
-console.log('PASS national identity fields and collections exist');
+console.log('PASS national identity fields and catalog references exist');
+console.log('PASS national listings require shipping');
 console.log('PASS structured offer and transaction guards exist');
 console.log('PASS transaction ids are idempotent per accepted offer');
 console.log('PASS V2 lifecycle dates serialize as Firestore timestamps');
