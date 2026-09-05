@@ -215,6 +215,18 @@ class NationalMarketplaceBackend {
     return next;
   }
 
+  async finalizeCompletedListing(transaction: MarketplaceTransaction) {
+    this.requireV2();
+    const client = this.getClient();
+    const actor = client.currentSession?.uid;
+    if (!actor) throw new Error('AUTH_REQUIRED');
+    if (actor !== transaction.seller_id) throw new Error('SELLER_REQUIRED');
+    if (transaction.status !== 'completed' || !transaction.buyer_confirmed_at || !transaction.seller_confirmed_at) throw new Error('TRANSACTION_NOT_COMPLETED');
+    const at = nowIso();
+    await client.setDocument(`products/${transaction.listing_id}`, { estado: 'Vendido', updated_at: at }, { merge: true });
+    return { ...transaction, updated_at: at };
+  }
+
   async disputeTransaction(transaction: MarketplaceTransaction) {
     this.requireV2();
     const client = this.getClient();
