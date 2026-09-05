@@ -41,26 +41,11 @@ async function enableService(serviceName) {
   }
 }
 
+// Firebase Auth base is configured separately through `firebase deploy --only auth`.
+// This helper deliberately does NOT call identityPlatform:initializeAuth, because
+// that endpoint upgrades the project and can require billing.
 await enableService('identitytoolkit.googleapis.com');
 await enableService('firebase.googleapis.com');
-
-const authConfigUrl = `https://identitytoolkit.googleapis.com/admin/v2/projects/${encodeURIComponent(projectId)}/config`;
-let authConfig = await jsonRequest(authConfigUrl, {}, [404]);
-if (authConfig.status === 404) {
-  const initUrl = `https://identitytoolkit.googleapis.com/v2/projects/${encodeURIComponent(projectId)}/identityPlatform:initializeAuth`;
-  await jsonRequest(initUrl, { method: 'POST', body: '{}' }, [409]);
-  for (let i = 0; i < 20; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    authConfig = await jsonRequest(authConfigUrl, {}, [404]);
-    if (authConfig.status === 200) break;
-  }
-}
-if (authConfig.status !== 200) throw new Error('Firebase Auth no pudo inicializarse en staging.');
-
-await jsonRequest(`${authConfigUrl}?updateMask=signIn.email.enabled,signIn.email.passwordRequired`, {
-  method: 'PATCH',
-  body: JSON.stringify({ name: `projects/${projectId}/config`, signIn: { email: { enabled: true, passwordRequired: true } } }),
-});
 
 const webAppsUrl = `https://firebase.googleapis.com/v1beta1/projects/${encodeURIComponent(projectId)}/webApps`;
 const listed = await jsonRequest(webAppsUrl);
@@ -93,6 +78,5 @@ fs.writeFileSync(outputPath, JSON.stringify({
   appId: config.appId,
 }, null, 2), { mode: 0o600 });
 
-console.log(`✅ Firebase Auth email/password listo en ${projectId}.`);
 console.log(`✅ Firebase Web App lista para smoke E2E (${app.displayName || 'TuTop staging'}).`);
 console.log(`✅ Config runtime escrita en ${outputPath} sin imprimir credenciales de sesión.`);
