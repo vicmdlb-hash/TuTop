@@ -29,7 +29,10 @@ for (const timestampField of [
 }
 
 assert.match(rules, /status == 'pending'/);
-assert.match(rules, /\['accepted','rejected','countered'\]/);
+assert.match(rules, /created_by/);
+assert.match(rules, /request\.auth\.uid != resource\.data\.created_by/);
+assert.match(rules, /request\.resource\.data\.status in \['accepted','rejected'\]/);
+assert.match(rules, /request\.resource\.data\.status == 'countered'/);
 assert.match(rules, /\['accepted','reserved','meetup_scheduled','completed','cancelled','expired','no_show','disputed'\]/);
 assert.match(rules, /data\.country_code == 'MX'/);
 assert.match(rules, /image_data\.size\(\) <= 230000/);
@@ -40,16 +43,20 @@ assert.match(rules, /transactionId == 'tx-' \+ request\.resource\.data\.accepted
 
 assert.match(nationalBackend, /SCHEMA_V2_DISABLED/);
 assert.match(nationalBackend, /createOffer/);
+assert.match(nationalBackend, /createCounterOffer/);
+assert.match(nationalBackend, /created_by: actor/);
 assert.match(nationalBackend, /createDemandRequest/);
 assert.match(nationalBackend, /saveSearch/);
 assert.match(nationalBackend, /updateUniversityIdentity/);
 assert.match(nationalBackend, /acceptOfferAndCreateTransaction/);
+assert.match(nationalBackend, /createTransactionFromAcceptedOffer/);
 assert.match(nationalBackend, /releaseExpiredReservation/);
 assert.match(nationalBackend, /const transactionId = `tx-\$\{offer\.id\}`/);
 
 console.log('PASS Firestore V2 remains isolated from firebase.json');
 console.log('PASS national identity fields and catalog references exist');
 console.log('PASS national listings require shipping');
+console.log('PASS counteroffers are proposer-aware');
 console.log('PASS structured offer and transaction guards exist');
 console.log('PASS transaction ids are idempotent per accepted offer');
 console.log('PASS V2 lifecycle dates serialize as Firestore timestamps');
