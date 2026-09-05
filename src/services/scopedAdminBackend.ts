@@ -121,7 +121,7 @@ export const scopedAdminBackend = {
       return firebase.runQuery<any>('audit_log', [{ field: 'institution_id', op: 'EQUAL', value: admin.institution_id }], [{ field: 'created_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
     }
     if (admin.role === 'verification_reviewer' || admin.role === 'support') return [];
-    return firebase.runQuery<any>('audit_log', [], [{ field: 'created_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit));
+    return firebase.runQuery<any>('audit_log', [], [{ field: 'created_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
   },
 
   async resolveModerationCase(caseId: string, status: 'reviewing' | 'resolved' | 'dismissed', institutionId?: string) {
