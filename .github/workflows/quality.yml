@@ -52,3 +52,32 @@ jobs:
           path: dist
           if-no-files-found: error
           retention-days: 7
+
+  firestore-v2-security:
+    name: Firestore V2 emulator security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Install emulator test harness
+        run: npm install --no-save @firebase/rules-unit-testing firebase firebase-tools
+
+      - name: Firestore V2 abuse tests
+        run: npx firebase-tools emulators:exec --only firestore --config firebase.v2.json --project demo-tutop-v2-rules "node --test tests/firestore.v2.rules.test.mjs"
