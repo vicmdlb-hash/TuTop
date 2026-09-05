@@ -1,0 +1,119 @@
+name: Provision TuTop Firebase V2 staging
+
+on:
+  push:
+    branches: ["feat/tutop-0.8-p0"]
+    paths:
+      - ".github/workflows/provision-firebase-staging-v2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-provision-firebase-v2-staging
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision isolated Firebase V2 staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Firebase CLI
+        run: npm install --no-save firebase-tools@latest
+
+      - name: Validate staging target
+        run: |
+          set -euo pipefail
+          test "$TUTOP_FIREBASE_PROJECT_ID" != "tutop-3a4f7"
+          echo "$TUTOP_FIREBASE_PROJECT_ID" | grep -Eq '(staging|stage|beta|dev|test|sandbox)'
+          TUTOP_ALLOW_FIREBASE_DEPLOY=staging-v2 TUTOP_ALLOW_V2_SEED=staging-v2 npm run v2:staging:readiness:test
+          npm run v2:catalog:plan
+
+      - name: Select Firebase authentication
+        id: auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]; then
+            printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/firebase-sa.json"
+            chmod 600 "$RUNNER_TEMP/firebase-sa.json"
+            echo "mode=service-account" >> "$GITHUB_OUTPUT"
+            echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-sa.json" >> "$GITHUB_ENV"
+          elif [ -n "${GCP_SA_KEY:-}" ]; then
+            printf '%s' "$GCP_SA_KEY" > "$RUNNER_TEMP/firebase-sa.json"
+            chmod 600 "$RUNNER_TEMP/firebase-sa.json"
+            echo "mode=service-account" >> "$GITHUB_OUTPUT"
+            echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-sa.json" >> "$GITHUB_ENV"
+          elif [ -n "${FIREBASE_TOKEN:-}" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+          else
+            echo "No Firebase/GCP CI credential is configured in this repository." >&2
+            echo "Expected one of: FIREBASE_SERVICE_ACCOUNT_JSON, GCP_SA_KEY, FIREBASE_TOKEN." >&2
+            exit 42
+          fi
+
+      - name: Verify Firebase identity
+        run: npx firebase-tools projects:list --non-interactive
+
+      - name: Create or reuse dedicated Firebase project
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npx firebase-tools projects:list --json --non-interactive | grep -q "\"projectId\": \"$TUTOP_FIREBASE_PROJECT_ID\""; then
+            echo "Firebase staging project already exists: $TUTOP_FIREBASE_PROJECT_ID"
+          else
+            npx firebase-tools projects:create "$TUTOP_FIREBASE_PROJECT_ID" \
+              --display-name "TuTop Beta V2" \
+              --non-interactive
+          fi
+
+      - name: Create default Firestore database if missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npx firebase-tools firestore:databases:list --project "$TUTOP_FIREBASE_PROJECT_ID" --json --non-interactive | grep -q '"name": "(default)"'; then
+            echo "Default Firestore database already exists."
+          else
+            npx firebase-tools firestore:databases:create '(default)' \
+              --location us-central1 \
+              --delete-protection DISABLED \
+              --project "$TUTOP_FIREBASE_PROJECT_ID" \
+              --non-interactive
+          fi
+
+      - name: Deploy Firestore V2 rules and indexes only
+        env:
+          TUTOP_ALLOW_FIREBASE_DEPLOY: staging-v2
+        run: npm run firebase:deploy:staging
+
+      - name: Seed V2 catalog atomically
+        env:
+          TUTOP_ALLOW_V2_SEED: staging-v2
+        run: npm run v2:catalog:seed
+
+      - name: Reconciliation dry run
+        run: npm run v2:reservations:reconcile
+
+      - name: Report staging project
+        run: |
+          echo "✅ Firebase V2 staging ready: $TUTOP_FIREBASE_PROJECT_ID"
+          echo "VITE_TUTOP_SCHEMA_V2 remains OFF; no production project was touched."
