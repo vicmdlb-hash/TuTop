@@ -83,6 +83,33 @@ export function expandedSearchTokens(query: string) {
   return [...tokens];
 }
 
+function phraseMatches(haystack: string, phrase: string) {
+  const tokens = normalizeNationalSearch(phrase).split(' ').filter(Boolean);
+  return tokens.length > 0 && tokens.every((token) => haystack.includes(token));
+}
+
+function tokenMatches(haystack: string, queryToken: string) {
+  if (haystack.includes(queryToken)) return true;
+  for (const [canonical, variants] of Object.entries(SYNONYMS)) {
+    const relatedTokens = new Set([
+      canonical,
+      ...variants.flatMap((variant) => normalizeNationalSearch(variant).split(' ').filter(Boolean)),
+    ]);
+    if (!relatedTokens.has(queryToken)) continue;
+    if (haystack.includes(canonical)) return true;
+    if (variants.some((variant) => phraseMatches(haystack, variant))) return true;
+  }
+  return false;
+}
+
+function queryMatches(haystack: string, query: string) {
+  const normalized = normalizeNationalSearch(query);
+  if (!normalized) return { matches: true, matchedTerms: 0 };
+  const originalTokens = normalized.split(' ').filter(Boolean);
+  const matches = originalTokens.every((token) => tokenMatches(haystack, token));
+  return { matches, matchedTerms: matches ? originalTokens.length : 0 };
+}
+
 function productText(product: Product) {
   return normalizeNationalSearch([
     product.titulo,
@@ -110,14 +137,13 @@ function scopeAffinity(product: Product, user: User) {
 }
 
 export function searchScore(product: Product, input: { query?: string; user: User; interestCategories?: string[]; now?: number }) {
-  const tokens = expandedSearchTokens(input.query || '');
   const haystack = productText(product);
+  const queryResult = queryMatches(haystack, input.query || '');
   let score = 0;
   const reasons: string[] = [];
-  if (tokens.length) {
-    const matched = tokens.filter((token) => haystack.includes(token));
-    if (matched.length !== tokens.length) return { score: -Infinity, reasons: [] as string[] };
-    score += matched.length * 12;
+  if (!queryResult.matches) return { score: -Infinity, reasons: [] as string[] };
+  if (queryResult.matchedTerms > 0) {
+    score += queryResult.matchedTerms * 12;
     reasons.push('Coincide con tu búsqueda');
   }
 
