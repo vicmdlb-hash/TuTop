@@ -121,5 +121,5 @@ jobs:
       - name: Prepare strict V2 rules
         run: npm run v2:rules:prepare
 
-      - name: Firestore V2 abuse + atomic batch + trusted reputation tests
-        run: npx firebase-tools emulators:exec --only firestore --config firebase.v2.json --project demo-tutop-v2-rules "node --test tests/firestore.v2.rules.test.mjs tests/firestore.v2.atomic.test.mjs tests/firestore.v2.acceptance-atomic.test.mjs tests/firestore.v2.reputation-trust.test.mjs"
+      - name: Firestore V2 abuse + atomic batch + governance tests
+        run: npx firebase-tools emulators:exec --only firestore --config firebase.v2.json --project demo-tutop-v2-rules "node --test tests/firestore.v2.rules.test.mjs tests/firestore.v2.atomic.test.mjs tests/firestore.v2.acceptance-atomic.test.mjs tests/firestore.v2.reputation-trust.test.mjs tests/firestore.v2.governance.test.mjs"
