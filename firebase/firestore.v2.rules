@@ -90,7 +90,6 @@ service cloud.firestore {
         && validImages(data);
     }
 
-    // Legacy immutable marketplace catalog remains readable and bootstrap-safe.
     match /catalog/{catalogId} {
       allow read: if signedIn();
       allow create: if signedIn() && notSuspended() && catalogId == 'marketplace'
@@ -102,7 +101,6 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // National catalog. Client reads are public to signed-in members; writes are administrative.
     match /institutions/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
     match /campuses/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
     match /faculties/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
@@ -110,7 +108,6 @@ service cloud.firestore {
     match /institution_domains/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
     match /approved_meeting_points/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
 
-    // Public profile. Legacy UATx fields remain valid while national IDs become persistent.
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if owner(uid)
@@ -158,7 +155,6 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // UCoins remain closed-loop points. No direct cash top-up exists.
     match /wallets/{uid} {
       allow read: if owner(uid) || isAdmin();
       allow create: if owner(uid)
@@ -316,13 +312,13 @@ service cloud.firestore {
       }
     }
 
-    // Structured offers. No money is held by TuTop; this only records negotiation intent.
     match /offers/{offerId} {
       allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || isAdmin());
       allow create: if signedIn() && notSuspended()
-        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','amount_mxn','status','parent_offer_id','counter_offer_id','expires_at','created_at','updated_at'])
-        && request.resource.data.buyer_id == request.auth.uid
-        && request.resource.data.seller_id != request.auth.uid
+        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','created_by','amount_mxn','status','parent_offer_id','counter_offer_id','expires_at','created_at','updated_at'])
+        && request.resource.data.buyer_id != request.resource.data.seller_id
+        && request.resource.data.created_by == request.auth.uid
+        && request.auth.uid in [request.resource.data.buyer_id, request.resource.data.seller_id]
         && request.resource.data.amount_mxn is number && request.resource.data.amount_mxn >= 1 && request.resource.data.amount_mxn <= 1000000
         && request.resource.data.status == 'pending'
         && productDoc(request.resource.data.listing_id).data.vendedor_id == request.resource.data.seller_id
@@ -330,11 +326,24 @@ service cloud.firestore {
         && request.resource.data.listing_id == chatDoc(request.resource.data.chat_id).data.product_id
         && request.resource.data.buyer_id == chatDoc(request.resource.data.chat_id).data.buyer_id
         && request.resource.data.seller_id == chatDoc(request.resource.data.chat_id).data.seller_id
+        && (
+          (request.resource.data.created_by == request.resource.data.buyer_id && !('parent_offer_id' in request.resource.data))
+          ||
+          ('parent_offer_id' in request.resource.data
+            && exists(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id))
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.status == 'pending'
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.created_by != request.auth.uid
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.listing_id == request.resource.data.listing_id
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.chat_id == request.resource.data.chat_id
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.buyer_id == request.resource.data.buyer_id
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.seller_id == request.resource.data.seller_id)
+        )
         && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
       allow update: if signedIn() && notSuspended()
         && resource.data.status == 'pending'
         && request.resource.data.buyer_id == resource.data.buyer_id
         && request.resource.data.seller_id == resource.data.seller_id
+        && request.resource.data.created_by == resource.data.created_by
         && request.resource.data.listing_id == resource.data.listing_id
         && request.resource.data.chat_id == resource.data.chat_id
         && request.resource.data.amount_mxn == resource.data.amount_mxn
@@ -342,13 +351,23 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','counter_offer_id','updated_at'])
         && fresh(request.resource.data.updated_at)
         && (
-          (request.auth.uid == resource.data.seller_id && request.resource.data.status in ['accepted','rejected','countered'])
-          || (request.auth.uid == resource.data.buyer_id && request.resource.data.status == 'withdrawn')
+          (request.auth.uid == resource.data.created_by && request.resource.data.status == 'withdrawn')
+          ||
+          (request.auth.uid != resource.data.created_by
+            && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]
+            && request.resource.data.status in ['accepted','rejected'])
+          ||
+          (request.auth.uid != resource.data.created_by
+            && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]
+            && request.resource.data.status == 'countered'
+            && 'counter_offer_id' in request.resource.data
+            && exists(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id))
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.parent_offer_id == offerId
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.created_by == request.auth.uid)
         );
       allow delete: if false;
     }
 
-    // Transaction state is separate from listing state. Creation requires an accepted structured offer.
     match /transactions_v2/{transactionId} {
       allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || isAdmin());
       allow create: if signedIn() && notSuspended()
