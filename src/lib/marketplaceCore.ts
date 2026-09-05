@@ -15,10 +15,13 @@ export function nextOfferStatus(current: OfferStatus, action: OfferAction): Offe
   return offerTransitions[current][action] || null;
 }
 
-export function canActOnOffer(offer: Pick<Offer, 'buyer_id' | 'seller_id' | 'status'>, actorUid: string, action: OfferAction) {
+export function canActOnOffer(offer: Pick<Offer, 'buyer_id' | 'seller_id' | 'created_by' | 'status'>, actorUid: string, action: OfferAction) {
   if (offer.status !== 'pending') return false;
-  if (action === 'withdraw') return actorUid === offer.buyer_id;
-  if (action === 'accept' || action === 'reject' || action === 'counter') return actorUid === offer.seller_id;
+  const creator = offer.created_by || offer.buyer_id;
+  const participant = actorUid === offer.buyer_id || actorUid === offer.seller_id;
+  if (!participant && action !== 'expire') return false;
+  if (action === 'withdraw') return actorUid === creator;
+  if (action === 'accept' || action === 'reject' || action === 'counter') return actorUid !== creator;
   return action === 'expire';
 }
 
