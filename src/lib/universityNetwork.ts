@@ -7,7 +7,7 @@ export const INSTITUTIONS: Institution[] = [
   { id: 'ipn', name: 'Instituto Politécnico Nacional', short_name: 'IPN', country_code: 'MX', state_code: 'CMX', state_name: 'Ciudad de México', city_name: 'Ciudad de México', domains: ['ipn.mx', 'alumno.ipn.mx'], active: true },
   { id: 'uanl', name: 'Universidad Autónoma de Nuevo León', short_name: 'UANL', country_code: 'MX', state_code: 'NLE', state_name: 'Nuevo León', city_name: 'San Nicolás de los Garza', domains: ['uanl.edu.mx'], active: true },
   { id: 'udg', name: 'Universidad de Guadalajara', short_name: 'UdeG', country_code: 'MX', state_code: 'JAL', state_name: 'Jalisco', city_name: 'Guadalajara', domains: ['udg.mx'], active: true },
-  { id: 'uaq', name: 'Universidad Autónoma de Querétaro', short_name: 'UAQ', country_code: 'QUE', state_code: 'QUE', state_name: 'Querétaro', city_name: 'Santiago de Querétaro', domains: ['uaq.mx'], active: true } as Institution,
+  { id: 'uaq', name: 'Universidad Autónoma de Querétaro', short_name: 'UAQ', country_code: 'MX', state_code: 'QUE', state_name: 'Querétaro', city_name: 'Santiago de Querétaro', domains: ['uaq.mx'], active: true },
 ];
 
 export const CAMPUSES: Campus[] = [
