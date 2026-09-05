@@ -25,6 +25,8 @@ const SESSION_KEY_PREFIX = 'tutop.firebase.session.v2.';
 const TIMESTAMP_FIELDS = new Set([
   'created_at', 'updated_at', 'fecha_creacion', 'fecha_registro', 'date', 'fecha',
   'suspended_until', 'expires_at', 'last_message_at', 'confirmed_at', 'reviewed_at',
+  'reservation_expires_at', 'meetup_at', 'buyer_confirmed_at', 'seller_confirmed_at',
+  'needed_by', 'retention_delete_after', 'verified_at', 'read_at',
 ]);
 
 function encodePath(path: string) {
