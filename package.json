@@ -31,6 +31,8 @@
     "firebase:link": "node scripts/link-firebase-project.mjs",
     "firebase:deploy:spark": "firebase deploy --only firestore:rules,firestore:indexes,hosting",
     "firebase:emulators:spark": "firebase emulators:start --only auth,firestore,hosting",
+    "v2:catalog:plan": "node scripts/seed-v2-catalog.mjs",
+    "v2:catalog:seed": "node scripts/seed-v2-catalog.mjs --apply",
     "deps:mobile:blaze": "node scripts/install-mobile-deps-blaze.mjs",
     "ci:summary": "node scripts/ci-summary.mjs",
     "beta:ready": "node scripts/beta-ready.mjs",
