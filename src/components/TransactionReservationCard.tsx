@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Clock3, Loader2, MapPin, PackageCheck, RotateCcw, ShieldCheck } from 'lucide-react';
-import { safeMeetingPointsFor } from '../lib/universityNetwork';
+import { AlertTriangle, CalendarCheck2, CheckCircle2, Clock3, Loader2, MapPin, PackageCheck, RotateCcw, ShieldCheck } from 'lucide-react';
+import { SAFE_MEETING_POINTS, safeMeetingPointsFor } from '../lib/universityNetwork';
 import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
 import type { MarketplaceTransaction, UniversityIdentity } from '../types';
 
@@ -25,18 +25,36 @@ function readIdentity(): UniversityIdentity | null {
   } catch { return null; }
 }
 
+function defaultMeetupInput() {
+  const date = new Date(Date.now() + 60 * 60_000);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 export default function TransactionReservationCard({ chatId, currentUserId, onReleased }: { chatId: string; currentUserId: string; onReleased?: () => void }) {
   const [transaction, setTransaction] = useState<MarketplaceTransaction | null>(null);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [selectedPointId, setSelectedPointId] = useState('');
+  const [meetupAt, setMeetupAt] = useState(defaultMeetupInput);
   const identity = useMemo(readIdentity, []);
   const safePoints = useMemo(() => safeMeetingPointsFor(identity?.campus_id, identity?.institution_id).slice(0, 3), [identity?.campus_id, identity?.institution_id]);
+  const selectedPoint = useMemo(() => SAFE_MEETING_POINTS.find((point) => point.id === (transaction?.meeting_point_id || selectedPointId)), [transaction?.meeting_point_id, selectedPointId]);
 
   useEffect(() => {
     if (!nationalSchemaEnabled()) return;
     let active = true;
-    void nationalBackend.loadTransactionForChat(chatId).then((value) => { if (active) setTransaction(value); }).catch(() => undefined);
+    void nationalBackend.loadTransactionForChat(chatId).then((value) => {
+      if (!active) return;
+      setTransaction(value);
+      if (value?.meeting_point_id) setSelectedPointId(value.meeting_point_id);
+      if (value?.meetup_at) {
+        const date = new Date(value.meetup_at);
+        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+        setMeetupAt(local.toISOString().slice(0, 16));
+      }
+    }).catch(() => undefined);
     return () => { active = false; };
   }, [chatId]);
 
@@ -49,6 +67,9 @@ export default function TransactionReservationCard({ chatId, currentUserId, onRe
   const remaining = useMemo(() => remainingLabel(transaction?.reservation_expires_at, now), [transaction?.reservation_expires_at, now]);
   const expired = Boolean(transaction?.status === 'reserved' && transaction.reservation_expires_at && Date.parse(transaction.reservation_expires_at) <= now);
   const isSeller = transaction?.seller_id === currentUserId;
+  const isBuyer = transaction?.buyer_id === currentUserId;
+  const currentUserConfirmed = Boolean(isBuyer ? transaction?.buyer_confirmed_at : transaction?.seller_confirmed_at);
+  const otherConfirmed = Boolean(isBuyer ? transaction?.seller_confirmed_at : transaction?.buyer_confirmed_at);
 
   if (!nationalSchemaEnabled() || !transaction) return null;
 
@@ -64,14 +85,40 @@ export default function TransactionReservationCard({ chatId, currentUserId, onRe
     finally { setBusy(false); }
   };
 
-  const copyPoint = async (name: string) => {
+  const saveMeetup = async () => {
+    if (!selectedPointId || !meetupAt || busy) return;
     try {
-      await navigator.clipboard.writeText(`Propongo encontrarnos en ${name}. Confirmemos día y hora por este chat.`);
-      setMessage('Punto seguro copiado. Pégalo en el chat para proponerlo.');
-    } catch { setMessage(`Punto sugerido: ${name}`); }
+      setBusy(true); setMessage(null);
+      const next = await nationalBackend.scheduleMeetup(transaction, selectedPointId, new Date(meetupAt).toISOString());
+      setTransaction(next);
+      setMessage('Encuentro guardado en la operación. La otra persona verá el mismo punto y horario.');
+    } catch { setMessage('No pudimos guardar el encuentro. Revisa punto, fecha y hora.'); }
+    finally { setBusy(false); }
   };
 
-  const statusLabel = transaction.status === 'reserved' ? 'En trato' : transaction.status === 'completed' ? 'Completada' : transaction.status === 'expired' ? 'Reserva vencida' : transaction.status.replace('_', ' ');
+  const confirmDelivery = async () => {
+    if (busy || currentUserConfirmed || transaction.status !== 'meetup_scheduled') return;
+    try {
+      setBusy(true); setMessage(null);
+      const next = await nationalBackend.confirmDelivery(transaction);
+      setTransaction(next);
+      setMessage(next.status === 'completed' ? 'Entrega confirmada por ambas partes. Operación completada.' : 'Tu confirmación quedó registrada. Falta la confirmación de la otra persona.');
+    } catch { setMessage('No pudimos registrar tu confirmación. Actualiza e inténtalo otra vez.'); }
+    finally { setBusy(false); }
+  };
+
+  const dispute = async () => {
+    if (busy || !['reserved', 'meetup_scheduled'].includes(transaction.status)) return;
+    try {
+      setBusy(true); setMessage(null);
+      const next = await nationalBackend.disputeTransaction(transaction);
+      setTransaction(next);
+      setMessage('Operación marcada en disputa. No la consideraremos completada hasta resolverla.');
+    } catch { setMessage('No pudimos abrir la disputa. Actualiza e inténtalo otra vez.'); }
+    finally { setBusy(false); }
+  };
+
+  const statusLabel = transaction.status === 'reserved' ? 'En trato' : transaction.status === 'meetup_scheduled' ? 'Encuentro programado' : transaction.status === 'completed' ? 'Completada' : transaction.status === 'expired' ? 'Reserva vencida' : transaction.status === 'disputed' ? 'En disputa' : transaction.status.replace('_', ' ');
 
   return (
     <section className="mx-4 mt-2 rounded-2xl border border-amber-300/10 bg-amber-500/[0.05] p-3">
@@ -84,12 +131,18 @@ export default function TransactionReservationCard({ chatId, currentUserId, onRe
         </div>
       </div>
 
-      {transaction.status === 'reserved' && !expired && <div className="mt-3 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.045] p-2.5">
-        <div className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5 text-emerald-300" /><div><strong className="block text-[9px] text-emerald-200">Plan de encuentro seguro</strong><span className="text-[8px] text-slate-600">Lugar público + horario confirmado + entrega revisada antes de confirmar.</span></div></div>
-        {safePoints.length > 0 ? <div className="mt-2 space-y-1.5">{safePoints.map((point) => <button key={point.id} onClick={() => void copyPoint(point.name)} className="flex w-full items-start gap-2 rounded-lg bg-white/[0.035] px-2.5 py-2 text-left"><MapPin className="mt-0.5 h-3 w-3 shrink-0 text-emerald-300" /><span className="min-w-0"><strong className="block text-[8px] text-slate-300">{point.name}</strong><small className="mt-0.5 block text-[7px] leading-3 text-slate-600">{point.description}</small></span></button>)}</div> : <p className="mt-2 text-[8px] leading-4 text-slate-600">Aún no hay un Punto TuTop validado para este campus. Elijan un lugar público, concurrido y dentro de horario seguro.</p>}
+      {['reserved', 'meetup_scheduled'].includes(transaction.status) && !expired && <div className="mt-3 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.045] p-2.5">
+        <div className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5 text-emerald-300" /><div><strong className="block text-[9px] text-emerald-200">Plan de encuentro seguro</strong><span className="text-[8px] text-slate-600">Punto sugerido de TuTop + horario compartido dentro de esta operación.</span></div></div>
+        {safePoints.length > 0 ? <div className="mt-2 space-y-1.5">{safePoints.map((point) => <button key={point.id} onClick={() => setSelectedPointId(point.id)} className={`flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left ${selectedPointId === point.id || transaction.meeting_point_id === point.id ? 'bg-emerald-400/10 ring-1 ring-emerald-300/20' : 'bg-white/[0.035]'}`}><MapPin className="mt-0.5 h-3 w-3 shrink-0 text-emerald-300" /><span className="min-w-0"><strong className="block text-[8px] text-slate-300">{point.name}</strong><small className="mt-0.5 block text-[7px] leading-3 text-slate-600">{point.description}</small></span></button>)}</div> : <p className="mt-2 text-[8px] leading-4 text-slate-600">Aún no hay un Punto TuTop catalogado para este campus. Por seguridad, esta versión no guarda lugares improvisados como “Punto TuTop”.</p>}
+        {safePoints.length > 0 && <div className="mt-2 grid grid-cols-[1fr_auto] gap-2"><input aria-label="Fecha y hora del encuentro" type="datetime-local" value={meetupAt} onChange={(event) => setMeetupAt(event.target.value)} className="min-w-0 rounded-lg border border-white/5 bg-black/20 px-2 py-2 text-[8px] text-slate-300 outline-none" /><button disabled={busy || !selectedPointId || !meetupAt} onClick={() => void saveMeetup()} className="flex items-center justify-center gap-1 rounded-lg bg-emerald-400/10 px-3 text-[8px] font-black text-emerald-200 disabled:opacity-40">{busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CalendarCheck2 className="h-3 w-3" />}Guardar</button></div>}
+        {transaction.meeting_point_id && transaction.meetup_at && <p className="mt-2 text-[8px] leading-4 text-emerald-100/70"><MapPin className="mr-1 inline h-3 w-3" />{selectedPoint?.name || 'Punto TuTop'} · {new Date(transaction.meetup_at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}</p>}
       </div>}
 
+      {transaction.status === 'meetup_scheduled' && <div className="mt-3 rounded-xl border border-sky-400/10 bg-sky-500/[0.04] p-2.5"><strong className="text-[9px] text-sky-200">Confirmación de entrega</strong><p className="mt-1 text-[8px] leading-4 text-slate-600">Confirma sólo después de revisar y recibir/entregar el artículo. TuTop completa la operación únicamente cuando ambas partes confirman.</p><div className="mt-2 flex items-center gap-2"><button disabled={busy || currentUserConfirmed} onClick={() => void confirmDelivery()} className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-sky-400/10 text-[8px] font-black text-sky-200 disabled:opacity-45">{currentUserConfirmed ? <CheckCircle2 className="h-3 w-3" /> : busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}{currentUserConfirmed ? 'Ya confirmaste' : 'Confirmar entrega'}</button><span className="text-[7px] text-slate-600">Otra parte: {otherConfirmed ? 'confirmó' : 'pendiente'}</span></div></div>}
+
+      {['reserved', 'meetup_scheduled'].includes(transaction.status) && <button disabled={busy} onClick={() => void dispute()} className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-xl bg-white/[0.035] text-[8px] font-bold text-slate-400 disabled:opacity-40"><AlertTriangle className="h-3 w-3" />Reportar problema con esta operación</button>}
       {expired && isSeller && <button disabled={busy} onClick={() => void release()} className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-rose-500/10 text-[9px] font-black text-rose-200 disabled:opacity-50">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}Liberar producto</button>}
+      {transaction.status === 'disputed' && <p className="mt-3 rounded-xl bg-rose-500/5 p-2 text-[8px] leading-4 text-rose-200/70">La operación está en disputa. No se puede completar ni modificar el encuentro desde esta tarjeta.</p>}
       {message && <p className="mt-2 text-[9px] text-slate-400">{message}</p>}
     </section>
   );
