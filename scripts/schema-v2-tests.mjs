@@ -2,12 +2,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const rules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
+const generator = fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs', 'utf8');
 const firebaseV2 = JSON.parse(fs.readFileSync('firebase.v2.json', 'utf8'));
 const envExample = fs.readFileSync('.env.example', 'utf8');
 const nationalBackend = fs.readFileSync('src/services/nationalBackend.ts', 'utf8');
 const firebaseRest = fs.readFileSync('src/services/firebaseRest.ts', 'utf8');
 
-assert.equal(firebaseV2.firestore.rules, 'firebase/firestore.v2.rules');
+assert.equal(firebaseV2.firestore.rules, 'firebase/firestore.v2.generated.rules');
+assert.match(generator, /firebase\/firestore\.v2\.rules/);
+assert.match(generator, /firebase\/firestore\.v2\.generated\.rules/);
+assert.match(generator, /match \/reputation\/\{uid\}/);
 assert.match(envExample, /VITE_TUTOP_SCHEMA_V2=false/);
 
 for (const collection of [
@@ -78,7 +82,7 @@ assert.match(nationalBackend, /const transactionId = `tx-\$\{offer\.id\}`/);
 assert.match(nationalBackend, /patchWrite\(client, `offers\/\$\{offer\.id\}`, \{ status: 'accepted'/);
 assert.match(nationalBackend, /patchWrite\(client, `products\/\$\{offer\.listing_id\}`, \{ estado: 'Reservado'/);
 
-console.log('PASS Firestore V2 remains isolated from firebase.json');
+console.log('PASS Firestore V2 remains isolated and deploys generated strict rules');
 console.log('PASS national identity fields and catalog references exist');
 console.log('PASS national listings require shipping');
 console.log('PASS counteroffers are proposer-aware');
