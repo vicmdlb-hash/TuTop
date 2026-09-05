@@ -86,6 +86,9 @@ jobs:
               --non-interactive
           fi
 
+      - name: Enable Cloud Firestore API
+        run: node scripts/enable-firestore-api.mjs
+
       - name: Create default Firestore database if missing
         shell: bash
         run: |
