@@ -221,9 +221,14 @@ class NationalMarketplaceBackend {
     const status = transactionStatusForAction(transaction, actor, 'confirm_delivery') || transaction.status;
     const field = actor === transaction.buyer_id ? 'buyer_confirmed_at' : 'seller_confirmed_at';
     const next = { ...transaction, [field]: at, status, updated_at: at } as MarketplaceTransaction;
-    await client.setDocument(`transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at }, { merge: true });
+    const confirmationWrite = patchWrite(client, `transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at });
     if (status === 'completed' && actor === transaction.seller_id) {
-      await client.setDocument(`products/${transaction.listing_id}`, { estado: 'Vendido', updated_at: at }, { merge: true });
+      await client.commit([
+        confirmationWrite,
+        patchWrite(client, `products/${transaction.listing_id}`, { estado: 'Vendido', updated_at: at }),
+      ]);
+    } else {
+      await client.commit([confirmationWrite]);
     }
     return next;
   }
