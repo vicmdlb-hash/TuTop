@@ -21,6 +21,20 @@ assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', created_by: 'b'
 assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', created_by: 's', status: 'pending' }, 'b', 'accept'), true);
 assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', created_by: 's', status: 'pending' }, 's', 'withdraw'), true);
 assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', created_by: 's', status: 'pending' }, 's', 'counter'), false);
+
+const future = new Date(Date.now() + 60_000).toISOString();
+const past = new Date(Date.now() - 60_000).toISOString();
+const reserved = { buyer_id: 'b', seller_id: 's', status: 'reserved', reservation_expires_at: future };
+assert.equal(core.canActOnTransaction(reserved, 'b', 'schedule_meetup'), true);
+assert.equal(core.canActOnTransaction(reserved, 'x', 'schedule_meetup'), false);
+assert.equal(core.canActOnTransaction(reserved, 's', 'expire'), false);
+assert.equal(core.canActOnTransaction({ ...reserved, reservation_expires_at: past }, 'b', 'expire'), false);
+assert.equal(core.canActOnTransaction({ ...reserved, reservation_expires_at: past }, 's', 'expire'), true);
+assert.equal(core.canActOnTransaction({ ...reserved, status: 'meetup_scheduled' }, 'b', 'confirm_delivery'), true);
+assert.equal(core.transactionStatusForAction({ ...reserved, status: 'meetup_scheduled' }, 'b', 'confirm_delivery'), 'meetup_scheduled');
+assert.equal(core.transactionStatusForAction({ ...reserved, status: 'meetup_scheduled', seller_confirmed_at: past }, 'b', 'confirm_delivery'), 'completed');
+assert.equal(core.canActOnTransaction({ ...reserved, status: 'completed' }, 'b', 'dispute'), false);
+
 assert.equal(core.normalizeSearchText('iPhone13 CELULAR'), 'iphone 13 telefono');
 assert.equal(core.marketplacePolicyCheck('Vendo una pistola').allowed, false);
 assert.deepEqual(core.suspiciousMessageSignals('Pásame el código OTP por WhatsApp').sort(), ['move_off_platform', 'otp_request']);
