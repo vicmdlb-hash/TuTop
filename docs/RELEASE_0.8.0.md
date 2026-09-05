@@ -47,12 +47,15 @@ El backend Spark desplegado en 0.7.0 permite un conjunto estricto de campos, cat
 - Orden por recientes, popularidad y precio.
 - Contador de resultados y contador de filtros activos.
 - Estado vacío con recuperación rápida de filtros.
+- Las tarjetas muestran de forma visual si el precio es negociable y si la entrega ya está definida.
 
 ### Experiencia de vendedor
 - El Feed detecta si la persona tiene publicaciones activas y muestra un bloque **Modo vendedor**.
 - Resume publicaciones activas y mensajes pendientes.
 - Acceso directo a crear otra publicación.
 - Perfil conserva gestión, edición, pausa, reactivación y marcado como vendido.
+- Mensajes separa claramente conversaciones de compra y venta.
+- El vendedor ve cuántas conversaciones de venta tiene y cuántas requieren respuesta.
 
 ### Ficha de producto
 - Descripción limpia separada de los metadatos técnicos del anuncio.
@@ -66,11 +69,18 @@ El backend Spark desplegado en 0.7.0 permite un conjunto estricto de campos, cat
 - Acción **Hacer oferta** desde la propia ficha.
 - Recordatorio de seguridad para encuentros en lugares públicos.
 
-### Chat / negociación
-- Respuestas rápidas: disponibilidad, ofertas, entrega e interés.
+### Mensajes / negociación
+- Bandeja separada por **Compras** y **Ventas**.
+- Contadores de compras, ventas y conversaciones de venta pendientes por responder.
+- Cada conversación indica el rol actual y el estado de la entrega.
+- Respuestas rápidas distintas para comprador y vendedor.
 - Acción **Hacer oferta** para comprador.
-- La oferta se envía como mensaje explícito y no ejecuta ningún pago ni reserva automática.
+- TuTop reconoce visualmente mensajes de oferta y resalta el monto.
+- El vendedor puede **Aceptar**, **Rechazar** o **Contraofertar** desde controles claros.
+- Aceptar o rechazar genera una respuesta explícita dentro del chat; no realiza pagos ni reserva automáticamente el producto.
+- Confirmación de entrega usa lenguaje distinto según rol: recibido para comprador y entregado para vendedor.
 - Se conserva envío de fotos, reportes, confirmación bilateral de entrega y calificación.
+- Se muestra recordatorio de encuentro seguro sin publicar domicilios exactos.
 
 ## Conservado de 0.7.0
 - Firebase Spark / cero inversión.
@@ -84,11 +94,12 @@ El backend Spark desplegado en 0.7.0 permite un conjunto estricto de campos, cat
 ## Límites deliberados de este bloque
 - Se mantienen máximo 4 imágenes hasta migrar reglas y presupuesto de documento de Firestore de forma segura.
 - Las categorías nuevas del catálogo maestro todavía no se activan en producción si las reglas actuales no las aceptan.
-- La oferta todavía es una conversación guiada, no una entidad transaccional con aceptación/rechazo/contraoferta persistente.
+- Aceptar/rechazar/contraofertar todavía se representa como mensajes estructurados por la UI, no como una entidad de oferta persistente con máquina de estados en Firestore.
+- Todavía no existe reserva transaccional automática.
 - No se expone domicilio exacto públicamente.
 
 ## No se presenta como terminado todavía
-Quedan para siguientes bloques de 0.8/0.9: migración segura del catálogo ampliado y puntos de entrega, ofertas/reservas estructuradas, notificaciones push, IA externa para Topi, análisis real de fotografías, publicación por cámara/voz, solicitudes “Busco…”, reputación avanzada, Puntos TuTop, offline ampliado y release de Play Store.
+Quedan para siguientes bloques de 0.8/0.9: varios borradores simultáneos, migración segura del catálogo ampliado y puntos de entrega, ofertas/reservas persistentes, notificaciones push, IA externa para Topi, análisis real de fotografías, publicación por cámara/voz, solicitudes “Busco…”, reputación avanzada, Puntos TuTop, offline ampliado y release de Play Store.
 
 ## Criterio de salida
 Antes de integrar a `main`, la rama debe pasar:
