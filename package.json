@@ -41,6 +41,7 @@
     "reservation-reconciliation:test": "node scripts/reservation-reconciliation-tests.mjs",
     "institutional-moderation:test": "node scripts/institutional-moderation-tests.mjs",
     "credential-retention:test": "node scripts/credential-retention-tests.mjs",
+    "saved-search-notification:test": "node scripts/saved-search-notification-tests.mjs",
     "seller-profile:privacy:test": "node scripts/seller-profile-privacy-tests.mjs",
     "deps:mobile:blaze": "node scripts/install-mobile-deps-blaze.mjs",
     "ci:summary": "node scripts/ci-summary.mjs",
