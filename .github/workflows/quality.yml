@@ -84,6 +84,9 @@ jobs:
       - name: Canonical listings V2 migration
         run: npm run listing-schema-v2:test
 
+      - name: Offline privacy and performance budgets
+        run: npm run offline-performance:test
+
       - name: Typecheck
         run: npm run typecheck
 
