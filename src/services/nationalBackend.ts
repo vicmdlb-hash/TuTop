@@ -66,7 +66,7 @@ class NationalMarketplaceBackend {
     return map;
   }
 
-  async createOffer(input: { listingId: string; chatId: string; sellerId: string; amountMxn: number; expiresAt?: string; parentOfferId?: string }) {
+  async createOffer(input: { listingId: string; chatId: string; sellerId: string; amountMxn: number; expiresAt?: string }) {
     this.requireV2();
     const client = this.getClient();
     const buyerId = client.currentSession?.uid;
@@ -76,13 +76,45 @@ class NationalMarketplaceBackend {
     const at = nowIso();
     const offer: Offer = {
       id: offerId, listing_id: input.listingId, chat_id: input.chatId, buyer_id: buyerId, seller_id: input.sellerId,
-      amount_mxn: Math.round(input.amountMxn * 100) / 100, status: 'pending', parent_offer_id: input.parentOfferId,
+      created_by: buyerId, amount_mxn: Math.round(input.amountMxn * 100) / 100, status: 'pending',
       expires_at: input.expiresAt, created_at: at, updated_at: at,
     };
     const { id: _id, ...data } = offer;
     await client.setDocument(`offers/${offerId}`, data, { exists: false });
     await client.setDocument(`chats/${input.chatId}`, { current_offer_id: offerId, updated_at: at }, { merge: true });
     return offer;
+  }
+
+  async createCounterOffer(parent: Offer, amountMxn: number, expiresAt?: string) {
+    this.requireV2();
+    const client = this.getClient();
+    const actor = client.currentSession?.uid;
+    if (!actor) throw new Error('AUTH_REQUIRED');
+    if (actor !== parent.buyer_id && actor !== parent.seller_id) throw new Error('PARTICIPANT_REQUIRED');
+    if (parent.created_by === actor) throw new Error('COUNTERPARTY_REQUIRED');
+    if (parent.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
+    if (!Number.isFinite(amountMxn) || amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
+    const offerId = localId('offer');
+    const at = nowIso();
+    const counter: Offer = {
+      id: offerId,
+      listing_id: parent.listing_id,
+      chat_id: parent.chat_id,
+      buyer_id: parent.buyer_id,
+      seller_id: parent.seller_id,
+      created_by: actor,
+      amount_mxn: Math.round(amountMxn * 100) / 100,
+      status: 'pending',
+      parent_offer_id: parent.id,
+      expires_at: expiresAt || new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+      created_at: at,
+      updated_at: at,
+    };
+    const { id: _id, ...data } = counter;
+    await client.setDocument(`offers/${offerId}`, data, { exists: false });
+    await this.updateOffer(parent.id, 'countered', offerId);
+    await client.setDocument(`chats/${parent.chat_id}`, { current_offer_id: offerId, updated_at: at }, { merge: true });
+    return counter;
   }
 
   async listOffersForChat(chatId: string) {
@@ -100,14 +132,25 @@ class NationalMarketplaceBackend {
     await client.setDocument(`offers/${offerId}`, { status, ...(counterOfferId ? { counter_offer_id: counterOfferId } : {}), updated_at: nowIso() }, { merge: true });
   }
 
-  async acceptOfferAndCreateTransaction(offer: Offer, reserveMinutes: 30 | 120 | 1440 = 120) {
+  async acceptOffer(offer: Offer) {
+    this.requireV2();
+    const client = this.getClient();
+    const actor = client.currentSession?.uid;
+    if (!actor) throw new Error('AUTH_REQUIRED');
+    if (actor !== offer.buyer_id && actor !== offer.seller_id) throw new Error('PARTICIPANT_REQUIRED');
+    if (offer.created_by === actor) throw new Error('COUNTERPARTY_REQUIRED');
+    await this.updateOffer(offer.id, 'accepted');
+    return { ...offer, status: 'accepted' as const, updated_at: nowIso() };
+  }
+
+  async createTransactionFromAcceptedOffer(offer: Offer, reserveMinutes: 30 | 120 | 1440 = 120) {
     this.requireV2();
     const client = this.getClient();
     const actor = client.currentSession?.uid;
     if (!actor) throw new Error('AUTH_REQUIRED');
     if (actor !== offer.seller_id) throw new Error('SELLER_REQUIRED');
+    if (offer.status !== 'accepted') throw new Error('OFFER_NOT_ACCEPTED');
     const at = nowIso();
-    await this.updateOffer(offer.id, 'accepted');
     const transactionId = `tx-${offer.id}`;
     const transaction: MarketplaceTransaction = {
       id: transactionId, listing_id: offer.listing_id, chat_id: offer.chat_id, buyer_id: offer.buyer_id, seller_id: offer.seller_id,
@@ -119,6 +162,13 @@ class NationalMarketplaceBackend {
     await client.setDocument(`chats/${offer.chat_id}`, { transaction_id: transactionId, current_offer_id: offer.id, updated_at: at }, { merge: true });
     await client.setDocument(`products/${offer.listing_id}`, { estado: 'Reservado', updated_at: at }, { merge: true });
     return transaction;
+  }
+
+  async acceptOfferAndCreateTransaction(offer: Offer, reserveMinutes: 30 | 120 | 1440 = 120) {
+    const accepted = await this.acceptOffer(offer);
+    const client = this.getClient();
+    if (client.currentSession?.uid !== accepted.seller_id) return { offer: accepted, transaction: null };
+    return { offer: accepted, transaction: await this.createTransactionFromAcceptedOffer(accepted, reserveMinutes) };
   }
 
   async loadTransactionForChat(chatId: string) {
