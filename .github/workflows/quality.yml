@@ -63,6 +63,9 @@ jobs:
       - name: Credential retention policy
         run: npm run credential-retention:test
 
+      - name: Saved-search notification eligibility
+        run: npm run saved-search-notification:test
+
       - name: Public seller profile privacy
         run: npm run seller-profile:privacy:test
 
