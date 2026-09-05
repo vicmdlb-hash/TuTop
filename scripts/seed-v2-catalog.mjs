@@ -98,27 +98,30 @@ function firestoreFields(data) {
 }
 
 const token = accessToken();
-const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
-let written = 0;
-for (const item of docs) {
-  const url = `${base}/${encodeURIComponent(item.collection)}/${encodeURIComponent(item.id)}?currentDocument.exists=false`;
-  const response = await fetch(url, {
-    method: 'PATCH',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: firestoreFields(item.data) }),
-  });
-  if (response.status === 409) {
-    console.error(`DETENIDO: ${item.collection}/${item.id} ya existe. El seed es create-only y no sobrescribe catálogo.`);
-    process.exit(3);
-  }
-  if (!response.ok) {
-    const detail = await response.text();
-    console.error(`ERROR ${response.status} creando ${item.collection}/${item.id}: ${detail.slice(0, 500)}`);
-    process.exit(1);
-  }
-  written += 1;
-  console.log(`✓ ${item.collection}/${item.id}`);
+const projectPath = `projects/${projectId}/databases/(default)/documents`;
+const writes = docs.map((item) => ({
+  update: {
+    name: `${projectPath}/${item.collection}/${item.id}`,
+    fields: firestoreFields(item.data),
+  },
+  currentDocument: { exists: false },
+}));
+const endpoint = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:commit`;
+const response = await fetch(endpoint, {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ writes }),
+});
+if (!response.ok) {
+  const detail = await response.text();
+  console.error(`DETENIDO: el commit atómico no escribió ningún documento. Firestore respondió ${response.status}: ${detail.slice(0, 1000)}`);
+  process.exit(response.status === 409 ? 3 : 1);
+}
+const result = await response.json();
+if (!Array.isArray(result.writeResults) || result.writeResults.length !== docs.length) {
+  console.error(`ERROR: Firestore confirmó ${result.writeResults?.length || 0}/${docs.length} escrituras; revisa el proyecto antes de activar V2.`);
+  process.exit(1);
 }
 
-console.log(`\n✅ Seed V2 completado: ${written}/${docs.length} documentos creados en ${projectId}.`);
+console.log(`\n✅ Seed V2 atómico completado: ${docs.length} documentos creados en ${projectId}.`);
 console.log('VITE_TUTOP_SCHEMA_V2 sigue siendo una activación separada; este script no cambia feature flags ni reglas desplegadas.');
