@@ -37,6 +37,10 @@ async function seedMarketplace() {
       uid: 'stranger', nombre: 'Stranger', facultad: 'Derecho', esta_verificado: false,
       created_at: now(), updated_at: now(),
     });
+    await setDoc(doc(db, 'users/loose'), {
+      uid: 'loose', nombre: 'Loose', facultad: 'Turismo Internacional', esta_verificado: false,
+      created_at: now(), updated_at: now(),
+    });
     await setDoc(doc(db, 'products/listing'), {
       vendedor_id: 'seller', vendedor_nombre: 'Seller', vendedor_handle: '@seller', titulo: 'Calculadora Casio', descripcion: 'Funciona correctamente',
       precio_mxn: 500, stock: 1, categoria: 'Electrónica', facultad: 'Turismo Internacional', country_code: 'MX', state_code: 'TLAX',
@@ -65,12 +69,21 @@ function transaction(overrides = {}) {
   };
 }
 
+function product(overrides = {}) {
+  return {
+    vendedor_id: 'seller', vendedor_nombre: 'Seller', vendedor_handle: '@seller', titulo: 'Audífonos', descripcion: 'Nuevos', precio_mxn: 600,
+    stock: 1, categoria: 'Electrónica', facultad: 'Turismo Internacional', country_code: 'MX', state_code: 'TLAX', city_id: 'tlaxcala', city_name: 'Tlaxcala',
+    institution_id: institutionId, campus_id: campusId, visibility_scope: 'city', listing_kind: 'offer', shipping_available: false,
+    punto_encuentro: 'Coordinar por Chat', imagen_url: image, estado: 'Activo', likes: 0, fecha_creacion: now(), updated_at: now(), ...overrides,
+  };
+}
+
 test('V2 mantiene privados offers y transactions frente a terceros', async () => {
   await seedMarketplace();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await setDoc(doc(db, 'offers/offer-1'), offer());
-    await setDoc(doc(db, 'transactions_v2/tx-1'), transaction());
+    await setDoc(doc(db, 'transactions_v2/tx-offer-1'), transaction());
   });
   const buyer = env.authenticatedContext('buyer').firestore();
   const seller = env.authenticatedContext('seller').firestore();
@@ -78,8 +91,8 @@ test('V2 mantiene privados offers y transactions frente a terceros', async () =>
   await assertSucceeds(getDoc(doc(buyer, 'offers/offer-1')));
   await assertSucceeds(getDoc(doc(seller, 'offers/offer-1')));
   await assertFails(getDoc(doc(stranger, 'offers/offer-1')));
-  await assertSucceeds(getDoc(doc(buyer, 'transactions_v2/tx-1')));
-  await assertFails(getDoc(doc(stranger, 'transactions_v2/tx-1')));
+  await assertSucceeds(getDoc(doc(buyer, 'transactions_v2/tx-offer-1')));
+  await assertFails(getDoc(doc(stranger, 'transactions_v2/tx-offer-1')));
 });
 
 test('sólo el comprador del chat puede crear la oferta inicial', async () => {
@@ -102,14 +115,15 @@ test('comprador no puede aceptar su propia oferta y vendedor no puede retirarla'
   await assertSucceeds(updateDoc(doc(seller, 'offers/offer-1'), { status: 'accepted', updated_at: now() }));
 });
 
-test('transacción sólo la crea el vendedor desde una oferta aceptada y por el importe exacto', async () => {
+test('transacción sólo la crea el vendedor, con importe exacto e ID derivado de la oferta', async () => {
   await seedMarketplace();
   await env.withSecurityRulesDisabled(async (ctx) => setDoc(doc(ctx.firestore(), 'offers/offer-1'), offer({ status: 'accepted' })));
   const buyer = env.authenticatedContext('buyer').firestore();
   const seller = env.authenticatedContext('seller').firestore();
-  await assertFails(setDoc(doc(buyer, 'transactions_v2/tx-buyer'), transaction()));
-  await assertFails(setDoc(doc(seller, 'transactions_v2/tx-wrong-price'), transaction({ agreed_amount_mxn: 1 })));
-  await assertSucceeds(setDoc(doc(seller, 'transactions_v2/tx-ok'), transaction()));
+  await assertFails(setDoc(doc(buyer, 'transactions_v2/tx-offer-1'), transaction()));
+  await assertFails(setDoc(doc(seller, 'transactions_v2/tx-offer-1'), transaction({ agreed_amount_mxn: 1 })));
+  await assertFails(setDoc(doc(seller, 'transactions_v2/tx-another-name'), transaction()));
+  await assertSucceeds(setDoc(doc(seller, 'transactions_v2/tx-offer-1'), transaction()));
 });
 
 test('tercero no puede cambiar estado de operación ni reservar producto ajeno', async () => {
@@ -117,25 +131,30 @@ test('tercero no puede cambiar estado de operación ni reservar producto ajeno',
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await setDoc(doc(db, 'offers/offer-1'), offer({ status: 'accepted' }));
-    await setDoc(doc(db, 'transactions_v2/tx-1'), transaction());
+    await setDoc(doc(db, 'transactions_v2/tx-offer-1'), transaction());
   });
   const stranger = env.authenticatedContext('stranger').firestore();
-  await assertFails(updateDoc(doc(stranger, 'transactions_v2/tx-1'), { status: 'completed', updated_at: now() }));
+  await assertFails(updateDoc(doc(stranger, 'transactions_v2/tx-offer-1'), { status: 'completed', updated_at: now() }));
   await assertFails(updateDoc(doc(stranger, 'products/listing'), { estado: 'Reservado', updated_at: now() }));
 });
 
-test('producto nacional requiere coherencia con la identidad del vendedor', async () => {
+test('producto respeta identidad del vendedor y catálogo universitario', async () => {
   await seedMarketplace();
   const seller = env.authenticatedContext('seller').firestore();
-  const base = {
-    vendedor_id: 'seller', vendedor_nombre: 'Seller', vendedor_handle: '@seller', titulo: 'Audífonos', descripcion: 'Nuevos', precio_mxn: 600,
-    stock: 1, categoria: 'Electrónica', facultad: 'Turismo Internacional', country_code: 'MX', state_code: 'TLAX', city_id: 'tlaxcala', city_name: 'Tlaxcala',
-    institution_id: institutionId, campus_id: campusId, visibility_scope: 'city', listing_kind: 'offer', shipping_available: false,
-    punto_encuentro: 'Coordinar por Chat', imagen_url: image, estado: 'Activo', likes: 0, fecha_creacion: now(), updated_at: now(),
-  };
-  await assertSucceeds(setDoc(doc(seller, 'products/good'), base));
-  await assertFails(setDoc(doc(seller, 'products/fake-campus'), { ...base, campus_id: 'otro-campus' }));
-  await assertFails(setDoc(doc(seller, 'products/fake-institution'), { ...base, institution_id: 'otra-universidad' }));
+  await assertSucceeds(setDoc(doc(seller, 'products/good'), product()));
+  await assertFails(setDoc(doc(seller, 'products/fake-campus'), product({ campus_id: 'otro-campus' })));
+  await assertFails(setDoc(doc(seller, 'products/fake-institution'), product({ institution_id: 'otra-universidad' })));
+
+  const loose = env.authenticatedContext('loose').firestore();
+  await assertFails(updateDoc(doc(loose, 'users/loose'), { institution_id: 'universidad-fantasma', updated_at: now() }));
+  await assertSucceeds(updateDoc(doc(loose, 'users/loose'), { institution_id: institutionId, campus_id: campusId, updated_at: now() }));
+});
+
+test('alcance nacional requiere envío también en reglas', async () => {
+  await seedMarketplace();
+  const seller = env.authenticatedContext('seller').firestore();
+  await assertFails(setDoc(doc(seller, 'products/national-no-shipping'), product({ visibility_scope: 'national', shipping_available: false })));
+  await assertSucceeds(setDoc(doc(seller, 'products/national-shipping'), product({ visibility_scope: 'national', shipping_available: true })));
 });
 
 test('usuario suspendido no puede ofertar ni modificar operación', async () => {
@@ -144,9 +163,9 @@ test('usuario suspendido no puede ofertar ni modificar operación', async () => 
     const db = ctx.firestore();
     await setDoc(doc(db, 'moderationStatus/buyer'), { suspended: true, reason: 'abuso', updated_at: now(), admin_uid: 'admin' });
     await setDoc(doc(db, 'offers/offer-1'), offer({ status: 'accepted' }));
-    await setDoc(doc(db, 'transactions_v2/tx-1'), transaction());
+    await setDoc(doc(db, 'transactions_v2/tx-offer-1'), transaction());
   });
   const buyer = env.authenticatedContext('buyer').firestore();
   await assertFails(setDoc(doc(buyer, 'offers/offer-suspended'), offer()));
-  await assertFails(updateDoc(doc(buyer, 'transactions_v2/tx-1'), { status: 'disputed', updated_at: now() }));
+  await assertFails(updateDoc(doc(buyer, 'transactions_v2/tx-offer-1'), { status: 'disputed', updated_at: now() }));
 });
