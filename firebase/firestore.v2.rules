@@ -14,6 +14,20 @@ service cloud.firestore {
     function fresh(ts) {
       return ts is timestamp && ts <= request.time + duration.value(5, 'm') && ts >= request.time - duration.value(10, 'm');
     }
+    function sellerAcceptanceReady(offerId, offerData) {
+      let txId = 'tx-' + offerId;
+      return existsAfter(/databases/$(database)/documents/transactions_v2/$(txId))
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.accepted_offer_id == offerId
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.listing_id == offerData.listing_id
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.chat_id == offerData.chat_id
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.buyer_id == offerData.buyer_id
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.seller_id == offerData.seller_id
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.agreed_amount_mxn == offerData.amount_mxn
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.status == 'reserved'
+        && getAfter(/databases/$(database)/documents/chats/$(offerData.chat_id)).data.transaction_id == txId
+        && getAfter(/databases/$(database)/documents/chats/$(offerData.chat_id)).data.current_offer_id == offerId
+        && getAfter(/databases/$(database)/documents/products/$(offerData.listing_id)).data.estado == 'Reservado';
+    }
     function validCategory(value) {
       return value in [
         'Electrónica','Ropa & Accesorios','Libros & Apuntes','Apuntes & Guías','Material Escolar',
@@ -367,17 +381,7 @@ service cloud.firestore {
           (request.auth.uid == resource.data.seller_id
             && resource.data.created_by == resource.data.buyer_id
             && request.resource.data.status == 'accepted'
-            && existsAfter(/databases/$(database)/documents/transactions_v2/tx-$(offerId))
-            && getAfter(/databases/$(database)/documents/transactions_v2/tx-$(offerId)).data.accepted_offer_id == offerId
-            && getAfter(/databases/$(database)/documents/transactions_v2/tx-$(offerId)).data.listing_id == resource.data.listing_id
-            && getAfter(/databases/$(database)/documents/transactions_v2/tx-$(offerId)).data.chat_id == resource.data.chat_id
-            && getAfter(/databases/$(database)/documents/transactions_v2/tx-$(offerId)).data.buyer_id == resource.data.buyer_id
-            && getAfter(/databases/$(database)/documents/transactions_v2/tx-$(offerId)).data.seller_id == resource.data.seller_id
-            && getAfter(/databases/$(database)/documents/transactions_v2/tx-$(offerId)).data.agreed_amount_mxn == resource.data.amount_mxn
-            && getAfter(/databases/$(database)/documents/transactions_v2/tx-$(offerId)).data.status == 'reserved'
-            && getAfter(/databases/$(database)/documents/chats/$(resource.data.chat_id)).data.transaction_id == 'tx-' + offerId
-            && getAfter(/databases/$(database)/documents/chats/$(resource.data.chat_id)).data.current_offer_id == offerId
-            && getAfter(/databases/$(database)/documents/products/$(resource.data.listing_id)).data.estado == 'Reservado')
+            && sellerAcceptanceReady(offerId, resource.data))
           ||
           (request.auth.uid != resource.data.created_by
             && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]
