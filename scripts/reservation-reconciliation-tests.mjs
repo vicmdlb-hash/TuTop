@@ -6,16 +6,16 @@ const nowMs = Date.parse('2026-09-05T18:00:00.000Z');
 assert.deepEqual(
   reservationReconciliationPlan({
     transaction: { status: 'reserved', reservation_expires_at: '2026-09-05T17:59:59.000Z' },
-    productStatus: 'Reservado',
+    listingStatus: 'active',
     nowMs,
   }),
-  { kind: 'expire_reserved', nextTransactionStatus: 'expired', nextProductStatus: 'Activo' },
+  { kind: 'expire_reserved', nextTransactionStatus: 'expired' },
 );
 
 assert.equal(
   reservationReconciliationPlan({
     transaction: { status: 'reserved', reservation_expires_at: '2026-09-05T18:30:00.000Z' },
-    productStatus: 'Reservado',
+    listingStatus: 'active',
     nowMs,
   }).kind,
   'none',
@@ -24,10 +24,10 @@ assert.equal(
 assert.deepEqual(
   reservationReconciliationPlan({
     transaction: { status: 'expired', reservation_expires_at: '2026-09-05T17:00:00.000Z' },
-    productStatus: 'Reservado',
+    listingStatus: 'active',
     nowMs,
   }),
-  { kind: 'repair_expired_listing', nextProductStatus: 'Activo' },
+  { kind: 'none', reason: 'expired_transaction_listing_unchanged' },
 );
 
 assert.deepEqual(
@@ -37,16 +37,16 @@ assert.deepEqual(
       buyer_confirmed_at: '2026-09-05T17:10:00.000Z',
       seller_confirmed_at: '2026-09-05T17:11:00.000Z',
     },
-    productStatus: 'Reservado',
+    listingStatus: 'active',
     nowMs,
   }),
-  { kind: 'repair_completed_listing', nextProductStatus: 'Vendido' },
+  { kind: 'repair_completed_listing', nextListingStatus: 'sold_out' },
 );
 
 assert.equal(
   reservationReconciliationPlan({
     transaction: { status: 'completed', buyer_confirmed_at: '2026-09-05T17:10:00.000Z' },
-    productStatus: 'Reservado',
+    listingStatus: 'active',
     nowMs,
   }).kind,
   'none',
@@ -55,7 +55,7 @@ assert.equal(
 for (const status of ['meetup_scheduled', 'disputed', 'cancelled', 'no_show']) {
   const plan = reservationReconciliationPlan({
     transaction: { status, reservation_expires_at: '2026-09-05T17:00:00.000Z' },
-    productStatus: 'Reservado',
+    listingStatus: 'active',
     nowMs,
   });
   assert.equal(plan.kind, 'none', `${status} must not auto-expire`);
@@ -63,12 +63,12 @@ for (const status of ['meetup_scheduled', 'disputed', 'cancelled', 'no_show']) {
 }
 
 assert.equal(
-  reservationReconciliationPlan({ transaction: { status: 'reserved' }, productStatus: 'Reservado', nowMs }).reason,
+  reservationReconciliationPlan({ transaction: { status: 'reserved' }, listingStatus: 'active', nowMs }).reason,
   'reservation_expiry_missing_or_invalid',
 );
 
-console.log('PASS expired reserved transactions produce deterministic release plan');
-console.log('PASS completed bilateral transactions repair listing to Vendido');
+console.log('PASS expired reserved transactions expire without mutating canonical listing');
+console.log('PASS completed bilateral transactions repair listing to sold_out');
 console.log('PASS scheduled meetups/disputes are never auto-expired');
 console.log('PASS malformed expiry never triggers an automatic write plan');
 console.log('Reservation reconciliation tests: PASS');
