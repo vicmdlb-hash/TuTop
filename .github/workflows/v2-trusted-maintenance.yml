@@ -1,0 +1,57 @@
+name: TuTop V2 trusted maintenance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "src/lib/reservationReconciliation.ts"
+      - "scripts/reconcile-v2-reservations.mjs"
+      - "scripts/v2-trusted-maintenance.mjs"
+      - ".github/workflows/v2-trusted-maintenance.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-v2-trusted-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain-staging:
+    if: github.event_name != 'pull_request' || github.head_ref == 'feat/tutop-0.8-p0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_ALLOW_V2_RECONCILE: staging-v2
+      TUTOP_ALLOW_V2_MAINTENANCE: staging-v2
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Require staging credential
+        shell: bash
+        run: |
+          if [ -z "$FIREBASE_TOKEN" ]; then
+            echo "FIREBASE_TOKEN no está configurado en GitHub Actions." >&2
+            exit 42
+          fi
+
+      - name: Expire reservations and repair completed listings
+        run: node scripts/reconcile-v2-reservations.mjs --apply
+
+      - name: Rebuild trusted reputation purge credentials queue alerts and send push
+        run: node scripts/v2-trusted-maintenance.mjs --apply
