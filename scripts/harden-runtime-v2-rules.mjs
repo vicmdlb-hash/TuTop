@@ -58,6 +58,9 @@ const runtimeCollections = `    match /device_tokens/{tokenId} {
           get(/databases/$(database)/documents/transactions_v2/$(request.resource.data.transaction_id)).data.buyer_id,
           get(/databases/$(database)/documents/transactions_v2/$(request.resource.data.transaction_id)).data.seller_id
         ]
+        && request.resource.data.accused_uid != request.resource.data.claimant_uid
+        && request.resource.data.institution_id is string
+        && request.resource.data.institution_id == listingDoc(get(/databases/$(database)/documents/transactions_v2/$(request.resource.data.transaction_id)).data.listing_id).data.institution_id
         && get(/databases/$(database)/documents/transactions_v2/$(request.resource.data.transaction_id)).data.status == 'meetup_scheduled'
         && get(/databases/$(database)/documents/transactions_v2/$(request.resource.data.transaction_id)).data.meetup_at is timestamp
         && request.time >= get(/databases/$(database)/documents/transactions_v2/$(request.resource.data.transaction_id)).data.meetup_at + duration.value(30, 'm')
@@ -67,6 +70,7 @@ const runtimeCollections = `    match /device_tokens/{tokenId} {
         && request.resource.data.claimant_uid == resource.data.claimant_uid
         && request.resource.data.accused_uid == resource.data.accused_uid
         && request.resource.data.kind == resource.data.kind
+        && request.resource.data.institution_id == resource.data.institution_id
         && request.resource.data.created_at == resource.data.created_at
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
         && request.resource.data.status in ['open','upheld','dismissed']
