@@ -203,6 +203,7 @@ export interface Offer {
   chat_id: string;
   buyer_id: string;
   seller_id: string;
+  created_by?: string;
   amount_mxn: number;
   status: OfferStatus;
   parent_offer_id?: string;
