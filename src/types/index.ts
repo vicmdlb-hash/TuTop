@@ -1,8 +1,41 @@
 export type AppTab = 'feed' | 'bot' | 'wallet' | 'inbox' | 'profile';
 export type SellerLevel = 'Novato' | 'Pro' | 'Leyenda';
-export type ProductStatus = 'Activo' | 'Pausado' | 'Vendido';
-export type ProductCategory = 'Electrónica' | 'Ropa & Accesorios' | 'Libros & Apuntes' | 'Apuntes & Guías' | 'Comida' | 'Postres' | 'Servicios' | 'Transporte' | 'Cuartos & Renta' | 'Eventos' | 'Arte & Manualidades' | 'Otros';
-export type MeetingPoint = 'Cafetería Central' | 'Puerta Principal' | 'Salón de Clases' | 'Coordinar por Chat';
+export type ProductStatus = 'Activo' | 'Reservado' | 'Pausado' | 'Vendido' | 'Agotado';
+export type ProductCategory =
+  | 'Electrónica'
+  | 'Ropa & Accesorios'
+  | 'Libros & Apuntes'
+  | 'Apuntes & Guías'
+  | 'Material Escolar'
+  | 'Comida'
+  | 'Postres'
+  | 'Servicios'
+  | 'Transporte'
+  | 'Hogar'
+  | 'Deportes'
+  | 'Videojuegos'
+  | 'Coleccionables'
+  | 'Arte & Manualidades'
+  | 'Eventos'
+  | 'Entradas permitidas'
+  | 'Belleza & Cuidado'
+  | 'Mascotas'
+  | 'Instrumentos Musicales'
+  | 'Cuartos & Renta'
+  | 'Otros';
+export type ProductCondition = 'Nuevo' | 'Como nuevo' | 'Buen estado' | 'Uso visible' | 'Para reparar' | 'No aplica';
+export type MeetingPoint =
+  | 'Cafetería Central'
+  | 'Puerta Principal'
+  | 'Biblioteca'
+  | 'Facultad'
+  | 'Estacionamiento'
+  | 'Rectoría'
+  | 'Salón de Clases'
+  | 'Campus específico'
+  | 'Otro punto público'
+  | 'Coordinar por Chat';
+export type DeliveryMethod = 'Nos encontramos' | 'Recoge conmigo' | 'Yo entrego' | 'Acordamos por chat' | 'Envío local' | 'Punto TuTop';
 export type DeliveryStatus = 'negociando' | 'acordada' | 'esperando_confirmacion' | 'completada' | 'cancelada';
 export type NotificationKind = 'message' | 'bid' | 'delivery' | 'verification' | 'system';
 
@@ -32,10 +65,23 @@ export interface Product {
   titulo: string;
   descripcion?: string;
   precio_mxn: number;
+  precio_negociable?: boolean;
   stock?: number;
   categoria: ProductCategory;
+  subcategoria?: string;
+  condicion?: ProductCondition;
+  marca?: string;
+  modelo?: string;
+  talla?: string;
+  color?: string;
+  etiquetas?: string[];
   facultad: string;
   punto_encuentro: MeetingPoint;
+  punto_personalizado?: string;
+  metodos_entrega?: DeliveryMethod[];
+  dias_entrega?: string[];
+  horario_entrega?: string;
+  disponibilidad?: string;
   imagen_url: string;
   imagenes_url?: string[];
   estado: ProductStatus;
@@ -44,6 +90,7 @@ export interface Product {
   puja_ucoins?: number;
   likes?: number;
   fecha_creacion: string;
+  updated_at?: string;
 }
 
 export interface Review {
@@ -93,10 +140,23 @@ export interface ProductFormData {
   titulo: string;
   descripcion?: string;
   precio_mxn: number;
+  precio_negociable?: boolean;
   stock?: number;
   categoria: ProductCategory;
+  subcategoria?: string;
+  condicion?: ProductCondition;
+  marca?: string;
+  modelo?: string;
+  talla?: string;
+  color?: string;
+  etiquetas?: string[];
   facultad: string;
   punto_encuentro: MeetingPoint;
+  punto_personalizado?: string;
+  metodos_entrega?: DeliveryMethod[];
+  dias_entrega?: string[];
+  horario_entrega?: string;
+  disponibilidad?: string;
   imagen_url?: string;
   imagenes_url?: string[];
 }
