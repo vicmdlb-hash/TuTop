@@ -58,18 +58,9 @@ class NationalMarketplaceBackend {
     for (const doc of docs) {
       const data = doc.data || {};
       map[doc.id] = {
-        country_code: data.country_code,
-        state_code: data.state_code,
-        city_id: data.city_id,
-        city_name: data.city_name,
-        institution_id: data.institution_id,
-        campus_id: data.campus_id,
-        faculty_id: data.faculty_id,
-        career_id: data.career_id,
-        visibility_scope: data.visibility_scope,
-        listing_kind: data.listing_kind,
-        shipping_available: data.shipping_available,
-        estado: data.estado,
+        country_code: data.country_code, state_code: data.state_code, city_id: data.city_id, city_name: data.city_name,
+        institution_id: data.institution_id, campus_id: data.campus_id, faculty_id: data.faculty_id, career_id: data.career_id,
+        visibility_scope: data.visibility_scope, listing_kind: data.listing_kind, shipping_available: data.shipping_available, estado: data.estado,
       };
     }
     return map;
@@ -128,6 +119,30 @@ class NationalMarketplaceBackend {
     await client.setDocument(`chats/${offer.chat_id}`, { transaction_id: transactionId, current_offer_id: offer.id, updated_at: at }, { merge: true });
     await client.setDocument(`products/${offer.listing_id}`, { estado: 'Reservado', updated_at: at }, { merge: true });
     return transaction;
+  }
+
+  async loadTransactionForChat(chatId: string) {
+    this.requireV2();
+    const client = this.getClient();
+    if (!client.currentSession?.uid) throw new Error('AUTH_REQUIRED');
+    const docs = await client.runQuery<any>('transactions_v2', [{ field: 'chat_id', op: 'EQUAL', value: chatId }], [{ field: 'created_at', direction: 'DESCENDING' }], 5);
+    if (!docs.length) return null;
+    const doc = docs[0];
+    return { id: doc.id, ...doc.data } as MarketplaceTransaction;
+  }
+
+  async releaseExpiredReservation(transaction: MarketplaceTransaction) {
+    this.requireV2();
+    const client = this.getClient();
+    const actor = client.currentSession?.uid;
+    if (!actor) throw new Error('AUTH_REQUIRED');
+    if (actor !== transaction.seller_id) throw new Error('SELLER_REQUIRED');
+    if (transaction.status !== 'reserved') throw new Error('TRANSACTION_NOT_RESERVED');
+    if (!transaction.reservation_expires_at || Date.parse(transaction.reservation_expires_at) > Date.now()) throw new Error('RESERVATION_NOT_EXPIRED');
+    const at = nowIso();
+    await client.setDocument(`transactions_v2/${transaction.id}`, { status: 'expired', updated_at: at }, { merge: true });
+    await client.setDocument(`products/${transaction.listing_id}`, { estado: 'Activo', updated_at: at }, { merge: true });
+    return { ...transaction, status: 'expired' as const, updated_at: at };
   }
 
   async createDemandRequest(input: Omit<DemandRequest, 'id' | 'buyer_id' | 'status' | 'created_at' | 'updated_at'>) {
