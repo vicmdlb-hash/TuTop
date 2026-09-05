@@ -39,6 +39,8 @@
     "reputation:test": "node scripts/reputation-evidence-tests.mjs",
     "trusted-reputation:test": "node scripts/trusted-reputation-tests.mjs",
     "reservation-reconciliation:test": "node scripts/reservation-reconciliation-tests.mjs",
+    "institutional-moderation:test": "node scripts/institutional-moderation-tests.mjs",
+    "credential-retention:test": "node scripts/credential-retention-tests.mjs",
     "seller-profile:privacy:test": "node scripts/seller-profile-privacy-tests.mjs",
     "deps:mobile:blaze": "node scripts/install-mobile-deps-blaze.mjs",
     "ci:summary": "node scripts/ci-summary.mjs",
