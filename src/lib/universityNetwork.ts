@@ -1,4 +1,4 @@
-import type { Campus, FacultyCatalogItem, Institution, ListingVisibilityScope, UniversityIdentity, VerificationBadge, VerificationLevel } from '../types';
+import type { ApprovedMeetingPoint, Campus, FacultyCatalogItem, Institution, ListingVisibilityScope, UniversityIdentity, VerificationBadge, VerificationLevel } from '../types';
 
 export const INSTITUTIONS: Institution[] = [
   { id: 'uatx', name: 'Universidad Autónoma de Tlaxcala', short_name: 'UATx', country_code: 'MX', state_code: 'TLAX', state_name: 'Tlaxcala', city_name: 'Tlaxcala', domains: ['uatx.mx'], active: true },
@@ -25,6 +25,13 @@ export const FACULTIES: FacultyCatalogItem[] = [
   { id: 'unam-contaduria', institution_id: 'unam', campus_id: 'unam-cu', name: 'Contaduría y Administración' },
 ];
 
+export const SAFE_MEETING_POINTS: ApprovedMeetingPoint[] = [
+  { id: 'uatx-riberena-cafeteria', institution_id: 'uatx', campus_id: 'uatx-riberena', name: 'Cafetería Central · Campus Ribereña', description: 'Zona concurrida dentro del campus; preferente durante horario universitario.', active: true },
+  { id: 'uatx-riberena-entrada', institution_id: 'uatx', campus_id: 'uatx-riberena', name: 'Acceso principal · Campus Ribereña', description: 'Punto visible y con flujo constante de estudiantes.', active: true },
+  { id: 'buap-cu-biblioteca', institution_id: 'buap', campus_id: 'buap-cu', name: 'Zona de Biblioteca · CU BUAP', description: 'Referencia pública y concurrida dentro de Ciudad Universitaria.', active: true },
+  { id: 'unam-cu-biblioteca-central', institution_id: 'unam', campus_id: 'unam-cu', name: 'Explanada Biblioteca Central · UNAM', description: 'Punto público de alta visibilidad; confirma horario antes de acudir.', active: true },
+];
+
 export const VISIBILITY_SCOPES: Array<{ id: ListingVisibilityScope; label: string; hint: string }> = [
   { id: 'campus', label: 'Mi campus', hint: 'Comida, apuntes y entregas rápidas.' },
   { id: 'institution', label: 'Mi universidad', hint: 'Libros, accesorios y servicios entre campus.' },
@@ -32,6 +39,10 @@ export const VISIBILITY_SCOPES: Array<{ id: ListingVisibilityScope; label: strin
   { id: 'city', label: 'Mi ciudad', hint: 'Electrónica, ropa y artículos generales.' },
   { id: 'national', label: 'Todo México', hint: 'Solo para artículos que realmente puedas enviar.' },
 ];
+
+export function safeMeetingPointsFor(campusId?: string, institutionId?: string) {
+  return SAFE_MEETING_POINTS.filter((point) => point.active && (campusId ? point.campus_id === campusId : institutionId ? point.institution_id === institutionId : false));
+}
 
 export function verificationBadge(level: VerificationLevel): VerificationBadge {
   if (level >= 4) return 'Vendedor destacado';
