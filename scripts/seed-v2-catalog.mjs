@@ -58,7 +58,7 @@ console.log(`Total: ${docs.length} documentos`);
 
 if (!apply) {
   console.log('\nDRY RUN: no se escribió nada.');
-  console.log('Para sembrar un proyecto beta/staging V2:');
+  console.log('Para sembrar o verificar un proyecto beta/staging V2:');
   console.log('  TUTOP_FIREBASE_PROJECT_ID=<id> TUTOP_ALLOW_V2_SEED=staging-v2 npm run v2:catalog:seed');
   process.exit(0);
 }
@@ -111,6 +111,56 @@ function firestoreFields(data) {
   return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, firestoreValue(value)]));
 }
 
+function decodeValue(value = {}) {
+  if ('nullValue' in value) return null;
+  if ('stringValue' in value) return value.stringValue;
+  if ('booleanValue' in value) return value.booleanValue;
+  if ('integerValue' in value) return Number(value.integerValue);
+  if ('doubleValue' in value) return Number(value.doubleValue);
+  if ('arrayValue' in value) return (value.arrayValue.values || []).map(decodeValue);
+  if ('mapValue' in value) return decodeFields(value.mapValue.fields || {});
+  return undefined;
+}
+
+function decodeFields(fields = {}) {
+  return Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, decodeValue(value)]));
+}
+
+function stable(value) {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stable(value[key])]));
+  }
+  return value;
+}
+
+function sameData(actual, expected) {
+  return JSON.stringify(stable(actual)) === JSON.stringify(stable(expected));
+}
+
+async function verifyExistingCatalog(token) {
+  const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
+  const failures = [];
+  for (const item of docs) {
+    const response = await fetch(`${base}/${encodeURIComponent(item.collection)}/${encodeURIComponent(item.id)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      failures.push(`${item.collection}/${item.id}:HTTP_${response.status}`);
+      continue;
+    }
+    const remote = await response.json();
+    const actual = decodeFields(remote.fields || {});
+    if (!sameData(actual, item.data)) failures.push(`${item.collection}/${item.id}:DATA_MISMATCH`);
+  }
+  if (failures.length) {
+    console.error(`DETENIDO: el catálogo remoto ya existe pero no coincide con la fuente (${failures.length} problema(s)).`);
+    console.error(failures.slice(0, 12).join('\n'));
+    process.exit(4);
+  }
+  console.log(`\n✅ Catálogo V2 ya existente verificado: ${docs.length}/${docs.length} documentos coinciden. No se sobrescribió nada.`);
+}
+
 const token = await accessToken();
 const projectPath = `projects/${projectId}/databases/(default)/documents`;
 const writes = docs.map((item) => ({
@@ -128,8 +178,14 @@ const response = await fetch(endpoint, {
 });
 if (!response.ok) {
   const detail = await response.text();
+  if (response.status === 409 || /already exists|FAILED_PRECONDITION/i.test(detail)) {
+    console.log('\nCatálogo V2 detectado previamente. Verificando integridad sin sobrescribir...');
+    await verifyExistingCatalog(token);
+    console.log('VITE_TUTOP_SCHEMA_V2 sigue siendo una activación separada; este script no cambia feature flags ni reglas desplegadas.');
+    process.exit(0);
+  }
   console.error(`DETENIDO: el commit atómico no escribió ningún documento. Firestore respondió ${response.status}: ${detail.slice(0, 1000)}`);
-  process.exit(response.status === 409 ? 3 : 1);
+  process.exit(1);
 }
 const result = await response.json();
 if (!Array.isArray(result.writeResults) || result.writeResults.length !== docs.length) {
