@@ -25,6 +25,26 @@ assert.equal(network.institutionFromEmail('alumno@alumno.buap.mx')?.id, 'buap');
 assert.equal(network.identityFor('uatx', 'uatx-riberena', 'uatx-fcea', 'uatx-turismo').career_name, 'Turismo Internacional');
 assert.equal(network.defaultScopeForCategory('Comida'), 'campus');
 assert.equal(network.defaultScopeForCategory('Electrónica'), 'city');
+assert.equal(network.safeMeetingPointsFor('uatx-riberena').length, 2);
+
+const now = new Date().toISOString();
+const baseProduct = {
+  vendedor_id: 'seller', vendedor_nombre: 'Ana', vendedor_verificado: true, descripcion: 'Calculadora científica en excelente estado',
+  stock: 1, categoria: 'Electrónica', facultad: 'Turismo Internacional', punto_encuentro: 'Cafetería Central', imagen_url: 'data:image/png;base64,x',
+  estado: 'Activo', es_top: false, jerarquia_top: 0, likes: 0, fecha_creacion: now, institution_id: 'uatx', campus_id: 'uatx-riberena', city_id: 'TLAX-tlaxcala', visibility_scope: 'campus',
+};
+const demand = {
+  title: 'Busco calculadora científica', description: 'Para clases', category: 'Electrónica', max_price_mxn: 700,
+  institution_id: 'uatx', campus_id: 'uatx-riberena', city_id: 'TLAX-tlaxcala', visibility_scope: 'campus',
+};
+const matches = core.matchDemandToListings(demand, [
+  { ...baseProduct, id: 'calc', titulo: 'Calculadora científica Casio', precio_mxn: 550 },
+  { ...baseProduct, id: 'expensive', titulo: 'Calculadora científica Texas', precio_mxn: 1200 },
+  { ...baseProduct, id: 'unrelated', titulo: 'Audífonos Bluetooth', descripcion: 'Audio', precio_mxn: 300 },
+]);
+assert.equal(matches[0]?.product.id, 'calc');
+assert.equal(matches.some((match) => match.product.id === 'expensive'), false);
+assert.equal(matches.some((match) => match.product.id === 'unrelated'), false);
 
 const good = core.reputationScore({ completed_transactions: 30, seller_rating: 4.9, buyer_rating: 4.8, punctuality_rate: 98, median_response_minutes: 8, cancellations: 0, no_shows: 0, reports_upheld: 0 });
 const risky = core.reputationScore({ completed_transactions: 2, seller_rating: 3, buyer_rating: 3, punctuality_rate: 50, median_response_minutes: 1200, cancellations: 4, no_shows: 2, reports_upheld: 2 });
