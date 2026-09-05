@@ -121,8 +121,8 @@ class NationalMarketplaceBackend {
       updated_at: at,
     };
     const { id: _id, ...data } = counter;
-    await client.setDocument(`offers/${offerId}`, data, { exists: false });
     await client.commit([
+      { update: client.encodeDocumentForWrite(`offers/${offerId}`, data), currentDocument: { exists: false } },
       patchWrite(client, `offers/${parent.id}`, { status: 'countered', counter_offer_id: offerId, updated_at: at }),
       patchWrite(client, `chats/${parent.chat_id}`, { current_offer_id: offerId, updated_at: at }),
     ]);
