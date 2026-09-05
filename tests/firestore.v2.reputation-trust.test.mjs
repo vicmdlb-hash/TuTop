@@ -1,12 +1,9 @@
 import fs from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 
-const prepared = spawnSync(process.execPath, ['scripts/prepare-firestore-v2-rules.mjs'], { stdio: 'inherit' });
-if (prepared.status !== 0) process.exit(prepared.status || 1);
-
+// Rules are generated exactly once by the CI step before the emulator starts.
 const projectId = process.env.GCLOUD_PROJECT || 'demo-tutop-v2-rules';
 const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
 const [hostname, portRaw] = host.split(':');
