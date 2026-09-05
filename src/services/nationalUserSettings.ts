@@ -1,5 +1,6 @@
 import { DEFAULT_NOTIFICATION_PREFERENCES, normalizeNotificationPreferences, type NotificationPreferences } from '../lib/notificationPreferences.ts';
 import { FirebaseRestClient } from './firebaseRest.ts';
+import { nationalSchemaEnabled } from './nationalBackend.ts';
 import { getFirebaseConfig } from './runtimeConfig.ts';
 
 export type AccountDeletionRequestStatus = 'pending' | 'processing' | 'completed' | 'rejected';
@@ -12,6 +13,7 @@ export type AccountDeletionRequest = {
 };
 
 function client() {
+  if (!nationalSchemaEnabled()) throw new Error('SCHEMA_V2_DISABLED');
   return new FirebaseRestClient(getFirebaseConfig());
 }
 
