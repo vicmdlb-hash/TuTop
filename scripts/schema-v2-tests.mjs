@@ -41,10 +41,12 @@ assert.match(nationalBackend, /saveSearch/);
 assert.match(nationalBackend, /updateUniversityIdentity/);
 assert.match(nationalBackend, /acceptOfferAndCreateTransaction/);
 assert.match(nationalBackend, /releaseExpiredReservation/);
+assert.match(nationalBackend, /const transactionId = `tx-\$\{offer\.id\}`/);
 
 console.log('PASS Firestore V2 remains isolated from firebase.json');
 console.log('PASS national identity fields and collections exist');
 console.log('PASS structured offer and transaction guards exist');
+console.log('PASS transaction ids are idempotent per accepted offer');
 console.log('PASS V2 lifecycle dates serialize as Firestore timestamps');
 console.log('PASS feature flag defaults to disabled');
 console.log('Schema V2 contract checks: PASS');
