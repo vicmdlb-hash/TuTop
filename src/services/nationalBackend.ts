@@ -1,5 +1,6 @@
 import { FirebaseRestClient } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
+import { canActOnTransaction, transactionStatusForAction } from '../lib/marketplaceCore';
 import type { DemandRequest, ListingVisibilityScope, MarketplaceTransaction, Offer, OfferStatus, Product, SavedSearch, UniversityIdentity } from '../types';
 
 function nowIso() { return new Date().toISOString(); }
@@ -181,14 +182,57 @@ class NationalMarketplaceBackend {
     return { id: doc.id, ...doc.data } as MarketplaceTransaction;
   }
 
+  async scheduleMeetup(transaction: MarketplaceTransaction, meetingPointId: string, meetupAt: string) {
+    this.requireV2();
+    const client = this.getClient();
+    const actor = client.currentSession?.uid;
+    if (!actor) throw new Error('AUTH_REQUIRED');
+    if (!canActOnTransaction(transaction, actor, 'schedule_meetup')) throw new Error('TRANSACTION_ACTION_DENIED');
+    const meetupMs = Date.parse(meetupAt);
+    if (!meetingPointId || !Number.isFinite(meetupMs) || meetupMs <= Date.now() || meetupMs > Date.now() + 30 * 86400000) throw new Error('INVALID_MEETUP');
+    const at = nowIso();
+    const next: MarketplaceTransaction = { ...transaction, status: 'meetup_scheduled', meeting_point_id: meetingPointId, meetup_at: new Date(meetupMs).toISOString(), updated_at: at };
+    await client.setDocument(`transactions_v2/${transaction.id}`, {
+      status: next.status, meeting_point_id: meetingPointId, meetup_at: next.meetup_at, updated_at: at,
+    }, { merge: true });
+    return next;
+  }
+
+  async confirmDelivery(transaction: MarketplaceTransaction) {
+    this.requireV2();
+    const client = this.getClient();
+    const actor = client.currentSession?.uid;
+    if (!actor) throw new Error('AUTH_REQUIRED');
+    if (!canActOnTransaction(transaction, actor, 'confirm_delivery')) throw new Error('TRANSACTION_ACTION_DENIED');
+    const at = nowIso();
+    const status = transactionStatusForAction(transaction, actor, 'confirm_delivery') || transaction.status;
+    const field = actor === transaction.buyer_id ? 'buyer_confirmed_at' : 'seller_confirmed_at';
+    const next = { ...transaction, [field]: at, status, updated_at: at } as MarketplaceTransaction;
+    await client.setDocument(`transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at }, { merge: true });
+    if (status === 'completed' && actor === transaction.seller_id) {
+      await client.setDocument(`products/${transaction.listing_id}`, { estado: 'Vendido', updated_at: at }, { merge: true });
+    }
+    return next;
+  }
+
+  async disputeTransaction(transaction: MarketplaceTransaction) {
+    this.requireV2();
+    const client = this.getClient();
+    const actor = client.currentSession?.uid;
+    if (!actor) throw new Error('AUTH_REQUIRED');
+    if (!canActOnTransaction(transaction, actor, 'dispute')) throw new Error('TRANSACTION_ACTION_DENIED');
+    const at = nowIso();
+    const next = { ...transaction, status: 'disputed' as const, updated_at: at };
+    await client.setDocument(`transactions_v2/${transaction.id}`, { status: 'disputed', updated_at: at }, { merge: true });
+    return next;
+  }
+
   async releaseExpiredReservation(transaction: MarketplaceTransaction) {
     this.requireV2();
     const client = this.getClient();
     const actor = client.currentSession?.uid;
     if (!actor) throw new Error('AUTH_REQUIRED');
-    if (actor !== transaction.seller_id) throw new Error('SELLER_REQUIRED');
-    if (transaction.status !== 'reserved') throw new Error('TRANSACTION_NOT_RESERVED');
-    if (!transaction.reservation_expires_at || Date.parse(transaction.reservation_expires_at) > Date.now()) throw new Error('RESERVATION_NOT_EXPIRED');
+    if (!canActOnTransaction(transaction, actor, 'expire')) throw new Error('RESERVATION_NOT_EXPIRED');
     const at = nowIso();
     await client.setDocument(`transactions_v2/${transaction.id}`, { status: 'expired', updated_at: at }, { merge: true });
     await client.setDocument(`products/${transaction.listing_id}`, { estado: 'Activo', updated_at: at }, { merge: true });
