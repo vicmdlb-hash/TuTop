@@ -1,0 +1,77 @@
+name: TuTop V2 real staging smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "firebase/**"
+      - "firebase.v2.json"
+      - "src/lib/listingSchemaV2.ts"
+      - "src/services/canonicalListingsBackend.ts"
+      - "src/services/canonicalTransactionsBackend.ts"
+      - "src/services/nationalBackendCanonicalBridge.ts"
+      - "scripts/prepare-firestore-v2-rules.mjs"
+      - "scripts/harden-canonical-v2-rules.mjs"
+      - "scripts/prepare-staging-v2-auth.mjs"
+      - "scripts/staging-v2-admin.mjs"
+      - "scripts/staging-v2-e2e-smoke.mjs"
+      - ".github/workflows/staging-v2-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-v2-real-staging-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/tutop-0.8-p0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_ALLOW_FIREBASE_DEPLOY: staging-v2
+      TUTOP_ALLOW_V2_SEED: staging-v2
+      TUTOP_STAGING_WEB_CONFIG_PATH: .tutop-staging-web-config.json
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Install Firebase client and CLI for smoke
+        run: npm install --no-save firebase firebase-tools
+
+      - name: Require staging credential
+        shell: bash
+        run: |
+          if [ -z "$FIREBASE_TOKEN" ]; then
+            echo "FIREBASE_TOKEN no está configurado en GitHub Actions." >&2
+            exit 42
+          fi
+
+      - name: Deploy current strict V2 rules and indexes
+        run: npm run firebase:deploy:staging
+
+      - name: Verify canonical catalog without overwriting
+        run: npm run v2:catalog:seed
+
+      - name: Prepare Firebase Auth and staging Web App
+        run: node scripts/prepare-staging-v2-auth.mjs
+
+      - name: Real two-user marketplace smoke
+        run: node scripts/staging-v2-e2e-smoke.mjs
+
+      - name: Remove local runtime config
+        if: always()
+        run: rm -f .tutop-staging-web-config.json
