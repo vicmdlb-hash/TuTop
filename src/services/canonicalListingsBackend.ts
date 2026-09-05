@@ -63,7 +63,6 @@ export const canonicalListingsBackend = {
 
   async setStatus(listingId: string, status: CanonicalListingV2['status']) {
     const client = getClient();
-    if (status === 'reserved') throw new Error('RESERVATION_BELONGS_TO_TRANSACTION');
     await client.setDocument(`listings_v2/${listingId}`, { status, updated_at: new Date() }, { merge: true });
   },
 };
