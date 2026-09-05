@@ -45,6 +45,9 @@ jobs:
       - name: Reputation evidence contract
         run: npm run reputation:test
 
+      - name: Trusted reputation aggregation
+        run: npm run trusted-reputation:test
+
       - name: Public seller profile privacy
         run: npm run seller-profile:privacy:test
 
