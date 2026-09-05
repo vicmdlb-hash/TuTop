@@ -78,6 +78,9 @@ jobs:
       - name: National marketplace foundation
         run: npm run national-foundation:test
 
+      - name: Search pricing bundles and seller CRM
+        run: npm run commerce-intelligence:test
+
       - name: Typecheck
         run: npm run typecheck
 
