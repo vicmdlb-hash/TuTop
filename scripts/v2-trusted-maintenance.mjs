@@ -6,7 +6,7 @@ const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
 const apply = process.argv.includes('--apply');
 const historicalProject = 'tutop-3a4f7';
 const tasksArg = process.argv.find((value) => value.startsWith('--tasks='));
-const tasks = new Set((tasksArg ? tasksArg.split('=')[1] : 'reputation,credentials,saved-searches,push').split(',').map((value) => value.trim()).filter(Boolean));
+const tasks = new Set((tasksArg ? tasksArg.split('=')[1] : 'outcomes,reputation,credentials,saved-searches,push').split(',').map((value) => value.trim()).filter(Boolean));
 const limit = Math.max(1, Math.min(500, Number(process.env.TUTOP_V2_MAINTENANCE_LIMIT || 300)));
 
 function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
@@ -46,8 +46,7 @@ function encodeValue(value, key = '') {
 function encodeFields(data) { return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined).map(([key, value]) => [key, encodeValue(value, key)])); }
 function docName(path) { return `projects/${projectId}/databases/(default)/documents/${path}`; }
 function patchWrite(path, data, deleteFields = []) {
-  const fields = encodeFields(data);
-  return { update: { name: docName(path), fields }, updateMask: { fieldPaths: [...Object.keys(data), ...deleteFields] } };
+  return { update: { name: docName(path), fields: encodeFields(data) }, updateMask: { fieldPaths: [...Object.keys(data), ...deleteFields] } };
 }
 function createWrite(path, data) { return { update: { name: docName(path), fields: encodeFields(data) }, currentDocument: { exists: false } }; }
 
@@ -68,15 +67,61 @@ async function query(collectionId, max = limit) {
     method: 'POST',
     body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], limit: max } }),
   });
-  return (result.data || []).filter((row) => row.document).map((row) => ({
-    id: row.document.name.split('/').pop(),
-    ...decodeFields(row.document.fields || {}),
-  }));
+  return (result.data || []).filter((row) => row.document).map((row) => ({ id: row.document.name.split('/').pop(), ...decodeFields(row.document.fields || {}) }));
 }
 async function commit(writes) {
-  if (!writes.length) return;
-  if (!apply) return;
+  if (!writes.length || !apply) return;
   await request(`${base}:commit`, { method: 'POST', body: JSON.stringify({ writes }) });
+}
+function auditWrite(action, targetType, targetId, extra = {}) {
+  const at = new Date().toISOString();
+  return createWrite(`audit_log/system-${action}-${crypto.randomUUID()}`, { actor_type: 'system', action, target_type: targetType, target_id: targetId, ...extra, created_at: at });
+}
+
+async function runOutcomes() {
+  const [transactions, claims, cancellationRequests] = await Promise.all([
+    query('transactions_v2'), query('transaction_outcome_claims'), query('transaction_cancellation_requests'),
+  ]);
+  const txById = new Map(transactions.map((tx) => [tx.id, tx]));
+  let resolvedNoShows = 0; let resolvedMutual = 0;
+
+  for (const claim of claims.filter((item) => item.status === 'upheld')) {
+    const tx = txById.get(claim.transaction_id);
+    if (!tx || !['meetup_scheduled', 'disputed'].includes(tx.status)) continue;
+    if (!['buyer_no_show', 'seller_no_show'].includes(claim.kind)) continue;
+    if (claim.accused_uid !== tx.buyer_id && claim.accused_uid !== tx.seller_id) continue;
+    const expected = claim.accused_uid === tx.buyer_id ? 'buyer_no_show' : 'seller_no_show';
+    if (claim.kind !== expected) continue;
+    const at = new Date().toISOString();
+    await commit([
+      patchWrite(`transactions_v2/${tx.id}`, { status: 'no_show', outcome_code: expected, outcome_actor_id: claim.accused_uid, outcome_recorded_at: at, updated_at: at }),
+      auditWrite('no_show_upheld', 'transaction', tx.id, { outcome_code: expected }),
+    ]);
+    resolvedNoShows += 1;
+  }
+
+  const mutualByTx = new Map();
+  for (const requestDoc of cancellationRequests.filter((item) => item.status === 'open' && item.kind === 'mutual_cancel')) {
+    const list = mutualByTx.get(requestDoc.transaction_id) || [];
+    list.push(requestDoc);
+    mutualByTx.set(requestDoc.transaction_id, list);
+  }
+  for (const [transactionId, requests] of mutualByTx) {
+    const tx = txById.get(transactionId);
+    if (!tx || !['reserved', 'meetup_scheduled'].includes(tx.status) || tx.buyer_confirmed_at || tx.seller_confirmed_at) continue;
+    const requesters = new Set(requests.map((item) => item.requester_uid));
+    if (!requesters.has(tx.buyer_id) || !requesters.has(tx.seller_id)) continue;
+    const at = new Date().toISOString();
+    const writes = [
+      patchWrite(`transactions_v2/${tx.id}`, { status: 'cancelled', outcome_code: 'mutual_cancel', outcome_recorded_at: at, updated_at: at }, ['outcome_actor_id']),
+      auditWrite('mutual_cancel_completed', 'transaction', tx.id),
+      ...requests.filter((item) => item.requester_uid === tx.buyer_id || item.requester_uid === tx.seller_id).map((item) => patchWrite(`transaction_cancellation_requests/${item.id}`, { status: 'resolved', updated_at: at })),
+    ];
+    await commit(writes);
+    resolvedMutual += 1;
+  }
+  console.log(`outcomes: ${resolvedNoShows} no-show(s), ${resolvedMutual} cancelación(es) mutua(s) ${apply ? 'resueltos' : 'planificados'}.`);
+  return resolvedNoShows + resolvedMutual;
 }
 
 function positiveRate(positive, total) { return total > 0 ? Math.round((positive / total) * 100) : null; }
@@ -92,8 +137,8 @@ function reputationFor(uid, transactions, reviews, moderationCases) {
     if (tx.seller_id === uid) { sellerReviewCount += 1; if (review.calificacion === 'positive') sellerPositiveCount += 1; }
     if (tx.buyer_id === uid) { buyerReviewCount += 1; if (review.calificacion === 'positive') buyerPositiveCount += 1; }
   }
-  const cancellations = participant.filter((tx) => tx.status === 'cancelled' && (!tx.outcome_actor_id || tx.outcome_actor_id === uid)).length;
-  const noShows = participant.filter((tx) => tx.status === 'no_show' && tx.outcome_actor_id === uid).length;
+  const cancellations = participant.filter((tx) => tx.status === 'cancelled' && tx.outcome_code !== 'mutual_cancel' && (!tx.outcome_actor_id || tx.outcome_actor_id === uid)).length;
+  const noShows = participant.filter((tx) => tx.status === 'no_show' && (!tx.outcome_actor_id || tx.outcome_actor_id === uid)).length;
   const reportsUpheld = moderationCases.filter((item) => item.target_type === 'user' && item.target_id === uid && item.status === 'resolved' && item.result === 'upheld').length;
   return {
     subject_uid: uid,
@@ -134,9 +179,7 @@ async function runCredentialPurge() {
   for (const item of candidates) {
     const at = new Date().toISOString();
     writes.push(patchWrite(`verificationRequests/${item.id}`, { updated_at: at }, ['image_data']));
-    writes.push(createWrite(`audit_log/credential-purge-${item.id}-${crypto.randomUUID()}`, {
-      actor_type: 'system', action: 'credential_image_purged', target_type: 'verification_request', target_id: item.id, created_at: at,
-    }));
+    writes.push(auditWrite('credential_image_purged', 'verification_request', item.id));
   }
   await commit(writes);
   console.log(`credentials: ${candidates.length} imagen(es) ${apply ? 'purgadas' : 'planificadas'}.`);
@@ -227,6 +270,7 @@ async function runPush() {
 }
 
 const results = {};
+if (tasks.has('outcomes')) results.outcomes = await runOutcomes();
 if (tasks.has('reputation')) results.reputation = await runReputation();
 if (tasks.has('credentials')) results.credentials = await runCredentialPurge();
 if (tasks.has('saved-searches')) results.savedSearches = await runSavedSearches();
