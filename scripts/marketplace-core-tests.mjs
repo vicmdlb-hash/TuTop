@@ -16,8 +16,11 @@ const network = await import(`${pathToFileURL(path.resolve('src/lib/universityNe
 
 assert.equal(core.nextOfferStatus('pending', 'accept'), 'accepted');
 assert.equal(core.nextOfferStatus('accepted', 'reject'), null);
-assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', status: 'pending' }, 's', 'accept'), true);
-assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', status: 'pending' }, 'b', 'accept'), false);
+assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', created_by: 'b', status: 'pending' }, 's', 'accept'), true);
+assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', created_by: 'b', status: 'pending' }, 'b', 'accept'), false);
+assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', created_by: 's', status: 'pending' }, 'b', 'accept'), true);
+assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', created_by: 's', status: 'pending' }, 's', 'withdraw'), true);
+assert.equal(core.canActOnOffer({ buyer_id: 'b', seller_id: 's', created_by: 's', status: 'pending' }, 's', 'counter'), false);
 assert.equal(core.normalizeSearchText('iPhone13 CELULAR'), 'iphone 13 telefono');
 assert.equal(core.marketplacePolicyCheck('Vendo una pistola').allowed, false);
 assert.deepEqual(core.suspiciousMessageSignals('Pásame el código OTP por WhatsApp').sort(), ['move_off_platform', 'otp_request']);
