@@ -27,8 +27,12 @@ async function seedBase() {
     await setDoc(doc(db, 'admins/support'), { active: true, role: 'support' });
     await setDoc(doc(db, 'admins/verify'), { active: true, role: 'verification_reviewer' });
     await setDoc(doc(db, 'admins/legacy'), { active: true });
-    await setDoc(doc(db, 'users/uatx-user'), { uid: 'uatx-user', institution_id: 'uatx', nombre: 'UATx', facultad: 'FCEA' });
-    await setDoc(doc(db, 'users/buap-user'), { uid: 'buap-user', institution_id: 'buap', nombre: 'BUAP', facultad: 'Admin' });
+    await setDoc(doc(db, 'institutions/uatx'), { id: 'uatx', active: true });
+    await setDoc(doc(db, 'institutions/buap'), { id: 'buap', active: true });
+    await setDoc(doc(db, 'campuses/uatx-riberena'), { id: 'uatx-riberena', institution_id: 'uatx', active: true });
+    await setDoc(doc(db, 'campuses/buap-cu'), { id: 'buap-cu', institution_id: 'buap', active: true });
+    await setDoc(doc(db, 'users/uatx-user'), { uid: 'uatx-user', institution_id: 'uatx', campus_id: 'uatx-riberena', nombre: 'UATx', facultad: 'FCEA' });
+    await setDoc(doc(db, 'users/buap-user'), { uid: 'buap-user', institution_id: 'buap', campus_id: 'buap-cu', nombre: 'BUAP', facultad: 'Admin' });
     await setDoc(doc(db, 'reports/r-uatx'), { created_by: 'reporter', target_type: 'product', target_id: 'p1', reason: 'spam', status: 'open', institution_id: 'uatx', priority: 'normal', created_at: now(), updated_at: now() });
     await setDoc(doc(db, 'reports/r-buap'), { created_by: 'reporter', target_type: 'product', target_id: 'p2', reason: 'spam', status: 'open', institution_id: 'buap', priority: 'normal', created_at: now(), updated_at: now() });
     await setDoc(doc(db, 'reports/r-global'), { created_by: 'reporter', target_type: 'user', target_id: 'u3', reason: 'abuse', status: 'open', priority: 'urgent', created_at: now(), updated_at: now() });
@@ -50,6 +54,33 @@ function preferences() {
     listing_saved_count: false,
     weekly_digest: false,
     safety_alert: true,
+    updated_at: now(),
+  };
+}
+
+function canonicalListing(seller = 'uatx-user') {
+  return {
+    schema_version: 2,
+    seller_id: seller,
+    institution_id: seller === 'buap-user' ? 'buap' : 'uatx',
+    campus_id: seller === 'buap-user' ? 'buap-cu' : 'uatx-riberena',
+    city_id: seller === 'buap-user' ? 'PUE-puebla' : 'TLAX-tlaxcala',
+    category_id: 'electronica',
+    title: 'Calculadora Casio',
+    description: 'Buen estado',
+    attributes: { brand: 'Casio' },
+    price_mxn: 450,
+    negotiable: true,
+    quantity: 1,
+    delivery_methods: ['campus_meetup'],
+    meeting_point_ids: [],
+    shipping_available: false,
+    photo_urls: ['data:image/png;base64,a'],
+    status: 'active',
+    moderation_status: 'pending',
+    visibility_scope: 'campus',
+    published_at: now(),
+    created_at: now(),
     updated_at: now(),
   };
 }
@@ -104,4 +135,35 @@ test('reviewer de verificación no obtiene permisos generales de moderación', a
   await seedBase();
   const verify = env.authenticatedContext('verify').firestore();
   await assertFails(getDoc(doc(verify, 'reports/r-uatx')));
+});
+
+test('listings_v2 requiere identidad de campus y propietario real', async () => {
+  await seedBase();
+  const seller = env.authenticatedContext('uatx-user').firestore();
+  await assertSucceeds(setDoc(doc(seller, 'listings_v2/l1'), canonicalListing()));
+  await assertFails(setDoc(doc(seller, 'listings_v2/l2'), { ...canonicalListing(), institution_id: 'buap', campus_id: 'buap-cu' }));
+  await assertFails(setDoc(doc(seller, 'listings_v2/l3'), { ...canonicalListing(), seller_id: 'buap-user' }));
+});
+
+test('listing pendiente es privado hasta aprobación y moderación respeta institución', async () => {
+  await seedBase();
+  const seller = env.authenticatedContext('uatx-user').firestore();
+  const stranger = env.authenticatedContext('viewer').firestore();
+  const uatxMod = env.authenticatedContext('uatxmod').firestore();
+  const buapMod = env.authenticatedContext('buapmod').firestore();
+  await assertSucceeds(setDoc(doc(seller, 'listings_v2/l1'), canonicalListing()));
+  await assertSucceeds(getDoc(doc(seller, 'listings_v2/l1')));
+  await assertFails(getDoc(doc(stranger, 'listings_v2/l1')));
+  await assertSucceeds(getDoc(doc(uatxMod, 'listings_v2/l1')));
+  await assertFails(getDoc(doc(buapMod, 'listings_v2/l1')));
+  await assertSucceeds(updateDoc(doc(uatxMod, 'listings_v2/l1'), { moderation_status: 'approved', updated_at: now() }));
+  await assertSucceeds(getDoc(doc(stranger, 'listings_v2/l1')));
+});
+
+test('reserva no existe como estado canónico de listings_v2', async () => {
+  await seedBase();
+  const seller = env.authenticatedContext('uatx-user').firestore();
+  await assertSucceeds(setDoc(doc(seller, 'listings_v2/l1'), canonicalListing()));
+  await assertFails(updateDoc(doc(seller, 'listings_v2/l1'), { status: 'reserved', updated_at: now() }));
+  await assertSucceeds(updateDoc(doc(seller, 'listings_v2/l1'), { status: 'paused', updated_at: now() }));
 });
