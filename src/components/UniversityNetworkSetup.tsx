@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, CheckCircle2, ChevronRight, GraduationCap, MapPin, Network, ShieldCheck, X } from 'lucide-react';
+import { Building2, CheckCircle2, ChevronRight, GraduationCap, Loader2, MapPin, Network, ShieldCheck, X } from 'lucide-react';
 import { CAMPUSES, FACULTIES, INSTITUTIONS, identityFor, verificationBadge } from '../lib/universityNetwork';
+import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
 import { useAppStore } from '../store/useAppStore';
 
 const STORAGE_KEY = 'tutop.university-identity.v1';
@@ -28,12 +29,15 @@ export default function UniversityNetworkSetup() {
   const [campusId, setCampusId] = useState('');
   const [facultyId, setFacultyId] = useState('');
   const [careerId, setCareerId] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = readStored();
     if (!stored || !user.id) return;
     const identity = identityFor(stored.institution_id, stored.campus_id, stored.faculty_id, stored.career_id);
-    if (!identity.institution_id || user.institution_id === identity.institution_id && user.campus_id === identity.campus_id && user.faculty_id === identity.faculty_id && user.career_id === identity.career_id) return;
+    if (!identity.institution_id || (user.institution_id === identity.institution_id && user.campus_id === identity.campus_id && user.faculty_id === identity.faculty_id && user.career_id === identity.career_id)) return;
+    const level = user.esta_verificado ? 2 : Math.max(0, user.verification_level || 0) as 0 | 1 | 2 | 3 | 4;
     setUser({
       ...user,
       institution_id: identity.institution_id,
@@ -41,8 +45,8 @@ export default function UniversityNetworkSetup() {
       faculty_id: identity.faculty_id,
       career_id: identity.career_id,
       university: identity,
-      verification_level: user.esta_verificado ? 2 : Math.max(0, user.verification_level || 0) as 0 | 1 | 2 | 3 | 4,
-      verification_badge: verificationBadge(user.esta_verificado ? 2 : Math.max(0, user.verification_level || 0) as 0 | 1 | 2 | 3 | 4),
+      verification_level: level,
+      verification_badge: verificationBadge(level),
       facultad: identity.career_name || identity.faculty_name || user.facultad,
     });
   }, [user, setUser]);
@@ -54,6 +58,7 @@ export default function UniversityNetworkSetup() {
   const hasIdentity = Boolean(user.institution_id || user.university?.institution_id);
   const identityLabel = user.university?.institution_name || INSTITUTIONS.find((item) => item.id === user.institution_id)?.short_name;
   const campusLabel = user.university?.campus_name || CAMPUSES.find((item) => item.id === user.campus_id)?.name;
+  const v2Enabled = nationalSchemaEnabled();
 
   const begin = () => {
     const stored = readStored();
@@ -65,15 +70,19 @@ export default function UniversityNetworkSetup() {
     setCampusId(existingCampus);
     setFacultyId(existingFaculty);
     setCareerId(existingCareer);
+    setSaveNote(null);
     setOpen(true);
   };
 
-  const save = () => {
+  const save = async () => {
     const identity = identityFor(institutionId, campusId, facultyId, careerId);
-    if (!identity.institution_id) return;
+    if (!identity.institution_id || saving) return;
+    setSaving(true);
+    setSaveNote(null);
     const stored: StoredIdentity = { institution_id: identity.institution_id, campus_id: identity.campus_id, faculty_id: identity.faculty_id, career_id: identity.career_id };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stored)); } catch { /* local persistence is optional */ }
     const legacyFaculty = identity.career_name || identity.faculty_name || user.facultad;
+    const level = user.esta_verificado ? 2 : user.verification_level || 0;
     setUser({
       ...user,
       institution_id: identity.institution_id,
@@ -81,12 +90,26 @@ export default function UniversityNetworkSetup() {
       faculty_id: identity.faculty_id,
       career_id: identity.career_id,
       university: identity,
-      verification_level: user.esta_verificado ? 2 : user.verification_level || 0,
-      verification_badge: verificationBadge(user.esta_verificado ? 2 : user.verification_level || 0),
+      verification_level: level,
+      verification_badge: verificationBadge(level),
       facultad: legacyFaculty,
     });
     setCurrentFacultad(legacyFaculty);
-    setOpen(false);
+
+    if (v2Enabled) {
+      try {
+        await nationalBackend.updateUniversityIdentity(identity, legacyFaculty);
+        setSaveNote('Universidad y campus guardados en tu cuenta.');
+        window.setTimeout(() => setOpen(false), 500);
+      } catch (error) {
+        console.error('[TuTop national identity]', error);
+        setSaveNote('Se guardó en este dispositivo, pero no pudimos sincronizarlo todavía.');
+      }
+    } else {
+      setSaveNote('Guardado en este dispositivo. La sincronización nacional aún está en migración segura.');
+      window.setTimeout(() => setOpen(false), 650);
+    }
+    setSaving(false);
   };
 
   if (!user.id) return null;
@@ -112,8 +135,9 @@ export default function UniversityNetworkSetup() {
 
         {selectedInstitution && <div className="mt-5 rounded-2xl border border-emerald-400/10 bg-emerald-500/[0.06] p-3"><div className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" /><div><strong className="text-[10px] text-emerald-100">Identidad universitaria progresiva</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">Elegir tu universidad no significa que TuTop ya la verificó. La insignia de estudiante se obtiene después mediante correo institucional o credencial.</p></div></div></div>}
 
-        <button disabled={!institutionId} onClick={save} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-black disabled:opacity-40"><CheckCircle2 className="h-4 w-4" />Guardar mi comunidad</button>
-        <p className="mt-3 text-center text-[8px] leading-4 text-slate-700">Catálogo inicial en expansión. La arquitectura ya admite nuevas universidades, campus, facultades y carreras sin cambiar el modelo de datos.</p>
+        {saveNote && <p className="mt-4 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-[9px] leading-4 text-slate-400">{saveNote}</p>}
+        <button disabled={!institutionId || saving} onClick={() => void save()} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-black disabled:opacity-40">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{saving ? 'Guardando…' : 'Guardar mi comunidad'}</button>
+        <p className="mt-3 text-center text-[8px] leading-4 text-slate-700">{v2Enabled ? 'Sincronización nacional V2 activa en este ambiente.' : 'Catálogo inicial en expansión · sincronización V2 aún protegida por feature flag.'}</p>
       </div>
     </div>}
   </>;
