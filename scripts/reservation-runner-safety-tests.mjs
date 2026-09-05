@@ -10,7 +10,7 @@ assert.match(runner, /allow !== 'staging-v2'/);
 assert.match(runner, /historicalProject = 'tutop-3a4f7'/);
 assert.match(runner, /projectId === historicalProject/);
 assert.match(runner, /DRY RUN: no se escribió nada/);
-assert.match(runner, /documents:commit/);
+assert.match(runner, /requestJson\(`\$\{base\}:commit`/);
 assert.match(runner, /status: 'expired'/);
 assert.match(runner, /estado: 'Activo'/);
 assert.match(runner, /estado: 'Vendido'/);
