@@ -15,6 +15,7 @@ import DraftShelf from './components/DraftShelf';
 import SellerTools from './components/SellerTools';
 import UniversityNetworkSetup from './components/UniversityNetworkSetup';
 import DemandRequestComposer from './components/DemandRequestComposer';
+import NationalAccountControls from './components/NationalAccountControls';
 import { useAppStore } from './store/useAppStore';
 import type { AppTab } from './types';
 import AdminDashboard from './admin/AdminDashboard';
@@ -65,7 +66,7 @@ function MobileApp() {
       </main>
 
       {activeTab === 'bot' && !activeChatId && !selectedProductId && <DraftShelf />}
-      {activeTab === 'profile' && !activeChatId && !selectedProductId && <SellerTools />}
+      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls /></>}
 
       {!activeChatId && (
         <nav className="bottom-nav" aria-label="Navegación principal">
