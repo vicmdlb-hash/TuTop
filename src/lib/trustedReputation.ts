@@ -17,16 +17,32 @@ export type TrustedReputationAggregate = {
 };
 
 type TrustedReview = Pick<Review, 'chat_id' | 'evaluado_id' | 'calificacion'>;
-type TrustedTransaction = Pick<MarketplaceTransaction, 'chat_id' | 'buyer_id' | 'seller_id' | 'status'>;
+type TrustedTransaction = Pick<MarketplaceTransaction, 'chat_id' | 'buyer_id' | 'seller_id' | 'status' | 'outcome_code' | 'outcome_actor_id'>;
 
 function positiveRate(positive: number, total: number) {
   return total > 0 ? Math.round((positive / total) * 100) : null;
+}
+
+function attributedCancellation(transaction: TrustedTransaction, subjectUid: string) {
+  if (transaction.status !== 'cancelled') return false;
+  if (transaction.outcome_code === 'mutual_cancel') return false;
+  if (transaction.outcome_actor_id) return transaction.outcome_actor_id === subjectUid;
+  // Compatibility for historical V2 records created before outcome attribution.
+  return transaction.buyer_id === subjectUid || transaction.seller_id === subjectUid;
+}
+
+function attributedNoShow(transaction: TrustedTransaction, subjectUid: string) {
+  if (transaction.status !== 'no_show') return false;
+  if (transaction.outcome_actor_id) return transaction.outcome_actor_id === subjectUid;
+  return transaction.buyer_id === subjectUid || transaction.seller_id === subjectUid;
 }
 
 /**
  * Pure aggregation intended for trusted/admin execution only.
  * Callers must supply transactions/reviews already validated by server-side policy.
  * Reviews count only when they can be tied to a completed transaction for the subject.
+ * Cancellations/no-shows are attributed only to the responsible actor when V2 outcome
+ * metadata is present; mutual cancellation does not penalize either side.
  */
 export function aggregateTrustedReputation(input: {
   subjectUid: string;
@@ -71,8 +87,8 @@ export function aggregateTrustedReputation(input: {
     buyer_review_count: buyerReviewCount,
     buyer_positive_count: buyerPositiveCount,
     buyer_positive_rate: positiveRate(buyerPositiveCount, buyerReviewCount),
-    cancellations: participantTransactions.filter((transaction) => transaction.status === 'cancelled').length,
-    no_shows: participantTransactions.filter((transaction) => transaction.status === 'no_show').length,
+    cancellations: participantTransactions.filter((transaction) => attributedCancellation(transaction, subjectUid)).length,
+    no_shows: participantTransactions.filter((transaction) => attributedNoShow(transaction, subjectUid)).length,
     reports_upheld: Math.max(0, Math.floor(input.reportsUpheld || 0)),
   };
 }
