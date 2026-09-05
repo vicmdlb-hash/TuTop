@@ -1,5 +1,5 @@
 import { canActOnTransaction, transactionStatusForAction } from '../lib/marketplaceCore';
-import type { MarketplaceTransaction, Offer } from '../types';
+import type { MarketplaceTransaction, Offer, TransactionOutcomeCode } from '../types';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { getFirebaseConfig } from './runtimeConfig';
@@ -22,6 +22,12 @@ async function assertActiveCanonicalListing(client: FirebaseRestClient, offer: O
   if (listing.data.seller_id !== offer.seller_id) throw new Error('SELLER_MISMATCH');
   if (listing.data.status !== 'active') throw new Error('LISTING_NOT_ACTIVE');
   if (listing.data.moderation_status !== 'approved') throw new Error('LISTING_NOT_APPROVED');
+}
+
+function assertCancelable(transaction: MarketplaceTransaction, actor: string) {
+  if (actor !== transaction.buyer_id && actor !== transaction.seller_id) throw new Error('PARTICIPANT_REQUIRED');
+  if (!['reserved', 'meetup_scheduled'].includes(transaction.status)) throw new Error('TRANSACTION_NOT_CANCELLABLE');
+  if (transaction.buyer_confirmed_at || transaction.seller_confirmed_at) throw new Error('CONFIRMED_TRANSACTION_NOT_CANCELLABLE');
 }
 
 export const canonicalTransactionsBackend = {
@@ -143,6 +149,64 @@ export const canonicalTransactionsBackend = {
     const at = nowIso();
     await client.setDocument(`transactions_v2/${transaction.id}`, { status: 'disputed', updated_at: at }, { merge: true });
     return { ...transaction, status: 'disputed' as const, updated_at: at };
+  },
+
+  async cancelTransaction(transaction: MarketplaceTransaction) {
+    const client = getClient();
+    const actor = client.currentSession!.uid;
+    assertCancelable(transaction, actor);
+    const at = nowIso();
+    const outcomeCode: TransactionOutcomeCode = actor === transaction.buyer_id ? 'buyer_cancelled' : 'seller_cancelled';
+    const patch = { status: 'cancelled' as const, outcome_code: outcomeCode, outcome_actor_id: actor, outcome_recorded_at: at, updated_at: at };
+    await client.setDocument(`transactions_v2/${transaction.id}`, patch, { merge: true });
+    return { ...transaction, ...patch } as MarketplaceTransaction;
+  },
+
+  async requestMutualCancellation(transaction: MarketplaceTransaction, institutionId: string) {
+    const client = getClient();
+    const actor = client.currentSession!.uid;
+    assertCancelable(transaction, actor);
+    const listing = await client.getDocument<any>(`listings_v2/${transaction.listing_id}`);
+    if (!listing || listing.data.institution_id !== institutionId) throw new Error('INSTITUTION_MISMATCH');
+    const at = nowIso();
+    const requestId = `${transaction.id}-${actor}`;
+    await client.setDocument(`transaction_cancellation_requests/${requestId}`, {
+      transaction_id: transaction.id,
+      requester_uid: actor,
+      kind: 'mutual_cancel',
+      institution_id: institutionId,
+      status: 'open',
+      created_at: at,
+      updated_at: at,
+    }, { exists: false });
+    return requestId;
+  },
+
+  async claimNoShow(transaction: MarketplaceTransaction, institutionId: string, reason = '') {
+    const client = getClient();
+    const actor = client.currentSession!.uid;
+    if (actor !== transaction.buyer_id && actor !== transaction.seller_id) throw new Error('PARTICIPANT_REQUIRED');
+    if (transaction.status !== 'meetup_scheduled' || !transaction.meetup_at) throw new Error('NO_SHOW_NOT_AVAILABLE');
+    const meetupMs = Date.parse(transaction.meetup_at);
+    if (!Number.isFinite(meetupMs) || Date.now() < meetupMs + 30 * 60_000) throw new Error('NO_SHOW_TOO_EARLY');
+    const listing = await client.getDocument<any>(`listings_v2/${transaction.listing_id}`);
+    if (!listing || listing.data.institution_id !== institutionId) throw new Error('INSTITUTION_MISMATCH');
+    const accused = actor === transaction.buyer_id ? transaction.seller_id : transaction.buyer_id;
+    const kind: TransactionOutcomeCode = accused === transaction.buyer_id ? 'buyer_no_show' : 'seller_no_show';
+    const at = nowIso();
+    const claimId = `${transaction.id}-${actor}`;
+    await client.setDocument(`transaction_outcome_claims/${claimId}`, {
+      transaction_id: transaction.id,
+      claimant_uid: actor,
+      accused_uid: accused,
+      kind,
+      institution_id: institutionId,
+      reason: reason.trim().slice(0, 500),
+      status: 'open',
+      created_at: at,
+      updated_at: at,
+    }, { exists: false });
+    return claimId;
   },
 
   async releaseExpiredReservation(transaction: MarketplaceTransaction) {
