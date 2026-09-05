@@ -34,6 +34,7 @@
     "v2:catalog:plan": "node scripts/seed-v2-catalog.mjs",
     "v2:catalog:seed": "node scripts/seed-v2-catalog.mjs --apply",
     "reputation:test": "node scripts/reputation-evidence-tests.mjs",
+    "trusted-reputation:test": "node scripts/trusted-reputation-tests.mjs",
     "seller-profile:privacy:test": "node scripts/seller-profile-privacy-tests.mjs",
     "deps:mobile:blaze": "node scripts/install-mobile-deps-blaze.mjs",
     "ci:summary": "node scripts/ci-summary.mjs",
