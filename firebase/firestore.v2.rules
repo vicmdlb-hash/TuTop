@@ -47,10 +47,23 @@ service cloud.firestore {
         && (!('state_code' in data) || (data.state_code is string && data.state_code.size() >= 2 && data.state_code.size() <= 8))
         && (!('city_id' in data) || (data.city_id is string && data.city_id.size() >= 2 && data.city_id.size() <= 120))
         && (!('city_name' in data) || (data.city_name is string && data.city_name.size() >= 2 && data.city_name.size() <= 120))
-        && (!('institution_id' in data) || (data.institution_id is string && data.institution_id.size() >= 2 && data.institution_id.size() <= 120))
-        && (!('campus_id' in data) || (data.campus_id is string && data.campus_id.size() >= 2 && data.campus_id.size() <= 120))
-        && (!('faculty_id' in data) || (data.faculty_id is string && data.faculty_id.size() >= 2 && data.faculty_id.size() <= 120))
-        && (!('career_id' in data) || (data.career_id is string && data.career_id.size() >= 2 && data.career_id.size() <= 120));
+        && (!('institution_id' in data) || (
+          data.institution_id is string && data.institution_id.size() >= 2 && data.institution_id.size() <= 120
+          && exists(/databases/$(database)/documents/institutions/$(data.institution_id))
+        ))
+        && (!('campus_id' in data) || (
+          data.campus_id is string && data.campus_id.size() >= 2 && data.campus_id.size() <= 120
+          && exists(/databases/$(database)/documents/campuses/$(data.campus_id))
+          && (!('institution_id' in data) || get(/databases/$(database)/documents/campuses/$(data.campus_id)).data.institution_id == data.institution_id)
+        ))
+        && (!('faculty_id' in data) || (
+          data.faculty_id is string && data.faculty_id.size() >= 2 && data.faculty_id.size() <= 120
+          && exists(/databases/$(database)/documents/faculties/$(data.faculty_id))
+        ))
+        && (!('career_id' in data) || (
+          data.career_id is string && data.career_id.size() >= 2 && data.career_id.size() <= 120
+          && exists(/databases/$(database)/documents/careers/$(data.career_id))
+        ));
     }
     function productMatchesSellerIdentity(data, uid) {
       return !('institution_id' in userDoc(uid).data) || (
@@ -70,6 +83,7 @@ service cloud.firestore {
         && (!('visibility_scope' in data) || validVisibilityScope(data.visibility_scope))
         && (!('listing_kind' in data) || data.listing_kind == 'offer')
         && (!('shipping_available' in data) || data.shipping_available is bool)
+        && (!('visibility_scope' in data) || data.visibility_scope != 'national' || ('shipping_available' in data && data.shipping_available == true))
         && validUniversityMetadata(data)
         && data.imagen_url is string && data.imagen_url.size() <= 180000
         && data.imagen_url.matches('^data:image/.*')
@@ -341,6 +355,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','accepted_offer_id','agreed_amount_mxn','status','reservation_expires_at','meeting_point_id','meetup_at','buyer_confirmed_at','seller_confirmed_at','created_at','updated_at'])
         && request.auth.uid == request.resource.data.seller_id
         && request.resource.data.buyer_id != request.resource.data.seller_id
+        && transactionId == 'tx-' + request.resource.data.accepted_offer_id
         && request.resource.data.status in ['accepted','reserved']
         && get(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.status == 'accepted'
         && get(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.listing_id == request.resource.data.listing_id
