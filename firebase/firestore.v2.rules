@@ -277,7 +277,10 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updated_at','last_message','last_message_at','transaction_id','current_offer_id'])
         && request.resource.data.last_message is string && request.resource.data.last_message.size() <= 180
         && fresh(request.resource.data.updated_at)
-        && fresh(request.resource.data.last_message_at);
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['last_message','last_message_at'])
+          || fresh(request.resource.data.last_message_at)
+        );
       allow delete: if false;
 
       match /messages/{messageId} {
@@ -361,9 +364,14 @@ service cloud.firestore {
             && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]
             && request.resource.data.status == 'countered'
             && 'counter_offer_id' in request.resource.data
-            && exists(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id))
-            && get(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.parent_offer_id == offerId
-            && get(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.created_by == request.auth.uid)
+            && existsAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id))
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.parent_offer_id == offerId
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.created_by == request.auth.uid
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.status == 'pending'
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.listing_id == resource.data.listing_id
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.chat_id == resource.data.chat_id
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.buyer_id == resource.data.buyer_id
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.seller_id == resource.data.seller_id)
         );
       allow delete: if false;
     }
