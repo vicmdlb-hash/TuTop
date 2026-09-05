@@ -4,6 +4,7 @@ import type { Product } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { feedbackFavorite, feedbackTap } from '../lib/feedback';
 import { parseListingDescription } from '../lib/listingDetails';
+import { sellerReputationEvidence } from '../lib/reputationEvidence';
 
 function relativeTime(iso: string) {
   const ms = Date.now() - Date.parse(iso);
@@ -25,15 +26,7 @@ export default function ProductCard({ product }: { product: Product }) {
   const parsed = parseListingDescription(product.descripcion);
   const negotiable = product.precio_negociable === true || parsed.details['Precio negociable']?.toLowerCase() === 'sí';
   const delivery = parsed.details['Entrega'] || parsed.details['Horario'] || parsed.details['Disponibilidad'];
-  const sellerReviews = reviews.filter((review) => review.evaluado_id === product.vendedor_id);
-  const sellerPositive = sellerReviews.filter((review) => review.calificacion === 'positive').length;
-  const sellerPositiveRate = sellerReviews.length ? Math.round(sellerPositive / sellerReviews.length * 100) : null;
-  const completedSales = chats.filter((chat) => chat.vendedor_id === product.vendedor_id && chat.entrega_confirmada).length;
-  const reputationLabel = sellerReviews.length
-    ? `${sellerPositiveRate}% cumplió · ${sellerReviews.length} ${sellerReviews.length === 1 ? 'reseña' : 'reseñas'}`
-    : completedSales
-      ? `${completedSales} ${completedSales === 1 ? 'entrega confirmada' : 'entregas confirmadas'}`
-      : 'Sin historial todavía';
+  const reputation = sellerReputationEvidence(product.vendedor_id, reviews, chats);
 
   return (
     <motion.article whileTap={{ scale: 0.995 }} className="market-card">
@@ -45,7 +38,7 @@ export default function ProductCard({ product }: { product: Product }) {
             {product.vendedor_verificado && <BadgeCheck className="h-4 w-4 text-[#38BDF8]" fill="currentColor" strokeWidth={1.5} />}
           </div>
           <p className="mt-0.5 text-[11px] text-muted">{relativeTime(product.fecha_creacion)} · {product.facultad}</p>
-          <p className={`mt-1 flex items-center gap-1 text-[8px] ${sellerReviews.length || completedSales ? 'text-emerald-300/80' : 'text-slate-600'}`}><ShieldCheck className="h-3 w-3" />{reputationLabel}</p>
+          <p className={`mt-1 flex items-center gap-1 text-[8px] ${reputation.hasEvidence ? 'text-emerald-300/80' : 'text-slate-600'}`}><ShieldCheck className="h-3 w-3" />{reputation.label}</p>
         </button>
         <button onClick={() => openProduct(product.id)} className="icon-button" aria-label="Ver detalles"><MoreHorizontal className="h-5 w-5" /></button>
       </div>
