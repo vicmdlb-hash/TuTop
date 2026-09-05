@@ -50,13 +50,13 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
     for (let i = chat.mensajes.length - 1; i >= 0; i -= 1) {
       const message = chat.mensajes[i];
       const amount = parseOffer(message.texto || '');
-      if (amount) return { amount, message, index: i };
+      if (amount) return amount;
     }
     return null;
   }, [chat, structuredPending]);
-  const visibleOffer = actionableStructured
+  const visibleOffer: { amount: number; structured?: Offer } | null = actionableStructured
     ? { amount: actionableStructured.amount_mxn, structured: actionableStructured }
-    : (!isBuyer ? legacyLatestOffer : null);
+    : (!isBuyer && legacyLatestOffer ? { amount: legacyLatestOffer } : null);
   const waitingText = useMemo(() => {
     if (!chat) return '';
     if (chat.entrega_confirmada) return 'Entrega confirmada por ambas personas';
