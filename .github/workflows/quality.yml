@@ -75,6 +75,9 @@ jobs:
       - name: Public seller profile privacy
         run: npm run seller-profile:privacy:test
 
+      - name: National marketplace foundation
+        run: npm run national-foundation:test
+
       - name: Typecheck
         run: npm run typecheck
 
