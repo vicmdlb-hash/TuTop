@@ -9,6 +9,13 @@ function localId(prefix: string) {
   return `${prefix}-${random}`;
 }
 
+function patchWrite(client: FirebaseRestClient, path: string, data: Record<string, unknown>) {
+  return {
+    update: client.encodeDocumentForWrite(path, data),
+    updateMask: { fieldPaths: Object.keys(data) },
+  };
+}
+
 export function nationalSchemaEnabled() {
   return String(import.meta.env.VITE_TUTOP_SCHEMA_V2 || '').toLowerCase() === 'true';
 }
@@ -81,8 +88,10 @@ class NationalMarketplaceBackend {
       expires_at: input.expiresAt, created_at: at, updated_at: at,
     };
     const { id: _id, ...data } = offer;
-    await client.setDocument(`offers/${offerId}`, data, { exists: false });
-    await client.setDocument(`chats/${input.chatId}`, { current_offer_id: offerId, updated_at: at }, { merge: true });
+    await client.commit([
+      { update: client.encodeDocumentForWrite(`offers/${offerId}`, data), currentDocument: { exists: false } },
+      patchWrite(client, `chats/${input.chatId}`, { current_offer_id: offerId, updated_at: at }),
+    ]);
     return offer;
   }
 
@@ -92,7 +101,7 @@ class NationalMarketplaceBackend {
     const actor = client.currentSession?.uid;
     if (!actor) throw new Error('AUTH_REQUIRED');
     if (actor !== parent.buyer_id && actor !== parent.seller_id) throw new Error('PARTICIPANT_REQUIRED');
-    if (parent.created_by === actor) throw new Error('COUNTERPARTY_REQUIRED');
+    if ((parent.created_by || parent.buyer_id) === actor) throw new Error('COUNTERPARTY_REQUIRED');
     if (parent.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
     if (!Number.isFinite(amountMxn) || amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
     const offerId = localId('offer');
@@ -112,9 +121,11 @@ class NationalMarketplaceBackend {
       updated_at: at,
     };
     const { id: _id, ...data } = counter;
-    await client.setDocument(`offers/${offerId}`, data, { exists: false });
-    await this.updateOffer(parent.id, 'countered', offerId);
-    await client.setDocument(`chats/${parent.chat_id}`, { current_offer_id: offerId, updated_at: at }, { merge: true });
+    await client.commit([
+      { update: client.encodeDocumentForWrite(`offers/${offerId}`, data), currentDocument: { exists: false } },
+      patchWrite(client, `offers/${parent.id}`, { status: 'countered', counter_offer_id: offerId, updated_at: at }),
+      patchWrite(client, `chats/${parent.chat_id}`, { current_offer_id: offerId, updated_at: at }),
+    ]);
     return counter;
   }
 
@@ -139,7 +150,7 @@ class NationalMarketplaceBackend {
     const actor = client.currentSession?.uid;
     if (!actor) throw new Error('AUTH_REQUIRED');
     if (actor !== offer.buyer_id && actor !== offer.seller_id) throw new Error('PARTICIPANT_REQUIRED');
-    if (offer.created_by === actor) throw new Error('COUNTERPARTY_REQUIRED');
+    if ((offer.created_by || offer.buyer_id) === actor) throw new Error('COUNTERPARTY_REQUIRED');
     await this.updateOffer(offer.id, 'accepted');
     return { ...offer, status: 'accepted' as const, updated_at: nowIso() };
   }
@@ -159,9 +170,11 @@ class NationalMarketplaceBackend {
       reservation_expires_at: new Date(Date.now() + reserveMinutes * 60_000).toISOString(), created_at: at, updated_at: at,
     };
     const { id: _id, ...data } = transaction;
-    await client.setDocument(`transactions_v2/${transactionId}`, data, { exists: false });
-    await client.setDocument(`chats/${offer.chat_id}`, { transaction_id: transactionId, current_offer_id: offer.id, updated_at: at }, { merge: true });
-    await client.setDocument(`products/${offer.listing_id}`, { estado: 'Reservado', updated_at: at }, { merge: true });
+    await client.commit([
+      { update: client.encodeDocumentForWrite(`transactions_v2/${transactionId}`, data), currentDocument: { exists: false } },
+      patchWrite(client, `chats/${offer.chat_id}`, { transaction_id: transactionId, current_offer_id: offer.id, updated_at: at }),
+      patchWrite(client, `products/${offer.listing_id}`, { estado: 'Reservado', updated_at: at }),
+    ]);
     return transaction;
   }
 
@@ -246,8 +259,10 @@ class NationalMarketplaceBackend {
     if (!actor) throw new Error('AUTH_REQUIRED');
     if (!canActOnTransaction(transaction, actor, 'expire')) throw new Error('RESERVATION_NOT_EXPIRED');
     const at = nowIso();
-    await client.setDocument(`transactions_v2/${transaction.id}`, { status: 'expired', updated_at: at }, { merge: true });
-    await client.setDocument(`products/${transaction.listing_id}`, { estado: 'Activo', updated_at: at }, { merge: true });
+    await client.commit([
+      patchWrite(client, `transactions_v2/${transaction.id}`, { status: 'expired', updated_at: at }),
+      patchWrite(client, `products/${transaction.listing_id}`, { estado: 'Activo', updated_at: at }),
+    ]);
     return { ...transaction, status: 'expired' as const, updated_at: at };
   }
 
