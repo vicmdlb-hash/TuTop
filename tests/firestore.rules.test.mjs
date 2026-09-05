@@ -145,3 +145,39 @@ test('admin sembrado manualmente puede moderar y revisar verificación', async (
   await assertSucceeds(setDoc(doc(db,'publicVerifications/u1'), { approved:true, updated_at:now(), reviewed_by:'admin' }));
   await assertSucceeds(setDoc(doc(db,'moderationStatus/u2'), { suspended:true, reason:'prueba', updated_at:now(), admin_uid:'admin' }));
 });
+
+
+test('catálogo canónico puede sembrarse una sola vez y no admite valores arbitrarios', async () => {
+  const db = env.authenticatedContext('u1').firestore();
+  await seedBase();
+  await assertSucceeds(setDoc(doc(db,'catalog/marketplace'), {
+    version: 1,
+    categories: ['Electrónica','Ropa & Accesorios','Libros & Apuntes','Comida','Postres','Servicios','Transporte','Cuartos & Renta','Eventos','Arte & Manualidades','Otros'],
+    meeting_points: ['Cafetería Central','Puerta Principal','Salón de Clases','Coordinar por Chat'],
+    updated_at: now(),
+  }));
+  await assertFails(updateDoc(doc(db,'catalog/marketplace'), { version: 2, updated_at: now() }));
+});
+
+test('producto admite hasta cuatro imágenes válidas y conserva la portada como primera imagen', async () => {
+  await seedBase();
+  const db = env.authenticatedContext('u1').firestore();
+  await assertSucceeds(setDoc(doc(db,'products/multi-photo'), {
+    vendedor_id:'u1', vendedor_nombre:'Uno', vendedor_handle:'@uno', titulo:'Calculadora', descripcion:'Calculadora científica funcionando', precio_mxn:300,
+    categoria:'Electrónica', facultad:'Turismo Internacional', punto_encuentro:'Cafetería Central', imagen_url:image, imagenes_url:[image,image], estado:'Activo', likes:0,
+    fecha_creacion:now(), updated_at:now()
+  }));
+  await assertFails(setDoc(doc(db,'products/bad-photos'), {
+    vendedor_id:'u1', vendedor_nombre:'Uno', vendedor_handle:'@uno', titulo:'Calculadora', descripcion:'Calculadora científica funcionando', precio_mxn:300,
+    categoria:'Electrónica', facultad:'Turismo Internacional', punto_encuentro:'Cafetería Central', imagen_url:image, imagenes_url:['https://example.com/not-allowed.jpg'], estado:'Activo', likes:0,
+    fecha_creacion:now(), updated_at:now()
+  }));
+});
+
+test('chat permite foto comprimida como mensaje y bloquea urls externas', async () => {
+  await seedBase();
+  const db = env.authenticatedContext('u1').firestore();
+  await setDoc(doc(db,'chats/chat-u1-p-u2'), { product_id:'p-u2', producto_id:'p-u2', buyer_id:'u1', comprador_id:'u1', seller_id:'u2', vendedor_id:'u2', participants:['u1','u2'], nombre_otro_usuario:'Dos', created_at:now(), updated_at:now(), last_message:'', last_message_at:now() });
+  await assertSucceeds(setDoc(doc(db,'chats/chat-u1-p-u2/messages/photo-ok'), { sender_id:'u1', text:'', image_url:image, created_at:now() }));
+  await assertFails(setDoc(doc(db,'chats/chat-u1-p-u2/messages/photo-bad'), { sender_id:'u1', text:'', image_url:'https://example.com/x.jpg', created_at:now() }));
+});

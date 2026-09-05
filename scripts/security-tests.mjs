@@ -101,10 +101,13 @@ test('reportes sólo los crea el usuario autenticado y sólo admin resuelve', ()
   assert.ok(block.includes('allow update: if isAdmin()'));
 });
 
-test('config Firebase se inyecta en runtime, no requiere secretos hardcodeados', () => {
+test('config cliente Firebase puede venir integrada sin incluir credenciales privadas', () => {
   assert.ok(runtime.includes('tutop.firebase.config.v1'));
   assert.ok(runtime.includes('VITE_FIREBASE_API_KEY'));
-  assert.ok(!runtime.match(/AIza[0-9A-Za-z_-]{20,}/));
+  assert.ok(runtime.includes("projectId: 'tutop-3a4f7'"));
+  assert.ok(!runtime.match(/BEGIN (?:RSA )?PRIVATE KEY/));
+  assert.ok(!runtime.includes('private_key_id'));
+  assert.ok(!runtime.includes('client_email'));
 });
 
 test('registro puede reparar Auth huérfano sin borrar cuentas existentes', () => {

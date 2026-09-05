@@ -1,6 +1,6 @@
 import { FirebaseRestClient, type AuthSession, type FirestoreDocument } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
-import { sellerLevelFor } from '../lib/productAssistant';
+import { MARKETPLACE_CATEGORIES, VALID_MEETING_POINTS, normalizeCategory, sellerLevelFor } from '../lib/productAssistant';
 import type { AppNotification, Chat, Product, Review, User, WalletTransaction } from '../types';
 
 export interface OnlineSnapshot {
@@ -40,10 +40,12 @@ function asProduct(doc: FirestoreDocument<any>): Product {
     titulo: String(data.titulo || ''),
     descripcion: data.descripcion ? String(data.descripcion) : undefined,
     precio_mxn: Number(data.precio_mxn || 0),
-    categoria: data.categoria,
+    stock: Math.max(1, Number(data.stock || 1)),
+    categoria: normalizeCategory(String(data.categoria || 'Otros')),
     facultad: String(data.facultad || 'Turismo Internacional'),
     punto_encuentro: data.punto_encuentro,
-    imagen_url: String(data.imagen_url || ''),
+    imagen_url: String(data.imagen_url || (Array.isArray(data.imagenes_url) ? data.imagenes_url[0] : '') || ''),
+    imagenes_url: Array.isArray(data.imagenes_url) ? data.imagenes_url.map(String).slice(0, 4) : undefined,
     estado: data.estado || 'Activo',
     es_top: false,
     jerarquia_top: 0,
@@ -95,6 +97,7 @@ export class TuTopOnlineBackend {
     }
     try {
       await this.createInitialAccount(session, profile);
+      await this.ensureMarketplaceCatalog();
     } catch (error) {
       // Delete only identities created by this attempt. Never delete an existing account during repair.
       if (createdAuthIdentity) {
@@ -105,10 +108,25 @@ export class TuTopOnlineBackend {
     return session;
   }
 
+  async ensureMarketplaceCatalog() {
+    const client = this.getClient();
+    const session = client.currentSession;
+    if (!session) return;
+    const existing = await client.getDocument<any>('catalog/marketplace').catch(() => null);
+    if (existing) return;
+    await client.setDocument('catalog/marketplace', {
+      version: 1,
+      categories: MARKETPLACE_CATEGORIES,
+      meeting_points: VALID_MEETING_POINTS,
+      updated_at: nowIso(),
+    }, { exists: false }).catch((error: any) => { if (error?.status !== 409) throw error; });
+  }
+
   async login(phone: string, password: string) {
     const session = await this.getClient().signInWithPhonePassword(phone, password);
     const profile = await this.getClient().getDocument(`users/${session.uid}`);
-    if (!profile) throw new Error('Tu cuenta de Auth existe, pero falta el perfil Firestore. Usa “Crear cuenta” para reparar el alta o revisa las reglas.');
+    if (!profile) throw new Error('PROFILE_MISSING');
+    await this.ensureMarketplaceCatalog();
     return session;
   }
 
@@ -170,6 +188,7 @@ export class TuTopOnlineBackend {
     const session = client.currentSession;
     if (!session) throw new Error('AUTH_REQUIRED');
     await client.getIdToken();
+    await this.ensureMarketplaceCatalog().catch(() => undefined);
 
     const [profileDoc, walletDoc, productsDocs, chatsDocs, favoritesDocs, ownReviewDocs, receivedReviewDocs, txDocs, publicVerification, adminDoc, moderationDoc, bidDocs] = await Promise.all([
       client.getDocument<any>(`users/${session.uid}`),
@@ -220,7 +239,8 @@ export class TuTopOnlineBackend {
       suspension_reason: moderationDoc?.data?.reason ? String(moderationDoc.data.reason) : undefined,
     };
 
-    const reviews: Review[] = ownReviewDocs.map((doc) => ({
+    const reviewDocs = [...ownReviewDocs, ...receivedReviewDocs].filter((doc, index, list) => list.findIndex((item) => item.id === doc.id) === index);
+    const reviews: Review[] = reviewDocs.map((doc) => ({
       id: doc.id,
       chat_id: String(doc.data.chat_id || ''),
       evaluador_id: String(doc.data.evaluador_id || ''),
@@ -334,6 +354,7 @@ export class TuTopOnlineBackend {
         sender_id: String(message.data.sender_id || ''),
         emisor: String(message.data.sender_id || '') === buyerId ? 'comprador' : 'vendedor',
         texto: String(message.data.text || ''),
+        image_url: message.data.image_url ? String(message.data.image_url) : undefined,
         hora: String(message.data.created_at || nowIso()),
         leido: true,
       })),
@@ -383,10 +404,12 @@ export class TuTopOnlineBackend {
       titulo: product.titulo,
       descripcion: product.descripcion || '',
       precio_mxn: product.precio_mxn,
+      stock: product.stock || 1,
       categoria: product.categoria,
       facultad: product.facultad,
       punto_encuentro: product.punto_encuentro,
       imagen_url: product.imagen_url,
+      imagenes_url: product.imagenes_url || [product.imagen_url],
       estado: product.estado,
       likes: 0,
       fecha_creacion: product.fecha_creacion,
@@ -395,7 +418,7 @@ export class TuTopOnlineBackend {
   }
 
   async updateProduct(productId: string, updates: Partial<Product>) {
-    const allowed = ['titulo', 'descripcion', 'precio_mxn', 'categoria', 'facultad', 'punto_encuentro', 'imagen_url', 'estado'] as const;
+    const allowed = ['titulo', 'descripcion', 'precio_mxn', 'stock', 'categoria', 'facultad', 'punto_encuentro', 'imagen_url', 'imagenes_url', 'estado'] as const;
     const data: Record<string, unknown> = {};
     for (const key of allowed) if (updates[key] !== undefined) data[key] = updates[key];
     data.updated_at = nowIso();
@@ -422,15 +445,21 @@ export class TuTopOnlineBackend {
     }, { exists: false });
   }
 
-  async sendMessage(chatId: string, text: string) {
+  async sendMessage(chatId: string, text: string, imageUrl?: string) {
     const client = this.getClient();
     const uid = client.currentSession?.uid;
     if (!uid) throw new Error('AUTH_REQUIRED');
+    const clean = text.trim().slice(0, 1500);
+    if (!clean && !imageUrl) throw new Error('EMPTY_MESSAGE');
+    if (imageUrl && (!imageUrl.startsWith('data:image/') || imageUrl.length > 130000)) throw new Error('Imagen de chat inválida.');
     const messageId = id('msg');
     const createdAt = nowIso();
+    const messageData: Record<string, unknown> = { sender_id: uid, text: clean, created_at: createdAt };
+    if (imageUrl) messageData.image_url = imageUrl;
+    const lastMessage = clean || '📷 Foto';
     await client.commit([
-      { update: client.encodeDocumentForWrite(`chats/${chatId}/messages/${messageId}`, { sender_id: uid, text: text.trim().slice(0, 1500), created_at: createdAt }), currentDocument: { exists: false } },
-      { update: client.encodeDocumentForWrite(`chats/${chatId}`, { updated_at: createdAt, last_message: text.trim().slice(0, 180), last_message_at: createdAt }), updateMask: { fieldPaths: ['updated_at', 'last_message', 'last_message_at'] } },
+      { update: client.encodeDocumentForWrite(`chats/${chatId}/messages/${messageId}`, messageData), currentDocument: { exists: false } },
+      { update: client.encodeDocumentForWrite(`chats/${chatId}`, { updated_at: createdAt, last_message: lastMessage.slice(0, 180), last_message_at: createdAt }), updateMask: { fieldPaths: ['updated_at', 'last_message', 'last_message_at'] } },
     ]);
   }
 

@@ -169,7 +169,7 @@ export class FirebaseRestClient {
 
   async registerWithPhonePassword(phoneInput: string, password: string) {
     const phone = normalizeMexicoPhone(phoneInput);
-    if (password.length < 8) throw new Error('La clave beta debe tener al menos 8 caracteres.');
+    if (password.length < 8) throw new Error('Tu Clave TuTop debe tener al menos 8 caracteres.');
     const email = await phoneAliasEmail(phone);
     const data = await this.authRequest('accounts:signUp', { email, password, returnSecureToken: true });
     const session: AuthSession = {

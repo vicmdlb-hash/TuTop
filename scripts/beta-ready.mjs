@@ -16,6 +16,7 @@ const cap = JSON.parse(read('capacitor.config.json') || '{}');
 const project = JSON.parse(read('config/project.json') || '{}');
 const app = read('src/App.tsx');
 const gate = read('src/components/BackendGate.tsx');
+const runtime = read('src/services/runtimeConfig.ts');
 const store = read('src/store/useAppStore.ts');
 const online = read('src/services/onlineBackend.ts');
 const rules = read('firebase/firestore.rules');
@@ -29,7 +30,11 @@ const assistant = read('src/lib/productAssistant.ts');
 if (cap.appId !== 'mx.tutop.app') errors.push('Capacitor appId no es mx.tutop.app');
 if (project.applicationId !== 'mx.tutop.app' || project.applicationIdConfirmed !== true) errors.push('config/project.json no confirma mx.tutop.app');
 if (!app.includes('<BackendGate>')) errors.push('App no está protegida por BackendGate');
-if (!gate.includes('FirebaseSetup')) errors.push('Falta flujo de conexión a Firebase');
+if (!runtime.includes('BUILT_IN_CONFIG') || !runtime.includes("projectId: 'tutop-3a4f7'")) errors.push('Falta configuración online integrada para instalaciones nuevas');
+if (/Firebase|Firestore|projectId/i.test(gate)) {
+  const consumerText = gate.replace(/CONFIGURATION_NOT_FOUND/g, '').replace(/onlineBackend/g, '').replace(/configureFromRuntime/g, '');
+  if (/Firebase|Firestore|projectId/i.test(consumerText)) errors.push('BackendGate expone lenguaje técnico al usuario');
+}
 if (!online.includes('FirebaseRestClient')) errors.push('Backend online no usa FirebaseRestClient');
 if (!rules.includes('match /wallets/{uid}')) errors.push('Rules no protegen Wallet');
 if (!rules.includes('match /admins/{uid}')) errors.push('Rules no protegen administradores');

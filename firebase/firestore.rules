@@ -13,20 +13,48 @@ service cloud.firestore {
       return ts is timestamp && ts <= request.time + duration.value(5, 'm') && ts >= request.time - duration.value(10, 'm');
     }
     function validCategory(value) {
-      return value in ['Comida','Postres','Apuntes & Guías','Ropa & Accesorios','Servicios','Otros'];
+      return value in ['Electrónica','Ropa & Accesorios','Libros & Apuntes','Apuntes & Guías','Comida','Postres','Servicios','Transporte','Cuartos & Renta','Eventos','Arte & Manualidades','Otros'];
     }
     function validMeetingPoint(value) {
       return value in ['Cafetería Central','Puerta Principal','Salón de Clases','Coordinar por Chat'];
+    }
+    function validImages(data) {
+      return !('imagenes_url' in data) || (
+        data.imagenes_url is list
+        && data.imagenes_url.size() >= 1 && data.imagenes_url.size() <= 4
+        && data.imagenes_url[0] == data.imagen_url
+        && data.imagenes_url[0] is string && data.imagenes_url[0].size() <= 180000 && data.imagenes_url[0].matches('^data:image/.*')
+        && (data.imagenes_url.size() < 2 || (data.imagenes_url[1] is string && data.imagenes_url[1].size() <= 180000 && data.imagenes_url[1].matches('^data:image/.*')))
+        && (data.imagenes_url.size() < 3 || (data.imagenes_url[2] is string && data.imagenes_url[2].size() <= 180000 && data.imagenes_url[2].matches('^data:image/.*')))
+        && (data.imagenes_url.size() < 4 || (data.imagenes_url[3] is string && data.imagenes_url[3].size() <= 180000 && data.imagenes_url[3].matches('^data:image/.*')))
+      );
     }
     function validProductContent(data) {
       return data.titulo is string && data.titulo.size() >= 2 && data.titulo.size() <= 120
         && data.descripcion is string && data.descripcion.size() <= 1000
         && data.precio_mxn is number && data.precio_mxn >= 0 && data.precio_mxn <= 1000000
+        && (!('stock' in data) || (data.stock is int && data.stock >= 1 && data.stock <= 99))
         && validCategory(data.categoria)
         && data.facultad is string && data.facultad.size() >= 2 && data.facultad.size() <= 100
         && validMeetingPoint(data.punto_encuentro)
         && data.imagen_url is string && data.imagen_url.size() <= 180000
-        && data.imagen_url.matches('^data:image/.*');
+        && data.imagen_url.matches('^data:image/.*')
+        && validImages(data);
+    }
+
+
+    // Canonical marketplace catalog. Any signed-in member may create the first
+    // immutable copy, but only with the exact TuTop values. This lets a fresh
+    // backend seed itself without exposing infrastructure setup to students.
+    match /catalog/{catalogId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && notSuspended() && catalogId == 'marketplace'
+        && request.resource.data.keys().hasOnly(['version','categories','meeting_points','updated_at'])
+        && request.resource.data.version == 1
+        && request.resource.data.categories == ['Electrónica','Ropa & Accesorios','Libros & Apuntes','Comida','Postres','Servicios','Transporte','Cuartos & Renta','Eventos','Arte & Manualidades','Otros']
+        && request.resource.data.meeting_points == ['Cafetería Central','Puerta Principal','Salón de Clases','Coordinar por Chat']
+        && fresh(request.resource.data.updated_at);
+      allow update, delete: if false;
     }
 
     // Public profile: phone number is intentionally NOT stored here.
@@ -115,7 +143,7 @@ service cloud.firestore {
     match /products/{productId} {
       allow read: if signedIn();
       allow create: if signedIn() && notSuspended()
-        && request.resource.data.keys().hasOnly(['vendedor_id','vendedor_nombre','vendedor_handle','titulo','descripcion','precio_mxn','categoria','facultad','punto_encuentro','imagen_url','estado','likes','fecha_creacion','updated_at'])
+        && request.resource.data.keys().hasOnly(['vendedor_id','vendedor_nombre','vendedor_handle','titulo','descripcion','precio_mxn','stock','categoria','facultad','punto_encuentro','imagen_url','imagenes_url','estado','likes','fecha_creacion','updated_at'])
         && request.resource.data.vendedor_id == request.auth.uid
         && request.resource.data.vendedor_nombre is string && request.resource.data.vendedor_nombre.size() <= 80
         && request.resource.data.vendedor_nombre == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.nombre
@@ -132,7 +160,7 @@ service cloud.firestore {
         && (request.resource.data.facultad == resource.data.facultad
           || request.resource.data.facultad == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.facultad)
         && request.resource.data.fecha_creacion == resource.data.fecha_creacion
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['titulo','descripcion','precio_mxn','categoria','facultad','punto_encuentro','imagen_url','estado','updated_at'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['titulo','descripcion','precio_mxn','stock','categoria','facultad','punto_encuentro','imagen_url','imagenes_url','estado','updated_at'])
         && request.resource.data.estado in ['Activo','Pausado','Vendido']
         && validProductContent(request.resource.data)
         && fresh(request.resource.data.updated_at);
@@ -181,9 +209,11 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if participant(chatId) || isAdmin();
         allow create: if participant(chatId) && notSuspended()
-          && request.resource.data.keys().hasOnly(['sender_id','text','created_at'])
+          && request.resource.data.keys().hasOnly(['sender_id','text','image_url','created_at'])
           && request.resource.data.sender_id == request.auth.uid
-          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1500
+          && request.resource.data.text is string && request.resource.data.text.size() <= 1500
+          && (!('image_url' in request.resource.data) || (request.resource.data.image_url is string && request.resource.data.image_url.size() <= 130000 && request.resource.data.image_url.matches('^data:image/.*')))
+          && (request.resource.data.text.size() > 0 || ('image_url' in request.resource.data))
           && fresh(request.resource.data.created_at);
         allow update, delete: if false;
       }

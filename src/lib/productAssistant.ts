@@ -1,29 +1,34 @@
-import type { AssistantResult, MeetingPoint, ProductCategory, ProductFormData } from '../types';
+import type { AssistantResult, MeetingPoint, Product, ProductCategory, ProductFormData } from '../types';
 
-export const VALID_CATEGORIES: ProductCategory[] = ['Comida', 'Postres', 'Apuntes & Guías', 'Ropa & Accesorios', 'Servicios', 'Otros'];
+export const MARKETPLACE_CATEGORIES: ProductCategory[] = [
+  'Electrónica',
+  'Ropa & Accesorios',
+  'Libros & Apuntes',
+  'Comida',
+  'Postres',
+  'Servicios',
+  'Transporte',
+  'Cuartos & Renta',
+  'Eventos',
+  'Arte & Manualidades',
+  'Otros',
+];
+
+// Old records remain readable while new listings use the cleaner category name.
+export const VALID_CATEGORIES: ProductCategory[] = [...MARKETPLACE_CATEGORIES, 'Apuntes & Guías'];
 export const VALID_MEETING_POINTS: MeetingPoint[] = ['Cafetería Central', 'Puerta Principal', 'Salón de Clases', 'Coordinar por Chat'];
 
 const FORBIDDEN_PATTERNS = [
-  // Armas y municiones.
   /\b(arma|armas|pistola|rifle|escopeta|munici[oó]n|cartucho|balas?)\b/i,
-  // Drogas recreativas y sustancias de alto riesgo.
   /\b(droga|drogas|coca[ií]na|metanfetamina|fentanilo|marihuana|weed|thc|lsd|mdma|[eé]xtasis)\b/i,
-  // Alcohol, tabaco, vapeo y nicotina no forman parte de la beta universitaria.
   /\b(cerveza|vino|tequila|vodka|whisk(?:y|ey)|mezcal|ron|licor|bebida\s+alcoh[oó]lica)\b/i,
   /\b(tabaco|cigarros?|cigarrillos?|vape(?:r|ador)?|vapes|nicotina|pods?\s+de\s+vape)\b/i,
-  // Medicamentos sujetos a receta o control especial.
   /\b(medicamento\s+con\s+receta|f[aá]rmaco\s+controlado|clonazepam|alprazolam|diazepam|tramadol)\b/i,
-  // Servicios sexuales o contenido explícitamente comercial de carácter sexual.
   /\b(servicio\s+sexual|sexo\s+por\s+dinero|escort)\b/i,
-  // Efectivo, divisas y operaciones que intentan convertir TuTop en un mercado financiero.
   /\b(vendo\s+efectivo|cambio\s+efectivo|dinero\s+en\s+efectivo|vendo\s+d[oó]lares?|vendo\s+euros?)\b/i,
-  // Bienes robados, falsificación y documentos falsos.
-  /\b(producto\s+robado|celular\s+robado|art[ií]culo\s+robado|credencial\s+falsa|documento\s+falso|billete\s+falso|pirater[ií]a)\b/i,
-  // Venta de cuentas/credenciales y fraude digital.
+  /\b(producto\s+robado|celular\s+robado|art[ií]culo\s+robado|credencial\s+falsa|documento\s+falso|billete\s+falso|pirater[ií]a|r[eé]plica\s+1:1)\b/i,
   /\b(vendo\s+(?:mi\s+)?cuenta\s+(?:de\s+)?(?:netflix|spotify|disney|hbo|max|steam|xbox|playstation|fortnite|free\s*fire|brawl\s*stars)|vendo\s+contrase(?:ñ|n)a|hacke(?:o|ar)|phishing)\b/i,
-  // Datos personales o suplantación comercializada.
   /\b(vendo\s+(?:curp|ine|credencial|datos\s+personales)|base\s+de\s+datos\s+de\s+personas)\b/i,
-  // Fraude académico: los apuntes y tutorías sí están permitidos; exámenes/respuestas filtradas no.
   /\b(vendo\s+(?:el\s+)?examen|vendo\s+respuestas\s+de\s+examen|respuestas\s+del\s+examen|examen\s+filtrado)\b/i,
 ];
 
@@ -38,21 +43,35 @@ export function reliabilityFor(strikes: number) {
   return Math.max(0, 98 - Math.min(strikes, 3) * 26);
 }
 
+function normalize(text: string) {
+  return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+export function normalizeCategory(category: ProductCategory | string): ProductCategory {
+  if (category === 'Apuntes & Guías') return 'Libros & Apuntes';
+  return (VALID_CATEGORIES.includes(category as ProductCategory) ? category : 'Otros') as ProductCategory;
+}
+
 export function detectCategory(text: string): ProductCategory | null {
   const value = normalize(text);
-  if (/(comida|hamburguesa|taco|pizza|burrito|sandwich|s[aá]ndwich|torta|chilaquil|tamales?|hot dog|comida corrida)/.test(value)) return 'Comida';
-  if (/(brownie|galleta|pastel|postre|cupcake|flan|gelatina|alegr[ií]a|amaranto|dulce)/.test(value)) return 'Postres';
-  if (/(apunte|gu[ií]a|resumen|libro|cuaderno|manual|formulario|acorde[oó]n|material de estudio)/.test(value)) return 'Apuntes & Guías';
-  if (/(ropa|tenis|zapato|sudadera|playera|camisa|pantal[oó]n|mochila|bolsa|gorra|chamarra|accesorio)/.test(value)) return 'Ropa & Accesorios';
-  if (/(servicio|tutor[ií]a|asesor[ií]a|clase|diseño|edici[oó]n|fotograf[ií]a|traducci[oó]n|reparaci[oó]n)/.test(value)) return 'Servicios';
-  return VALID_CATEGORIES.find((category) => normalize(category) === value || value.includes(normalize(category))) || null;
+  if (/(iphone|ipad|android|celular|telefono|laptop|computadora|audifono|cargador|usb|teclado|mouse|tablet|bocina|electronica)/.test(value)) return 'Electrónica';
+  if (/(ropa|tenis|zapato|sudadera|playera|camisa|pantalon|mochila|bolsa|gorra|chamarra|accesorio|vestido)/.test(value)) return 'Ropa & Accesorios';
+  if (/(apunte|guia|resumen|libro|cuaderno|manual|formulario|material de estudio|antologia|fotocopia)/.test(value)) return 'Libros & Apuntes';
+  if (/(comida|hamburguesa|taco|pizza|burrito|sandwich|torta|chilaquil|tamal|hot dog|comida corrida|ensalada|pasta)/.test(value)) return 'Comida';
+  if (/(brownie|galleta|pastel|postre|cupcake|flan|gelatina|alegria|amaranto|dulce|pay|cheesecake)/.test(value)) return 'Postres';
+  if (/(servicio|tutoria|asesoria|clase|diseno|edicion|fotografia|traduccion|reparacion|impresion|maquillaje)/.test(value)) return 'Servicios';
+  if (/(ride|avent[oó]n|transporte|viaje|lugar en carro|auto compartido|r[aá]ite)/.test(value)) return 'Transporte';
+  if (/(cuarto|renta|roomie|departamento|depa|habitacion|alojamiento)/.test(value)) return 'Cuartos & Renta';
+  if (/(boleto|evento|concierto|fiesta|entrada|taller|curso|expo)/.test(value)) return 'Eventos';
+  if (/(arte|manualidad|pulsera|artesania|dibujo|pintura|tejido|hecho a mano|sticker)/.test(value)) return 'Arte & Manualidades';
+  return MARKETPLACE_CATEGORIES.find((category) => normalize(category) === value || value.includes(normalize(category))) || null;
 }
 
 export function detectMeetingPoint(text: string): MeetingPoint | null {
   const value = normalize(text);
   if (value.includes('cafeter')) return 'Cafetería Central';
   if (value.includes('puerta') || value.includes('entrada')) return 'Puerta Principal';
-  if (value.includes('salon') || value.includes('salón') || value.includes('clases')) return 'Salón de Clases';
+  if (value.includes('salon') || value.includes('clases')) return 'Salón de Clases';
   if (value.includes('chat') || value.includes('coordinar') || value.includes('ponernos de acuerdo')) return 'Coordinar por Chat';
   return null;
 }
@@ -79,12 +98,61 @@ export function cleanTitle(text: string): string | null {
   return candidate.slice(0, 90);
 }
 
-function isForbidden(text: string) {
+export function isForbiddenProductText(text: string) {
   return FORBIDDEN_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-function normalize(text: string) {
-  return text.toLowerCase().trim();
+export function improveDescription(draft: Partial<ProductFormData>) {
+  const title = draft.titulo?.trim();
+  if (!title) return 'Agrega primero un título para que Topi pueda ayudarte a redactar mejor.';
+  const current = draft.descripcion?.trim();
+  const category = normalizeCategory(draft.categoria || detectCategory(title) || 'Otros');
+  if (current && current.length >= 70) {
+    return current
+      .replace(/\s+/g, ' ')
+      .replace(/^./, (letter) => letter.toUpperCase())
+      .slice(0, 900);
+  }
+  const templates: Partial<Record<ProductCategory, string>> = {
+    'Electrónica': `${title}. Indica estado, funcionamiento, accesorios incluidos y cualquier detalle importante. Entrega dentro de la comunidad TuTop.`,
+    'Ropa & Accesorios': `${title}. Agrega talla, estado, medidas si aplica y cualquier detalle de uso. Entrega a convenir dentro de TuTop.`,
+    'Libros & Apuntes': `${title}. Explica materia/semestre, contenido, formato y estado para que otros estudiantes sepan exactamente qué reciben.`,
+    'Comida': `${title}. Describe porción, ingredientes principales, horario de entrega y si requiere pedido previo.`,
+    'Postres': `${title}. Describe tamaño o porción, sabor, ingredientes principales y disponibilidad.`,
+    'Servicios': `${title}. Explica qué incluye, tiempo estimado, modalidad y qué necesita enviarte la persona interesada.`,
+    'Transporte': `${title}. Indica ruta aproximada, horario, lugares disponibles y punto de encuentro.`,
+    'Cuartos & Renta': `${title}. Describe zona, servicios incluidos, condiciones básicas y disponibilidad. No publiques datos sensibles.`,
+    'Eventos': `${title}. Indica fecha, lugar general, qué incluye y condiciones de entrega o acceso.`,
+    'Arte & Manualidades': `${title}. Describe materiales, tamaño, personalización disponible y tiempo de entrega.`,
+  };
+  return templates[category] || `${title}. Agrega estado, características principales, qué incluye y cualquier detalle que ayude a decidir la compra.`;
+}
+
+export function suggestPriceFromProducts(draft: Partial<ProductFormData>, products: Product[]) {
+  const category = draft.categoria ? normalizeCategory(draft.categoria) : detectCategory(`${draft.titulo || ''} ${draft.descripcion || ''}`);
+  if (!category) return null;
+  const comparable = products
+    .filter((product) => normalizeCategory(product.categoria) === category && product.estado === 'Activo' && product.precio_mxn > 0)
+    .map((product) => product.precio_mxn)
+    .sort((a, b) => a - b);
+  if (comparable.length < 2) return null;
+  const median = comparable[Math.floor(comparable.length / 2)];
+  const low = Math.max(1, Math.round(median * 0.8 / 5) * 5);
+  const high = Math.max(low, Math.round(median * 1.2 / 5) * 5);
+  return { low, high, median, samples: comparable.length };
+}
+
+export function reviewProductDraft(draft: Partial<ProductFormData>) {
+  const issues: string[] = [];
+  const fullText = `${draft.titulo || ''} ${draft.descripcion || ''}`;
+  if (isForbiddenProductText(fullText)) issues.push('El anuncio parece incluir algo que no está permitido en TuTop.');
+  if (!draft.titulo || draft.titulo.trim().length < 3) issues.push('Agrega un título claro.');
+  if (!draft.precio_mxn || draft.precio_mxn <= 0) issues.push('Agrega un precio mayor a $0.');
+  if (!draft.categoria) issues.push('Elige una categoría.');
+  if (!draft.punto_encuentro) issues.push('Elige cómo coordinarás la entrega.');
+  if (!draft.imagen_url && !draft.imagenes_url?.length) issues.push('Una foto ayuda mucho a que el anuncio genere confianza.');
+  if ((draft.descripcion?.trim().length || 0) < 20) issues.push('Una descripción un poco más completa puede ayudarte a vender más rápido.');
+  return issues;
 }
 
 function nextMissing(data: Partial<ProductFormData>): keyof ProductFormData | null {
@@ -98,74 +166,32 @@ function nextMissing(data: Partial<ProductFormData>): keyof ProductFormData | nu
 
 function askFor(field: keyof ProductFormData | null): string {
   switch (field) {
-    case 'titulo': return '¿Qué producto o servicio quieres vender?';
-    case 'precio_mxn': return 'Perfecto ✨ ¿Cuál es el precio en pesos?';
-    case 'categoria': return '¿En qué categoría encaja mejor? Puedes decir “comida”, “ropa”, “apuntes”, “servicios”…';
-    case 'punto_encuentro': return '¿Dónde lo entregarías? Cafetería, puerta principal, salón o coordinar por chat.';
-    case 'facultad': return '¿En qué facultad quieres ofrecerlo?';
-    default: return '¡Listo! Tu anuncio ya está armado.';
+    case 'titulo': return '¿Qué quieres vender u ofrecer?';
+    case 'precio_mxn': return '¿Qué precio quieres ponerle?';
+    case 'categoria': return 'Puedo sugerirte una categoría, pero tú siempre tienes la última palabra.';
+    case 'punto_encuentro': return '¿Cómo prefieres coordinar la entrega?';
+    case 'facultad': return '¿En qué facultad lo quieres publicar?';
+    default: return 'Listo. Revisa los datos y publica cuando quieras.';
   }
 }
 
-/**
- * Parser local del asistente de publicación. Acepta varios campos en una sola frase y solo
- * pregunta el dato faltante. En beta real este mismo contrato puede ser servido
- * por una Function/LLM, pero el cliente nunca debe confiar en el LLM para reglas
- * de seguridad o movimientos de UCoins.
- */
-export function parseProductMessage(
-  text: string,
-  previous: Partial<ProductFormData>,
-  defaultFaculty: string,
-): AssistantResult {
-  if (isForbidden(text)) {
-    return {
-      blocked: true,
-      response: '⚠️ Oops, eso va en contra de las reglas de la comunidad de TuTop. Solo permitimos productos y servicios estudiantiles seguros.',
-      data: previous,
-      complete: false,
-      needs: nextMissing(previous),
-    };
+// Compatibility parser kept for older flows/tests. New UI is manual-first.
+export function parseProductMessage(text: string, previous: Partial<ProductFormData>, defaultFaculty: string): AssistantResult {
+  if (isForbiddenProductText(text)) {
+    return { blocked: true, response: 'Ese tipo de publicación no está permitido en TuTop.', data: previous, complete: false, needs: nextMissing(previous) };
   }
-
   const data: Partial<ProductFormData> = { ...previous };
   const price = extractPrice(text);
   const category = detectCategory(text);
   const meetingPoint = detectMeetingPoint(text);
-
   if (!data.precio_mxn && price && price > 0) data.precio_mxn = price;
   if (!data.categoria && category) data.categoria = category;
   if (!data.punto_encuentro && meetingPoint) data.punto_encuentro = meetingPoint;
   if (!data.facultad) data.facultad = defaultFaculty;
-
   if (!data.titulo) {
     const candidate = cleanTitle(text);
-    // Una respuesta que es solo precio/categoría/punto no debe convertirse en título.
-    const looksLikeOnlyMetadata = Boolean(price) && candidate === text.trim();
-    if (candidate && !looksLikeOnlyMetadata && candidate.length > 2) data.titulo = candidate;
+    if (candidate && candidate.length > 2) data.titulo = candidate;
   }
-
-  // Si todavía falta precio y el mensaje fue una respuesta corta numérica.
-  if (!data.precio_mxn) {
-    const fallbackPrice = extractPrice(text);
-    if (fallbackPrice && fallbackPrice > 0) data.precio_mxn = fallbackPrice;
-  }
-
-  if (data.precio_mxn && data.precio_mxn > 10000 && (data.categoria === 'Apuntes & Guías' || data.categoria === 'Comida' || data.categoria === 'Postres')) {
-    delete data.precio_mxn;
-    return {
-      response: `¿Seguro que son $${price?.toLocaleString('es-MX')}? Suena fuera de lo normal para esa categoría 😅. Confírmame el precio correcto.`,
-      data,
-      complete: false,
-      needs: 'precio_mxn',
-    };
-  }
-
   const missing = nextMissing(data);
-  return {
-    response: askFor(missing),
-    data,
-    complete: missing === null,
-    needs: missing,
-  };
+  return { response: askFor(missing), data, complete: missing === null, needs: missing };
 }

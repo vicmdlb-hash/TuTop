@@ -1,7 +1,7 @@
 export type AppTab = 'feed' | 'bot' | 'wallet' | 'inbox' | 'profile';
 export type SellerLevel = 'Novato' | 'Pro' | 'Leyenda';
 export type ProductStatus = 'Activo' | 'Pausado' | 'Vendido';
-export type ProductCategory = 'Comida' | 'Postres' | 'Apuntes & Guías' | 'Ropa & Accesorios' | 'Servicios' | 'Otros';
+export type ProductCategory = 'Electrónica' | 'Ropa & Accesorios' | 'Libros & Apuntes' | 'Apuntes & Guías' | 'Comida' | 'Postres' | 'Servicios' | 'Transporte' | 'Cuartos & Renta' | 'Eventos' | 'Arte & Manualidades' | 'Otros';
 export type MeetingPoint = 'Cafetería Central' | 'Puerta Principal' | 'Salón de Clases' | 'Coordinar por Chat';
 export type DeliveryStatus = 'negociando' | 'acordada' | 'esperando_confirmacion' | 'completada' | 'cancelada';
 export type NotificationKind = 'message' | 'bid' | 'delivery' | 'verification' | 'system';
@@ -32,10 +32,12 @@ export interface Product {
   titulo: string;
   descripcion?: string;
   precio_mxn: number;
+  stock?: number;
   categoria: ProductCategory;
   facultad: string;
   punto_encuentro: MeetingPoint;
   imagen_url: string;
+  imagenes_url?: string[];
   estado: ProductStatus;
   es_top: boolean;
   jerarquia_top: 0 | 1 | 2 | 3;
@@ -59,6 +61,7 @@ export interface ChatMessage {
   sender_id?: string;
   emisor: 'comprador' | 'vendedor';
   texto: string;
+  image_url?: string;
   hora: string;
   leido?: boolean;
 }
@@ -82,6 +85,7 @@ export interface Chat {
 export interface Message {
   emisor: 'user' | 'bot';
   texto: string;
+  image_url?: string;
   hora: string;
 }
 
@@ -89,10 +93,12 @@ export interface ProductFormData {
   titulo: string;
   descripcion?: string;
   precio_mxn: number;
+  stock?: number;
   categoria: ProductCategory;
   facultad: string;
   punto_encuentro: MeetingPoint;
   imagen_url?: string;
+  imagenes_url?: string[];
 }
 
 export interface WalletTransaction {

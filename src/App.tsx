@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bot, Home, MessageCircle, UserRound, WalletCards } from 'lucide-react';
+import { Home, MessageCircle, PlusCircle, UserRound, WalletCards } from 'lucide-react';
 import Feed from './components/Feed';
 import Chatbot from './components/Chatbot';
 import WalletView from './components/WalletView';
@@ -59,7 +59,7 @@ function MobileApp() {
       {!activeChatId && (
         <nav className="bottom-nav" aria-label="Navegación principal">
           <NavButton icon={<Home />} label="Inicio" active={activeTab === 'feed'} onClick={() => setActiveTab('feed')} />
-          <NavButton icon={<Bot />} label="Publicar" active={activeTab === 'bot'} onClick={() => setActiveTab('bot')} />
+          <NavButton icon={<PlusCircle />} label="Publicar" active={activeTab === 'bot'} onClick={() => setActiveTab('bot')} />
           <NavButton icon={<WalletCards />} label="Wallet" active={activeTab === 'wallet'} onClick={() => setActiveTab('wallet')} />
           <NavButton icon={<MessageCircle />} label="Mensajes" active={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} badge={unread > 0 ? String(Math.min(unread, 99)) : undefined} />
           <NavButton icon={<UserRound />} label="Perfil" active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} />

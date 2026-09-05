@@ -7,6 +7,16 @@ export interface FirebaseRuntimeConfig {
 
 const STORAGE_KEY = 'tutop.firebase.config.v1';
 
+// Firebase Web config is public client configuration, not a server secret.
+// Shipping it here means every installed TuTop build connects to the same
+// production beta backend without exposing infrastructure setup to students.
+const BUILT_IN_CONFIG: FirebaseRuntimeConfig = {
+  apiKey: 'AIzaSyDWEv_N_CMwtvPzbPQ7-6zajJfOf06WR7A',
+  authDomain: 'tutop-3a4f7.firebaseapp.com',
+  projectId: 'tutop-3a4f7',
+  appId: '1:418411650162:web:5e435d81fb1e7880a9b6eb',
+};
+
 function envConfig(): FirebaseRuntimeConfig | null {
   const apiKey = import.meta.env.VITE_FIREBASE_API_KEY?.trim();
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID?.trim();
@@ -19,9 +29,7 @@ function envConfig(): FirebaseRuntimeConfig | null {
   };
 }
 
-export function getFirebaseConfig(): FirebaseRuntimeConfig | null {
-  const fromEnv = envConfig();
-  if (fromEnv) return fromEnv;
+function storedConfig(): FirebaseRuntimeConfig | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -38,6 +46,11 @@ export function getFirebaseConfig(): FirebaseRuntimeConfig | null {
   }
 }
 
+export function getFirebaseConfig(): FirebaseRuntimeConfig {
+  return envConfig() || storedConfig() || BUILT_IN_CONFIG;
+}
+
+// Kept for admin/development overrides. Normal users never see this flow.
 export function saveFirebaseConfig(config: FirebaseRuntimeConfig) {
   const clean: FirebaseRuntimeConfig = {
     apiKey: config.apiKey.trim(),
@@ -45,7 +58,7 @@ export function saveFirebaseConfig(config: FirebaseRuntimeConfig) {
     authDomain: config.authDomain?.trim() || undefined,
     appId: config.appId?.trim() || undefined,
   };
-  if (!clean.apiKey || !clean.projectId) throw new Error('API key y Project ID son obligatorios.');
+  if (!clean.apiKey || !clean.projectId) throw new Error('Configuración incompleta.');
   localStorage.setItem(STORAGE_KEY, JSON.stringify(clean));
 }
 
@@ -55,14 +68,11 @@ export function clearFirebaseConfig() {
 
 export function parseFirebaseConfig(input: string): FirebaseRuntimeConfig {
   const trimmed = input.trim();
-  if (!trimmed) throw new Error('Pega la configuración web de Firebase.');
-
-  // Accept raw JSON or the object copied from `const firebaseConfig = { ... }`.
+  if (!trimmed) throw new Error('Configuración vacía.');
   let candidate = trimmed;
   const objectStart = candidate.indexOf('{');
   const objectEnd = candidate.lastIndexOf('}');
   if (objectStart >= 0 && objectEnd > objectStart) candidate = candidate.slice(objectStart, objectEnd + 1);
-
   candidate = candidate
     .replace(/([,{]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')
     .replace(/'/g, '"')
@@ -72,12 +82,11 @@ export function parseFirebaseConfig(input: string): FirebaseRuntimeConfig {
   try {
     parsed = JSON.parse(candidate) as Record<string, unknown>;
   } catch {
-    throw new Error('No pude leer esa configuración. Copia el bloque firebaseConfig completo desde Firebase Console.');
+    throw new Error('No pude leer esa configuración.');
   }
-
   const apiKey = String(parsed.apiKey || '').trim();
   const projectId = String(parsed.projectId || '').trim();
-  if (!apiKey || !projectId) throw new Error('La configuración debe contener apiKey y projectId.');
+  if (!apiKey || !projectId) throw new Error('Configuración incompleta.');
   return {
     apiKey,
     projectId,

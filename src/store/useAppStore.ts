@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { sellerLevelFor } from '../lib/productAssistant';
 import { onlineBackend, type OnlineSnapshot } from '../services/onlineBackend';
+import { feedbackMessage } from '../lib/feedback';
 import type { AppNotification, AppTab, Chat, Product, Review, User, WalletTransaction } from '../types';
 
 interface AppState {
@@ -36,6 +37,7 @@ interface AppState {
   openChat: (chatId: string) => void;
   closeChat: () => void;
   sendMessage: (chatId: string, text: string) => void;
+  sendImageMessage: (chatId: string, imageUrl: string) => void;
   markChatRead: (chatId: string) => void;
   confirmDelivery: (chatId: string) => void;
   submitReview: (chatId: string, rating: Review['calificacion'], comment?: string) => boolean;
@@ -194,6 +196,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     void onlineBackend.sendMessage(chatId, clean).then(async () => {
       const snapshot = await onlineBackend.loadSnapshot();
       get().hydrateOnline(snapshot);
+    }).catch((error) => {
+      set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? chat : item) }));
+      reportSyncError(set, error);
+    });
+  },
+
+  sendImageMessage: (chatId, imageUrl) => {
+    const state = get();
+    const chat = state.chats.find((item) => item.id === chatId);
+    if (!chat || !imageUrl.startsWith('data:image/')) return;
+    const emisor = chat.comprador_id === state.user.id ? 'comprador' : 'vendedor';
+    const message = { id: localId('msg-local'), sender_id: state.user.id, emisor, texto: '', image_url: imageUrl, hora: new Date().toISOString(), leido: true } as const;
+    set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, mensajes: [...item.mensajes, message], sin_leer: 0 } : item) }));
+    feedbackMessage();
+    void onlineBackend.sendMessage(chatId, '', imageUrl).then(async () => {
+      get().hydrateOnline(await onlineBackend.loadSnapshot());
     }).catch((error) => {
       set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? chat : item) }));
       reportSyncError(set, error);
