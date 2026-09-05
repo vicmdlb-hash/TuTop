@@ -81,6 +81,9 @@ jobs:
       - name: Search pricing bundles and seller CRM
         run: npm run commerce-intelligence:test
 
+      - name: Canonical listings V2 migration
+        run: npm run listing-schema-v2:test
+
       - name: Typecheck
         run: npm run typecheck
 
