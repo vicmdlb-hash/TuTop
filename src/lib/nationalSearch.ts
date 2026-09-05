@@ -1,5 +1,5 @@
-import type { Product, ProductCategory, User } from '../types';
-import { defaultScopeForCategory } from './universityNetwork';
+import type { Product, ProductCategory, User } from '../types/index.ts';
+import { defaultScopeForCategory } from './universityNetwork.ts';
 
 const SYNONYMS: Record<string, string[]> = {
   iphone: ['iphone', 'celular apple', 'telefono apple', 'smartphone apple'],
