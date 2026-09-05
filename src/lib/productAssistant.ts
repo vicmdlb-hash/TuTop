@@ -1,17 +1,14 @@
 import type { AssistantResult, MeetingPoint, Product, ProductCategory, ProductFormData } from '../types';
 
+// TuTop 0.8 keeps the active Spark catalog compatible with the already deployed rules.
+// More granular options are captured by the adaptive form and stored as listing details
+// until the dedicated schema migration is deployed.
 export const MARKETPLACE_CATEGORIES: ProductCategory[] = [
-  'Electrónica', 'Ropa & Accesorios', 'Libros & Apuntes', 'Material Escolar', 'Comida', 'Postres',
-  'Servicios', 'Transporte', 'Hogar', 'Deportes', 'Videojuegos', 'Coleccionables', 'Arte & Manualidades',
-  'Eventos', 'Entradas permitidas', 'Belleza & Cuidado', 'Mascotas', 'Instrumentos Musicales', 'Cuartos & Renta', 'Otros',
+  'Electrónica', 'Ropa & Accesorios', 'Libros & Apuntes', 'Comida', 'Postres',
+  'Servicios', 'Transporte', 'Cuartos & Renta', 'Eventos', 'Arte & Manualidades', 'Otros',
 ];
-
-// Old records remain readable while new listings use the cleaner category name.
 export const VALID_CATEGORIES: ProductCategory[] = [...MARKETPLACE_CATEGORIES, 'Apuntes & Guías'];
-export const VALID_MEETING_POINTS: MeetingPoint[] = [
-  'Cafetería Central', 'Puerta Principal', 'Biblioteca', 'Facultad', 'Estacionamiento', 'Rectoría',
-  'Salón de Clases', 'Campus específico', 'Otro punto público', 'Coordinar por Chat',
-];
+export const VALID_MEETING_POINTS: MeetingPoint[] = ['Cafetería Central', 'Puerta Principal', 'Salón de Clases', 'Coordinar por Chat'];
 
 const FORBIDDEN_PATTERNS = [
   /\b(arma|armas|pistola|rifle|escopeta|munici[oó]n|cartucho|balas?)\b/i,
@@ -51,36 +48,22 @@ export function detectCategory(text: string): ProductCategory | null {
   const value = normalize(text);
   if (/(iphone|ipad|android|celular|telefono|laptop|computadora|audifono|cargador|usb|teclado|mouse|tablet|bocina|electronica)/.test(value)) return 'Electrónica';
   if (/(ropa|tenis|zapato|sudadera|playera|camisa|pantalon|mochila|bolsa|gorra|chamarra|accesorio|vestido)/.test(value)) return 'Ropa & Accesorios';
-  if (/(apunte|guia|resumen|libro|cuaderno|manual|formulario|material de estudio|antologia|fotocopia)/.test(value)) return 'Libros & Apuntes';
-  if (/(lapiz|pluma|marcador|carpeta|regla|calculadora|material escolar|papeleria)/.test(value)) return 'Material Escolar';
+  if (/(apunte|guia|resumen|libro|cuaderno|manual|formulario|material de estudio|antologia|fotocopia|calculadora|papeleria|material escolar)/.test(value)) return 'Libros & Apuntes';
   if (/(comida|hamburguesa|taco|pizza|burrito|sandwich|torta|chilaquil|tamal|hot dog|comida corrida|ensalada|pasta)/.test(value)) return 'Comida';
   if (/(brownie|galleta|pastel|postre|cupcake|flan|gelatina|alegria|amaranto|dulce|pay|cheesecake)/.test(value)) return 'Postres';
   if (/(servicio|tutoria|asesoria|clase|diseno|edicion|fotografia|traduccion|reparacion|impresion|maquillaje)/.test(value)) return 'Servicios';
   if (/(ride|avent[oó]n|transporte|viaje|lugar en carro|auto compartido|r[aá]ite)/.test(value)) return 'Transporte';
-  if (/(mueble|lampara|cocina|hogar|decoracion|organizador)/.test(value)) return 'Hogar';
-  if (/(futbol|balon|raqueta|gimnasio|deporte|pesas|jersey)/.test(value)) return 'Deportes';
-  if (/(videojuego|xbox|playstation|nintendo|switch|control|juego fisico)/.test(value)) return 'Videojuegos';
-  if (/(pokemon|figura|funko|coleccion|carta coleccionable)/.test(value)) return 'Coleccionables';
   if (/(cuarto|renta|roomie|departamento|depa|habitacion|alojamiento)/.test(value)) return 'Cuartos & Renta';
   if (/(boleto|evento|concierto|fiesta|entrada|taller|curso|expo)/.test(value)) return 'Eventos';
   if (/(arte|manualidad|pulsera|artesania|dibujo|pintura|tejido|hecho a mano|sticker)/.test(value)) return 'Arte & Manualidades';
-  if (/(maquillaje|skincare|belleza|cuidado personal|perfume)/.test(value)) return 'Belleza & Cuidado';
-  if (/(mascota|perro|gato|transportadora|correa|plato para mascota)/.test(value)) return 'Mascotas';
-  if (/(guitarra|teclado musical|violin|instrumento musical|ukulele)/.test(value)) return 'Instrumentos Musicales';
   return MARKETPLACE_CATEGORIES.find((category) => normalize(category) === value || value.includes(normalize(category))) || null;
 }
 
 export function detectMeetingPoint(text: string): MeetingPoint | null {
   const value = normalize(text);
   if (value.includes('cafeter')) return 'Cafetería Central';
-  if (value.includes('biblioteca')) return 'Biblioteca';
-  if (value.includes('estacionamiento')) return 'Estacionamiento';
-  if (value.includes('rectoria')) return 'Rectoría';
-  if (value.includes('facultad')) return 'Facultad';
-  if (value.includes('campus')) return 'Campus específico';
-  if (value.includes('salon') || value.includes('clases')) return 'Salón de Clases';
   if (value.includes('puerta') || value.includes('entrada')) return 'Puerta Principal';
-  if (value.includes('otro punto') || value.includes('lugar publico')) return 'Otro punto público';
+  if (value.includes('salon') || value.includes('clases')) return 'Salón de Clases';
   if (value.includes('chat') || value.includes('coordinar') || value.includes('ponernos de acuerdo')) return 'Coordinar por Chat';
   return null;
 }
@@ -121,14 +104,13 @@ export function improveDescription(draft: Partial<ProductFormData>) {
     'Electrónica': `${title}. Indica estado, funcionamiento, accesorios incluidos y cualquier detalle importante.`,
     'Ropa & Accesorios': `${title}. Agrega talla, estado, medidas si aplica y cualquier detalle de uso.`,
     'Libros & Apuntes': `${title}. Explica materia/semestre, contenido, formato y estado para que otros estudiantes sepan exactamente qué reciben.`,
-    'Material Escolar': `${title}. Indica marca, estado y para qué materias o uso resulta útil.`,
     'Comida': `${title}. Describe porción, ingredientes principales, horario de entrega y si requiere pedido previo.`,
     'Postres': `${title}. Describe tamaño o porción, sabor, ingredientes principales y disponibilidad.`,
     'Servicios': `${title}. Explica qué incluye, tiempo estimado, modalidad y qué necesita enviarte la persona interesada.`,
     'Transporte': `${title}. Indica ruta aproximada, horario, lugares disponibles y punto de encuentro.`,
     'Cuartos & Renta': `${title}. Describe zona, servicios incluidos, condiciones básicas y disponibilidad. No publiques datos sensibles.`,
-    'Videojuegos': `${title}. Indica plataforma, estado físico, región y si incluye caja o accesorios.`,
-    'Deportes': `${title}. Indica talla o medidas, estado y detalles de uso.`,
+    'Eventos': `${title}. Indica fecha, lugar general, qué incluye y condiciones de entrega o acceso.`,
+    'Arte & Manualidades': `${title}. Describe materiales, tamaño, personalización disponible y tiempo de entrega.`,
   };
   return templates[category] || `${title}. Agrega estado, características principales, qué incluye y cualquier detalle que ayude a decidir la compra.`;
 }
@@ -152,7 +134,6 @@ export function reviewProductDraft(draft: Partial<ProductFormData>) {
   if (!draft.precio_mxn || draft.precio_mxn <= 0) issues.push('Agrega un precio mayor a $0.');
   if (!draft.categoria) issues.push('Elige una categoría.');
   if (!draft.punto_encuentro) issues.push('Elige cómo coordinarás la entrega.');
-  if (draft.punto_encuentro === 'Otro punto público' && !draft.punto_personalizado?.trim()) issues.push('Escribe el punto público donde puedes entregar.');
   if (!draft.imagen_url && !draft.imagenes_url?.length) issues.push('Una foto ayuda mucho a que el anuncio genere confianza.');
   if ((draft.descripcion?.trim().length || 0) < 20) issues.push('Una descripción un poco más completa puede ayudarte a vender más rápido.');
   return issues;
