@@ -1,6 +1,7 @@
-import type { DemandRequest, MarketplaceTransactionStatus, Offer, OfferStatus, Product, ReputationMetrics, User } from '../types';
+import type { DemandRequest, MarketplaceTransaction, MarketplaceTransactionStatus, Offer, OfferStatus, Product, ReputationMetrics, User } from '../types';
 
 export type OfferAction = 'accept' | 'reject' | 'counter' | 'withdraw' | 'expire';
+export type TransactionAction = 'schedule_meetup' | 'confirm_delivery' | 'dispute' | 'expire';
 
 const offerTransitions: Record<OfferStatus, Partial<Record<OfferAction, OfferStatus>>> = {
   pending: { accept: 'accepted', reject: 'rejected', counter: 'countered', withdraw: 'withdrawn', expire: 'expired' },
@@ -23,6 +24,49 @@ export function canActOnOffer(offer: Pick<Offer, 'buyer_id' | 'seller_id' | 'cre
   if (action === 'withdraw') return actorUid === creator;
   if (action === 'accept' || action === 'reject' || action === 'counter') return actorUid !== creator;
   return action === 'expire';
+}
+
+export function canActOnTransaction(
+  transaction: Pick<MarketplaceTransaction, 'buyer_id' | 'seller_id' | 'status' | 'reservation_expires_at' | 'buyer_confirmed_at' | 'seller_confirmed_at'>,
+  actorUid: string,
+  action: TransactionAction,
+  now = new Date(),
+) {
+  const participant = actorUid === transaction.buyer_id || actorUid === transaction.seller_id;
+  if (!participant) return false;
+  if (action === 'schedule_meetup') {
+    return ['reserved', 'meetup_scheduled'].includes(transaction.status)
+      && !transaction.buyer_confirmed_at
+      && !transaction.seller_confirmed_at;
+  }
+  if (action === 'confirm_delivery') {
+    if (transaction.status !== 'meetup_scheduled') return false;
+    if (actorUid === transaction.buyer_id) return !transaction.buyer_confirmed_at;
+    return !transaction.seller_confirmed_at;
+  }
+  if (action === 'dispute') return ['reserved', 'meetup_scheduled'].includes(transaction.status);
+  if (action === 'expire') {
+    return actorUid === transaction.seller_id
+      && transaction.status === 'reserved'
+      && Boolean(transaction.reservation_expires_at)
+      && Date.parse(transaction.reservation_expires_at || '') <= now.getTime();
+  }
+  return false;
+}
+
+export function transactionStatusForAction(
+  transaction: Pick<MarketplaceTransaction, 'buyer_id' | 'seller_id' | 'status' | 'buyer_confirmed_at' | 'seller_confirmed_at'>,
+  actorUid: string,
+  action: TransactionAction,
+): MarketplaceTransactionStatus | null {
+  if (action === 'schedule_meetup') return 'meetup_scheduled';
+  if (action === 'dispute') return 'disputed';
+  if (action === 'expire') return 'expired';
+  if (action === 'confirm_delivery') {
+    const otherConfirmed = actorUid === transaction.buyer_id ? Boolean(transaction.seller_confirmed_at) : Boolean(transaction.buyer_confirmed_at);
+    return otherConfirmed ? 'completed' : 'meetup_scheduled';
+  }
+  return null;
 }
 
 export function reservationExpiry(minutes: 30 | 120 | 1440, now = new Date()) {
