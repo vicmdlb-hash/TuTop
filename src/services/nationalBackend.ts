@@ -108,7 +108,7 @@ class NationalMarketplaceBackend {
     if (actor !== offer.seller_id) throw new Error('SELLER_REQUIRED');
     const at = nowIso();
     await this.updateOffer(offer.id, 'accepted');
-    const transactionId = localId('tx');
+    const transactionId = `tx-${offer.id}`;
     const transaction: MarketplaceTransaction = {
       id: transactionId, listing_id: offer.listing_id, chat_id: offer.chat_id, buyer_id: offer.buyer_id, seller_id: offer.seller_id,
       accepted_offer_id: offer.id, agreed_amount_mxn: offer.amount_mxn, status: 'reserved',
