@@ -179,10 +179,43 @@ class NationalMarketplaceBackend {
   }
 
   async acceptOfferAndCreateTransaction(offer: Offer, reserveMinutes: 30 | 120 | 1440 = 120) {
-    const accepted = await this.acceptOffer(offer);
+    this.requireV2();
     const client = this.getClient();
-    if (client.currentSession?.uid !== accepted.seller_id) return { offer: accepted, transaction: null };
-    return { offer: accepted, transaction: await this.createTransactionFromAcceptedOffer(accepted, reserveMinutes) };
+    const actor = client.currentSession?.uid;
+    if (!actor) throw new Error('AUTH_REQUIRED');
+    if (actor !== offer.buyer_id && actor !== offer.seller_id) throw new Error('PARTICIPANT_REQUIRED');
+    if ((offer.created_by || offer.buyer_id) === actor) throw new Error('COUNTERPARTY_REQUIRED');
+    if (offer.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
+
+    if (actor !== offer.seller_id) {
+      const accepted = await this.acceptOffer(offer);
+      return { offer: accepted, transaction: null };
+    }
+
+    const at = nowIso();
+    const accepted: Offer = { ...offer, status: 'accepted', updated_at: at };
+    const transactionId = `tx-${offer.id}`;
+    const transaction: MarketplaceTransaction = {
+      id: transactionId,
+      listing_id: offer.listing_id,
+      chat_id: offer.chat_id,
+      buyer_id: offer.buyer_id,
+      seller_id: offer.seller_id,
+      accepted_offer_id: offer.id,
+      agreed_amount_mxn: offer.amount_mxn,
+      status: 'reserved',
+      reservation_expires_at: new Date(Date.now() + reserveMinutes * 60_000).toISOString(),
+      created_at: at,
+      updated_at: at,
+    };
+    const { id: _id, ...transactionData } = transaction;
+    await client.commit([
+      patchWrite(client, `offers/${offer.id}`, { status: 'accepted', updated_at: at }),
+      { update: client.encodeDocumentForWrite(`transactions_v2/${transactionId}`, transactionData), currentDocument: { exists: false } },
+      patchWrite(client, `chats/${offer.chat_id}`, { transaction_id: transactionId, current_offer_id: offer.id, updated_at: at }),
+      patchWrite(client, `products/${offer.listing_id}`, { estado: 'Reservado', updated_at: at }),
+    ]);
+    return { offer: accepted, transaction };
   }
 
   async loadTransactionForChat(chatId: string) {
