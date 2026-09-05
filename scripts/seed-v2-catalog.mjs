@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 
 if (process.env.TUTOP_NODE_TS_STRIP !== '1') {
   const result = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
@@ -83,13 +84,17 @@ if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUT
   process.exit(2);
 }
 
-function accessToken() {
+async function accessToken() {
   const explicit = String(process.env.TUTOP_FIREBASE_ACCESS_TOKEN || '').trim();
   if (explicit) return explicit;
   const result = spawnSync('gcloud', ['auth', 'print-access-token'], { encoding: 'utf8', shell: process.platform === 'win32' });
   if (result.status === 0 && result.stdout.trim()) return result.stdout.trim();
-  console.error('DETENIDO: falta TUTOP_FIREBASE_ACCESS_TOKEN y gcloud no entregó un access token.');
-  process.exit(2);
+  try {
+    return await firebaseCiAccessToken();
+  } catch (error) {
+    console.error(`DETENIDO: no se pudo obtener access token para el seed V2: ${error.message}`);
+    process.exit(2);
+  }
 }
 
 function firestoreValue(value) {
@@ -106,7 +111,7 @@ function firestoreFields(data) {
   return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, firestoreValue(value)]));
 }
 
-const token = accessToken();
+const token = await accessToken();
 const projectPath = `projects/${projectId}/databases/(default)/documents`;
 const writes = docs.map((item) => ({
   update: {
