@@ -31,7 +31,11 @@ for (const timestampField of [
 assert.match(rules, /status == 'pending'/);
 assert.match(rules, /created_by/);
 assert.match(rules, /request\.auth\.uid != resource\.data\.created_by/);
-assert.match(rules, /request\.resource\.data\.status in \['accepted','rejected'\]/);
+assert.match(rules, /request\.resource\.data\.status == 'rejected'/);
+assert.match(rules, /request\.auth\.uid == resource\.data\.buyer_id[\s\S]*request\.resource\.data\.status == 'accepted'/);
+assert.match(rules, /request\.auth\.uid == resource\.data\.seller_id[\s\S]*request\.resource\.data\.status == 'accepted'/);
+assert.match(rules, /existsAfter\(\/databases\/\$\(database\)\/documents\/transactions_v2\/tx-\$\(offerId\)\)/);
+assert.match(rules, /getAfter\(\/databases\/\$\(database\)\/documents\/products\/\$\(resource\.data\.listing_id\)\)\.data\.estado == 'Reservado'/);
 assert.match(rules, /request\.resource\.data\.status == 'countered'/);
 assert.match(rules, /request\.resource\.data\.status == 'reserved'/);
 assert.match(rules, /request\.resource\.data\.status == 'meetup_scheduled'/);
@@ -50,6 +54,7 @@ assert.match(rules, /visibility_scope != 'national'.*shipping_available/s);
 assert.match(rules, /exists\(\/databases\/\$\(database\)\/documents\/institutions\/\$\(data\.institution_id\)\)/);
 assert.match(rules, /exists\(\/databases\/\$\(database\)\/documents\/campuses\/\$\(data\.campus_id\)\)/);
 assert.match(rules, /transactionId == 'tx-' \+ request\.resource\.data\.accepted_offer_id/);
+assert.match(rules, /getAfter\(\/databases\/\$\(database\)\/documents\/offers\/\$\(request\.resource\.data\.accepted_offer_id\)\)\.data\.status == 'accepted'/);
 
 assert.match(nationalBackend, /SCHEMA_V2_DISABLED/);
 assert.match(nationalBackend, /createOffer/);
@@ -67,11 +72,14 @@ assert.match(nationalBackend, /transaction\.status !== 'completed' \|\| !transac
 assert.match(nationalBackend, /disputeTransaction/);
 assert.match(nationalBackend, /releaseExpiredReservation/);
 assert.match(nationalBackend, /const transactionId = `tx-\$\{offer\.id\}`/);
+assert.match(nationalBackend, /patchWrite\(client, `offers\/\$\{offer\.id\}`, \{ status: 'accepted'/);
+assert.match(nationalBackend, /patchWrite\(client, `products\/\$\{offer\.listing_id\}`, \{ estado: 'Reservado'/);
 
 console.log('PASS Firestore V2 remains isolated from firebase.json');
 console.log('PASS national identity fields and catalog references exist');
 console.log('PASS national listings require shipping');
 console.log('PASS counteroffers are proposer-aware');
+console.log('PASS seller acceptance and reservation are atomic');
 console.log('PASS structured offer and transaction guards exist');
 console.log('PASS transaction ids are idempotent per accepted offer');
 console.log('PASS transaction lifecycle is role-scoped');
