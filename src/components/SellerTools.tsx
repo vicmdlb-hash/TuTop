@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { BarChart3, Edit3, Eye, MessageCircle, PackageCheck, Pause, Play, PlusCircle, Store, Tag, X } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 
@@ -31,6 +31,6 @@ export default function SellerTools() {
   );
 }
 
-function Metric({ icon, value, label }: { icon: React.ReactNode; value: number; label: string }) {
+function Metric({ icon, value, label }: { icon: ReactNode; value: number; label: string }) {
   return <div className="rounded-2xl border border-white/5 bg-white/[0.025] p-2.5 text-center"><span className="mx-auto grid h-7 w-7 place-items-center rounded-lg bg-white/[0.04] text-violet-300 [&>svg]:h-3.5 [&>svg]:w-3.5">{icon}</span><strong className="mt-1.5 block text-sm">{value}</strong><span className="text-[8px] text-muted">{label}</span></div>;
 }
