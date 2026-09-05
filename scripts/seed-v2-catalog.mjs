@@ -14,6 +14,7 @@ const network = await import(`${pathToFileURL(path.resolve('src/lib/universityNe
 const apply = process.argv.includes('--apply');
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_V2_SEED || '').trim();
+const historicalProject = 'tutop-3a4f7';
 
 const normalizeDomainId = (domain) => domain.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const compact = (value) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
@@ -56,8 +57,8 @@ console.log(`Total: ${docs.length} documentos`);
 
 if (!apply) {
   console.log('\nDRY RUN: no se escribió nada.');
-  console.log('Para sembrar un proyecto beta/staging:');
-  console.log('  TUTOP_FIREBASE_PROJECT_ID=<id> TUTOP_ALLOW_V2_SEED=staging npm run v2:catalog:seed');
+  console.log('Para sembrar un proyecto beta/staging V2:');
+  console.log('  TUTOP_FIREBASE_PROJECT_ID=<id> TUTOP_ALLOW_V2_SEED=staging-v2 npm run v2:catalog:seed');
   process.exit(0);
 }
 
@@ -65,12 +66,20 @@ if (!projectId) {
   console.error('DETENIDO: falta TUTOP_FIREBASE_PROJECT_ID.');
   process.exit(2);
 }
-if (allow !== 'staging') {
-  console.error('DETENIDO: define TUTOP_ALLOW_V2_SEED=staging después de revisar el project ID.');
+if (allow !== 'staging-v2') {
+  console.error('DETENIDO: define TUTOP_ALLOW_V2_SEED=staging-v2 después de revisar el project ID.');
+  process.exit(2);
+}
+if (projectId === historicalProject) {
+  console.error(`DETENIDO: ${historicalProject} es el proyecto histórico de TuTop y no puede usarse para el seed V2.`);
   process.exit(2);
 }
 if (/prod(uction)?/i.test(projectId) && process.env.TUTOP_ALLOW_PRODUCTION_FIREBASE !== '1') {
-  console.error('DETENIDO: el project ID parece producción. El seed automático está limitado a beta/staging.');
+  console.error('DETENIDO: el project ID parece producción. El seed automático está limitado a beta/staging V2.');
+  process.exit(2);
+}
+if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID !== '1') {
+  console.error('DETENIDO: el project ID no parece un entorno staging/beta/dev/test. Usa un ID inequívoco o define TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID=1 tras revisión manual.');
   process.exit(2);
 }
 
