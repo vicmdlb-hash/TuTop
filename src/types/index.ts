@@ -48,6 +48,7 @@ export type ListingKind = 'offer' | 'wanted';
 export type ModerationStatus = 'pending' | 'approved' | 'review' | 'rejected';
 export type OfferStatus = 'pending' | 'accepted' | 'rejected' | 'countered' | 'withdrawn' | 'expired';
 export type MarketplaceTransactionStatus = 'interest' | 'offer_sent' | 'countered' | 'accepted' | 'reserved' | 'meetup_scheduled' | 'completed' | 'cancelled' | 'expired' | 'no_show' | 'disputed';
+export type TransactionOutcomeCode = 'buyer_cancelled' | 'seller_cancelled' | 'buyer_no_show' | 'seller_no_show' | 'mutual_cancel';
 
 export interface UniversityIdentity {
   country_code: 'MX';
@@ -227,6 +228,9 @@ export interface MarketplaceTransaction {
   meetup_at?: string;
   buyer_confirmed_at?: string;
   seller_confirmed_at?: string;
+  outcome_code?: TransactionOutcomeCode;
+  outcome_actor_id?: string;
+  outcome_recorded_at?: string;
   created_at: string;
   updated_at: string;
 }
