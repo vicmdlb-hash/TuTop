@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Home, MessageCircle, PlusCircle, UserRound, WalletCards } from 'lucide-react';
+import { Home, MessageCircle, PlusCircle, ShieldAlert, UserRound, WalletCards } from 'lucide-react';
 import Feed from './components/Feed';
 import Chatbot from './components/Chatbot';
 import NationalPublishScreen from './components/NationalPublishScreen';
@@ -23,12 +23,16 @@ import { nationalSchemaEnabled } from './services/nationalBackend';
 import { useAppStore } from './store/useAppStore';
 import type { AppTab } from './types';
 import AdminDashboard from './admin/AdminDashboard';
+import ScopedModerationDashboard from './admin/ScopedModerationDashboard';
 
 export default function App() {
+  const path = window.location.pathname;
+  const admin = path.startsWith('/admin');
+  const moderation = path.startsWith('/admin/moderation');
   return (
     <ErrorBoundary>
       <BackendGate>
-        {window.location.pathname.startsWith('/admin') ? <AdminDashboard /> : <MobileApp />}
+        {moderation ? <ScopedModerationDashboard /> : admin ? <><AdminDashboard /><a href="/admin/moderation" className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-2xl border border-violet-300/20 bg-violet-600 px-4 py-3 text-xs font-black text-white shadow-2xl shadow-violet-950/40"><ShieldAlert className="h-4 w-4"/>Moderación V2</a></> : <MobileApp />}
       </BackendGate>
     </ErrorBoundary>
   );
