@@ -120,14 +120,15 @@ test('oferta inicial sólo puede crearla el comprador y no puede falsificar crea
   await assertFails(setDoc(doc(buyer, 'offers/wrong-listing'), offer({ listing_id: 'missing' })));
 });
 
-test('sólo la contraparte puede aceptar/rechazar y sólo el creador retirar', async () => {
+test('sólo la contraparte puede aceptar/rechazar y seller no acepta buyer-offer sin reserva atómica', async () => {
   await seedMarketplace();
   await env.withSecurityRulesDisabled(async (ctx) => setDoc(doc(ctx.firestore(), 'offers/offer-1'), offer()));
   const buyer = env.authenticatedContext('buyer').firestore();
   const seller = env.authenticatedContext('seller').firestore();
   await assertFails(updateDoc(doc(buyer, 'offers/offer-1'), { status: 'accepted', updated_at: now() }));
   await assertFails(updateDoc(doc(seller, 'offers/offer-1'), { status: 'withdrawn', updated_at: now() }));
-  await assertSucceeds(updateDoc(doc(seller, 'offers/offer-1'), { status: 'accepted', updated_at: now() }));
+  await assertFails(updateDoc(doc(seller, 'offers/offer-1'), { status: 'accepted', updated_at: now() }));
+  await assertSucceeds(updateDoc(doc(seller, 'offers/offer-1'), { status: 'rejected', updated_at: now() }));
 });
 
 test('seller puede contraofertar una oferta buyer y buyer puede responder la nueva propuesta', async () => {
