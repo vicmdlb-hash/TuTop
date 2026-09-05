@@ -11,6 +11,7 @@ import OfflineBanner from './components/OfflineBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import BackendGate from './components/BackendGate';
 import WelcomeTour from './components/WelcomeTour';
+import DraftShelf from './components/DraftShelf';
 import { useAppStore } from './store/useAppStore';
 import type { AppTab } from './types';
 import AdminDashboard from './admin/AdminDashboard';
@@ -57,6 +58,8 @@ function MobileApp() {
           </motion.div>
         </AnimatePresence>
       </main>
+
+      {activeTab === 'bot' && !activeChatId && !selectedProductId && <DraftShelf />}
 
       {!activeChatId && (
         <nav className="bottom-nav" aria-label="Navegación principal">
