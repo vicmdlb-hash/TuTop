@@ -5,6 +5,7 @@ const steps = [
   [process.execPath, ['scripts/syntax-check.mjs']],
   [process.execPath, ['scripts/logic-tests.mjs']],
   [process.execPath, ['scripts/marketplace-core-tests.mjs']],
+  [process.execPath, ['scripts/schema-v2-tests.mjs']],
   [process.execPath, ['scripts/functions-domain-tests.mjs']],
   [process.execPath, ['scripts/security-tests.mjs']],
   [process.execPath, ['scripts/policy-scan.mjs']],
