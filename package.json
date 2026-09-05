@@ -48,6 +48,7 @@
     "national-foundation:test": "node scripts/national-foundation-tests.mjs",
     "commerce-intelligence:test": "node scripts/commerce-intelligence-tests.mjs",
     "listing-schema-v2:test": "node scripts/listing-schema-v2-tests.mjs",
+    "offline-performance:test": "node scripts/offline-performance-tests.mjs",
     "deps:mobile:blaze": "node scripts/install-mobile-deps-blaze.mjs",
     "ci:summary": "node scripts/ci-summary.mjs",
     "beta:ready": "node scripts/beta-ready.mjs",
