@@ -57,6 +57,12 @@ jobs:
       - name: Reservation runner safety
         run: npm run reservation-runner:safety:test
 
+      - name: Institutional moderation scope
+        run: npm run institutional-moderation:test
+
+      - name: Credential retention policy
+        run: npm run credential-retention:test
+
       - name: Public seller profile privacy
         run: npm run seller-profile:privacy:test
 
