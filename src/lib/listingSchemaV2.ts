@@ -40,12 +40,7 @@ export type ListingMigrationResult = {
 };
 
 function slug(value: string) {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 function cleanAttributes(value: Product['attributes']) {
@@ -58,6 +53,12 @@ function cleanAttributes(value: Product['attributes']) {
     else if (Array.isArray(item)) output[key] = item.map(String).slice(0, 20).map((entry) => entry.slice(0, 120));
   }
   return output;
+}
+
+function canonicalModeration(product: Product): CanonicalListingV2['moderation_status'] {
+  if (product.moderation_status === 'review') return 'flagged';
+  if (product.moderation_status === 'pending' || product.moderation_status === 'approved' || product.moderation_status === 'rejected') return product.moderation_status;
+  return 'approved';
 }
 
 export function legacyProductToListingV2(product: Product, now = new Date().toISOString()): ListingMigrationResult {
@@ -75,6 +76,7 @@ export function legacyProductToListingV2(product: Product, now = new Date().toIS
   if (!photos.length) blockers.push('missing_photo');
   if (!product.faculty_id && product.facultad) warnings.push('legacy_faculty_name_without_faculty_id');
   if (product.estado === 'Reservado') warnings.push('legacy_reserved_mapped_to_active_listing_transaction_owns_reservation');
+  if (product.moderation_status === 'review') warnings.push('legacy_review_mapped_to_flagged');
 
   if (blockers.length) return { listing: null, blockers, warnings };
 
@@ -105,7 +107,7 @@ export function legacyProductToListingV2(product: Product, now = new Date().toIS
       shipping_available: shipping,
       photo_urls: photos,
       status: canonicalListingStatusFromLegacy(product.estado),
-      moderation_status: product.moderation_status || 'approved',
+      moderation_status: canonicalModeration(product),
       visibility_scope: product.visibility_scope || 'institution',
       published_at: product.estado === 'Activo' ? product.fecha_creacion : undefined,
       created_at: product.fecha_creacion || now,
