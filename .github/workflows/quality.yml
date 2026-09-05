@@ -86,4 +86,4 @@ jobs:
         run: npm install --no-save @firebase/rules-unit-testing firebase firebase-tools
 
       - name: Firestore V2 abuse + atomic batch tests
-        run: npx firebase-tools emulators:exec --only firestore --config firebase.v2.json --project demo-tutop-v2-rules "node --test tests/firestore.v2.rules.test.mjs tests/firestore.v2.atomic.test.mjs"
+        run: npx firebase-tools emulators:exec --only firestore --config firebase.v2.json --project demo-tutop-v2-rules "node --test tests/firestore.v2.rules.test.mjs tests/firestore.v2.atomic.test.mjs tests/firestore.v2.acceptance-atomic.test.mjs"
