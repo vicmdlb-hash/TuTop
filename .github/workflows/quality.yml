@@ -39,6 +39,9 @@ jobs:
       - name: Beta readiness
         run: npm run beta:ready
 
+      - name: V2 staging isolation policy
+        run: npm run v2:staging:readiness:test
+
       - name: V2 catalog dry run
         run: npm run v2:catalog:plan
 
