@@ -26,10 +26,10 @@ export const FACULTIES: FacultyCatalogItem[] = [
 ];
 
 export const SAFE_MEETING_POINTS: ApprovedMeetingPoint[] = [
-  { id: 'uatx-riberena-cafeteria', institution_id: 'uatx', campus_id: 'uatx-riberena', name: 'Cafetería Central · Campus Ribereña', description: 'Zona concurrida dentro del campus; preferente durante horario universitario.', active: true },
-  { id: 'uatx-riberena-entrada', institution_id: 'uatx', campus_id: 'uatx-riberena', name: 'Acceso principal · Campus Ribereña', description: 'Punto visible y con flujo constante de estudiantes.', active: true },
-  { id: 'buap-cu-biblioteca', institution_id: 'buap', campus_id: 'buap-cu', name: 'Zona de Biblioteca · CU BUAP', description: 'Referencia pública y concurrida dentro de Ciudad Universitaria.', active: true },
-  { id: 'unam-cu-biblioteca-central', institution_id: 'unam', campus_id: 'unam-cu', name: 'Explanada Biblioteca Central · UNAM', description: 'Punto público de alta visibilidad; confirma horario antes de acudir.', active: true },
+  { id: 'uatx-riberena-cafeteria', campus_id: 'uatx-riberena', name: 'Cafetería Central · Campus Ribereña', description: 'Zona concurrida dentro del campus; preferente durante horario universitario.', kind: 'cafeteria', is_tutop_safe_point: true, active: true },
+  { id: 'uatx-riberena-entrada', campus_id: 'uatx-riberena', name: 'Acceso principal · Campus Ribereña', description: 'Punto visible y con flujo constante de estudiantes.', kind: 'entrance', is_tutop_safe_point: true, active: true },
+  { id: 'buap-cu-biblioteca', campus_id: 'buap-cu', name: 'Zona de Biblioteca · CU BUAP', description: 'Referencia pública y concurrida dentro de Ciudad Universitaria.', kind: 'library', is_tutop_safe_point: true, active: true },
+  { id: 'unam-cu-biblioteca-central', campus_id: 'unam-cu', name: 'Explanada Biblioteca Central · UNAM', description: 'Punto público de alta visibilidad; confirma horario antes de acudir.', kind: 'library', is_tutop_safe_point: true, active: true },
 ];
 
 export const VISIBILITY_SCOPES: Array<{ id: ListingVisibilityScope; label: string; hint: string }> = [
@@ -41,7 +41,8 @@ export const VISIBILITY_SCOPES: Array<{ id: ListingVisibilityScope; label: strin
 ];
 
 export function safeMeetingPointsFor(campusId?: string, institutionId?: string) {
-  return SAFE_MEETING_POINTS.filter((point) => point.active && (campusId ? point.campus_id === campusId : institutionId ? point.institution_id === institutionId : false));
+  const campusIds = campusId ? [campusId] : institutionId ? CAMPUSES.filter((campus) => campus.institution_id === institutionId).map((campus) => campus.id) : [];
+  return SAFE_MEETING_POINTS.filter((point) => point.active && point.is_tutop_safe_point && campusIds.includes(point.campus_id));
 }
 
 export function verificationBadge(level: VerificationLevel): VerificationBadge {
