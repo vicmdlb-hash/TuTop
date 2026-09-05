@@ -375,25 +375,89 @@ service cloud.firestore {
         && request.auth.uid == request.resource.data.seller_id
         && request.resource.data.buyer_id != request.resource.data.seller_id
         && transactionId == 'tx-' + request.resource.data.accepted_offer_id
-        && request.resource.data.status in ['accepted','reserved']
+        && request.resource.data.status == 'reserved'
+        && request.resource.data.reservation_expires_at is timestamp
+        && request.resource.data.reservation_expires_at > request.time
+        && request.resource.data.reservation_expires_at <= request.time + duration.value(24, 'h')
+        && !('meeting_point_id' in request.resource.data)
+        && !('meetup_at' in request.resource.data)
+        && !('buyer_confirmed_at' in request.resource.data)
+        && !('seller_confirmed_at' in request.resource.data)
         && get(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.status == 'accepted'
         && get(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.listing_id == request.resource.data.listing_id
+        && get(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.chat_id == request.resource.data.chat_id
         && get(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.buyer_id == request.resource.data.buyer_id
         && get(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.seller_id == request.resource.data.seller_id
         && request.resource.data.agreed_amount_mxn == get(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.amount_mxn
         && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
       allow update: if signedIn() && notSuspended()
-        && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id)
+        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]
         && request.resource.data.listing_id == resource.data.listing_id
         && request.resource.data.chat_id == resource.data.chat_id
         && request.resource.data.buyer_id == resource.data.buyer_id
         && request.resource.data.seller_id == resource.data.seller_id
         && request.resource.data.accepted_offer_id == resource.data.accepted_offer_id
         && request.resource.data.agreed_amount_mxn == resource.data.agreed_amount_mxn
+        && request.resource.data.reservation_expires_at == resource.data.reservation_expires_at
         && request.resource.data.created_at == resource.data.created_at
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','reservation_expires_at','meeting_point_id','meetup_at','buyer_confirmed_at','seller_confirmed_at','updated_at'])
-        && request.resource.data.status in ['accepted','reserved','meetup_scheduled','completed','cancelled','expired','no_show','disputed']
-        && fresh(request.resource.data.updated_at);
+        && fresh(request.resource.data.updated_at)
+        && (
+          (
+            resource.data.status in ['reserved','meetup_scheduled']
+            && request.resource.data.status == 'meetup_scheduled'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','meeting_point_id','meetup_at','updated_at'])
+            && (resource.data.status != 'reserved' || resource.data.reservation_expires_at > request.time)
+            && !('buyer_confirmed_at' in resource.data)
+            && !('seller_confirmed_at' in resource.data)
+            && request.resource.data.meeting_point_id is string
+            && exists(/databases/$(database)/documents/approved_meeting_points/$(request.resource.data.meeting_point_id))
+            && get(/databases/$(database)/documents/approved_meeting_points/$(request.resource.data.meeting_point_id)).data.active == true
+            && get(/databases/$(database)/documents/approved_meeting_points/$(request.resource.data.meeting_point_id)).data.is_tutop_safe_point == true
+            && get(/databases/$(database)/documents/approved_meeting_points/$(request.resource.data.meeting_point_id)).data.campus_id == productDoc(resource.data.listing_id).data.campus_id
+            && request.resource.data.meetup_at is timestamp
+            && request.resource.data.meetup_at > request.time
+            && request.resource.data.meetup_at <= request.time + duration.value(30, 'd')
+          )
+          ||
+          (
+            request.auth.uid == resource.data.buyer_id
+            && resource.data.status == 'meetup_scheduled'
+            && !('buyer_confirmed_at' in resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','buyer_confirmed_at','updated_at'])
+            && fresh(request.resource.data.buyer_confirmed_at)
+            && (
+              (('seller_confirmed_at' in resource.data) && request.resource.data.status == 'completed')
+              || (!('seller_confirmed_at' in resource.data) && request.resource.data.status == 'meetup_scheduled')
+            )
+          )
+          ||
+          (
+            request.auth.uid == resource.data.seller_id
+            && resource.data.status == 'meetup_scheduled'
+            && !('seller_confirmed_at' in resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','seller_confirmed_at','updated_at'])
+            && fresh(request.resource.data.seller_confirmed_at)
+            && (
+              (('buyer_confirmed_at' in resource.data) && request.resource.data.status == 'completed')
+              || (!('buyer_confirmed_at' in resource.data) && request.resource.data.status == 'meetup_scheduled')
+            )
+          )
+          ||
+          (
+            resource.data.status in ['reserved','meetup_scheduled']
+            && request.resource.data.status == 'disputed'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+          )
+          ||
+          (
+            request.auth.uid == resource.data.seller_id
+            && resource.data.status == 'reserved'
+            && resource.data.reservation_expires_at is timestamp
+            && resource.data.reservation_expires_at <= request.time
+            && request.resource.data.status == 'expired'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+          )
+        );
       allow delete: if false;
     }
 
@@ -530,18 +594,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /moderation_cases/{caseId} {
-      allow read, write: if isAdmin();
-    }
+    match /moderation_cases/{caseId} { allow read, write: if isAdmin(); }
     match /audit_log/{entryId} {
       allow read: if isAdmin();
       allow create: if isAdmin() && request.resource.data.admin_uid == request.auth.uid && fresh(request.resource.data.created_at);
       allow update, delete: if false;
     }
-    match /reputation/{uid} {
-      allow read: if signedIn();
-      allow write: if isAdmin();
-    }
+    match /reputation/{uid} { allow read: if signedIn(); allow write: if isAdmin(); }
 
     match /moderationStatus/{uid} {
       allow read: if owner(uid) || isAdmin();
@@ -554,11 +613,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /admins/{uid} {
-      allow read: if owner(uid) || isAdmin();
-      allow write: if false;
-    }
-
+    match /admins/{uid} { allow read: if owner(uid) || isAdmin(); allow write: if false; }
     match /{document=**} { allow read, write: if false; }
   }
 }
