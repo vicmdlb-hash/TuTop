@@ -26,10 +26,12 @@ const run = (command, args) => {
 
 console.log(`TuTop V2 staging deploy target: ${project}`);
 console.log('Config: firebase.v2.json');
+console.log('Rules: firebase/firestore.v2.generated.rules (generadas antes de deploy)');
 console.log('Scope: firestore:rules,firestore:indexes únicamente');
 
 run('npm', ['run', 'check']);
 run('npm', ['run', 'typecheck']);
+run('npm', ['run', 'v2:rules:prepare']);
 run('npm', ['run', 'v2:catalog:plan']);
 run('npx', [
   'firebase-tools',
