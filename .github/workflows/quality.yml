@@ -45,6 +45,9 @@ jobs:
       - name: Reputation evidence contract
         run: npm run reputation:test
 
+      - name: Public seller profile privacy
+        run: npm run seller-profile:privacy:test
+
       - name: Typecheck
         run: npm run typecheck
 
