@@ -45,6 +45,7 @@
     "saved-search-notification:test": "node scripts/saved-search-notification-tests.mjs",
     "marketplace-observability:test": "node scripts/marketplace-observability-tests.mjs",
     "seller-profile:privacy:test": "node scripts/seller-profile-privacy-tests.mjs",
+    "national-foundation:test": "node scripts/national-foundation-tests.mjs",
     "deps:mobile:blaze": "node scripts/install-mobile-deps-blaze.mjs",
     "ci:summary": "node scripts/ci-summary.mjs",
     "beta:ready": "node scripts/beta-ready.mjs",
@@ -53,7 +54,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "TuTop — marketplace universitario UATx",
+  "description": "TuTop — red universitaria y marketplace estudiantil de México",
   "dependencies": {
     "framer-motion": "^13.1.1",
     "lucide-react": "^1.34.0",
