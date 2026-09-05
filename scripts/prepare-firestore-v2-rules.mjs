@@ -111,6 +111,82 @@ const scopedAdminHelpers = `${isAdminLine}
         || (adminHasRole('support') && ('kind' in data) && data.kind == 'appeal');
     }`;
 
+const canonicalListingsV2 = `    match /listings_v2/{listingId} {
+      allow read: if signedIn() && (
+        (resource.data.status == 'active' && resource.data.moderation_status == 'approved')
+        || request.auth.uid == resource.data.seller_id
+        || canModerateInstitution(resource.data)
+      );
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly([
+          'schema_version','seller_id','institution_id','campus_id','city_id','faculty_id','career_id','community_id',
+          'category_id','subcategory_id','title','description','attributes','price_mxn','negotiable','quantity','condition',
+          'delivery_methods','meeting_point_ids','shipping_available','photo_urls','status','moderation_status','visibility_scope',
+          'published_at','created_at','updated_at'
+        ])
+        && request.resource.data.schema_version == 2
+        && request.resource.data.seller_id == request.auth.uid
+        && request.resource.data.institution_id is string && request.resource.data.institution_id.size() >= 2
+        && request.resource.data.campus_id is string && request.resource.data.campus_id.size() >= 2
+        && validUniversityMetadata(request.resource.data)
+        && productMatchesSellerIdentity(request.resource.data, request.auth.uid)
+        && request.resource.data.category_id is string && request.resource.data.category_id.size() >= 2 && request.resource.data.category_id.size() <= 80
+        && (!('subcategory_id' in request.resource.data) || (request.resource.data.subcategory_id is string && request.resource.data.subcategory_id.size() <= 80))
+        && request.resource.data.title is string && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 120
+        && request.resource.data.description is string && request.resource.data.description.size() <= 3000
+        && request.resource.data.attributes is map
+        && request.resource.data.price_mxn is number && request.resource.data.price_mxn >= 0 && request.resource.data.price_mxn <= 1000000
+        && request.resource.data.negotiable is bool
+        && request.resource.data.quantity is int && request.resource.data.quantity >= 1 && request.resource.data.quantity <= 99
+        && request.resource.data.delivery_methods is list && request.resource.data.delivery_methods.size() >= 1 && request.resource.data.delivery_methods.size() <= 4
+        && request.resource.data.meeting_point_ids is list && request.resource.data.meeting_point_ids.size() <= 8
+        && request.resource.data.shipping_available is bool
+        && request.resource.data.photo_urls is list && request.resource.data.photo_urls.size() >= 1 && request.resource.data.photo_urls.size() <= 4
+        && request.resource.data.photo_urls[0] is string && request.resource.data.photo_urls[0].size() <= 180000
+        && (request.resource.data.photo_urls.size() < 2 || (request.resource.data.photo_urls[1] is string && request.resource.data.photo_urls[1].size() <= 180000))
+        && (request.resource.data.photo_urls.size() < 3 || (request.resource.data.photo_urls[2] is string && request.resource.data.photo_urls[2].size() <= 180000))
+        && (request.resource.data.photo_urls.size() < 4 || (request.resource.data.photo_urls[3] is string && request.resource.data.photo_urls[3].size() <= 180000))
+        && request.resource.data.status in ['draft','active']
+        && request.resource.data.moderation_status == 'pending'
+        && validVisibilityScope(request.resource.data.visibility_scope)
+        && (request.resource.data.visibility_scope != 'national' || request.resource.data.shipping_available == true)
+        && (!('published_at' in request.resource.data) || request.resource.data.published_at is timestamp)
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if signedIn() && notSuspended() && (
+        (
+          request.auth.uid == resource.data.seller_id
+          && request.resource.data.schema_version == resource.data.schema_version
+          && request.resource.data.seller_id == resource.data.seller_id
+          && request.resource.data.institution_id == resource.data.institution_id
+          && request.resource.data.campus_id == resource.data.campus_id
+          && request.resource.data.created_at == resource.data.created_at
+          && request.resource.data.moderation_status == resource.data.moderation_status
+          && request.resource.data.status in ['draft','active','paused','sold_out','archived']
+          && (
+            request.resource.data.status == resource.data.status
+            || (resource.data.status == 'draft' && request.resource.data.status in ['active','archived'])
+            || (resource.data.status == 'active' && request.resource.data.status in ['paused','sold_out','archived'])
+            || (resource.data.status == 'paused' && request.resource.data.status in ['active','archived'])
+            || (resource.data.status == 'sold_out' && request.resource.data.status == 'archived')
+          )
+          && validUniversityMetadata(request.resource.data)
+          && request.resource.data.visibility_scope in ['campus','institution','university-zone','city','national']
+          && (request.resource.data.visibility_scope != 'national' || request.resource.data.shipping_available == true)
+          && fresh(request.resource.data.updated_at)
+        )
+        ||
+        (
+          canModerateInstitution(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['moderation_status','updated_at'])
+          && request.resource.data.moderation_status in ['pending','approved','rejected','flagged']
+          && fresh(request.resource.data.updated_at)
+        )
+      );
+      allow delete: if false;
+    }
+
+`;
+
 requireOnce(source, permissiveReputation, 'reputation permisivo');
 requireOnce(source, isAdminLine, 'helper isAdmin');
 
@@ -234,5 +310,9 @@ generated = replaceSection(
   'moderationStatus scope',
 );
 
+const offersMarker = '    match /offers/{offerId} {';
+requireOnce(generated, offersMarker, 'match offers');
+generated = generated.replace(offersMarker, canonicalListingsV2 + offersMarker);
+
 fs.writeFileSync(outputPath, generated);
-console.log(`✅ Rules V2 generadas con reputation estricto, moderación por alcance y privacidad: ${outputPath}`);
+console.log(`✅ Rules V2 generadas con reputation estricto, moderación por alcance, privacidad y listings_v2 canónicos: ${outputPath}`);
