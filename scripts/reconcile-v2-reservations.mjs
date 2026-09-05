@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 
 if (process.env.TUTOP_NODE_TS_STRIP !== '1') {
   const result = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
@@ -33,12 +34,16 @@ function assertStagingTarget() {
   if (apply && allow !== 'staging-v2') stop('para escribir define TUTOP_ALLOW_V2_RECONCILE=staging-v2 después de revisar el dry-run.');
 }
 
-function accessToken() {
+async function accessToken() {
   const explicit = String(process.env.TUTOP_FIREBASE_ACCESS_TOKEN || '').trim();
   if (explicit) return explicit;
   const result = spawnSync('gcloud', ['auth', 'print-access-token'], { encoding: 'utf8', shell: process.platform === 'win32' });
   if (result.status === 0 && result.stdout.trim()) return result.stdout.trim();
-  stop('falta TUTOP_FIREBASE_ACCESS_TOKEN y gcloud no entregó un access token.');
+  try {
+    return await firebaseCiAccessToken();
+  } catch (error) {
+    stop(`no se pudo obtener access token para reconciliación V2: ${error.message}`);
+  }
 }
 
 function decodeValue(value = {}) {
@@ -91,7 +96,7 @@ async function requestJson(url, options = {}) {
 }
 
 assertStagingTarget();
-const token = accessToken();
+const token = await accessToken();
 const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
 
 const queryResponse = await requestJson(`${base}:runQuery`, {
