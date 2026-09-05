@@ -57,7 +57,7 @@ async function seedMarketplace() {
 
 function offer(overrides = {}) {
   return {
-    listing_id: 'listing', chat_id: 'chat-buyer-listing', buyer_id: 'buyer', seller_id: 'seller', amount_mxn: 450,
+    listing_id: 'listing', chat_id: 'chat-buyer-listing', buyer_id: 'buyer', seller_id: 'seller', created_by: 'buyer', amount_mxn: 450,
     status: 'pending', expires_at: future(1440), created_at: now(), updated_at: now(), ...overrides,
   };
 }
@@ -95,17 +95,20 @@ test('V2 mantiene privados offers y transactions frente a terceros', async () =>
   await assertFails(getDoc(doc(stranger, 'transactions_v2/tx-offer-1')));
 });
 
-test('sólo el comprador del chat puede crear la oferta inicial', async () => {
+test('oferta inicial sólo puede crearla el comprador y no puede falsificar created_by', async () => {
   await seedMarketplace();
   const buyer = env.authenticatedContext('buyer').firestore();
+  const seller = env.authenticatedContext('seller').firestore();
   const stranger = env.authenticatedContext('stranger').firestore();
   await assertSucceeds(setDoc(doc(buyer, 'offers/offer-1'), offer()));
-  await assertFails(setDoc(doc(stranger, 'offers/evil'), offer({ buyer_id: 'stranger' })));
+  await assertFails(setDoc(doc(seller, 'offers/seller-initial'), offer({ created_by: 'seller' })));
+  await assertFails(setDoc(doc(buyer, 'offers/forged-creator'), offer({ created_by: 'seller' })));
+  await assertFails(setDoc(doc(stranger, 'offers/evil'), offer({ buyer_id: 'stranger', created_by: 'stranger' })));
   await assertFails(setDoc(doc(buyer, 'offers/wrong-seller'), offer({ seller_id: 'stranger' })));
   await assertFails(setDoc(doc(buyer, 'offers/wrong-listing'), offer({ listing_id: 'missing' })));
 });
 
-test('comprador no puede aceptar su propia oferta y vendedor no puede retirarla', async () => {
+test('sólo la contraparte puede aceptar/rechazar y sólo el creador retirar', async () => {
   await seedMarketplace();
   await env.withSecurityRulesDisabled(async (ctx) => setDoc(doc(ctx.firestore(), 'offers/offer-1'), offer()));
   const buyer = env.authenticatedContext('buyer').firestore();
@@ -113,6 +116,31 @@ test('comprador no puede aceptar su propia oferta y vendedor no puede retirarla'
   await assertFails(updateDoc(doc(buyer, 'offers/offer-1'), { status: 'accepted', updated_at: now() }));
   await assertFails(updateDoc(doc(seller, 'offers/offer-1'), { status: 'withdrawn', updated_at: now() }));
   await assertSucceeds(updateDoc(doc(seller, 'offers/offer-1'), { status: 'accepted', updated_at: now() }));
+});
+
+test('seller puede contraofertar una oferta buyer y buyer puede responder la nueva propuesta', async () => {
+  await seedMarketplace();
+  await env.withSecurityRulesDisabled(async (ctx) => setDoc(doc(ctx.firestore(), 'offers/offer-1'), offer()));
+  const buyer = env.authenticatedContext('buyer').firestore();
+  const seller = env.authenticatedContext('seller').firestore();
+
+  await assertSucceeds(setDoc(doc(seller, 'offers/counter-1'), offer({ created_by: 'seller', amount_mxn: 480, parent_offer_id: 'offer-1' })));
+  await assertFails(setDoc(doc(seller, 'offers/counter-self'), offer({ created_by: 'seller', amount_mxn: 490, parent_offer_id: 'counter-1' })));
+  await assertSucceeds(updateDoc(doc(seller, 'offers/offer-1'), { status: 'countered', counter_offer_id: 'counter-1', updated_at: now() }));
+  await assertFails(updateDoc(doc(seller, 'offers/counter-1'), { status: 'accepted', updated_at: now() }));
+  await assertSucceeds(updateDoc(doc(buyer, 'offers/counter-1'), { status: 'accepted', updated_at: now() }));
+});
+
+test('buyer también puede contraofertar una propuesta seller pendiente', async () => {
+  await seedMarketplace();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'offers/offer-1'), offer({ status: 'countered', counter_offer_id: 'counter-1' }));
+    await setDoc(doc(db, 'offers/counter-1'), offer({ created_by: 'seller', amount_mxn: 480, parent_offer_id: 'offer-1' }));
+  });
+  const buyer = env.authenticatedContext('buyer').firestore();
+  await assertSucceeds(setDoc(doc(buyer, 'offers/counter-2'), offer({ created_by: 'buyer', amount_mxn: 465, parent_offer_id: 'counter-1' })));
+  await assertSucceeds(updateDoc(doc(buyer, 'offers/counter-1'), { status: 'countered', counter_offer_id: 'counter-2', updated_at: now() }));
 });
 
 test('transacción sólo la crea el vendedor, con importe exacto e ID derivado de la oferta', async () => {
