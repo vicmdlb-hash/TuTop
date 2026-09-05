@@ -1,6 +1,6 @@
 import { FirebaseRestClient } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
-import type { DemandRequest, ListingVisibilityScope, MarketplaceTransaction, Offer, OfferStatus, SavedSearch, UniversityIdentity } from '../types';
+import type { DemandRequest, ListingVisibilityScope, MarketplaceTransaction, Offer, OfferStatus, Product, SavedSearch, UniversityIdentity } from '../types';
 
 function nowIso() { return new Date().toISOString(); }
 function localId(prefix: string) {
@@ -49,6 +49,32 @@ class NationalMarketplaceBackend {
     await client.setDocument(`products/${listingId}`, { ...metadata, updated_at: nowIso() }, { merge: true });
   }
 
+  async loadListingMetadata(limit = 200) {
+    this.requireV2();
+    const client = this.getClient();
+    if (!client.currentSession?.uid) throw new Error('AUTH_REQUIRED');
+    const docs = await client.runQuery<any>('products', [], [{ field: 'fecha_creacion', direction: 'DESCENDING' }], limit);
+    const map: Record<string, Partial<Product>> = {};
+    for (const doc of docs) {
+      const data = doc.data || {};
+      map[doc.id] = {
+        country_code: data.country_code,
+        state_code: data.state_code,
+        city_id: data.city_id,
+        city_name: data.city_name,
+        institution_id: data.institution_id,
+        campus_id: data.campus_id,
+        faculty_id: data.faculty_id,
+        career_id: data.career_id,
+        visibility_scope: data.visibility_scope,
+        listing_kind: data.listing_kind,
+        shipping_available: data.shipping_available,
+        estado: data.estado,
+      };
+    }
+    return map;
+  }
+
   async createOffer(input: { listingId: string; chatId: string; sellerId: string; amountMxn: number; expiresAt?: string; parentOfferId?: string }) {
     this.requireV2();
     const client = this.getClient();
@@ -93,17 +119,9 @@ class NationalMarketplaceBackend {
     await this.updateOffer(offer.id, 'accepted');
     const transactionId = localId('tx');
     const transaction: MarketplaceTransaction = {
-      id: transactionId,
-      listing_id: offer.listing_id,
-      chat_id: offer.chat_id,
-      buyer_id: offer.buyer_id,
-      seller_id: offer.seller_id,
-      accepted_offer_id: offer.id,
-      agreed_amount_mxn: offer.amount_mxn,
-      status: 'reserved',
-      reservation_expires_at: new Date(Date.now() + reserveMinutes * 60_000).toISOString(),
-      created_at: at,
-      updated_at: at,
+      id: transactionId, listing_id: offer.listing_id, chat_id: offer.chat_id, buyer_id: offer.buyer_id, seller_id: offer.seller_id,
+      accepted_offer_id: offer.id, agreed_amount_mxn: offer.amount_mxn, status: 'reserved',
+      reservation_expires_at: new Date(Date.now() + reserveMinutes * 60_000).toISOString(), created_at: at, updated_at: at,
     };
     const { id: _id, ...data } = transaction;
     await client.setDocument(`transactions_v2/${transactionId}`, data, { exists: false });
