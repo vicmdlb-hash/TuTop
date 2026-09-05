@@ -1,5 +1,5 @@
-import type { Product } from '../types';
-import { normalizeNationalSearch } from './nationalSearch';
+import type { Product } from '../types/index.ts';
+import { normalizeNationalSearch } from './nationalSearch.ts';
 
 export type PricingEvidence = {
   sample_size: number;
