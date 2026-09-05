@@ -22,6 +22,8 @@ Comprar y vender debe sentirse rápido por defecto y detallado solo cuando la pe
 ### Publicar
 - Dos modos: **Publicación rápida** y **Más detalles**.
 - Borrador automático en el dispositivo.
+- Estantería de borradores múltiples: guardar copia, recuperar y eliminar hasta 12 preparaciones locales.
+- Los borradores múltiples funcionan sin conexión y no consumen Firestore.
 - Indicador de calidad/completitud de publicación.
 - Datos esenciales primero: fotos, título, precio, cantidad, categoría y coordinación de entrega.
 - Reordenamiento de fotos y selección implícita de portada mediante el primer lugar.
@@ -96,10 +98,11 @@ El backend Spark desplegado en 0.7.0 permite un conjunto estricto de campos, cat
 - Las categorías nuevas del catálogo maestro todavía no se activan en producción si las reglas actuales no las aceptan.
 - Aceptar/rechazar/contraofertar todavía se representa como mensajes estructurados por la UI, no como una entidad de oferta persistente con máquina de estados en Firestore.
 - Todavía no existe reserva transaccional automática.
+- Los borradores están ligados al dispositivo actual hasta que exista sincronización de borradores en backend.
 - No se expone domicilio exacto públicamente.
 
 ## No se presenta como terminado todavía
-Quedan para siguientes bloques de 0.8/0.9: varios borradores simultáneos, migración segura del catálogo ampliado y puntos de entrega, ofertas/reservas persistentes, notificaciones push, IA externa para Topi, análisis real de fotografías, publicación por cámara/voz, solicitudes “Busco…”, reputación avanzada, Puntos TuTop, offline ampliado y release de Play Store.
+Quedan para siguientes bloques de 0.8/0.9: migración segura del catálogo ampliado y puntos de entrega, ofertas/reservas persistentes, notificaciones push, IA externa para Topi, análisis real de fotografías, publicación por cámara/voz, solicitudes “Busco…”, reputación avanzada, Puntos TuTop, offline ampliado y release de Play Store.
 
 ## Criterio de salida
 Antes de integrar a `main`, la rama debe pasar:
