@@ -1,6 +1,6 @@
 import { FirebaseRestClient } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
-import type { DemandRequest, ListingVisibilityScope, Offer, OfferStatus, SavedSearch, UniversityIdentity } from '../types';
+import type { DemandRequest, ListingVisibilityScope, MarketplaceTransaction, Offer, OfferStatus, SavedSearch, UniversityIdentity } from '../types';
 
 function nowIso() { return new Date().toISOString(); }
 function localId(prefix: string) {
@@ -30,28 +30,18 @@ class NationalMarketplaceBackend {
     if (!uid) throw new Error('AUTH_REQUIRED');
     if (!identity.institution_id) throw new Error('INSTITUTION_REQUIRED');
     await client.setDocument(`users/${uid}`, {
-      facultad: legacyFaculty.trim().slice(0, 120),
-      country_code: 'MX',
-      state_code: identity.state_code,
-      city_id: identity.city_id,
-      city_name: identity.city_name,
-      institution_id: identity.institution_id,
-      institution_name: identity.institution_name,
-      campus_id: identity.campus_id,
-      campus_name: identity.campus_name,
-      faculty_id: identity.faculty_id,
-      faculty_name: identity.faculty_name,
-      career_id: identity.career_id,
-      career_name: identity.career_name,
-      updated_at: nowIso(),
+      facultad: legacyFaculty.trim().slice(0, 120), country_code: 'MX', state_code: identity.state_code,
+      city_id: identity.city_id, city_name: identity.city_name, institution_id: identity.institution_id,
+      institution_name: identity.institution_name, campus_id: identity.campus_id, campus_name: identity.campus_name,
+      faculty_id: identity.faculty_id, faculty_name: identity.faculty_name, career_id: identity.career_id,
+      career_name: identity.career_name, updated_at: nowIso(),
     }, { merge: true });
   }
 
   async enrichListing(listingId: string, metadata: {
     country_code?: 'MX'; state_code?: string; city_id?: string; city_name?: string;
     institution_id?: string; campus_id?: string; faculty_id?: string; career_id?: string;
-    visibility_scope?: ListingVisibilityScope; listing_kind?: 'offer'; shipping_available?: boolean;
-    meeting_point_id?: string;
+    visibility_scope?: ListingVisibilityScope; listing_kind?: 'offer'; shipping_available?: boolean; meeting_point_id?: string;
   }) {
     this.requireV2();
     const client = this.getClient();
@@ -68,32 +58,58 @@ class NationalMarketplaceBackend {
     const offerId = localId('offer');
     const at = nowIso();
     const offer: Offer = {
-      id: offerId,
-      listing_id: input.listingId,
-      chat_id: input.chatId,
-      buyer_id: buyerId,
-      seller_id: input.sellerId,
-      amount_mxn: Math.round(input.amountMxn * 100) / 100,
-      status: 'pending',
-      parent_offer_id: input.parentOfferId,
-      expires_at: input.expiresAt,
-      created_at: at,
-      updated_at: at,
+      id: offerId, listing_id: input.listingId, chat_id: input.chatId, buyer_id: buyerId, seller_id: input.sellerId,
+      amount_mxn: Math.round(input.amountMxn * 100) / 100, status: 'pending', parent_offer_id: input.parentOfferId,
+      expires_at: input.expiresAt, created_at: at, updated_at: at,
     };
     const { id: _id, ...data } = offer;
     await client.setDocument(`offers/${offerId}`, data, { exists: false });
+    await client.setDocument(`chats/${input.chatId}`, { current_offer_id: offerId, updated_at: at }, { merge: true });
     return offer;
+  }
+
+  async listOffersForChat(chatId: string) {
+    this.requireV2();
+    const client = this.getClient();
+    if (!client.currentSession?.uid) throw new Error('AUTH_REQUIRED');
+    const docs = await client.runQuery<any>('offers', [{ field: 'chat_id', op: 'EQUAL', value: chatId }], [{ field: 'created_at', direction: 'DESCENDING' }], 30);
+    return docs.map((doc) => ({ id: doc.id, ...doc.data } as Offer));
   }
 
   async updateOffer(offerId: string, status: Extract<OfferStatus, 'accepted' | 'rejected' | 'countered' | 'withdrawn'>, counterOfferId?: string) {
     this.requireV2();
     const client = this.getClient();
     if (!client.currentSession?.uid) throw new Error('AUTH_REQUIRED');
-    await client.setDocument(`offers/${offerId}`, {
-      status,
-      ...(counterOfferId ? { counter_offer_id: counterOfferId } : {}),
-      updated_at: nowIso(),
-    }, { merge: true });
+    await client.setDocument(`offers/${offerId}`, { status, ...(counterOfferId ? { counter_offer_id: counterOfferId } : {}), updated_at: nowIso() }, { merge: true });
+  }
+
+  async acceptOfferAndCreateTransaction(offer: Offer, reserveMinutes: 30 | 120 | 1440 = 120) {
+    this.requireV2();
+    const client = this.getClient();
+    const actor = client.currentSession?.uid;
+    if (!actor) throw new Error('AUTH_REQUIRED');
+    if (actor !== offer.seller_id) throw new Error('SELLER_REQUIRED');
+    const at = nowIso();
+    await this.updateOffer(offer.id, 'accepted');
+    const transactionId = localId('tx');
+    const transaction: MarketplaceTransaction = {
+      id: transactionId,
+      listing_id: offer.listing_id,
+      chat_id: offer.chat_id,
+      buyer_id: offer.buyer_id,
+      seller_id: offer.seller_id,
+      accepted_offer_id: offer.id,
+      agreed_amount_mxn: offer.amount_mxn,
+      status: 'reserved',
+      reservation_expires_at: new Date(Date.now() + reserveMinutes * 60_000).toISOString(),
+      created_at: at,
+      updated_at: at,
+    };
+    const { id: _id, ...data } = transaction;
+    await client.setDocument(`transactions_v2/${transactionId}`, data, { exists: false });
+    await client.setDocument(`chats/${offer.chat_id}`, { transaction_id: transactionId, current_offer_id: offer.id, updated_at: at }, { merge: true });
+    await client.setDocument(`products/${offer.listing_id}`, { estado: 'Reservado', updated_at: at }, { merge: true });
+    return transaction;
   }
 
   async createDemandRequest(input: Omit<DemandRequest, 'id' | 'buyer_id' | 'status' | 'created_at' | 'updated_at'>) {
