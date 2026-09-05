@@ -10,6 +10,7 @@ import ProductDetail from './components/ProductDetail';
 import OfflineBanner from './components/OfflineBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import BackendGate from './components/BackendGate';
+import WelcomeTour from './components/WelcomeTour';
 import { useAppStore } from './store/useAppStore';
 import type { AppTab } from './types';
 import AdminDashboard from './admin/AdminDashboard';
@@ -48,6 +49,7 @@ function MobileApp() {
   return (
     <div className="app-shell">
       <OfflineBanner />
+      <WelcomeTour />
       <main className="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))]">
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
