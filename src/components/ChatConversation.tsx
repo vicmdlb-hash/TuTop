@@ -6,6 +6,7 @@ import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBack
 import { onlineBackend } from '../services/onlineBackend';
 import { useAppStore } from '../store/useAppStore';
 import type { Offer } from '../types';
+import TransactionReservationCard from './TransactionReservationCard';
 
 const BUYER_QUICK = ['¿Sigue disponible?', '¿Dónde entregas?', '¿Puedes entregarlo mañana?', 'Me interesa'];
 const SELLER_QUICK = ['Sí, sigue disponible', 'Podemos acordar punto y horario', '¿Qué horario te funciona?', 'Puedo resolver tus dudas'];
@@ -102,7 +103,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
       }
       submitText(`Contraoferta: $${Math.round(amount).toLocaleString('es-MX')} por ${product.titulo}. Si te funciona, acordamos entrega.`);
       setCounterAmount(''); setCounterOpen(false);
-      setStructuredMessage(nationalSchemaEnabled() ? 'La oferta anterior quedó marcada como contraofertada.' : null);
+      setStructuredMessage(nationalSchemaEnabled() ? 'La oferta anterior quedó marcada como contraofertada. La nueva cifra sigue en modo guiado hasta cerrar las reglas de contraoferta.' : null);
     } finally { setStructuredBusy(false); }
   };
 
@@ -148,6 +149,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
       <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-white/5 bg-[#0d1725] px-3 py-2 text-[10px] text-muted"><MapPin className="h-3.5 w-3.5 text-success" /><span className="min-w-0 flex-1 truncate">{product.punto_encuentro}</span><button onClick={() => void reportChat()} className="inline-flex items-center gap-1 text-slate-500" aria-label="Reportar conversación"><Flag className="h-3.5 w-3.5" />Reportar</button></div>
       <div className="mx-4 mt-2 flex items-center gap-2 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.05] px-3 py-2 text-[9px] leading-relaxed text-slate-400"><ShieldCheck className="h-4 w-4 shrink-0 text-emerald-300" />Acuérdense de verse en un lugar público. No compartas tu domicilio exacto si no es necesario.</div>
       {structuredMessage && <div className="mx-4 mt-2 rounded-xl border border-violet-400/10 bg-violet-500/[0.06] px-3 py-2 text-[9px] text-violet-200">{structuredMessage}</div>}
+      <TransactionReservationCard chatId={chatId} currentUserId={user.id} />
 
       <div className="mx-4 mt-2 flex gap-2 overflow-x-auto pb-1 scrollbar-none">{quickMessages.map((message) => <button key={message} onClick={() => submitText(message)} className="shrink-0 rounded-full border border-white/5 bg-white/[0.035] px-3 py-2 text-[9px] font-bold text-slate-400">{message}</button>)}{isBuyer && <button onClick={() => setOfferOpen((value) => !value)} className="shrink-0 rounded-full border border-emerald-400/10 bg-emerald-500/10 px-3 py-2 text-[9px] font-bold text-emerald-300"><CircleDollarSign className="mr-1 inline h-3.5 w-3.5" />Hacer oferta</button>}</div>
 
