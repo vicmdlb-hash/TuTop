@@ -28,9 +28,7 @@ function assertStagingTarget() {
   if (!projectId) stop('falta TUTOP_FIREBASE_PROJECT_ID. Usa un proyecto dedicado a beta/staging V2.');
   if (projectId === historicalProject) stop(`${historicalProject} es el proyecto histórico de TuTop y no puede usarse para reconciliación V2.`);
   if (/prod(uction)?/i.test(projectId) && process.env.TUTOP_ALLOW_PRODUCTION_FIREBASE !== '1') stop('el project ID parece producción.');
-  if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID !== '1') {
-    stop('el project ID no parece staging/beta/dev/test.');
-  }
+  if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID !== '1') stop('el project ID no parece staging/beta/dev/test.');
   if (apply && allow !== 'staging-v2') stop('para escribir define TUTOP_ALLOW_V2_RECONCILE=staging-v2 después de revisar el dry-run.');
 }
 
@@ -39,11 +37,8 @@ async function accessToken() {
   if (explicit) return explicit;
   const result = spawnSync('gcloud', ['auth', 'print-access-token'], { encoding: 'utf8', shell: process.platform === 'win32' });
   if (result.status === 0 && result.stdout.trim()) return result.stdout.trim();
-  try {
-    return await firebaseCiAccessToken();
-  } catch (error) {
-    stop(`no se pudo obtener access token para reconciliación V2: ${error.message}`);
-  }
+  try { return await firebaseCiAccessToken(); }
+  catch (error) { stop(`no se pudo obtener access token para reconciliación V2: ${error.message}`); }
 }
 
 function decodeValue(value = {}) {
@@ -98,33 +93,29 @@ async function requestJson(url, options = {}) {
 assertStagingTarget();
 const token = await accessToken();
 const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
-
 const queryResponse = await requestJson(`${base}:runQuery`, {
   method: 'POST',
   body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'transactions_v2' }], limit: maxDocs } }),
 });
 
-const transactions = (queryResponse || [])
-  .filter((row) => row.document)
-  .map((row) => ({
-    id: row.document.name.split('/').pop(),
-    ...decodeFields(row.document.fields || {}),
-  }));
+const transactions = (queryResponse || []).filter((row) => row.document).map((row) => ({
+  id: row.document.name.split('/').pop(),
+  ...decodeFields(row.document.fields || {}),
+}));
 
 const plans = [];
 for (const transaction of transactions) {
   if (!transaction.listing_id) continue;
-  let productStatus = 'Archivado';
+  let listingStatus = 'archived';
   try {
-    const product = await requestJson(`${base}/products/${encodeURIComponent(transaction.listing_id)}`);
-    productStatus = decodeFields(product.fields || {}).estado || productStatus;
+    const listing = await requestJson(`${base}/listings_v2/${encodeURIComponent(transaction.listing_id)}`);
+    listingStatus = decodeFields(listing.fields || {}).status || listingStatus;
   } catch (error) {
-    plans.push({ transaction_id: transaction.id, listing_id: transaction.listing_id, kind: 'none', reason: `product_unavailable:${error.message}` });
+    plans.push({ transaction_id: transaction.id, listing_id: transaction.listing_id, kind: 'none', reason: `listing_unavailable:${error.message}` });
     continue;
   }
-
-  const plan = reservationReconciliationPlan({ transaction, productStatus });
-  plans.push({ transaction_id: transaction.id, listing_id: transaction.listing_id, current_transaction_status: transaction.status, current_product_status: productStatus, ...plan });
+  const plan = reservationReconciliationPlan({ transaction, listingStatus });
+  plans.push({ transaction_id: transaction.id, listing_id: transaction.listing_id, current_transaction_status: transaction.status, current_listing_status: listingStatus, ...plan });
 }
 
 const actionable = plans.filter((plan) => plan.kind !== 'none');
@@ -146,16 +137,13 @@ for (const plan of actionable) {
   const writes = [];
   if (plan.kind === 'expire_reserved') {
     writes.push(patchWrite(`transactions_v2/${plan.transaction_id}`, { status: 'expired', updated_at: updatedAt }));
-    writes.push(patchWrite(`products/${plan.listing_id}`, { estado: 'Activo', updated_at: updatedAt }));
-  } else if (plan.kind === 'repair_expired_listing') {
-    writes.push(patchWrite(`products/${plan.listing_id}`, { estado: 'Activo', updated_at: updatedAt }));
   } else if (plan.kind === 'repair_completed_listing') {
-    writes.push(patchWrite(`products/${plan.listing_id}`, { estado: 'Vendido', updated_at: updatedAt }));
+    writes.push(patchWrite(`listings_v2/${plan.listing_id}`, { status: 'sold_out', updated_at: updatedAt }));
   }
   if (!writes.length) continue;
   await requestJson(`${base}:commit`, { method: 'POST', body: JSON.stringify({ writes }) });
   applied += 1;
 }
 
-console.log(`\n✅ Reconciliación staging completada: ${applied} operación(es) reparada(s).`);
-console.log('Este runner no agenda ejecuciones futuras y no toca meetup_scheduled/disputed/no_show.');
+console.log(`\n✅ Reconciliación canonical V2 completada: ${applied} operación(es) reparada(s).`);
+console.log('El worker nunca reserva/libera el listing; sólo expira transactions y repara sold_out tras confirmación bilateral.');
