@@ -13,16 +13,19 @@ after(async () => env.cleanup());
 beforeEach(async () => env.clearFirestore());
 
 const now = () => Timestamp.now();
+const past = (minutes = 1) => Timestamp.fromMillis(Date.now() - minutes * 60_000);
 const future = (minutes = 120) => Timestamp.fromMillis(Date.now() + minutes * 60_000);
 const image = 'data:image/webp;base64,UklGRg==';
 const institutionId = 'uatx';
 const campusId = 'uatx-riberena';
+const safePointId = 'uatx-riberena-cafeteria';
 
 async function seedMarketplace() {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await setDoc(doc(db, `institutions/${institutionId}`), { name: 'Universidad Autónoma de Tlaxcala', country_code: 'MX', active: true });
     await setDoc(doc(db, `campuses/${campusId}`), { institution_id: institutionId, name: 'Campus Ribereña', city_id: 'tlaxcala', active: true });
+    await setDoc(doc(db, `approved_meeting_points/${safePointId}`), { campus_id: campusId, name: 'Cafetería Central · Campus Ribereña', active: true, is_tutop_safe_point: true });
     await setDoc(doc(db, 'users/buyer'), {
       uid: 'buyer', nombre: 'Buyer', facultad: 'Turismo Internacional', esta_verificado: false,
       country_code: 'MX', state_code: 'TLAX', city_id: 'tlaxcala', city_name: 'Tlaxcala',
@@ -76,6 +79,15 @@ function product(overrides = {}) {
     institution_id: institutionId, campus_id: campusId, visibility_scope: 'city', listing_kind: 'offer', shipping_available: false,
     punto_encuentro: 'Coordinar por Chat', imagen_url: image, estado: 'Activo', likes: 0, fecha_creacion: now(), updated_at: now(), ...overrides,
   };
+}
+
+async function seedAcceptedTransaction(overrides = {}) {
+  await seedMarketplace();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'offers/offer-1'), offer({ status: 'accepted' }));
+    await setDoc(doc(db, 'transactions_v2/tx-offer-1'), transaction(overrides));
+  });
 }
 
 test('V2 mantiene privados offers y transactions frente a terceros', async () => {
@@ -154,13 +166,52 @@ test('transacción sólo la crea el vendedor, con importe exacto e ID derivado d
   await assertSucceeds(setDoc(doc(seller, 'transactions_v2/tx-offer-1'), transaction()));
 });
 
+test('encuentro sólo acepta Punto TuTop activo del mismo campus y fecha futura', async () => {
+  await seedAcceptedTransaction();
+  const buyer = env.authenticatedContext('buyer').firestore();
+  const ref = doc(buyer, 'transactions_v2/tx-offer-1');
+  await assertFails(updateDoc(ref, { status: 'meetup_scheduled', meeting_point_id: 'inventado', meetup_at: future(60), updated_at: now() }));
+  await assertFails(updateDoc(ref, { status: 'meetup_scheduled', meeting_point_id: safePointId, meetup_at: past(), updated_at: now() }));
+  await assertSucceeds(updateDoc(ref, { status: 'meetup_scheduled', meeting_point_id: safePointId, meetup_at: future(60), updated_at: now() }));
+});
+
+test('confirmaciones son propias y completed exige las dos partes', async () => {
+  await seedAcceptedTransaction({ status: 'meetup_scheduled', meeting_point_id: safePointId, meetup_at: future(60) });
+  const buyer = env.authenticatedContext('buyer').firestore();
+  const seller = env.authenticatedContext('seller').firestore();
+  const refBuyer = doc(buyer, 'transactions_v2/tx-offer-1');
+  const refSeller = doc(seller, 'transactions_v2/tx-offer-1');
+
+  await assertFails(updateDoc(refBuyer, { seller_confirmed_at: now(), status: 'meetup_scheduled', updated_at: now() }));
+  await assertFails(updateDoc(refBuyer, { buyer_confirmed_at: now(), status: 'completed', updated_at: now() }));
+  await assertSucceeds(updateDoc(refBuyer, { buyer_confirmed_at: now(), status: 'meetup_scheduled', updated_at: now() }));
+  await assertFails(updateDoc(refSeller, { buyer_confirmed_at: now(), status: 'completed', updated_at: now() }));
+  await assertSucceeds(updateDoc(refSeller, { seller_confirmed_at: now(), status: 'completed', updated_at: now() }));
+});
+
+test('expiración sólo la ejecuta seller después del vencimiento', async () => {
+  await seedAcceptedTransaction();
+  const buyer = env.authenticatedContext('buyer').firestore();
+  const seller = env.authenticatedContext('seller').firestore();
+  await assertFails(updateDoc(doc(buyer, 'transactions_v2/tx-offer-1'), { status: 'expired', updated_at: now() }));
+  await assertFails(updateDoc(doc(seller, 'transactions_v2/tx-offer-1'), { status: 'expired', updated_at: now() }));
+
+  await env.withSecurityRulesDisabled(async (ctx) => updateDoc(doc(ctx.firestore(), 'transactions_v2/tx-offer-1'), { reservation_expires_at: past(5) }));
+  await assertSucceeds(updateDoc(doc(seller, 'transactions_v2/tx-offer-1'), { status: 'expired', updated_at: now() }));
+});
+
+test('operación protege identidad económica y no permite estados libres', async () => {
+  await seedAcceptedTransaction();
+  const buyer = env.authenticatedContext('buyer').firestore();
+  const ref = doc(buyer, 'transactions_v2/tx-offer-1');
+  await assertFails(updateDoc(ref, { agreed_amount_mxn: 1, updated_at: now() }));
+  await assertFails(updateDoc(ref, { status: 'completed', updated_at: now() }));
+  await assertFails(updateDoc(ref, { status: 'no_show', updated_at: now() }));
+  await assertSucceeds(updateDoc(ref, { status: 'disputed', updated_at: now() }));
+});
+
 test('tercero no puede cambiar estado de operación ni reservar producto ajeno', async () => {
-  await seedMarketplace();
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    const db = ctx.firestore();
-    await setDoc(doc(db, 'offers/offer-1'), offer({ status: 'accepted' }));
-    await setDoc(doc(db, 'transactions_v2/tx-offer-1'), transaction());
-  });
+  await seedAcceptedTransaction();
   const stranger = env.authenticatedContext('stranger').firestore();
   await assertFails(updateDoc(doc(stranger, 'transactions_v2/tx-offer-1'), { status: 'completed', updated_at: now() }));
   await assertFails(updateDoc(doc(stranger, 'products/listing'), { estado: 'Reservado', updated_at: now() }));
