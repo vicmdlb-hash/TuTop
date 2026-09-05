@@ -48,6 +48,9 @@ jobs:
       - name: Trusted reputation aggregation
         run: npm run trusted-reputation:test
 
+      - name: Reservation reconciliation contract
+        run: npm run reservation-reconciliation:test
+
       - name: Public seller profile privacy
         run: npm run seller-profile:privacy:test
 
