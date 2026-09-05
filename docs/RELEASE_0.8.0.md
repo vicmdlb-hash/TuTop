@@ -56,6 +56,9 @@ El backend Spark desplegado en 0.7.0 permite un conjunto estricto de campos, cat
 - Resume publicaciones activas y mensajes pendientes.
 - Acceso directo a crear otra publicación.
 - Perfil conserva gestión, edición, pausa, reactivación y marcado como vendido.
+- Centro de gestión en Perfil con métricas de activos, pendientes por responder, artículos **En trato** y entregas completadas.
+- **En trato** es una señal calculada desde chats activos; no cambia el estado persistido del producto y por eso mantiene compatibilidad con Rules actuales.
+- Desde el centro de gestión se puede abrir un anuncio, pausarlo, reactivarlo, marcarlo vendido, publicar otro o ir a Mensajes.
 - Mensajes separa claramente conversaciones de compra y venta.
 - El vendedor ve cuántas conversaciones de venta tiene y cuántas requieren respuesta.
 
@@ -99,6 +102,7 @@ El backend Spark desplegado en 0.7.0 permite un conjunto estricto de campos, cat
 - Aceptar/rechazar/contraofertar todavía se representa como mensajes estructurados por la UI, no como una entidad de oferta persistente con máquina de estados en Firestore.
 - Todavía no existe reserva transaccional automática.
 - Los borradores están ligados al dispositivo actual hasta que exista sincronización de borradores en backend.
+- **En trato** es una vista derivada, no un nuevo estado Firestore.
 - No se expone domicilio exacto públicamente.
 
 ## No se presenta como terminado todavía
