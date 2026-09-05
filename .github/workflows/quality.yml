@@ -42,6 +42,9 @@ jobs:
       - name: V2 catalog dry run
         run: npm run v2:catalog:plan
 
+      - name: Reputation evidence contract
+        run: npm run reputation:test
+
       - name: Typecheck
         run: npm run typecheck
 
