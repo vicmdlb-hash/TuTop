@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Home, MessageCircle, PlusCircle, UserRound, WalletCards } from 'lucide-react';
 import Feed from './components/Feed';
 import Chatbot from './components/Chatbot';
+import NationalPublishScreen from './components/NationalPublishScreen';
+import V2ListingsHydrator from './components/V2ListingsHydrator';
 import WalletView from './components/WalletView';
 import Inbox from './components/Inbox';
 import Profile from './components/Profile';
@@ -16,6 +18,7 @@ import SellerTools from './components/SellerTools';
 import UniversityNetworkSetup from './components/UniversityNetworkSetup';
 import DemandRequestComposer from './components/DemandRequestComposer';
 import NationalAccountControls from './components/NationalAccountControls';
+import { nationalSchemaEnabled } from './services/nationalBackend';
 import { useAppStore } from './store/useAppStore';
 import type { AppTab } from './types';
 import AdminDashboard from './admin/AdminDashboard';
@@ -33,6 +36,7 @@ export default function App() {
 function MobileApp() {
   const { activeTab, setActiveTab, chats, activeChatId, selectedProductId, closeChat, closeProduct } = useAppStore();
   const unread = chats.reduce((sum, chat) => sum + (chat.sin_leer || 0), 0);
+  const v2 = nationalSchemaEnabled();
 
   useEffect(() => {
     const onPopState = () => {
@@ -45,7 +49,7 @@ function MobileApp() {
 
   const content: Record<AppTab, ReactNode> = {
     feed: <Feed />,
-    bot: <Chatbot />,
+    bot: v2 ? <NationalPublishScreen /> : <Chatbot />,
     wallet: <WalletView />,
     inbox: <Inbox />,
     profile: <Profile />,
@@ -57,6 +61,7 @@ function MobileApp() {
       <WelcomeTour />
       <UniversityNetworkSetup />
       <DemandRequestComposer />
+      {v2 && <V2ListingsHydrator />}
       <main className="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))]">
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
@@ -65,7 +70,7 @@ function MobileApp() {
         </AnimatePresence>
       </main>
 
-      {activeTab === 'bot' && !activeChatId && !selectedProductId && <DraftShelf />}
+      {!v2 && activeTab === 'bot' && !activeChatId && !selectedProductId && <DraftShelf />}
       {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls /></>}
 
       {!activeChatId && (
