@@ -10,6 +10,18 @@ function replaceOnce(path, from, to, label) {
 
 replaceOnce(
   'src/components/BackendGate.tsx',
+  "import { CAMPUSES, INSTITUTIONS, identityFor } from '../lib/universityNetwork';",
+  "import { CAMPUSES, INSTITUTIONS } from '../lib/universityNetwork';",
+  'BackendGate remove direct identity helper',
+);
+replaceOnce(
+  'src/components/BackendGate.tsx',
+  "import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';",
+  "import { nationalSchemaEnabled } from '../services/nationalBackend';",
+  'BackendGate remove direct national backend import',
+);
+replaceOnce(
+  'src/components/BackendGate.tsx',
   "import { onlineBackend } from '../services/onlineBackend';",
   "import { onlineBackend } from '../services/onlineBackend';\nimport { completePendingUniversityIdentity, rememberPendingUniversityIdentity } from '../services/v2OnboardingRecovery';",
   'BackendGate onboarding import',
@@ -29,8 +41,14 @@ replaceOnce(
 
 replaceOnce(
   'src/components/NationalPublishScreen.tsx',
+  "  const [shipping, setShipping] = useState(false);\n",
+  '',
+  'publish remove duplicate shipping state',
+);
+replaceOnce(
+  'src/components/NationalPublishScreen.tsx',
   "  const toggleDelivery = (method: ListingDeliveryMethod) => {\n    setDeliveryMethods((current) => current.includes(method) ? current.filter((item) => item !== method) : [...current, method]);\n    if (method === 'shipping' && !deliveryMethods.includes('shipping')) setShipping(true);\n  };",
-  "  const toggleDelivery = (method: ListingDeliveryMethod) => {\n    setDeliveryMethods((current) => {\n      const next = current.includes(method) ? current.filter((item) => item !== method) : [...current, method];\n      setShipping(next.includes('shipping'));\n      return next;\n    });\n  };",
+  "  const toggleDelivery = (method: ListingDeliveryMethod) => {\n    setDeliveryMethods((current) => current.includes(method) ? current.filter((item) => item !== method) : [...current, method]);\n  };",
   'publish shipping toggle',
 );
 replaceOnce(
