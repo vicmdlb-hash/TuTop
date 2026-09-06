@@ -118,6 +118,12 @@ export function installPhysicalQaTelemetry() {
   document.addEventListener('visibilitychange', () => qaEvent('visibility', document.visibilityState));
   window.addEventListener('error', (event) => qaEvent('window_error', event.message || 'unknown'));
   window.addEventListener('unhandledrejection', (event) => qaEvent('unhandled_rejection', event.reason instanceof Error ? event.reason.message : event.reason));
+  window.addEventListener('tutop:native-notification', ((event: CustomEvent<any>) => {
+    const detail = event.detail || {};
+    const source = detail.source === 'action' ? 'push_action' : 'push_received';
+    const target = detail.chat_id ? 'chat' : detail.listing_id ? 'listing' : detail.transaction_id ? 'transaction' : detail.saved_search_id ? 'saved_search' : detail.kind || 'generic';
+    qaEvent(source, target);
+  }) as EventListener);
 }
 
 installPhysicalQaTelemetry();
