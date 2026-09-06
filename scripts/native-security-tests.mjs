@@ -63,19 +63,19 @@ pass('dispatchable Android workflow keeps stable main push path',
   androidWorkflow.includes('workflow_dispatch:')
   && androidWorkflow.includes('branches: ["main"]')
   && androidWorkflow.includes("if: github.event_name == 'push' || github.ref_name != 'feat/tutop-0.8-p0'"));
-pass('dispatch on 0.8.5 branch selects V2 staging only',
+pass('dispatch on physical QA branch selects V2 staging only',
   androidWorkflow.includes("if: github.event_name == 'workflow_dispatch' && github.ref_name == 'feat/tutop-0.8-p0'")
   && androidWorkflow.includes('TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881')
   && androidWorkflow.includes("grep -q 'tutop-3a4f7'")
   && androidWorkflow.includes('export-staging-v2-build-env.mjs'));
-pass('0.8.5 Android version is deterministic before packaging',
-  androidWorkflow.includes('TUTOP_BETA_VERSION: 0.8.5-beta.0')
-  && androidWorkflow.includes('TUTOP_ANDROID_VERSION_CODE: 80500')
+pass('0.9 Android version is deterministic before packaging',
+  androidWorkflow.includes('TUTOP_BETA_VERSION: 0.9.0-beta.0')
+  && androidWorkflow.includes('TUTOP_ANDROID_VERSION_CODE: 90000')
   && androidWorkflow.includes('configure-android-beta-version.mjs')
-  && versioner.includes("'0.8.5-beta.0'")
-  && versioner.includes('80500'));
-pass('0.8.5 artifact is explicit and checksummed',
-  androidWorkflow.includes('TuTop-0.8.5-beta.0-staging.apk')
-  && androidWorkflow.includes('sha256sum TuTop-0.8.5-beta.0-staging.apk'));
+  && versioner.includes("'0.9.0-beta.0'")
+  && versioner.includes('90000'));
+pass('0.9 physical QA artifact is explicit and checksummed',
+  androidWorkflow.includes('TuTop-0.9.0-beta.0-physical-qa-staging.apk')
+  && androidWorkflow.includes('sha256sum TuTop-0.9.0-beta.0-physical-qa-staging.apk'));
 
 console.log('Native Firebase security contracts: PASS');
