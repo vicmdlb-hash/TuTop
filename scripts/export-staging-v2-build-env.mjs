@@ -4,7 +4,7 @@ const configPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-s
 const githubEnv = String(process.env.GITHUB_ENV || '').trim();
 const expectedProject = 'tutop-beta-vicmdlb-1356585881';
 const historicalProject = 'tutop-3a4f7';
-const version = String(process.env.TUTOP_BETA_VERSION || '0.8.5-beta.0').trim();
+const version = String(process.env.TUTOP_BETA_VERSION || '0.9.0-beta.0').trim();
 
 function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
 if (!githubEnv) stop('GITHUB_ENV no está disponible; este export sólo debe correr dentro del build CI.');
@@ -13,7 +13,7 @@ const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 if (!config.apiKey || !config.projectId || !config.appId) stop('config web Firebase incompleta.');
 if (config.projectId === historicalProject) stop('V2 build no puede apuntar al Firebase histórico.');
 if (config.projectId !== expectedProject) stop(`V2 staging project mismatch: ${config.projectId}`);
-if (!/^0\.8\.5-beta\./.test(version)) stop(`versión beta inesperada: ${version}`);
+if (!/^0\.9\.0-beta\./.test(version)) stop(`versión beta inesperada: ${version}`);
 
 // apiKey/appId are client configuration rather than private server credentials, but
 // masking them keeps CI logs minimal and prevents accidental copy/paste exposure.
