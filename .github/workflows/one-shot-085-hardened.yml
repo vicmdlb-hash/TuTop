@@ -1,4 +1,4 @@
-# Autonomous hardening checkpoint: recovery policy, synthetic erasure and auto-classified Physical QA included.
+# Autonomous hardening rerun after shared erasure planner contract was aligned with the legacy safety test.
 name: One-shot TuTop 0.9 physical QA APK validation
 
 on:
