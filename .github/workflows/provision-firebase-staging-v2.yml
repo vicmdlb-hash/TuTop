@@ -90,14 +90,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if npx --yes firebase-tools@15.29.0 firestore:databases:list --project "$TUTOP_FIREBASE_PROJECT_ID" --json --non-interactive | grep -q '"name": "(default)"'; then
+          DATABASES_JSON="$(npx --yes firebase-tools@15.29.0 firestore:databases:list --project "$TUTOP_FIREBASE_PROJECT_ID" --json --non-interactive)"
+          if printf '%s' "$DATABASES_JSON" | grep -Fq '(default)'; then
             echo "Default Firestore database already exists."
           else
-            npx --yes firebase-tools@15.29.0 firestore:databases:create '(default)' \
+            CREATE_OUTPUT="$(mktemp)"
+            if npx --yes firebase-tools@15.29.0 firestore:databases:create '(default)' \
               --location us-central1 \
               --delete-protection DISABLED \
               --project "$TUTOP_FIREBASE_PROJECT_ID" \
-              --non-interactive
+              --non-interactive >"$CREATE_OUTPUT" 2>&1; then
+              cat "$CREATE_OUTPUT"
+            elif grep -Fq '409' "$CREATE_OUTPUT" && grep -Fq 'Database already exists' "$CREATE_OUTPUT"; then
+              echo "Default Firestore database already exists (idempotent 409)."
+            else
+              cat "$CREATE_OUTPUT" >&2
+              exit 1
+            fi
+            rm -f "$CREATE_OUTPUT"
           fi
 
       - name: Deploy Firestore V2 rules and indexes only
