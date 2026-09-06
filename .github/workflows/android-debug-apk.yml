@@ -39,6 +39,8 @@ jobs:
         run: npm ci
       - name: Install emulator test dependencies (ephemeral)
         run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@latest
+      - name: Verify dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
       - name: Execute Firestore rules tests
         run: npx --yes firebase-tools@15.29.0 emulators:exec --project demo-tutop-rules-test --only firestore "node --test tests/firestore.rules.test.mjs"
 
@@ -83,6 +85,8 @@ jobs:
         run: npm run build
       - name: Install Capacitor Android stack
         run: npm run deps:mobile
+      - name: Verify dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
       - name: Generate Android project
         run: npm run android:bootstrap
       - name: Android doctor
@@ -177,6 +181,8 @@ jobs:
         run: npm run build
       - name: Install Capacitor + native Firebase plugins
         run: npm run deps:mobile
+      - name: Verify dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
       - name: Generate Android project
         run: npm run android:bootstrap
       - name: Fix Android beta version
