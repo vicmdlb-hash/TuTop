@@ -15,6 +15,13 @@ if (config.projectId === historicalProject) stop('V2 build no puede apuntar al F
 if (config.projectId !== expectedProject) stop(`V2 staging project mismatch: ${config.projectId}`);
 if (!/^0\.8\.5-beta\./.test(version)) stop(`versión beta inesperada: ${version}`);
 
+// apiKey/appId are client configuration rather than private server credentials, but
+// masking them keeps CI logs minimal and prevents accidental copy/paste exposure.
+for (const value of [config.apiKey, config.appId]) {
+  const clean = String(value || '').trim();
+  if (clean) process.stdout.write(`::add-mask::${clean}\n`);
+}
+
 const lines = [
   `VITE_FIREBASE_API_KEY=${config.apiKey}`,
   `VITE_FIREBASE_AUTH_DOMAIN=${config.authDomain || `${expectedProject}.firebaseapp.com`}`,
@@ -26,4 +33,4 @@ const lines = [
 ];
 fs.appendFileSync(githubEnv, `${lines.join('\n')}\n`);
 console.log(`✅ Ambiente V2 staging exportado para ${expectedProject} · ${version}.`);
-console.log('La API key pública de Firebase no se imprime en logs.');
+console.log('Configuración cliente sensible a copia queda enmascarada en GitHub Actions.');
