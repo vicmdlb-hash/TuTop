@@ -28,6 +28,7 @@ import { useAppStore } from './store/useAppStore';
 import type { AppTab } from './types';
 import AdminDashboard from './admin/AdminDashboard';
 import ScopedModerationDashboard from './admin/ScopedModerationDashboard';
+import PendingListingModeration from './admin/PendingListingModeration';
 
 export default function App() {
   const path = window.location.pathname;
@@ -36,7 +37,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BackendGate>
-        {moderation ? <ScopedModerationDashboard /> : admin ? <><AdminDashboard /><a href="/admin/moderation" className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-2xl border border-violet-300/20 bg-violet-600 px-4 py-3 text-xs font-black text-white shadow-2xl shadow-violet-950/40"><ShieldAlert className="h-4 w-4"/>Moderación V2</a></> : <MobileApp />}
+        {moderation ? <><PendingListingModeration /><ScopedModerationDashboard /></> : admin ? <><AdminDashboard /><a href="/admin/moderation" className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-2xl border border-violet-300/20 bg-violet-600 px-4 py-3 text-xs font-black text-white shadow-2xl shadow-violet-950/40"><ShieldAlert className="h-4 w-4"/>Moderación V2</a></> : <MobileApp />}
       </BackendGate>
     </ErrorBoundary>
   );
