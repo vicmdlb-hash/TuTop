@@ -1,4 +1,4 @@
-# Runtime consistency QA rerun: canonical feed, shipping, onboarding recovery, notification routing and guarded erasure.
+# Final runtime consistency QA checkpoint: includes updated deletion policy documentation.
 name: One-shot TuTop 0.8.5 hardened APK validation
 
 on:
