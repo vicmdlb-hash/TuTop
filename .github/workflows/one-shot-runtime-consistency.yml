@@ -1,3 +1,4 @@
+# Rerun after type-clean codemod adjustments.
 name: One-shot apply TuTop runtime consistency fixes
 
 on:
