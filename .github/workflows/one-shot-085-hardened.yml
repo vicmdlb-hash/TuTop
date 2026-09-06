@@ -1,4 +1,4 @@
-# TuTop 0.9 physical QA checkpoint: privacy-safe diagnostics + hardened staging runtime.
+# Final TuTop 0.9 Physical QA candidate: diagnostics, lifecycle telemetry and deterministic Android Back history.
 name: One-shot TuTop 0.9 physical QA APK validation
 
 on:
