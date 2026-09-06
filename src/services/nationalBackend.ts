@@ -1,4 +1,5 @@
 import { FirebaseRestClient } from './firebaseRest';
+import { commitWithRateLimit } from './rateLimit';
 import { getFirebaseConfig } from './runtimeConfig';
 import { canActOnTransaction, transactionStatusForAction } from '../lib/marketplaceCore';
 import type { DemandRequest, ListingVisibilityScope, MarketplaceTransaction, Offer, OfferStatus, Product, SavedSearch, UniversityIdentity } from '../types';
@@ -88,7 +89,7 @@ class NationalMarketplaceBackend {
       expires_at: input.expiresAt, created_at: at, updated_at: at,
     };
     const { id: _id, ...data } = offer;
-    await client.commit([
+    await commitWithRateLimit(client, 'offer_create', [
       { update: client.encodeDocumentForWrite(`offers/${offerId}`, data), currentDocument: { exists: false } },
       patchWrite(client, `chats/${input.chatId}`, { current_offer_id: offerId, updated_at: at }),
     ]);
@@ -121,7 +122,7 @@ class NationalMarketplaceBackend {
       updated_at: at,
     };
     const { id: _id, ...data } = counter;
-    await client.commit([
+    await commitWithRateLimit(client, 'offer_create', [
       { update: client.encodeDocumentForWrite(`offers/${offerId}`, data), currentDocument: { exists: false } },
       patchWrite(client, `offers/${parent.id}`, { status: 'countered', counter_offer_id: offerId, updated_at: at }),
       patchWrite(client, `chats/${parent.chat_id}`, { current_offer_id: offerId, updated_at: at }),
@@ -313,7 +314,9 @@ class NationalMarketplaceBackend {
     const at = nowIso();
     const request: DemandRequest = { id: requestId, buyer_id: buyerId, ...input, status: 'active', created_at: at, updated_at: at };
     const { id: _id, ...data } = request;
-    await client.setDocument(`demand_requests/${requestId}`, data, { exists: false });
+    await commitWithRateLimit(client, 'demand_create', [
+      { update: client.encodeDocumentForWrite(`demand_requests/${requestId}`, data), currentDocument: { exists: false } },
+    ]);
     return request;
   }
 
