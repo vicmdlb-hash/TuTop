@@ -22,6 +22,8 @@ import './services/nationalBackendCanonicalBridge';
 import './services/rateLimitedOnlineBridge';
 import './services/canonicalStoreBridge';
 import './services/nationalIdentityHydrationBridge';
+import './services/notificationReceiptStoreBridge';
+import './services/nativeNotificationRouter';
 import { nationalSchemaEnabled } from './services/nationalBackend';
 import { initializeNativeFirebaseSecurity } from './services/nativeFirebaseSecurity';
 import { useAppStore } from './store/useAppStore';
