@@ -40,6 +40,19 @@ export async function adminDeleteDocument(path) {
   return request(`${firestoreBase}/${path}`, { method: 'DELETE' }, [404]);
 }
 
+export async function adminRunQuery(collectionId, filters = [], limit = 500) {
+  const where = filters.length === 0 ? undefined : filters.length === 1
+    ? { fieldFilter: { field: { fieldPath: filters[0].field }, op: 'EQUAL', value: value(filters[0].value) } }
+    : { compositeFilter: { op: 'AND', filters: filters.map((filter) => ({ fieldFilter: { field: { fieldPath: filter.field }, op: 'EQUAL', value: value(filter.value) } })) } };
+  const body = { structuredQuery: { from: [{ collectionId }], ...(where ? { where } : {}), limit: Math.max(1, Math.min(1000, Number(limit) || 500)) } };
+  const rows = await request(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:runQuery`, { method: 'POST', body: JSON.stringify(body) });
+  return (Array.isArray(rows) ? rows : []).map((row) => row?.document).filter(Boolean).map((document) => ({
+    name: String(document.name || ''),
+    path: String(document.name || '').split('/documents/')[1] || '',
+    fields: document.fields || {},
+  }));
+}
+
 export async function adminDeleteTestUsers(localIds) {
   if (!Array.isArray(localIds) || localIds.some((uid) => !String(uid).trim())) throw new Error('UIDs de cleanup inválidos.');
   if (!localIds.length) return null;
