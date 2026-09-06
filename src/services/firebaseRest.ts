@@ -1,3 +1,4 @@
+import { getNativeAppCheckToken } from './nativeAppCheckToken';
 import type { FirebaseRuntimeConfig } from './runtimeConfig';
 
 export interface AuthSession {
@@ -26,7 +27,7 @@ const TIMESTAMP_FIELDS = new Set([
   'created_at', 'updated_at', 'fecha_creacion', 'fecha_registro', 'date', 'fecha',
   'suspended_until', 'expires_at', 'last_message_at', 'confirmed_at', 'reviewed_at',
   'reservation_expires_at', 'meetup_at', 'buyer_confirmed_at', 'seller_confirmed_at',
-  'needed_by', 'retention_delete_after', 'verified_at', 'read_at',
+  'needed_by', 'retention_delete_after', 'verified_at', 'read_at', 'outcome_recorded_at',
 ]);
 
 function encodePath(path: string) {
@@ -105,6 +106,11 @@ async function sha256(text: string) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+async function appCheckHeader() {
+  const token = await getNativeAppCheckToken(false).catch(() => null);
+  return token ? { 'X-Firebase-AppCheck': token } : {};
+}
+
 export function normalizeMexicoPhone(input: string) {
   const clean = input.replace(/[^\d+]/g, '');
   if (clean.startsWith('+')) {
@@ -163,8 +169,9 @@ export class FirebaseRestClient {
   signOut() { this.persistSession(null); }
 
   private async authRequest(endpoint: string, body: Record<string, unknown>) {
+    const headers = { 'Content-Type': 'application/json', ...(await appCheckHeader()) };
     const response = await fetch(`https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${encodeURIComponent(this.config.apiKey)}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      method: 'POST', headers, body: JSON.stringify(body),
     });
     return readJson(response);
   }
@@ -209,9 +216,10 @@ export class FirebaseRestClient {
   async getIdToken() {
     if (!this.session) throw new Error('AUTH_REQUIRED');
     if (this.session.expiresAt > Date.now() + 60_000) return this.session.idToken;
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded', ...(await appCheckHeader()) };
     const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(this.config.apiKey)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers,
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: this.session.refreshToken }),
     });
     const data = await readJson(response);
@@ -234,6 +242,8 @@ export class FirebaseRestClient {
     const token = await this.getIdToken();
     const headers = new Headers(init.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
+    const appCheck = await getNativeAppCheckToken(false).catch(() => null);
+    if (appCheck) headers.set('X-Firebase-AppCheck', appCheck);
     if (init.body) headers.set('Content-Type', 'application/json');
     return readJson(await fetch(url, { ...init, headers }));
   }
