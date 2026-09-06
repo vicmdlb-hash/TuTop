@@ -1,5 +1,3 @@
-import type { PhysicalQaReport } from '../services/physicalQaTelemetry';
-
 export type QaSeverity = 'pass' | 'warn' | 'fail';
 export type QaFinding = { severity: QaSeverity; code: string; message: string };
 export type QaAssessment = {
@@ -9,9 +7,17 @@ export type QaAssessment = {
   next_actions: string[];
 };
 
+type PhysicalQaReportLike = {
+  native_runtime: boolean;
+  viewport: { width: number; height: number; dpr: number };
+  online: boolean;
+  checks: Array<{ key: string; label: string; status: QaSeverity; detail: string }>;
+  events: Array<{ at: string; kind: string; detail?: string }>;
+};
+
 const weight = (severity: QaSeverity) => severity === 'fail' ? 30 : severity === 'warn' ? 10 : 0;
 
-export function evaluatePhysicalQaReport(report: PhysicalQaReport): QaAssessment {
+export function evaluatePhysicalQaReport(report: PhysicalQaReportLike): QaAssessment {
   const findings: QaFinding[] = [];
   for (const check of report.checks) {
     if (check.status === 'fail') findings.push({ severity: 'fail', code: `check:${check.key}`, message: `${check.label}: ${check.detail}` });
