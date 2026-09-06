@@ -5,6 +5,7 @@ import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssista
 import type { DeliveryMethod, MeetingPoint, Product, ProductCategory, ProductStatus } from '../types/index.ts';
 import { FirebaseRestClient, type FirestoreDocument, type QueryFilter } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
+import { commitWithRateLimit } from './rateLimit.ts';
 import { getFirebaseConfig } from './runtimeConfig.ts';
 
 function localId() {
@@ -133,7 +134,9 @@ export const canonicalListingsBackend = {
       updated_at: new Date(listing.updated_at),
       ...(listing.published_at ? { published_at: new Date(listing.published_at) } : {}),
     };
-    await client.setDocument(`listings_v2/${id}`, payload, { exists: false });
+    await commitWithRateLimit(client, 'listing_create', [
+      { update: client.encodeDocumentForWrite(`listings_v2/${id}`, payload), currentDocument: { exists: false } },
+    ]);
     return { id, ...listing, moderation_status: 'pending' as const };
   },
 
