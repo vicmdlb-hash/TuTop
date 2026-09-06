@@ -44,6 +44,7 @@ function MobileApp() {
   const { activeTab, setActiveTab, chats, activeChatId, selectedProductId, closeChat, closeProduct } = useAppStore();
   const unread = chats.reduce((sum, chat) => sum + (chat.sin_leer || 0), 0);
   const v2 = nationalSchemaEnabled();
+  const showFeedUtilities = activeTab === 'feed' && !activeChatId && !selectedProductId;
 
   useEffect(() => {
     if (!v2) return;
@@ -71,8 +72,8 @@ function MobileApp() {
     <div className="app-shell">
       <OfflineBanner />
       <WelcomeTour />
-      <UniversityNetworkSetup />
-      <DemandRequestComposer />
+      {showFeedUtilities && <UniversityNetworkSetup />}
+      {showFeedUtilities && <DemandRequestComposer />}
       {v2 && <V2ListingsHydrator />}
       <main className="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))]">
         <AnimatePresence mode="wait">
