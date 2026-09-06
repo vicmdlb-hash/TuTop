@@ -9,6 +9,7 @@ const steps = [
   [process.execPath, ['scripts/functions-domain-tests.mjs']],
   [process.execPath, ['scripts/security-tests.mjs']],
   [process.execPath, ['scripts/policy-scan.mjs']],
+  [process.execPath, ['scripts/physical-qa-regression-tests.mjs']],
 ];
 for (const file of fs.readdirSync('scripts').filter((name) => name.endsWith('.mjs')).sort()) {
   steps.unshift([process.execPath, ['--check', `scripts/${file}`]]);
