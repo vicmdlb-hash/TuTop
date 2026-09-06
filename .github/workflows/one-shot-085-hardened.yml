@@ -1,4 +1,4 @@
-# One-shot rerun after fixing the single-transaction native dependency install.
+# Final hardened Android rerun: deterministic native deps, SDK provisioning and JNI packaging.
 name: One-shot TuTop 0.8.5 hardened APK validation
 
 on:
@@ -48,15 +48,11 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Prepare Android SDK
+      - name: Prepare Android SDK 36
         uses: android-actions/setup-android@v4
-
-      - name: Install Android SDK 36
-        shell: bash
-        run: |
-          set -euxo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
 
       - name: Install locked web dependencies
         run: npm ci
@@ -104,6 +100,8 @@ jobs:
           ! grep -q 'tutop-3a4f7' android/app/google-services.json
           grep -q 'versionCode 80500' android/app/build.gradle
           grep -q 'versionName "0.8.5-beta.0"' android/app/build.gradle
+          grep -q 'libdatastore_shared_counter.so' android/app/build.gradle
+          grep -q 'keepDebugSymbols' android/app/build.gradle
 
       - name: Cache Gradle dependencies
         uses: gradle/actions/setup-gradle@v6
