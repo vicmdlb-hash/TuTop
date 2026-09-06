@@ -1,4 +1,4 @@
-# Canonical V2 physical QA rerun: seller edits, moderation, identity hydration and structured offers.
+# Account operations physical QA rerun: synchronized 0.8.5 metadata, password rotation and deletion queue.
 name: One-shot TuTop 0.8.5 hardened APK validation
 
 on:
