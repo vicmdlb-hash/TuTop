@@ -27,6 +27,18 @@ let buyerApp;
 
 function ok(label) { console.log(`✅ ${label}`); }
 
+function consumeRate(batch, db, uid, action, count = 1, windowStart = Timestamp.now()) {
+  const path = `rate_limits/${uid}-${action}`;
+  batch.set(doc(db, 'rate_limits', `${uid}-${action}`), {
+    uid,
+    action,
+    window_start: windowStart,
+    count,
+    updated_at: Timestamp.now(),
+  });
+  if (!docsToClean.includes(path)) docsToClean.push(path);
+}
+
 async function bootstrap(db, uid, name, phone) {
   const now = Timestamp.now();
   const welcome = `welcome-${uid}`;
@@ -60,7 +72,8 @@ try {
   ok('identidad UATx/Campus Ribereña + wallet por Security Rules');
 
   const created = Timestamp.now();
-  await setDoc(doc(sellerDb, 'listings_v2', listingId), {
+  const listingBatch = writeBatch(sellerDb);
+  listingBatch.set(doc(sellerDb, 'listings_v2', listingId), {
     schema_version: 2, seller_id: seller.uid, institution_id: 'uatx', campus_id: 'uatx-riberena', city_id: 'tlaxcala',
     category_id: 'material-escolar', title: 'Calculadora Casio smoke V2', description: 'Prueba temporal E2E.',
     attributes: { brand: 'Casio', model: 'fx-991' }, price_mxn: 500, negotiable: true, quantity: 1, condition: 'Buen estado',
@@ -68,8 +81,10 @@ try {
     photo_urls: ['data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"></svg>'],
     status: 'active', moderation_status: 'pending', visibility_scope: 'campus', published_at: created, created_at: created, updated_at: created,
   });
+  consumeRate(listingBatch, sellerDb, seller.uid, 'listing_create');
+  await listingBatch.commit();
   docsToClean.push(`listings_v2/${listingId}`);
-  ok('publicación directa en listings_v2');
+  ok('publicación listings_v2 + rate bucket atómicos');
 
   await adminPatchDocument(`listings_v2/${listingId}`, { moderation_status: 'approved', updated_at: new Date() });
   ok('moderación trusted aprobó el listing');
@@ -81,28 +96,33 @@ try {
 
   const chatId = `chat-${buyer.uid}-${listingId}`;
   const chatTime = Timestamp.now();
-  await setDoc(doc(buyerDb, 'chats', chatId), {
+  const chatBatch = writeBatch(buyerDb);
+  chatBatch.set(doc(buyerDb, 'chats', chatId), {
     product_id: listingId, producto_id: listingId, buyer_id: buyer.uid, comprador_id: buyer.uid,
     seller_id: seller.uid, vendedor_id: seller.uid, participants: [buyer.uid, seller.uid], nombre_otro_usuario: 'Seller Smoke',
     last_message: 'Quiero negociar', last_message_at: chatTime, created_at: chatTime, updated_at: chatTime,
   });
+  consumeRate(chatBatch, buyerDb, buyer.uid, 'chat_create');
+  await chatBatch.commit();
   docsToClean.push(`chats/${chatId}`);
-  ok('chat real creado');
+  ok('chat real + rate bucket atómicos');
 
   const offerTime = Timestamp.now();
   const first = writeBatch(buyerDb);
   first.set(doc(buyerDb, 'offers', offerId), { listing_id: listingId, chat_id: chatId, buyer_id: buyer.uid, seller_id: seller.uid, created_by: buyer.uid, amount_mxn: 450, status: 'pending', expires_at: Timestamp.fromMillis(Date.now() + 86400000), created_at: offerTime, updated_at: offerTime });
   first.update(doc(buyerDb, 'chats', chatId), { current_offer_id: offerId, updated_at: offerTime });
+  consumeRate(first, buyerDb, buyer.uid, 'offer_create');
   await first.commit(); docsToClean.push(`offers/${offerId}`);
-  ok('oferta $450 atómica');
+  ok('oferta $450 + rate bucket atómicos');
 
   const counterTime = Timestamp.now();
   const counter = writeBatch(sellerDb);
   counter.set(doc(sellerDb, 'offers', counterId), { listing_id: listingId, chat_id: chatId, buyer_id: buyer.uid, seller_id: seller.uid, created_by: seller.uid, amount_mxn: 475, status: 'pending', parent_offer_id: offerId, expires_at: Timestamp.fromMillis(Date.now() + 86400000), created_at: counterTime, updated_at: counterTime });
   counter.update(doc(sellerDb, 'offers', offerId), { status: 'countered', counter_offer_id: counterId, updated_at: counterTime });
   counter.update(doc(sellerDb, 'chats', chatId), { current_offer_id: counterId, updated_at: counterTime });
+  consumeRate(counter, sellerDb, seller.uid, 'offer_create');
   await counter.commit(); docsToClean.push(`offers/${counterId}`);
-  ok('contraoferta $475 atómica');
+  ok('contraoferta $475 + rate bucket atómicos');
 
   await updateDoc(doc(buyerDb, 'offers', counterId), { status: 'accepted', updated_at: Timestamp.now() });
   ok('contraoferta aceptada');
@@ -147,7 +167,7 @@ try {
   ok('reputación trusted visible');
 
   console.log('\n🎯 TUTOP V2 REAL FIREBASE SMOKE: PASS');
-  console.log('auth → red → listing → search → chat → offer → counter → reserve → meetup → bilateral completion → review → reputation');
+  console.log('auth → red → listing+quota → search → chat+quota → offer+quota → counter+quota → reserve → meetup → bilateral completion → review → reputation');
 } finally {
   try { if (sellerApp) await signOut(getAuth(sellerApp)); } catch {}
   try { if (buyerApp) await signOut(getAuth(buyerApp)); } catch {}
