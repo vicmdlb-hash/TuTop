@@ -140,8 +140,8 @@ jobs:
         with:
           name: TuTop-0.8.5-beta.0-staging-${{ github.run_number }}
           path: |
-            android/TuTop-0.8.5-beta.0-staging.apk
-            android/TuTop-0.8.5-beta.0-staging.apk.sha256
+            TuTop-0.8.5-beta.0-staging.apk
+            TuTop-0.8.5-beta.0-staging.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
