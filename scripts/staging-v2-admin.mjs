@@ -30,6 +30,12 @@ async function request(url, options = {}, allow = []) {
   try { return JSON.parse(text); } catch { return text; }
 }
 
+export async function adminGetDocument(path) {
+  const result = await request(`${firestoreBase}/${path}`, { method: 'GET' }, [404]);
+  if (!result || typeof result !== 'object' || !result.name) return null;
+  return result;
+}
+
 export async function adminPatchDocument(path, fields) {
   const mask = Object.keys(fields).map((field) => `updateMask.fieldPaths=${encodeURIComponent(field)}`).join('&');
   const payload = { fields: Object.fromEntries(Object.entries(fields).map(([key, item]) => [key, value(item)])) };
