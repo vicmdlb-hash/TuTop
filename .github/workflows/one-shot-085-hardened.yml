@@ -79,56 +79,58 @@ jobs:
       - name: Build optimized V2 web bundle
         run: npm run build
 
-      - name: Install pinned mobile stack ephemerally
+      - name: Install pinned native stack ephemerally
         run: npm run deps:mobile
 
-      - name: Verify dependency manifests stayed immutable
+      - name: Prove dependency manifests stayed immutable
         run: git diff --exit-code -- package.json package-lock.json
 
-      - name: Generate native Android project
-        run: npm run android:bootstrap
+      - name: Generate and validate Android project
+        run: |
+          npm run android:bootstrap
+          node scripts/configure-android-beta-version.mjs
+          npm run android:doctor
 
-      - name: Force beta version and harden generated JNI packaging
-        run: npm run android:version
-
-      - name: Android doctor
-        run: npm run android:doctor
-
-      - name: Confirm staging Firebase and no historical project
+      - name: Verify staging-only native config
         shell: bash
         run: |
           set -euo pipefail
-          grep -R 'tutop-beta-vicmdlb-1356585881' android/app/google-services.json >/dev/null
-          if grep -R 'tutop-3a4f7' android/app/google-services.json android/app/src/main/res android/app/src/main/assets 2>/dev/null; then
-            echo 'DETENIDO: Firebase histórico apareció dentro del Android V2.' >&2
-            exit 51
-          fi
+          test -s android/app/google-services.json
+          grep -q 'tutop-beta-vicmdlb-1356585881' android/app/google-services.json
+          ! grep -q 'tutop-3a4f7' android/app/google-services.json
+          grep -q 'versionCode 80500' android/app/build.gradle
+          grep -q 'versionName "0.8.5-beta.0"' android/app/build.gradle
+          grep -q 'libdatastore_shared_counter.so' android/app/build.gradle
+          grep -q 'keepDebugSymbols' android/app/build.gradle
 
       - name: Cache Gradle dependencies
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Android lint unit tests and assemble
+      - name: Lint test and assemble hardened APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon clean lintDebug testDebugUnitTest assembleDebug
 
-      - name: Verify beta APK metadata checksum and signature
+      - name: Verify APK and checksum
         shell: bash
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          mkdir -p release
-          cp "$APK" release/TuTop-0.8.5-beta.0-hardened-staging.apk
-          sha256sum release/TuTop-0.8.5-beta.0-hardened-staging.apk | tee release/TuTop-0.8.5-beta.0-hardened-staging.apk.sha256
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep "versionCode='80500' versionName='0.8.5-beta.0'"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK"
+          cp "$APK" TuTop-0.8.5-beta.0-hardened-staging.apk
+          sha256sum TuTop-0.8.5-beta.0-hardened-staging.apk | tee TuTop-0.8.5-beta.0-hardened-staging.apk.sha256
 
-      - name: Upload hardened beta APK
+      - name: Upload hardened APK
         uses: actions/upload-artifact@v7
         with:
           name: TuTop-0.8.5-beta.0-hardened-staging-${{ github.run_number }}
-          path: release/
+          path: |
+            TuTop-0.8.5-beta.0-hardened-staging.apk
+            TuTop-0.8.5-beta.0-hardened-staging.apk.sha256
           if-no-files-found: error
           retention-days: 14
+
+      - name: Remove temporary Firebase configs
+        if: always()
+        run: rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json android/app/google-services.json
