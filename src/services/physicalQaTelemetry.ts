@@ -54,6 +54,18 @@ function capacitorPlatform() {
   return cap?.getPlatform?.() || 'web';
 }
 
+async function correlationFor(value: unknown) {
+  const clean = String(value || '').trim();
+  if (!clean) return 'none';
+  try {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(clean));
+    return [...new Uint8Array(digest)].slice(0, 8).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  } catch {
+    // Never fall back to the raw identifier: absence of correlation is safer.
+    return 'unavailable';
+  }
+}
+
 async function appCheckStatus(): Promise<QaCheck> {
   if (!isNativeFirebaseRuntime()) return { key: 'app-check', label: 'App Check token', status: 'warn', detail: 'No es runtime nativo.' };
   const token = await getNativeAppCheckToken(false).catch(() => null);
@@ -108,12 +120,23 @@ export async function buildPhysicalQaReport(): Promise<PhysicalQaReport> {
 }
 
 let installed = false;
+let offlineSequence = 0;
+let offlineStartedAt: number | null = null;
+
 export function installPhysicalQaTelemetry() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   qaEvent('app_boot', `${APP_VERSION} ${capacitorPlatform()} ${window.innerWidth}x${window.innerHeight}`);
-  window.addEventListener('online', () => qaEvent('network_online'));
-  window.addEventListener('offline', () => qaEvent('network_offline'));
+  window.addEventListener('offline', () => {
+    offlineSequence += 1;
+    offlineStartedAt = Date.now();
+    qaEvent('network_offline', `seq=${offlineSequence}`);
+  });
+  window.addEventListener('online', () => {
+    const duration = offlineStartedAt === null ? -1 : Math.max(0, Date.now() - offlineStartedAt);
+    qaEvent('network_online', `seq=${offlineSequence || 0} duration_ms=${duration}`);
+    offlineStartedAt = null;
+  });
   window.addEventListener('resize', () => qaEvent('viewport_resize', `${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio || 1}`));
   document.addEventListener('visibilitychange', () => qaEvent('visibility', document.visibilityState));
   window.addEventListener('error', (event) => qaEvent('window_error', event.message || 'unknown'));
@@ -122,7 +145,9 @@ export function installPhysicalQaTelemetry() {
     const detail = event.detail || {};
     const source = detail.source === 'action' ? 'push_action' : 'push_received';
     const target = detail.chat_id ? 'chat' : detail.listing_id ? 'listing' : detail.transaction_id ? 'transaction' : detail.saved_search_id ? 'saved_search' : detail.kind || 'generic';
-    qaEvent(source, target);
+    void correlationFor(detail.notification_id || detail.message_id || '').then((correlation) => {
+      qaEvent(source, `target=${sanitize(target)} correlation=${correlation}`);
+    });
   }) as EventListener);
 }
 
