@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BellRing, ChevronDown, ChevronUp, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NOTIFICATION_PRIORITY, type NotificationPreferenceKey, type NotificationPreferences } from '../lib/notificationPreferences.ts';
 import { nationalSchemaEnabled } from '../services/nationalBackend.ts';
+import { disableNativePushNotifications, enableNativePushNotifications, nativePushPermission } from '../services/nativeFirebaseSecurity.ts';
 import { nationalUserSettings, type AccountDeletionRequest } from '../services/nationalUserSettings.ts';
 
 const LABELS: Record<NotificationPreferenceKey, string> = {
@@ -20,6 +21,8 @@ const LABELS: Record<NotificationPreferenceKey, string> = {
   safety_alert: 'Alerta de seguridad',
 };
 
+type DevicePushPermission = 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' | 'unavailable';
+
 export default function NationalAccountControls() {
   const enabled = nationalSchemaEnabled();
   const [open, setOpen] = useState(false);
@@ -27,6 +30,8 @@ export default function NationalAccountControls() {
   const [busyKey, setBusyKey] = useState<NotificationPreferenceKey | null>(null);
   const [deletion, setDeletion] = useState<AccountDeletionRequest | null>(null);
   const [deletionBusy, setDeletionBusy] = useState(false);
+  const [pushPermission, setPushPermission] = useState<DevicePushPermission>('unavailable');
+  const [pushBusy, setPushBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,10 +40,12 @@ export default function NationalAccountControls() {
     void Promise.all([
       nationalUserSettings.loadNotificationPreferences().catch(() => ({ ...DEFAULT_NOTIFICATION_PREFERENCES })),
       nationalUserSettings.accountDeletionStatus().catch(() => null),
-    ]).then(([prefs, request]) => {
+      nativePushPermission().catch(() => 'unavailable' as const),
+    ]).then(([prefs, request, permission]) => {
       if (!active) return;
       setPreferences(prefs);
       setDeletion(request);
+      setPushPermission(permission as DevicePushPermission);
     });
     return () => { active = false; };
   }, [enabled]);
@@ -60,6 +67,26 @@ export default function NationalAccountControls() {
       setPreferences(preferences);
       setMessage('No pudimos guardar esa preferencia.');
     } finally { setBusyKey(null); }
+  };
+
+  const toggleDevicePush = async () => {
+    if (pushBusy || pushPermission === 'unavailable') return;
+    setPushBusy(true);
+    setMessage(null);
+    try {
+      if (pushPermission === 'granted') {
+        const disabled = await disableNativePushNotifications();
+        setPushPermission(disabled ? 'prompt' : await nativePushPermission());
+        setMessage(disabled ? 'Notificaciones push desactivadas en este dispositivo.' : 'No pudimos desactivar el token del dispositivo.');
+      } else {
+        const result = await enableNativePushNotifications();
+        setPushPermission(result.permission as DevicePushPermission);
+        setMessage(result.enabled ? 'Notificaciones del dispositivo activadas.' : result.permission === 'denied' ? 'Android no concedió permiso para notificaciones. Puedes cambiarlo desde los ajustes del sistema.' : 'No pudimos activar las notificaciones del dispositivo.');
+      }
+    } catch {
+      setMessage('No pudimos cambiar las notificaciones del dispositivo.');
+      setPushPermission(await nativePushPermission().catch(() => 'unavailable'));
+    } finally { setPushBusy(false); }
   };
 
   const requestDeletion = async () => {
@@ -93,6 +120,11 @@ export default function NationalAccountControls() {
       </button>
 
       {open && <div className="mt-3 space-y-2">
+        {pushPermission !== 'unavailable' && <div className="rounded-xl border border-violet-400/10 bg-violet-500/[0.04] p-3">
+          <div className="flex items-center gap-2"><BellRing className="h-4 w-4 text-violet-300" /><div className="flex-1"><strong className="block text-[10px] text-slate-200">Notificaciones del dispositivo</strong><small className="text-[8px] text-slate-500">{pushPermission === 'granted' ? 'Activadas en este teléfono' : pushPermission === 'denied' ? 'Bloqueadas por Android' : 'Aún no autorizadas'}</small></div></div>
+          <button type="button" onClick={() => void toggleDevicePush()} disabled={pushBusy} className={`mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl text-[9px] font-black disabled:opacity-50 ${pushPermission === 'granted' ? 'bg-white/[0.05] text-slate-300' : 'bg-violet-500/15 text-violet-200'}`}>{pushBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{pushPermission === 'granted' ? 'Desactivar push en este dispositivo' : 'Activar notificaciones del dispositivo'}</button>
+        </div>}
+
         <p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Importantes</p>
         {highPriority.map(renderToggle)}
         <p className="pt-2 text-[9px] font-black uppercase tracking-wide text-slate-500">Opcionales</p>
