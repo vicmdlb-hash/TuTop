@@ -1,4 +1,5 @@
 import { ACCOUNT_RECOVERY_POLICY, publicRecoveryResponse, type RecoveryChannel, type RecoveryProviderState } from '../lib/accountRecoveryPolicy';
+import { runtimeRecoveryAdapter } from './recoveryProviderAdapter';
 
 export type RecoveryReadiness = {
   provider: 'disabled' | 'external';
@@ -15,32 +16,16 @@ export type RecoveryStartResult = {
   provider: RecoveryReadiness['provider'];
 };
 
-export interface RecoveryProvider {
-  readonly name: string;
-  readonly channels: RecoveryChannel[];
-  start(identifier: string): Promise<void>;
-}
-
-class DisabledRecoveryProvider implements RecoveryProvider {
-  readonly name = 'disabled';
-  readonly channels: RecoveryChannel[] = [];
-  async start(_identifier: string) {
-    throw new Error('RECOVERY_CHANNEL_UNAVAILABLE');
-  }
-}
-
-const disabledProvider = new DisabledRecoveryProvider();
-
-function configuredProvider(): RecoveryProvider {
-  // No external provider is enabled in the zero-cost staging beta. Future SMS/email
-  // adapters must implement RecoveryProvider behind a trusted backend; never embed
-  // provider secrets in the APK or use an unverified phone number as proof of identity.
-  return disabledProvider;
+function correlationId() {
+  const raw = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return raw.replace(/[^a-z0-9-]/gi, '').slice(0, 80);
 }
 
 export function accountRecoveryReadiness(): RecoveryReadiness {
-  const provider = configuredProvider();
-  const enabled = provider !== disabledProvider;
+  const provider = runtimeRecoveryAdapter();
+  const enabled = provider.name !== 'disabled' && provider.channels.length > 0;
   return {
     provider: enabled ? 'external' : 'disabled',
     state: enabled ? 'ready' : 'disabled',
@@ -54,11 +39,16 @@ export function accountRecoveryReadiness(): RecoveryReadiness {
 export async function startForgottenPasswordRecovery(identifier: string): Promise<RecoveryStartResult> {
   const clean = String(identifier || '').trim().slice(0, ACCOUNT_RECOVERY_POLICY.max_identifier_length);
   if (!clean) return { accepted: false, public_message: publicRecoveryResponse(), provider: 'disabled' };
-  const provider = configuredProvider();
-  if (provider === disabledProvider) {
+
+  const provider = runtimeRecoveryAdapter();
+  if (provider.name === 'disabled' || provider.channels.length === 0) {
     // Generic wording avoids account enumeration while making the beta limitation explicit.
     return { accepted: false, public_message: 'TuTop todavía no tiene un canal de recuperación verificado activo. No se enviará un SMS o correo ficticio.', provider: 'disabled' };
   }
-  await provider.start(clean);
+
+  // A real adapter may only advertise verified channels and must execute behind a
+  // trusted backend. The client never receives provider credentials or raw OTP secrets.
+  const channel = provider.channels[0];
+  await provider.start({ identifier: clean, channel, correlation_id: correlationId() });
   return { accepted: true, public_message: publicRecoveryResponse(), provider: 'external' };
 }
