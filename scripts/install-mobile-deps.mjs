@@ -4,15 +4,12 @@ import { spawnSync } from 'node:child_process';
 // normal Vite/typecheck dependency surface remains small. The app talks to the native
 // plugins through Capacitor.registerPlugin(), therefore no Firebase private credential
 // or Blaze-only service is embedded in the web bundle.
-const packages = [
+const mobilePackages = [
   '@capacitor/core@8.5.1',
   '@capacitor/android@8.5.1',
   '@capacitor-firebase/messaging@8.5.1',
   '@capacitor-firebase/app-check@8.5.0',
   'firebase@12.18.0',
-];
-
-const devPackages = [
   '@capacitor/cli@8.5.1',
   '@capacitor/assets@3.0.5',
 ];
@@ -28,7 +25,6 @@ function run(args) {
 const ephemeralInstall = ['install', '--no-save', '--package-lock=false', '--no-audit', '--no-fund'];
 
 console.log('Instalando stack Android TuTop 0.8.5: Capacitor + FCM + App Check.');
-console.log('Instalación efímera: package.json y package-lock.json permanecen intactos.');
+console.log('Instalación efímera de una sola transacción: package.json y package-lock.json permanecen intactos.');
 console.log('No se instalan Cloud Functions, Cloud Storage ni servicios Blaze.');
-run([...ephemeralInstall, ...packages]);
-run([...ephemeralInstall, ...devPackages]);
+run([...ephemeralInstall, ...mobilePackages]);
