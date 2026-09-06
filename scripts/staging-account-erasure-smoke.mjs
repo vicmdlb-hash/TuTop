@@ -12,7 +12,16 @@ const REQUIRED = 'tutop-beta-vicmdlb-1356585881';
 
 if (projectId !== REQUIRED) throw new Error(`Erasure smoke fijado a ${REQUIRED}.`);
 if (process.env.TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed') throw new Error('Erasure smoke requiere TUTOP_ALLOW_ACCOUNT_ERASURE=staging-reviewed.');
-if (!fs.existsSync(configPath)) throw new Error(`Falta ${configPath}.`);
+if (!fs.existsSync(configPath)) {
+  console.log(`ℹ️ ${configPath} no existe; regenerando config Web staging de forma controlada.`);
+  const prepare = spawnSync(process.execPath, ['scripts/prepare-staging-v2-auth.mjs'], {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+    env: { ...process.env },
+  });
+  if (prepare.status !== 0) throw new Error(`No se pudo regenerar ${configPath}; prepare-staging-v2-auth terminó con ${prepare.status}.`);
+}
+if (!fs.existsSync(configPath)) throw new Error(`Falta ${configPath} después de preparar staging.`);
 
 const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 if (firebaseConfig.projectId !== projectId) throw new Error('Config Firebase no corresponde al staging objetivo.');
