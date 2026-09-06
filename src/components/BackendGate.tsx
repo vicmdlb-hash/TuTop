@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, Building2, Eye, EyeOff, Loader2, LockKeyhole, MapPin, Phone, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
-import { CAMPUSES, INSTITUTIONS, identityFor } from '../lib/universityNetwork';
-import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
+import { CAMPUSES, INSTITUTIONS } from '../lib/universityNetwork';
+import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { onlineBackend } from '../services/onlineBackend';
+import { completePendingUniversityIdentity, rememberPendingUniversityIdentity } from '../services/v2OnboardingRecovery';
 import { useAppStore } from '../store/useAppStore';
 
 type AuthMode = 'login' | 'register';
@@ -43,6 +44,7 @@ export default function BackendGate({ children }: { children: ReactNode }) {
       }
       const snapshot = await onlineBackend.loadSnapshot();
       hydrateOnline(snapshot);
+      if (nationalSchemaEnabled()) void completePendingUniversityIdentity().catch(() => false);
       setAuthenticated(true);
       setSuspended({ active: snapshot.user.is_suspended === true, reason: snapshot.user.suspension_reason });
     } catch (syncError) {
@@ -111,9 +113,12 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
         if (name.trim().length < 2) throw new Error('Escribe tu nombre.');
         if (!institutionId || !campusId) throw new Error('Selecciona universidad y campus.');
         const legacyAdapter = campus?.name || institution?.short_name || 'Red universitaria';
+        if (nationalSchemaEnabled()) {
+          rememberPendingUniversityIdentity({ phone, institution_id: institutionId, campus_id: campusId, legacy_adapter: legacyAdapter });
+        }
         await onlineBackend.register(phone, password, { nombre: name, facultad: legacyAdapter });
         if (nationalSchemaEnabled()) {
-          await nationalBackend.updateUniversityIdentity(identityFor(institutionId, campusId), legacyAdapter);
+          await completePendingUniversityIdentity().catch(() => false);
         }
       } else await onlineBackend.login(phone, password);
       onAuthenticated();
