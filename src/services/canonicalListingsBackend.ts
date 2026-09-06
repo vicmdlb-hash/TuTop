@@ -41,6 +41,13 @@ function legacyStatus(status: CanonicalListingV2['status']): ProductStatus {
   return 'Activo';
 }
 
+function canonicalStatus(status: ProductStatus): CanonicalListingV2['status'] {
+  if (status === 'Pausado') return 'paused';
+  if (status === 'Vendido' || status === 'Agotado') return 'sold_out';
+  if (status === 'Archivado') return 'archived';
+  return 'active';
+}
+
 function legacyDelivery(method: ListingDeliveryMethod): DeliveryMethod {
   if (method === 'pickup') return 'Recoge conmigo';
   if (method === 'local_delivery') return 'Envío local';
@@ -58,7 +65,7 @@ function contextLabel(data: CanonicalListingV2) {
 
 export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListingV2>, sellerName = 'Estudiante'): Product {
   const data = doc.data;
-  const photos = Array.isArray(data.photo_urls) ? data.photo_urls.filter(Boolean).slice(0, 8) : [];
+  const photos = Array.isArray(data.photo_urls) ? data.photo_urls.filter(Boolean).slice(0, 4) : [];
   return {
     id: doc.id,
     vendedor_id: data.seller_id,
@@ -168,6 +175,31 @@ export const canonicalListingsBackend = {
     return docs
       .map((doc) => canonicalListingToProduct(doc, names.get(doc.data.seller_id) || 'Estudiante'))
       .sort((a, b) => Date.parse(b.updated_at || b.fecha_creacion) - Date.parse(a.updated_at || a.fecha_creacion));
+  },
+
+  async updateProduct(listingId: string, updates: Partial<Product>) {
+    const client = getClient();
+    const uid = client.currentSession!.uid;
+    const current = await client.getDocument<CanonicalListingV2>(`listings_v2/${listingId}`);
+    if (!current) throw new Error('LISTING_NOT_FOUND');
+    if (current.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
+
+    const patch: Record<string, unknown> = { updated_at: new Date() };
+    let contentChanged = false;
+    if (updates.titulo !== undefined) { patch.title = updates.titulo.trim().slice(0, 120); contentChanged = true; }
+    if (updates.descripcion !== undefined) { patch.description = updates.descripcion.trim().slice(0, 3000); contentChanged = true; }
+    if (updates.precio_mxn !== undefined) patch.price_mxn = Math.max(0, Math.min(1_000_000, Number(updates.precio_mxn)));
+    if (updates.stock !== undefined) patch.quantity = Math.max(1, Math.min(99, Math.round(Number(updates.stock))));
+    if (updates.categoria !== undefined) { patch.category_id = slug(updates.categoria); contentChanged = true; }
+    if (updates.condicion !== undefined) { patch.condition = updates.condicion; contentChanged = true; }
+    if (updates.attributes !== undefined) { patch.attributes = updates.attributes; contentChanged = true; }
+    if (updates.precio_negociable !== undefined) patch.negotiable = Boolean(updates.precio_negociable);
+    if (updates.estado !== undefined) patch.status = canonicalStatus(updates.estado);
+    if (contentChanged && current.data.moderation_status !== 'pending') patch.moderation_status = 'pending';
+
+    const next = { ...current.data, ...patch, updated_at: new Date().toISOString() } as CanonicalListingV2;
+    validateCanonicalListingPolicy(next, updates.categoria || categoryLabel(current.data.category_id));
+    await client.setDocument(`listings_v2/${listingId}`, patch, { merge: true });
   },
 
   async setStatus(listingId: string, status: CanonicalListingV2['status']) {
