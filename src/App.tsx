@@ -24,8 +24,9 @@ import './services/rateLimitedOnlineBridge';
 import './services/canonicalStoreBridge';
 import './services/nationalIdentityHydrationBridge';
 import './services/notificationReceiptStoreBridge';
-import './services/nativeNotificationRouter';
 import './services/physicalQaTelemetry';
+import { handleTutopPopState } from './services/navigationHistoryBridge';
+import './services/nativeNotificationRouter';
 import { nationalSchemaEnabled } from './services/nationalBackend';
 import { initializeNativeFirebaseSecurity } from './services/nativeFirebaseSecurity';
 import { useAppStore } from './store/useAppStore';
@@ -49,7 +50,7 @@ export default function App() {
 }
 
 function MobileApp() {
-  const { activeTab, setActiveTab, chats, activeChatId, selectedProductId, closeChat, closeProduct } = useAppStore();
+  const { activeTab, setActiveTab, chats, activeChatId, selectedProductId } = useAppStore();
   const unread = chats.reduce((sum, chat) => sum + (chat.sin_leer || 0), 0);
   const v2 = nationalSchemaEnabled();
   const showFeedUtilities = activeTab === 'feed' && !activeChatId && !selectedProductId;
@@ -60,13 +61,10 @@ function MobileApp() {
   }, [v2]);
 
   useEffect(() => {
-    const onPopState = () => {
-      if (selectedProductId) closeProduct();
-      else if (activeChatId) closeChat();
-    };
+    const onPopState = () => { handleTutopPopState(); };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeChatId, selectedProductId, closeChat, closeProduct]);
+  }, []);
 
   const content: Record<AppTab, ReactNode> = {
     feed: <Feed />,
