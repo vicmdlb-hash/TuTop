@@ -19,6 +19,7 @@ import UniversityNetworkSetup from './components/UniversityNetworkSetup';
 import DemandRequestComposer from './components/DemandRequestComposer';
 import NationalAccountControls from './components/NationalAccountControls';
 import './services/nationalBackendCanonicalBridge';
+import './services/rateLimitedOnlineBridge';
 import { nationalSchemaEnabled } from './services/nationalBackend';
 import { useAppStore } from './store/useAppStore';
 import type { AppTab } from './types';
