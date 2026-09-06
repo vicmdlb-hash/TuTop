@@ -34,6 +34,10 @@ function canModerateListings(admin: AdminContext) {
   return !['verification_reviewer', 'support'].includes(admin.role);
 }
 
+function canProcessAccountRequests(admin: AdminContext) {
+  return ['super_admin', 'trust_safety', 'support'].includes(admin.role);
+}
+
 export function moderationQueryScope(admin: AdminContext, kind?: ModerationCaseKind) {
   if (!admin.active) throw new Error('ADMIN_REQUIRED');
   if (admin.role === 'institution_moderator') {
@@ -112,6 +116,13 @@ export const scopedAdminBackend = {
     return firebase.runQuery<any>('listings_v2', filters, [{ field: 'updated_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
   },
 
+  async accountDeletionRequests(limit = 100) {
+    const firebase = client();
+    const admin = await this.context();
+    if (!canProcessAccountRequests(admin)) throw new Error('ROLE_SCOPE_DENIED');
+    return firebase.runQuery<any>('account_deletion_requests', [], [{ field: 'updated_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
+  },
+
   async reports(limit = 100) {
     const firebase = client();
     const admin = await this.context();
@@ -158,6 +169,28 @@ export const scopedAdminBackend = {
       targetType: 'listing',
       targetId: listingId,
       institutionId: institutionId || listingInstitution || undefined,
+    });
+  },
+
+  async updateAccountDeletionRequest(uid: string, status: 'processing' | 'completed' | 'rejected') {
+    const admin = await this.context();
+    if (!canProcessAccountRequests(admin)) throw new Error('ROLE_SCOPE_DENIED');
+    const firebase = client();
+    const current = await firebase.getDocument<any>(`account_deletion_requests/${uid}`);
+    if (!current) throw new Error('ACCOUNT_DELETION_REQUEST_NOT_FOUND');
+    const existing = String(current.data.status || 'pending');
+    const allowed = existing === 'pending'
+      ? ['processing', 'rejected']
+      : existing === 'processing'
+        ? ['completed', 'rejected']
+        : [];
+    if (!allowed.includes(status)) throw new Error('ACCOUNT_DELETION_INVALID_TRANSITION');
+    await auditedPatch({
+      path: `account_deletion_requests/${uid}`,
+      patch: { status },
+      action: `account_deletion_${status}`,
+      targetType: 'account_deletion_request',
+      targetId: uid,
     });
   },
 
