@@ -1,4 +1,5 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { requireAppCheckPhysicalEvidence } from './app-check-enforcement-readiness.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_APP_CHECK || '').trim();
@@ -12,8 +13,15 @@ if (projectId === historicalProject) stop(`${historicalProject} está bloqueado.
 if (/prod(uction)?/i.test(projectId) && process.env.TUTOP_ALLOW_PRODUCTION_FIREBASE !== '1') stop('el project ID parece producción.');
 if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID !== '1') stop('el project ID no parece staging/beta/dev/test.');
 if (!['OFF', 'UNENFORCED', 'ENFORCED'].includes(mode)) stop(`modo App Check inválido: ${mode}`);
-if (mode === 'ENFORCED' && process.env.TUTOP_ALLOW_APP_CHECK_ENFORCEMENT !== 'staging-v2-client-ready') {
-  stop('ENFORCED requiere TUTOP_ALLOW_APP_CHECK_ENFORCEMENT=staging-v2-client-ready después de validar un APK que envíe tokens App Check.');
+if (mode === 'ENFORCED') {
+  if (process.env.TUTOP_ALLOW_APP_CHECK_ENFORCEMENT !== 'staging-v2-client-ready') {
+    stop('ENFORCED requiere TUTOP_ALLOW_APP_CHECK_ENFORCEMENT=staging-v2-client-ready después de validar un APK que envíe tokens App Check.');
+  }
+  try {
+    requireAppCheckPhysicalEvidence(process.env.TUTOP_APP_CHECK_PHYSICAL_EVIDENCE_PATH);
+  } catch (error) {
+    stop(`ENFORCED bloqueado por falta de evidencia física válida: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 const token = await firebaseCiAccessToken();
