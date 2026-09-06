@@ -2,6 +2,7 @@ import { canActOnTransaction, transactionStatusForAction } from '../lib/marketpl
 import type { MarketplaceTransaction, Offer, TransactionOutcomeCode } from '../types';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
+import { commitWithRateLimit } from './rateLimit';
 import { getFirebaseConfig } from './runtimeConfig';
 
 function nowIso() { return new Date().toISOString(); }
@@ -195,17 +196,22 @@ export const canonicalTransactionsBackend = {
     const kind: TransactionOutcomeCode = accused === transaction.buyer_id ? 'buyer_no_show' : 'seller_no_show';
     const at = nowIso();
     const claimId = `${transaction.id}-${actor}`;
-    await client.setDocument(`transaction_outcome_claims/${claimId}`, {
-      transaction_id: transaction.id,
-      claimant_uid: actor,
-      accused_uid: accused,
-      kind,
-      institution_id: institutionId,
-      reason: reason.trim().slice(0, 500),
-      status: 'open',
-      created_at: at,
-      updated_at: at,
-    }, { exists: false });
+    await commitWithRateLimit(client, 'report_create', [
+      {
+        update: client.encodeDocumentForWrite(`transaction_outcome_claims/${claimId}`, {
+          transaction_id: transaction.id,
+          claimant_uid: actor,
+          accused_uid: accused,
+          kind,
+          institution_id: institutionId,
+          reason: reason.trim().slice(0, 500),
+          status: 'open',
+          created_at: at,
+          updated_at: at,
+        }),
+        currentDocument: { exists: false },
+      },
+    ]);
     return claimId;
   },
 
