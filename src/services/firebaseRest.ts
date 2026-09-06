@@ -106,9 +106,11 @@ async function sha256(text: string) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function appCheckHeader() {
+async function appCheckHeader(): Promise<Record<string, string>> {
   const token = await getNativeAppCheckToken(false).catch(() => null);
-  return token ? { 'X-Firebase-AppCheck': token } : {};
+  const headers: Record<string, string> = {};
+  if (token) headers['X-Firebase-AppCheck'] = token;
+  return headers;
 }
 
 export function normalizeMexicoPhone(input: string) {
@@ -169,7 +171,7 @@ export class FirebaseRestClient {
   signOut() { this.persistSession(null); }
 
   private async authRequest(endpoint: string, body: Record<string, unknown>) {
-    const headers = { 'Content-Type': 'application/json', ...(await appCheckHeader()) };
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(await appCheckHeader()) };
     const response = await fetch(`https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${encodeURIComponent(this.config.apiKey)}`, {
       method: 'POST', headers, body: JSON.stringify(body),
     });
@@ -216,7 +218,7 @@ export class FirebaseRestClient {
   async getIdToken() {
     if (!this.session) throw new Error('AUTH_REQUIRED');
     if (this.session.expiresAt > Date.now() + 60_000) return this.session.idToken;
-    const headers = { 'Content-Type': 'application/x-www-form-urlencoded', ...(await appCheckHeader()) };
+    const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded', ...(await appCheckHeader()) };
     const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(this.config.apiKey)}`, {
       method: 'POST',
       headers,
