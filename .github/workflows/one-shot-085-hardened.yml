@@ -1,4 +1,4 @@
-# Autonomous hardening final rerun: Node-resolvable recovery and QA evaluator tests are included.
+# Autonomous hardening APK rerun: correlated push/reconnect telemetry and App Check evidence gate included.
 name: One-shot TuTop 0.9 physical QA APK validation
 
 on:
