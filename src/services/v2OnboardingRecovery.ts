@@ -1,4 +1,5 @@
 import { identityFor } from '../lib/universityNetwork';
+import { normalizeMexicoPhone } from './firebaseRest';
 import { nationalBackend, nationalSchemaEnabled } from './nationalBackend';
 import { onlineBackend } from './onlineBackend';
 
@@ -30,7 +31,7 @@ function read(): PendingIdentity | null {
 
 export function rememberPendingUniversityIdentity(input: Omit<PendingIdentity, 'created_at'>) {
   if (!nationalSchemaEnabled()) return;
-  localStorage.setItem(KEY, JSON.stringify({ ...input, created_at: new Date().toISOString() }));
+  localStorage.setItem(KEY, JSON.stringify({ ...input, phone: normalizeMexicoPhone(input.phone), created_at: new Date().toISOString() }));
 }
 
 export function clearPendingUniversityIdentity() {
