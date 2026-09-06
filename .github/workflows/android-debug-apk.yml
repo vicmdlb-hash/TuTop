@@ -63,14 +63,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Prepare Android SDK
+      - name: Prepare Android SDK 36
         uses: android-actions/setup-android@v4
-      - name: Install Android SDK 36
-        shell: bash
-        run: |
-          set -euxo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
       - name: Install web dependencies
         run: npm ci
       - name: Static checks
@@ -152,14 +149,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Prepare Android SDK
+      - name: Prepare Android SDK 36
         uses: android-actions/setup-android@v4
-      - name: Install Android SDK 36
-        shell: bash
-        run: |
-          set -euxo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
       - name: Install web dependencies
         run: npm ci
       - name: Static and policy gates
