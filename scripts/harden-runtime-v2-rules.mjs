@@ -126,6 +126,7 @@ const runtimeCollections = `    match /rate_limits/{bucketId} {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['token','platform','app_version','active','updated_at'])
         && request.resource.data.token is string && request.resource.data.token.size() >= 20 && request.resource.data.token.size() <= 4096
         && request.resource.data.platform in ['android','ios','web']
+        && request.resource.data.app_version is string && request.resource.data.app_version.size() <= 40
         && request.resource.data.active is bool
         && fresh(request.resource.data.updated_at);
       allow delete: if signedIn() && resource.data.owner_uid == request.auth.uid;
@@ -236,10 +237,10 @@ replaceOnce(
 );
 replaceOnce(
   `      allow create: if signedIn() && notSuspended()
-        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id'`,
+        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','created_by'`,
   `      allow create: if signedIn() && notSuspended()
         && rateLimitConsumed('offer_create')
-        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id'`,
+        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','created_by'`,
   'offer create rate limit',
 );
 replaceOnce(
