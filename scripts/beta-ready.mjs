@@ -31,7 +31,7 @@ const privacy = read('public/privacy.html');
 const terms = read('public/terms.html');
 const assistant = read('src/lib/productAssistant.ts');
 
-const expectedBeta = '0.8.5-beta.0';
+const expectedBeta = '0.9.0-beta.0';
 if (pkg.version !== expectedBeta) errors.push(`Versión core npm inesperada: ${pkg.version || 'vacía'}`);
 if (lock.version !== expectedBeta || lock.packages?.['']?.version !== expectedBeta) errors.push('package-lock.json no está sincronizado con la versión beta raíz');
 if (pkg.type !== 'module') errors.push('package.json debe declarar type=module para evitar carga CommonJS ambigua');

@@ -24,7 +24,7 @@ function run(args) {
 
 const ephemeralInstall = ['install', '--no-save', '--package-lock=false', '--no-audit', '--no-fund'];
 
-console.log('Instalando stack Android TuTop 0.8.5: Capacitor + FCM + App Check.');
+console.log('Instalando stack Android TuTop 0.9 Physical QA: Capacitor + FCM + App Check.');
 console.log('Instalación efímera de una sola transacción: package.json y package-lock.json permanecen intactos.');
 console.log('No se instalan Cloud Functions, Cloud Storage ni servicios Blaze.');
 run([...ephemeralInstall, ...mobilePackages]);
