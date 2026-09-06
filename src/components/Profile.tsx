@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { BadgeCheck, Camera, Database, Edit3, ExternalLink, LogOut, MoreVertical, Pause, Play, Settings, ShieldCheck, Star, Tag, Volume2, VolumeX, X } from 'lucide-react';
 import { compressImageForFirestore } from '../lib/imageCompression';
-import { MARKETPLACE_CATEGORIES, VALID_MEETING_POINTS, reliabilityFor } from '../lib/productAssistant';
+import { MARKETPLACE_CATEGORIES, VALID_MEETING_POINTS } from '../lib/productAssistant';
+import { sellerReputationEvidence } from '../lib/reputationEvidence';
 import { isSoundEnabled, setSoundEnabled } from '../lib/feedback';
 import { onlineBackend } from '../services/onlineBackend';
 import { useAppStore } from '../store/useAppStore';
@@ -10,7 +11,7 @@ import type { Product, ProductCategory } from '../types';
 const FACULTADES = ['Turismo Internacional', 'Odontología', 'Ciencias Económico Administrativas', 'Derecho', 'Medicina'];
 
 export default function Profile() {
-  const { user, products, updateProduct, openProduct, isAdmin, clearOnline, hydrateOnline } = useAppStore();
+  const { user, products, chats, reviews, updateProduct, openProduct, isAdmin, clearOnline, hydrateOnline } = useAppStore();
   const [status, setStatus] = useState<'Activo' | 'Pausado' | 'Vendido'>('Activo');
   const [showSettings, setShowSettings] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
@@ -23,7 +24,7 @@ export default function Profile() {
   const [soundEnabled, setSoundState] = useState(() => isSoundEnabled());
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const myProducts = products.filter((product) => product.vendedor_id === user.id && product.estado === status);
-  const reliability = reliabilityFor(user.strikes);
+  const reputation = sellerReputationEvidence(user.id, reviews, chats);
   const target = user.nivel_vendedor === 'Novato' ? 50 : user.nivel_vendedor === 'Pro' ? 200 : user.puntos_prestigio;
   const progress = user.nivel_vendedor === 'Leyenda' ? 100 : Math.min(100, (user.puntos_prestigio / Math.max(target, 1)) * 100);
 
@@ -86,7 +87,6 @@ export default function Profile() {
     setEditingProduct(null);
   };
 
-
   return (
     <div className="pb-4">
       <div className="profile-cover pt-safe">
@@ -104,7 +104,8 @@ export default function Profile() {
           <p className="mt-0.5 text-[11px] text-muted">Facultad de {user.facultad} · UATx</p>
           <div className="mt-2 flex flex-wrap gap-2">{user.esta_verificado && <span className="verified-pill"><ShieldCheck className="h-3.5 w-3.5" />Estudiante verificado</span>}<span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2 py-1 text-[9px] font-bold text-emerald-300"><ShieldCheck className="h-3 w-3" />Cuenta TuTop activa</span></div>
         </div>
-        <div className="profile-stats mt-5"><div><strong>{reliability}%</strong><span>Confiabilidad</span></div><div><strong>{user.puntos_prestigio}</strong><span>PP</span></div><div><strong className="flex items-center justify-center gap-1"><Star className="h-4 w-4 text-[#FBBF24]" fill="currentColor" />{user.nivel_vendedor}</strong><span>Nivel</span></div></div>
+        <div className="profile-stats mt-5"><div><strong>{reputation.positiveRate === null ? '—' : `${reputation.positiveRate}%`}</strong><span>{reputation.hasEvidence ? 'Cumplimiento' : 'Sin historial'}</span></div><div><strong>{user.puntos_prestigio}</strong><span>PP</span></div><div><strong className="flex items-center justify-center gap-1"><Star className="h-4 w-4 text-[#FBBF24]" fill="currentColor" />{user.nivel_vendedor}</strong><span>Nivel</span></div></div>
+        <p className="mt-2 px-1 text-[9px] leading-4 text-slate-500">{reputation.detail}</p>
         <section className="prestige-card mt-3"><div className="flex items-center justify-between"><div><p className="text-[11px] text-muted">Nivel de vendedor</p><h2 className="mt-1 text-[15px] font-extrabold">{user.nivel_vendedor}</h2></div><span className="text-[11px] text-muted">{user.puntos_prestigio} / {target} PP</span></div><div className="mt-3 h-2 rounded-full bg-[#202B3D]"><div className="h-full rounded-full bg-gradient-to-r from-[#7C3AED] to-[#D946EF]" style={{ width: `${progress}%` }} /></div></section>
         <section className="mt-6"><div className="mb-3 flex items-center justify-between"><h2 className="section-title">Mis productos</h2><span className="text-[10px] text-muted">Actualizados en TuTop</span></div><div className="segmented-control"><button className={status === 'Activo' ? 'active' : ''} onClick={() => setStatus('Activo')}>Activos</button><button className={status === 'Pausado' ? 'active' : ''} onClick={() => setStatus('Pausado')}>Pausados</button><button className={status === 'Vendido' ? 'active' : ''} onClick={() => setStatus('Vendido')}>Vendidos</button></div><div className="mt-2 space-y-2">{myProducts.length ? myProducts.map((product) => <div key={product.id} className="profile-product-row"><button onClick={() => openProduct(product.id)}><img src={product.imagen_url} alt={product.titulo} /></button><button onClick={() => openProduct(product.id)} className="min-w-0 flex-1 text-left"><p className="truncate text-[12px] font-semibold">{product.titulo}</p><p className="mt-1 text-[12px] font-bold text-white">${product.precio_mxn.toLocaleString('es-MX')}</p></button><div className="flex flex-col gap-1">{product.estado !== 'Vendido' && <button onClick={() => setEditingProduct(product)} className="profile-action"><Edit3 />Editar</button>}{product.estado === 'Activo' && <button onClick={() => updateProduct(product.id, { estado: 'Pausado', es_top: false, jerarquia_top: 0 })} className="profile-action"><Pause />Pausar</button>}{product.estado === 'Pausado' && <button onClick={() => updateProduct(product.id, { estado: 'Activo' })} className="profile-action"><Play />Activar</button>}{product.estado !== 'Vendido' && <button onClick={() => updateProduct(product.id, { estado: 'Vendido', es_top: false, jerarquia_top: 0 })} className="profile-action"><Tag />Vendido</button>}</div></div>) : <div className="empty-card">No tienes productos {status.toLowerCase()}s.</div>}</div></section>
         {editingProduct && <div className="settings-overlay" role="dialog" aria-modal="true" aria-label="Editar producto"><button aria-label="Cerrar edición" className="settings-backdrop" onClick={() => setEditingProduct(null)} /><div className="settings-sheet"><div className="flex items-center justify-between"><div><p className="eyebrow">TU ANUNCIO</p><h2 className="mt-1 text-xl font-black">Editar producto</h2></div><button aria-label="Cerrar" className="icon-button-lg" onClick={() => setEditingProduct(null)}><X className="h-5 w-5" /></button></div><div className="mt-4 space-y-3"><div><label className="auth-label mt-0">Título</label><input className="auth-input" value={editingProduct.titulo} maxLength={120} onChange={(event) => setEditingProduct({ ...editingProduct, titulo: event.target.value })} /></div><div className="grid grid-cols-2 gap-2"><div><label className="auth-label mt-0">Precio</label><input className="auth-input" type="number" min="1" max="1000000" value={editingProduct.precio_mxn} onChange={(event) => setEditingProduct({ ...editingProduct, precio_mxn: Number(event.target.value) })} /></div><div><label className="auth-label mt-0">Cantidad</label><input className="auth-input" type="number" min="1" max="99" value={editingProduct.stock || 1} onChange={(event) => setEditingProduct({ ...editingProduct, stock: Math.max(1, Math.min(99, Number(event.target.value) || 1)) })} /></div></div><div><label className="auth-label mt-0">Categoría</label><select className="auth-input" value={editingProduct.categoria} onChange={(event) => setEditingProduct({ ...editingProduct, categoria: event.target.value as ProductCategory })}>{MARKETPLACE_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select></div><div><label className="auth-label mt-0">Descripción</label><textarea className="auth-input min-h-24" maxLength={1000} value={editingProduct.descripcion || ''} onChange={(event) => setEditingProduct({ ...editingProduct, descripcion: event.target.value })} /></div><div><label className="auth-label mt-0">Entrega</label><select className="auth-input" value={editingProduct.punto_encuentro} onChange={(event) => setEditingProduct({ ...editingProduct, punto_encuentro: event.target.value as Product['punto_encuentro'] })}>{VALID_MEETING_POINTS.map((point) => <option key={point}>{point}</option>)}</select></div><button className="w-full rounded-xl bg-violet-600 py-3 text-xs font-black text-white" onClick={saveProductEdit}>Guardar cambios</button></div></div></div>}
