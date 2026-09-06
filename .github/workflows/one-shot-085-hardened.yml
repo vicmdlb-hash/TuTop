@@ -1,4 +1,4 @@
-# Physical QA fixes rerun: feed overlays, evidence reputation, assisted publish and identity resync.
+# Physical QA fixes APK validated in run 34057435584: feed overlays, evidence reputation, assisted publish and identity resync.
 name: One-shot TuTop 0.8.5 hardened APK validation
 
 on:
