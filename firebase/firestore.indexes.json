@@ -65,6 +65,23 @@
       ]
     },
     {
+      "collectionGroup": "listings_v2",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "moderation_status", "order": "ASCENDING" },
+        { "fieldPath": "updated_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "listings_v2",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "moderation_status", "order": "ASCENDING" },
+        { "fieldPath": "institution_id", "order": "ASCENDING" },
+        { "fieldPath": "updated_at", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "notification_outbox",
       "queryScope": "COLLECTION",
       "fields": [
