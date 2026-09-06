@@ -1,5 +1,6 @@
 import { identityFor, verificationBadge } from '../lib/universityNetwork';
 import type { VerificationLevel } from '../types';
+import { canonicalListingsBackend } from './canonicalListingsBackend';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { onlineBackend } from './onlineBackend';
@@ -27,8 +28,18 @@ if (nationalSchemaEnabled()) {
     const rawLevel = Number(data.verification_level ?? (snapshot.user.esta_verificado ? 2 : 0));
     const level = Math.max(0, Math.min(4, Number.isFinite(rawLevel) ? Math.trunc(rawLevel) : 0)) as VerificationLevel;
 
+    // In schema V2 the feed has one authority only: listings_v2. This prevents the
+    // legacy `products` snapshot and V2 hydrator from racing every 30 seconds.
+    const products = await canonicalListingsBackend.loadMarketplaceProducts({
+      campusId: identity.campus_id,
+      institutionId: identity.institution_id,
+      cityId: identity.city_id,
+      limitPerScope: 30,
+    }).catch(() => snapshot.products.filter((product) => product.listing_kind === 'offer' && product.institution_id));
+
     return {
       ...snapshot,
+      products,
       user: {
         ...snapshot.user,
         institution_id: identity.institution_id,
