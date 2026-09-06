@@ -10,6 +10,7 @@ on:
       - "src/lib/reservationReconciliation.ts"
       - "scripts/reconcile-v2-reservations.mjs"
       - "scripts/v2-trusted-maintenance.mjs"
+      - "scripts/v2-observability-snapshot.mjs"
       - ".github/workflows/v2-trusted-maintenance.yml"
 
 permissions:
@@ -28,6 +29,7 @@ jobs:
       TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
       TUTOP_ALLOW_V2_RECONCILE: staging-v2
       TUTOP_ALLOW_V2_MAINTENANCE: staging-v2
+      TUTOP_ALLOW_V2_OBSERVABILITY: staging-v2
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
     steps:
       - name: Checkout
@@ -55,3 +57,6 @@ jobs:
 
       - name: Rebuild trusted reputation purge credentials queue alerts and send push
         run: node scripts/v2-trusted-maintenance.mjs --apply
+
+      - name: Persist privacy-safe marketplace observability snapshot
+        run: node scripts/v2-observability-snapshot.mjs --apply
