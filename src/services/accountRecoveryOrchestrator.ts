@@ -42,7 +42,8 @@ export async function startForgottenPasswordRecovery(identifier: string): Promis
 
   const provider = runtimeRecoveryAdapter();
   if (provider.name === 'disabled' || provider.channels.length === 0) {
-    // Generic wording avoids account enumeration while making the beta limitation explicit.
+    // RECOVERY_CHANNEL_UNAVAILABLE remains the adapter-level hard stop.
+    // Never embed provider secrets in the APK and never treat knowledge of a phone number as identity proof.
     return { accepted: false, public_message: 'TuTop todavía no tiene un canal de recuperación verificado activo. No se enviará un SMS o correo ficticio.', provider: 'disabled' };
   }
 
