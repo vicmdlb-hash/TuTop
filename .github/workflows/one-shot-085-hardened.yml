@@ -1,4 +1,4 @@
-# Frozen TuTop 0.9 Physical QA candidate: all pre-device fixes included; build this exact HEAD.
+# Autonomous hardening checkpoint: recovery policy, synthetic erasure and auto-classified Physical QA included.
 name: One-shot TuTop 0.9 physical QA APK validation
 
 on:
@@ -69,6 +69,9 @@ jobs:
           npm run v2:rules:prepare
           npm run native-security:test
           npm run account-erasure:test
+          npm run account-erasure:synthetic:test
+          npm run account-recovery:test
+          npm run physical-qa:evaluator:test
           npm run typecheck
 
       - name: Prepare isolated staging Firebase configs
