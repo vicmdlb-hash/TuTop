@@ -27,6 +27,9 @@ const privacy = read('public/privacy.html');
 const terms = read('public/terms.html');
 const assistant = read('src/lib/productAssistant.ts');
 
+if (pkg.version !== '0.7.0-beta.0') errors.push(`Versión core npm inesperada: ${pkg.version || 'vacía'}`);
+if (pkg.type !== 'module') errors.push('package.json debe declarar type=module para evitar carga CommonJS ambigua');
+if (project.currentBetaVersion !== '0.8.5-beta.0') errors.push(`Versión beta Android inesperada: ${project.currentBetaVersion || 'vacía'}`);
 if (cap.appId !== 'mx.tutop.app') errors.push('Capacitor appId no es mx.tutop.app');
 if (project.applicationId !== 'mx.tutop.app' || project.applicationIdConfirmed !== true) errors.push('config/project.json no confirma mx.tutop.app');
 if (!app.includes('<BackendGate>')) errors.push('App no está protegida por BackendGate');
@@ -66,7 +69,7 @@ for (const file of activeUiFiles) {
   if (/modo demo|datos demo|demo local/i.test(text)) errors.push(`Texto de demo visible en ${file}`);
 }
 
-notes.push(`Paquete base ${pkg.version || 'desconocida'} · beta producto ${project.currentBetaVersion || '0.8.5-beta.0'}`);
+notes.push(`Core npm/base ${pkg.version || 'desconocida'} · release Android beta ${project.currentBetaVersion || 'desconocida'}`);
 notes.push(`Application ID ${cap.appId || 'desconocido'}`);
 notes.push('Backend beta: Firebase REST + Firestore Security Rules');
 notes.push('Distribución inmediata: APK debug por GitHub Actions, sin Play Console');
