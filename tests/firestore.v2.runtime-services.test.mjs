@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, Timestamp, updateDoc, writeBatch } from 'firebase/firestore';
 
 const projectId = process.env.GCLOUD_PROJECT || 'demo-tutop-v2-rules';
 const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
@@ -13,6 +13,17 @@ after(async () => env.cleanup());
 beforeEach(async () => env.clearFirestore());
 
 const now = () => Timestamp.now();
+
+function ratePayload(uid, action, count, windowStart) {
+  return { uid, action, window_start: windowStart, count, updated_at: now() };
+}
+
+function rateBatch(db, uid, action, count, windowStart, writeAction) {
+  const batch = writeBatch(db);
+  writeAction(batch);
+  batch.set(doc(db, `rate_limits/${uid}-${action}`), ratePayload(uid, action, count, windowStart));
+  return batch.commit();
+}
 
 async function seedCanonicalTransaction(id, status = 'reserved', meetupAt = undefined) {
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -58,6 +69,36 @@ test('notification outbox es legible sólo por destinatario y server-only para e
   await assertFails(setDoc(doc(alice, 'notification_outbox/fake'), { recipient_uid: 'alice', status: 'pending' }));
 });
 
+test('acción protegida exige bucket atómico y reportes se limitan a 10 por hora', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  const windowStart = now();
+  const report = (index) => ({
+    created_by: 'alice', target_type: 'user', target_id: 'bob', reason: `Reporte válido ${index}`, status: 'open', priority: 'normal', created_at: now(), updated_at: now(),
+  });
+
+  await assertFails(setDoc(doc(alice, 'reports/no-bucket'), report(0)));
+
+  for (let index = 1; index <= 10; index += 1) {
+    await assertSucceeds(rateBatch(alice, 'alice', 'report_create', index, windowStart, (batch) => {
+      batch.set(doc(alice, `reports/r-${index}`), report(index));
+    }));
+  }
+
+  await assertFails(rateBatch(alice, 'alice', 'report_create', 11, windowStart, (batch) => {
+    batch.set(doc(alice, 'reports/r-11'), report(11));
+  }));
+  const bucket = await getDoc(doc(alice, 'rate_limits/alice-report_create'));
+  if (bucket.data()?.count !== 10) throw new Error(`RATE_LIMIT_COUNTER_CORRUPTED:${bucket.data()?.count}`);
+});
+
+test('bucket horario no puede reducirse ni reiniciarse antes de una hora', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  const windowStart = now();
+  await assertSucceeds(setDoc(doc(alice, 'rate_limits/alice-message_create'), ratePayload('alice', 'message_create', 1, windowStart)));
+  await assertSucceeds(setDoc(doc(alice, 'rate_limits/alice-message_create'), ratePayload('alice', 'message_create', 2, windowStart)));
+  await assertFails(setDoc(doc(alice, 'rate_limits/alice-message_create'), ratePayload('alice', 'message_create', 1, windowStart)));
+});
+
 test('cancelación unilateral atribuye responsabilidad al actor real', async () => {
   await seedCanonicalTransaction('tx-cancel');
   const alice = env.authenticatedContext('alice').firestore();
@@ -86,11 +127,22 @@ test('no-show sólo puede reclamarse contra la contraparte después del encuentr
   await seedCanonicalTransaction('tx-past', 'meetup_scheduled', meetupPast);
   await seedCanonicalTransaction('tx-future', 'meetup_scheduled', meetupFuture);
   const alice = env.authenticatedContext('alice').firestore();
+  const windowStart = now();
   const claim = {
     transaction_id: 'tx-past', claimant_uid: 'alice', accused_uid: 'bob', kind: 'seller_no_show', institution_id: 'uatx', reason: 'Esperé más de 30 minutos', status: 'open', created_at: now(), updated_at: now(),
   };
-  await assertSucceeds(setDoc(doc(alice, 'transaction_outcome_claims/tx-past-alice'), claim));
-  await assertFails(setDoc(doc(alice, 'transaction_outcome_claims/tx-past-alice-wrong'), claim));
-  await assertFails(setDoc(doc(alice, 'transaction_outcome_claims/tx-past-alice-2'), { ...claim, institution_id: 'buap' }));
-  await assertFails(setDoc(doc(alice, 'transaction_outcome_claims/tx-future-alice'), { ...claim, transaction_id: 'tx-future' }));
+
+  await assertFails(setDoc(doc(alice, 'transaction_outcome_claims/no-rate'), claim));
+  await assertSucceeds(rateBatch(alice, 'alice', 'report_create', 1, windowStart, (batch) => {
+    batch.set(doc(alice, 'transaction_outcome_claims/tx-past-alice'), claim);
+  }));
+  await assertFails(rateBatch(alice, 'alice', 'report_create', 2, windowStart, (batch) => {
+    batch.set(doc(alice, 'transaction_outcome_claims/tx-past-alice-wrong'), claim);
+  }));
+  await assertFails(rateBatch(alice, 'alice', 'report_create', 2, windowStart, (batch) => {
+    batch.set(doc(alice, 'transaction_outcome_claims/tx-past-alice-2'), { ...claim, institution_id: 'buap' });
+  }));
+  await assertFails(rateBatch(alice, 'alice', 'report_create', 2, windowStart, (batch) => {
+    batch.set(doc(alice, 'transaction_outcome_claims/tx-future-alice'), { ...claim, transaction_id: 'tx-future' });
+  }));
 });
