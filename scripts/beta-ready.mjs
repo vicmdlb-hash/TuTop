@@ -12,6 +12,7 @@ function read(relative) {
 }
 
 const pkg = JSON.parse(read('package.json') || '{}');
+const lock = JSON.parse(read('package-lock.json') || '{}');
 const cap = JSON.parse(read('capacitor.config.json') || '{}');
 const project = JSON.parse(read('config/project.json') || '{}');
 const app = read('src/App.tsx');
@@ -30,9 +31,12 @@ const privacy = read('public/privacy.html');
 const terms = read('public/terms.html');
 const assistant = read('src/lib/productAssistant.ts');
 
-if (pkg.version !== '0.7.0-beta.0') errors.push(`Versión core npm inesperada: ${pkg.version || 'vacía'}`);
+const expectedBeta = '0.8.5-beta.0';
+if (pkg.version !== expectedBeta) errors.push(`Versión core npm inesperada: ${pkg.version || 'vacía'}`);
+if (lock.version !== expectedBeta || lock.packages?.['']?.version !== expectedBeta) errors.push('package-lock.json no está sincronizado con la versión beta raíz');
 if (pkg.type !== 'module') errors.push('package.json debe declarar type=module para evitar carga CommonJS ambigua');
-if (project.currentBetaVersion !== '0.8.5-beta.0') errors.push(`Versión beta Android inesperada: ${project.currentBetaVersion || 'vacía'}`);
+if (project.currentBetaVersion !== expectedBeta) errors.push(`Versión beta Android inesperada: ${project.currentBetaVersion || 'vacía'}`);
+if (pkg.version !== project.currentBetaVersion) errors.push(`Versiones raíz/Android divergentes: ${pkg.version || 'vacía'} vs ${project.currentBetaVersion || 'vacía'}`);
 if (cap.appId !== 'mx.tutop.app') errors.push('Capacitor appId no es mx.tutop.app');
 if (project.applicationId !== 'mx.tutop.app' || project.applicationIdConfirmed !== true) errors.push('config/project.json no confirma mx.tutop.app');
 if (!app.includes('<BackendGate>')) errors.push('App no está protegida por BackendGate');
@@ -55,12 +59,12 @@ if (workflow.includes('yes | sdkmanager --licenses') || hardenedWorkflow.include
 if (!androidBootstrap.includes('libdatastore_shared_counter.so') || !androidBootstrap.includes('keepDebugSymbols')) errors.push('Bootstrap Android no declara la librería JNI no-strippable');
 if (!qualityWorkflow.includes('npm run typecheck') || !qualityWorkflow.includes('npm run build')) errors.push('Quality workflow no cubre typecheck/build');
 if (!qualityWorkflow.includes('npm run native-security:test')) errors.push('Quality workflow no valida seguridad Firebase nativa');
+if (!qualityWorkflow.includes('firestore.v2.account-operations.test.mjs')) errors.push('Quality workflow no cubre reglas de operaciones de cuenta');
 if (!dependabot.includes('package-ecosystem: "npm"') || !dependabot.includes('package-ecosystem: "github-actions"')) errors.push('Dependabot no cubre npm + GitHub Actions');
 if (!privacy.includes('no se verifica por SMS') || !privacy.includes('no se usan Cloud Storage, Cloud Functions')) errors.push('Aviso de privacidad no refleja correctamente las limitaciones Spark/SMS de la beta');
 if (!terms.includes('alcohol') || !terms.includes('vapeadores') || !terms.includes('medicamentos sujetos a receta')) errors.push('Reglas públicas no enumeran categorías sensibles bloqueadas en la beta');
 for (const marker of ['clonazepam', 'vendo\\s+(?:mi\\s+)?cuenta', 'respuestas\\s+del\\s+examen']) { if (!assistant.includes(marker)) errors.push(`Asistente de publicación perdió control sensible: ${marker}`); }
 
-// Active beta must not ship the old seeded local marketplace.
 const forbiddenSeedMarkers = ['initialProducts', 'Ana M.', 'Carlos R.', 'Burrito de Milanesa'];
 for (const marker of forbiddenSeedMarkers) {
   if (store.includes(marker) || online.includes(marker)) errors.push(`Dataset ficticio activo detectado: ${marker}`);
@@ -79,7 +83,7 @@ for (const file of activeUiFiles) {
 }
 
 notes.push(`Core npm/base ${pkg.version || 'desconocida'} · release Android beta ${project.currentBetaVersion || 'desconocida'}`);
-notes.push('La separación 0.7.0 core / 0.8.5 Android es intencional y está validada por CI');
+notes.push(`Versionado raíz/lock/Android sincronizado en ${expectedBeta}`);
 notes.push(`Application ID ${cap.appId || 'desconocido'}`);
 notes.push('Backend beta: Firebase REST + Firestore Security Rules');
 notes.push('Distribución inmediata: APK debug por GitHub Actions, sin Play Console');
