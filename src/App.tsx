@@ -18,12 +18,14 @@ import SellerTools from './components/SellerTools';
 import UniversityNetworkSetup from './components/UniversityNetworkSetup';
 import DemandRequestComposer from './components/DemandRequestComposer';
 import NationalAccountControls from './components/NationalAccountControls';
+import PhysicalQaPanel from './components/PhysicalQaPanel';
 import './services/nationalBackendCanonicalBridge';
 import './services/rateLimitedOnlineBridge';
 import './services/canonicalStoreBridge';
 import './services/nationalIdentityHydrationBridge';
 import './services/notificationReceiptStoreBridge';
 import './services/nativeNotificationRouter';
+import './services/physicalQaTelemetry';
 import { nationalSchemaEnabled } from './services/nationalBackend';
 import { initializeNativeFirebaseSecurity } from './services/nativeFirebaseSecurity';
 import { useAppStore } from './store/useAppStore';
@@ -90,7 +92,7 @@ function MobileApp() {
       </main>
 
       {!v2 && activeTab === 'bot' && !activeChatId && !selectedProductId && <DraftShelf />}
-      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls /></>}
+      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <PhysicalQaPanel />}</>}
 
       {!activeChatId && (
         <nav className="bottom-nav" aria-label="Navegación principal">
