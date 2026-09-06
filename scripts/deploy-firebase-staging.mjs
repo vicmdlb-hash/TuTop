@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 const project = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_FIREBASE_DEPLOY || '').trim();
 const historicalProject = 'tutop-3a4f7';
+const firebaseTools = 'firebase-tools@15.29.0';
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -34,7 +35,7 @@ run('npm', ['run', 'typecheck']);
 run('npm', ['run', 'v2:rules:prepare']);
 run('npm', ['run', 'v2:catalog:plan']);
 run('npx', [
-  'firebase-tools',
+  '--yes', firebaseTools,
   'deploy',
   '--config', 'firebase.v2.json',
   '--project', project,
@@ -42,5 +43,6 @@ run('npx', [
 ]);
 
 console.log(`\n✅ Firestore V2 staging desplegado en ${project}.`);
+console.log(`Firebase CLI efímero y fijado: ${firebaseTools}.`);
 console.log('Este comando NO despliega hosting, storage, functions ni activa VITE_TUTOP_SCHEMA_V2.');
 console.log('Siguiente paso seguro: ejecutar el seed V2 controlado y validar lecturas/escrituras antes de activar la feature flag en una beta dedicada.');
