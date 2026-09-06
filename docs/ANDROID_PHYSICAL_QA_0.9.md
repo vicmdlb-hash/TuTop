@@ -6,6 +6,8 @@ Este protocolo valida comportamiento físico. Los gates CI, emulator y Firebase 
 
 Registrar: marca/modelo, versión Android, resolución/orientación, instalación limpia vs actualización, versión TuTop, fecha/hora y resultado PASS/FAIL por caso. En Perfil → Android Physical QA ejecutar diagnóstico y copiar el reporte sanitizado cuando exista un fallo.
 
+El reporte QA nunca debe incluir contraseñas, OTP, `idToken`, `refreshToken`, token FCM ni token App Check. Para push usa únicamente correlaciones SHA-256 truncadas generadas localmente; para App Check sólo registra que el token fue observado.
+
 ## P0 — debe pasar antes de continuar
 
 1. Instalación limpia abre sin crash ni pantalla técnica.
@@ -35,6 +37,8 @@ Registrar: marca/modelo, versión Android, resolución/orientación, instalació
 19. Reactivar red: feed/sesión se recuperan sin reiniciar la app.
 20. Interrumpir red durante publicación/chat/oferta y comprobar que no aparecen duplicados al reconectar.
 
+El reporte debe contener pares `network_offline seq=N` → `network_online seq=N`. Si falta el segundo evento, el evaluador clasifica el caso como WARN. La cola offline compacta intents mutuamente excluyentes de favoritos para no reproducir estados intermedios obsoletos al reconectar.
+
 ## Push / FCM
 
 21. La app NO debe pedir permiso push al primer arranque.
@@ -48,11 +52,15 @@ Registrar: marca/modelo, versión Android, resolución/orientación, instalació
 29. Tap de transacción navega al contexto correspondiente.
 30. Marcar notificación leída, cerrar/reabrir y comprobar persistencia read/unread.
 
+Para cada notificación ejercitada, `push_received` y `push_action` deben compartir la misma `correlation=<hash>`. Si existe recepción + tap pero las correlaciones no coinciden, el evaluador debe marcar FAIL.
+
 ## App Check
 
 31. En APK staging verificar que puede obtener token nativo.
 32. Si no hay token, capturar reporte QA antes de cualquier enforcement.
 33. App Check seguirá UNENFORCED durante esta fase. No activar enforcement hasta PASS físico estable.
+
+Para un futuro enforcement, completar una copia privada del esquema `docs/APP_CHECK_PHYSICAL_EVIDENCE_TEMPLATE.json` con `status=verified`, al menos un dispositivo Android y `app_check_token_observed=true`. Nunca guardar el token real. El script `scripts/app-check-enforcement-readiness.mjs` bloquea ENFORCED si esta evidencia no existe, está vencida o no corresponde a staging 0.9.
 
 ## Cuenta y privacidad
 
