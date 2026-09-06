@@ -67,14 +67,13 @@ export default function ProductDetail() {
     }
   };
 
-  const makeOffer = () => {
+  const startOffer = () => {
     if (ownProduct) return;
-    const raw = window.prompt(`Precio publicado: $${product.precio_mxn.toLocaleString('es-MX')}\n¿Cuánto quieres ofrecer?`);
-    const amount = Number(raw);
-    if (!Number.isFinite(amount) || amount <= 0) return;
-    const chatId = contactProduct(product.id);
-    if (!chatId) return;
-    sendMessage(chatId, `Te ofrezco $${Math.round(amount).toLocaleString('es-MX')} por ${product.titulo}. ¿Te funciona?`);
+    feedbackTap();
+    contactProduct(product.id);
+    // La oferta monetaria se registra dentro del chat, donde createOffer/counterOffer
+    // pueden mantener estado, roles, expiración y transacción atómica. Evitamos
+    // crear aquí un simple texto que parezca una oferta V2 sin serlo.
   };
 
   return (
@@ -106,7 +105,7 @@ export default function ProductDetail() {
           {!ownProduct && <section className="mt-3 rounded-2xl border border-violet-400/10 bg-violet-500/[0.055] p-3"><button onClick={() => setTopiOpen((value) => !value)} className="flex w-full items-center gap-2 text-left"><span className="brand-mini">T</span><span className="flex-1"><strong className="block text-[11px]">Topi puede ayudarte</strong><small className="text-[9px] text-slate-500">Preguntas útiles antes de comprar.</small></span><Sparkles className="h-4 w-4 text-violet-300" /></button>{topiOpen && <div className="mt-3 flex flex-wrap gap-2">{['¿Sigue disponible?', '¿Qué incluye exactamente?', '¿Dónde entregas?', negotiable ? '¿Aceptarías una oferta?' : '¿El precio es fijo?'].map((text) => <button key={text} onClick={() => { const chatId = contactProduct(product.id); if (chatId) sendMessage(chatId, text); }} className="rounded-full border border-white/5 bg-white/[0.035] px-3 py-2 text-[9px] font-bold text-slate-300">{text}</button>)}</div>}</section>}
 
           <div className="mt-4 flex gap-2"><button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`detail-favorite ${favorite ? 'favorite-button-active' : ''}`}><Heart className="h-5 w-5" fill={favorite ? 'currentColor' : 'none'} />{favorite ? 'Guardado' : 'Guardar'}</button><button onClick={() => { if (!ownProduct) { feedbackTap(); contactProduct(product.id); } }} disabled={ownProduct} className="detail-contact"><MessageCircle className="h-5 w-5" />{ownProduct ? 'Es tu publicación' : 'Contactar'}</button></div>
-          {!ownProduct && <button onClick={makeOffer} className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-400/15 bg-emerald-500/10 py-3 text-xs font-black text-emerald-200"><TimerReset className="h-4 w-4" />Hacer oferta</button>}
+          {!ownProduct && <button onClick={startOffer} className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-400/15 bg-emerald-500/10 py-3 text-xs font-black text-emerald-200"><TimerReset className="h-4 w-4" />Negociar / hacer oferta</button>}
 
           {similar.length > 0 && <section className="mt-5"><div className="mb-2 flex items-center justify-between"><h2 className="text-xs font-black">También podría interesarte</h2><span className="text-[9px] text-slate-600">Productos similares</span></div><div className="grid grid-cols-2 gap-2">{similar.map((item) => <button key={item.id} onClick={() => openProduct(item.id)} className="overflow-hidden rounded-2xl border border-white/5 bg-white/[0.025] text-left"><img src={item.imagen_url} alt={item.titulo} className="aspect-[4/3] w-full object-cover" /><div className="p-2"><p className="line-clamp-1 text-[10px] font-bold">{item.titulo}</p><p className="mt-1 text-[11px] font-black text-emerald-300">${item.precio_mxn.toLocaleString('es-MX')}</p></div></button>)}</div></section>}
 
