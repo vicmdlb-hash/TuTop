@@ -93,6 +93,15 @@ jobs:
       - name: Account erasure safety contract
         run: npm run account-erasure:test
 
+      - name: Synthetic account erasure scenarios
+        run: npm run account-erasure:synthetic:test
+
+      - name: Account recovery architecture
+        run: npm run account-recovery:test
+
+      - name: Physical QA automatic evaluator
+        run: npm run physical-qa:evaluator:test
+
       - name: Typecheck
         run: npm run typecheck
 
