@@ -1,5 +1,5 @@
-# Final runtime consistency QA checkpoint: includes updated deletion policy documentation.
-name: One-shot TuTop 0.8.5 hardened APK validation
+# TuTop 0.9 physical QA checkpoint: privacy-safe diagnostics + hardened staging runtime.
+name: One-shot TuTop 0.9 physical QA APK validation
 
 on:
   push:
@@ -20,8 +20,8 @@ jobs:
       TUTOP_ANDROID_GOOGLE_SERVICES_PATH: .tutop-staging-google-services.json
       TUTOP_ALLOW_ANDROID_APP_SETUP: staging-v2
       TUTOP_ANDROID_PACKAGE_NAME: mx.tutop.app
-      TUTOP_BETA_VERSION: 0.8.5-beta.0
-      TUTOP_ANDROID_VERSION_CODE: 80500
+      TUTOP_BETA_VERSION: 0.9.0-beta.0
+      TUTOP_ANDROID_VERSION_CODE: 90000
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
     steps:
       - name: Checkout hardened feature branch
@@ -68,6 +68,7 @@ jobs:
           npm run v2:staging:readiness:test
           npm run v2:rules:prepare
           npm run native-security:test
+          npm run account-erasure:test
           npm run typecheck
 
       - name: Prepare isolated staging Firebase configs
@@ -98,15 +99,15 @@ jobs:
           test -s android/app/google-services.json
           grep -q 'tutop-beta-vicmdlb-1356585881' android/app/google-services.json
           ! grep -q 'tutop-3a4f7' android/app/google-services.json
-          grep -q 'versionCode 80500' android/app/build.gradle
-          grep -q 'versionName "0.8.5-beta.0"' android/app/build.gradle
+          grep -q 'versionCode 90000' android/app/build.gradle
+          grep -q 'versionName "0.9.0-beta.0"' android/app/build.gradle
           grep -q 'libdatastore_shared_counter.so' android/app/build.gradle
           grep -q 'keepDebugSymbols' android/app/build.gradle
 
       - name: Cache Gradle dependencies
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Lint test and assemble hardened APK
+      - name: Lint test and assemble physical QA APK
         working-directory: android
         run: |
           chmod +x gradlew
@@ -118,16 +119,16 @@ jobs:
           set -euo pipefail
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          cp "$APK" TuTop-0.8.5-beta.0-hardened-staging.apk
-          sha256sum TuTop-0.8.5-beta.0-hardened-staging.apk | tee TuTop-0.8.5-beta.0-hardened-staging.apk.sha256
+          cp "$APK" TuTop-0.9.0-beta.0-physical-qa-staging.apk
+          sha256sum TuTop-0.9.0-beta.0-physical-qa-staging.apk | tee TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256
 
-      - name: Upload hardened APK
+      - name: Upload physical QA APK
         uses: actions/upload-artifact@v7
         with:
-          name: TuTop-0.8.5-beta.0-hardened-staging-${{ github.run_number }}
+          name: TuTop-0.9.0-beta.0-physical-qa-staging-${{ github.run_number }}
           path: |
-            TuTop-0.8.5-beta.0-hardened-staging.apk
-            TuTop-0.8.5-beta.0-hardened-staging.apk.sha256
+            TuTop-0.9.0-beta.0-physical-qa-staging.apk
+            TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
