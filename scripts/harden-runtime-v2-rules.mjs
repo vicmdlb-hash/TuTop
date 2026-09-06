@@ -12,8 +12,105 @@ function replaceOnce(from, to, label) {
   rules = rules.replace(from, to);
 }
 
+const freshHelper = `    function fresh(ts) {
+      return ts is timestamp && ts <= request.time + duration.value(5, 'm') && ts >= request.time - duration.value(10, 'm');
+    }`;
+const rateHelpers = `${freshHelper}
+    function validRateAction(action) {
+      return action in ['listing_create','chat_create','offer_create','message_create','report_create','demand_create'];
+    }
+    function rateLimitMultiplier() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && ('verification_level' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.verification_level >= 3
+          ? 4
+          : (
+            signedIn()
+            && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && ('verification_level' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.verification_level >= 1
+              ? 2
+              : 1
+          );
+    }
+    function rateLimitCap(action) {
+      let multiplier = rateLimitMultiplier();
+      return (
+        action == 'listing_create' ? 8 :
+        action == 'chat_create' ? 6 :
+        action == 'offer_create' ? 5 :
+        action == 'message_create' ? 120 :
+        action == 'report_create' ? 10 :
+        action == 'demand_create' ? 10 : 0
+      ) * multiplier;
+    }
+    function rateLimitConsumed(action) {
+      let bucket = /databases/$(database)/documents/rate_limits/$(request.auth.uid + '-' + action);
+      let after = getAfter(bucket).data;
+      return signedIn() && validRateAction(action) && existsAfter(bucket)
+        && after.uid == request.auth.uid
+        && after.action == action
+        && after.count is int && after.count >= 1 && after.count <= rateLimitCap(action)
+        && after.window_start is timestamp
+        && fresh(after.updated_at)
+        && (
+          (!exists(bucket) && after.count == 1 && fresh(after.window_start))
+          ||
+          (exists(bucket)
+            && get(bucket).data.window_start is timestamp
+            && get(bucket).data.count is int
+            && (
+              (get(bucket).data.window_start > request.time - duration.value(1, 'h')
+                && after.window_start == get(bucket).data.window_start
+                && after.count == get(bucket).data.count + 1)
+              ||
+              (get(bucket).data.window_start <= request.time - duration.value(1, 'h')
+                && after.count == 1
+                && fresh(after.window_start))
+            )
+          )
+        );
+    }`;
+replaceOnce(freshHelper, rateHelpers, 'rate limit helpers');
+
 const marker = '    match /{document=**} { allow read, write: if false; }';
-const runtimeCollections = `    match /device_tokens/{tokenId} {
+const runtimeCollections = `    match /rate_limits/{bucketId} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['uid','action','window_start','count','updated_at'])
+        && request.resource.data.uid == request.auth.uid
+        && validRateAction(request.resource.data.action)
+        && bucketId == request.auth.uid + '-' + request.resource.data.action
+        && request.resource.data.window_start is timestamp && fresh(request.resource.data.window_start)
+        && request.resource.data.count == 1
+        && request.resource.data.count <= rateLimitCap(request.resource.data.action)
+        && fresh(request.resource.data.updated_at);
+      allow update: if signedIn() && notSuspended() && resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid','action','window_start','count','updated_at'])
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.action == resource.data.action
+        && bucketId == request.auth.uid + '-' + resource.data.action
+        && validRateAction(resource.data.action)
+        && request.resource.data.window_start is timestamp
+        && request.resource.data.count is int && request.resource.data.count >= 1
+        && request.resource.data.count <= rateLimitCap(resource.data.action)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['window_start','count','updated_at'])
+        && fresh(request.resource.data.updated_at)
+        && resource.data.window_start is timestamp && resource.data.count is int
+        && (
+          (resource.data.window_start > request.time - duration.value(1, 'h')
+            && request.resource.data.window_start == resource.data.window_start
+            && request.resource.data.count == resource.data.count + 1)
+          ||
+          (resource.data.window_start <= request.time - duration.value(1, 'h')
+            && request.resource.data.count == 1
+            && fresh(request.resource.data.window_start))
+        );
+      allow delete: if false;
+    }
+
+    match /device_tokens/{tokenId} {
       allow read: if signedIn() && resource.data.owner_uid == request.auth.uid;
       allow create: if signedIn() && notSuspended()
         && request.resource.data.keys().hasOnly(['owner_uid','token','platform','app_version','active','created_at','updated_at'])
@@ -46,6 +143,7 @@ const runtimeCollections = `    match /device_tokens/{tokenId} {
         || canModerateInstitution(resource.data)
       );
       allow create: if signedIn() && notSuspended()
+        && rateLimitConsumed('report_create')
         && request.resource.data.keys().hasOnly(['transaction_id','claimant_uid','accused_uid','kind','institution_id','reason','status','created_at','updated_at'])
         && claimId == request.resource.data.transaction_id + '-' + request.auth.uid
         && request.resource.data.claimant_uid == request.auth.uid
@@ -110,6 +208,57 @@ const runtimeCollections = `    match /device_tokens/{tokenId} {
 `;
 replaceOnce(marker, runtimeCollections + marker, 'runtime catch-all');
 
+replaceOnce(
+  `      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly([
+          'schema_version'`,
+  `      allow create: if signedIn() && notSuspended()
+        && rateLimitConsumed('listing_create')
+        && request.resource.data.keys().hasOnly([
+          'schema_version'`,
+  'listing create rate limit',
+);
+replaceOnce(
+  `      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['product_id','producto_id','buyer_id'`,
+  `      allow create: if signedIn() && notSuspended()
+        && rateLimitConsumed('chat_create')
+        && request.resource.data.keys().hasOnly(['product_id','producto_id','buyer_id'`,
+  'chat create rate limit',
+);
+replaceOnce(
+  `        allow create: if participant(chatId) && notSuspended()
+          && request.resource.data.keys().hasOnly(['sender_id','text'`,
+  `        allow create: if participant(chatId) && notSuspended()
+          && rateLimitConsumed('message_create')
+          && request.resource.data.keys().hasOnly(['sender_id','text'`,
+  'message create rate limit',
+);
+replaceOnce(
+  `      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id'`,
+  `      allow create: if signedIn() && notSuspended()
+        && rateLimitConsumed('offer_create')
+        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id'`,
+  'offer create rate limit',
+);
+replaceOnce(
+  `      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['buyer_id','title','description','category'`,
+  `      allow create: if signedIn() && notSuspended()
+        && rateLimitConsumed('demand_create')
+        && request.resource.data.keys().hasOnly(['buyer_id','title','description','category'`,
+  'demand create rate limit',
+);
+replaceOnce(
+  `      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['created_by','target_type','target_id','reason'`,
+  `      allow create: if signedIn() && notSuspended()
+        && rateLimitConsumed('report_create')
+        && request.resource.data.keys().hasOnly(['created_by','target_type','target_id','reason'`,
+  'report create rate limit',
+);
+
 const transactionEnd = `      allow delete: if false;
     }
 
@@ -141,4 +290,4 @@ const cancellationRule = `      // Immediate unilateral cancellation with explic
 replaceOnce(transactionEnd, cancellationRule, 'transaction cancellation rule');
 
 fs.writeFileSync(path, rules);
-console.log('✅ Rules V2 runtime: push privado, outcomes protegidos y cancelación atribuida.');
+console.log('✅ Rules V2 runtime: rate limits atómicos, push privado, outcomes protegidos y cancelación atribuida.');
