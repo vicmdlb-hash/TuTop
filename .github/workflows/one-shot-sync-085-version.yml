@@ -1,0 +1,73 @@
+name: One-shot sync TuTop 0.8.5 package version
+
+on:
+  push:
+    branches: ["feat/tutop-0.8-p0"]
+    paths:
+      - ".github/workflows/one-shot-sync-085-version.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  sync-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: feat/tutop-0.8-p0
+          fetch-depth: 0
+
+      - name: Guard feature branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
+          test "$(git branch --show-current)" = "feat/tutop-0.8-p0"
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Synchronize package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const version = '0.8.5-beta.0';
+          for (const path of ['package.json', 'package-lock.json']) {
+            const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+            data.version = version;
+            if (path === 'package-lock.json' && data.packages?.['']) data.packages[''].version = version;
+            fs.writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
+          }
+          NODE
+          test "$(node -p "require('./package.json').version")" = "0.8.5-beta.0"
+          test "$(node -p "require('./package-lock.json').version")" = "0.8.5-beta.0"
+          test "$(node -p "require('./package-lock.json').packages[''].version")" = "0.8.5-beta.0"
+
+      - name: Validate synchronized manifests
+        run: |
+          npm ci
+          npm run check
+          npm run typecheck
+          npm run build
+
+      - name: Commit synchronized manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "Package version already synchronized."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: align package version with 0.8.5 beta"
+          git push origin HEAD:feat/tutop-0.8-p0
