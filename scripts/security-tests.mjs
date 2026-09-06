@@ -104,8 +104,10 @@ test('reportes sólo los crea el usuario autenticado y sólo admin resuelve', ()
 test('config cliente Firebase puede venir integrada sin incluir credenciales privadas', () => {
   assert.ok(runtime.includes('tutop.firebase.config.v1'));
   assert.ok(runtime.includes('VITE_FIREBASE_API_KEY'));
-  assert.ok(runtime.includes("HISTORICAL_FIREBASE_PROJECT_ID = 'tutop-3a4f7'"));
-  assert.ok(runtime.includes('SCHEMA_V2_HISTORICAL_PROJECT_BLOCKED'));
+  assert.ok(runtime.includes("HISTORICAL_PROJECT_ID = 'tutop-3a4f7'"));
+  assert.ok(runtime.includes("throw new Error('V2_LEGACY_FIREBASE_BLOCKED')"));
+  assert.ok(runtime.includes("STAGING_PROJECT_ID = 'tutop-beta-vicmdlb-1356585881'"));
+  assert.ok(runtime.includes("throw new Error('V2_STAGING_PROJECT_MISMATCH')"));
   assert.ok(!runtime.match(/BEGIN (?:RSA )?PRIVATE KEY/));
   assert.ok(!runtime.includes('private_key_id'));
   assert.ok(!runtime.includes('client_email'));
