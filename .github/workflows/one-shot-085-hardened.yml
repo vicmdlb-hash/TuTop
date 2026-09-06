@@ -1,0 +1,137 @@
+name: One-shot TuTop 0.8.5 hardened APK validation
+
+on:
+  push:
+    branches: ["feat/tutop-0.8-p0"]
+    paths:
+      - ".github/workflows/one-shot-085-hardened.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  hardened-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_STAGING_WEB_CONFIG_PATH: .tutop-staging-web-config.json
+      TUTOP_ANDROID_GOOGLE_SERVICES_PATH: .tutop-staging-google-services.json
+      TUTOP_ALLOW_ANDROID_APP_SETUP: staging-v2
+      TUTOP_ANDROID_PACKAGE_NAME: mx.tutop.app
+      TUTOP_BETA_VERSION: 0.8.5-beta.0
+      TUTOP_ANDROID_VERSION_CODE: 80500
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+    steps:
+      - name: Checkout hardened feature branch
+        uses: actions/checkout@v7
+
+      - name: Guard staging only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
+          test "$TUTOP_FIREBASE_PROJECT_ID" = "tutop-beta-vicmdlb-1356585881"
+          test "$TUTOP_FIREBASE_PROJECT_ID" != "tutop-3a4f7"
+          test -n "$FIREBASE_TOKEN"
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Prepare Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK 36
+        shell: bash
+        run: |
+          set -euxo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install locked web dependencies
+        run: npm ci
+
+      - name: Verify clean dependency audit
+        run: npm audit --audit-level=moderate
+
+      - name: Full beta and security gates
+        run: |
+          npm run check
+          npm run github:ready
+          npm run beta:ready
+          npm run v2:staging:readiness:test
+          npm run v2:rules:prepare
+          npm run native-security:test
+          npm run typecheck
+
+      - name: Prepare isolated staging Firebase configs
+        run: |
+          node scripts/prepare-staging-v2-auth.mjs
+          node scripts/prepare-staging-android-app.mjs
+          node scripts/export-staging-v2-build-env.mjs
+
+      - name: Build optimized V2 web bundle
+        run: npm run build
+
+      - name: Install pinned native stack ephemerally
+        run: npm run deps:mobile
+
+      - name: Prove dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
+
+      - name: Generate and validate Android project
+        run: |
+          npm run android:bootstrap
+          node scripts/configure-android-beta-version.mjs
+          npm run android:doctor
+
+      - name: Verify staging-only native config
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s android/app/google-services.json
+          grep -q 'tutop-beta-vicmdlb-1356585881' android/app/google-services.json
+          ! grep -q 'tutop-3a4f7' android/app/google-services.json
+          grep -q 'versionCode 80500' android/app/build.gradle
+          grep -q 'versionName "0.8.5-beta.0"' android/app/build.gradle
+
+      - name: Cache Gradle dependencies
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Lint test and assemble hardened APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon clean lintDebug testDebugUnitTest assembleDebug
+
+      - name: Verify APK and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          cp "$APK" TuTop-0.8.5-beta.0-hardened-staging.apk
+          sha256sum TuTop-0.8.5-beta.0-hardened-staging.apk | tee TuTop-0.8.5-beta.0-hardened-staging.apk.sha256
+
+      - name: Upload hardened APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-0.8.5-beta.0-hardened-staging-${{ github.run_number }}
+          path: |
+            TuTop-0.8.5-beta.0-hardened-staging.apk
+            TuTop-0.8.5-beta.0-hardened-staging.apk.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove temporary Firebase configs
+        if: always()
+        run: rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json android/app/google-services.json
