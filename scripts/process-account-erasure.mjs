@@ -1,4 +1,5 @@
 import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminPatchDocument, adminRunQuery } from './staging-v2-admin.mjs';
+import { buildAccountErasurePlan } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const REQUIRED = 'tutop-beta-vicmdlb-1356585881';
@@ -50,9 +51,9 @@ const retainedOperational = [
   ['reports', 'created_by'],
 ];
 
-const deletePaths = new Set(directDeletes);
+const queryDeletePaths = [];
 for (const [collection, field] of queryDeletes) {
-  for (const doc of await adminRunQuery(collection, [{ field, value: uid }], 1000)) deletePaths.add(doc.path);
+  for (const doc of await adminRunQuery(collection, [{ field, value: uid }], 1000)) queryDeletePaths.push(doc.path);
 }
 
 const withdrawDocs = [];
@@ -66,16 +67,7 @@ for (const [collection, field] of retainedOperational) {
   if (docs.length) retained.push({ collection, field, count: docs.length });
 }
 
-const plan = {
-  project_id: projectId,
-  uid,
-  request_status: status,
-  mode: apply ? 'apply' : 'dry-run',
-  delete_paths: [...deletePaths].sort(),
-  withdraw_paths: withdrawDocs.map((item) => item.path).sort(),
-  retained_operational: retained,
-  auth_delete_last: true,
-};
+const plan = buildAccountErasurePlan({ projectId, uid, status, apply, directDeletes, queryDeletePaths, withdrawDocs, retained });
 console.log(JSON.stringify(plan, null, 2));
 
 if (!apply) {
@@ -85,7 +77,7 @@ if (!apply) {
 
 if (status === 'pending') await adminPatchDocument(`account_deletion_requests/${uid}`, { status: 'processing', updated_at: new Date() });
 
-for (const item of withdrawDocs) {
+for (const item of plan.withdrawals) {
   if (item.collection === 'listings_v2') {
     await adminPatchDocument(item.path, {
       status: 'archived', moderation_status: 'rejected', title: 'Publicación retirada', description: '', updated_at: new Date(),
@@ -95,7 +87,7 @@ for (const item of withdrawDocs) {
   }
 }
 
-for (const path of [...deletePaths].sort()) await adminDeleteDocument(path);
+for (const path of plan.delete_paths) await adminDeleteDocument(path);
 
 // El perfil público se elimina después de retirar contenido; referencias históricas
 // permanecen sólo en colecciones operativas retenidas para transacciones/disputas.
@@ -111,4 +103,4 @@ await adminPatchDocument(`audit_log/account-erasure-${uid}-${Date.now()}`, {
 
 // Auth se borra al final para evitar dejar datos privados activos si un paso anterior falla.
 await adminDeleteTestUsers([uid]);
-console.log(`✅ Eliminación controlada staging completada para ${uid}. Datos operativos retenidos: ${retained.reduce((sum, item) => sum + item.count, 0)}.`);
+console.log(`✅ Eliminación controlada staging completada para ${uid}. Datos operativos retenidos: ${plan.retained_count}.`);
