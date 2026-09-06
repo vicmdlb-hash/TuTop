@@ -18,6 +18,7 @@ import SellerTools from './components/SellerTools';
 import UniversityNetworkSetup from './components/UniversityNetworkSetup';
 import DemandRequestComposer from './components/DemandRequestComposer';
 import NationalAccountControls from './components/NationalAccountControls';
+import RecoveryReadinessCard from './components/RecoveryReadinessCard';
 import PhysicalQaPanel from './components/PhysicalQaPanel';
 import './services/nationalBackendCanonicalBridge';
 import './services/rateLimitedOnlineBridge';
@@ -90,7 +91,7 @@ function MobileApp() {
       </main>
 
       {!v2 && activeTab === 'bot' && !activeChatId && !selectedProductId && <DraftShelf />}
-      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <PhysicalQaPanel />}</>}
+      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <><RecoveryReadinessCard /><PhysicalQaPanel /></>}</>}
 
       {!activeChatId && (
         <nav className="bottom-nav" aria-label="Navegación principal">
