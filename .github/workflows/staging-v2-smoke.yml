@@ -14,6 +14,7 @@ on:
       - "src/services/rateLimit.ts"
       - "src/services/rateLimitedOnlineBridge.ts"
       - "scripts/deploy-firebase-auth-staging.mjs"
+      - "scripts/deploy-firebase-staging.mjs"
       - "scripts/prepare-firestore-v2-rules.mjs"
       - "scripts/harden-canonical-v2-rules.mjs"
       - "scripts/harden-runtime-v2-rules.mjs"
@@ -49,10 +50,10 @@ jobs:
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -60,8 +61,8 @@ jobs:
       - name: Install app dependencies
         run: npm ci
 
-      - name: Install Firebase client and CLI for smoke
-        run: npm install --no-save firebase firebase-tools
+      - name: Install Firebase client for smoke (ephemeral)
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0
 
       - name: Require staging credential
         shell: bash
