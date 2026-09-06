@@ -87,6 +87,9 @@ jobs:
       - name: Offline privacy and performance budgets
         run: npm run offline-performance:test
 
+      - name: Native Firebase security contract
+        run: npm run native-security:test
+
       - name: Typecheck
         run: npm run typecheck
 
