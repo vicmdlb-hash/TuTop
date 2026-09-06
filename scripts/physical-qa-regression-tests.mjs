@@ -7,6 +7,9 @@ const profile = read('src/components/Profile.tsx');
 const publish = read('src/components/NationalPublishScreen.tsx');
 const productDetail = read('src/components/ProductDetail.tsx');
 const accountControls = read('src/components/NationalAccountControls.tsx');
+const qaPanel = read('src/components/PhysicalQaPanel.tsx');
+const qaTelemetry = read('src/services/physicalQaTelemetry.ts');
+const qaProtocol = read('docs/ANDROID_PHYSICAL_QA_0.9.md');
 const userSettings = read('src/services/nationalUserSettings.ts');
 const canonicalStore = read('src/services/canonicalStoreBridge.ts');
 const identityBridge = read('src/services/nationalIdentityHydrationBridge.ts');
@@ -27,12 +30,15 @@ const notificationHardener = read('scripts/harden-notification-receipts-rules.mj
 const smoke = read('scripts/staging-v2-e2e-smoke.mjs');
 const pkg = JSON.parse(read('package.json'));
 const lock = JSON.parse(read('package-lock.json'));
+const project = JSON.parse(read('config/project.json'));
 
 assert.match(app, /showFeedUtilities = activeTab === 'feed'/);
 assert.match(app, /canonicalStoreBridge/);
 assert.match(app, /nationalIdentityHydrationBridge/);
 assert.match(app, /notificationReceiptStoreBridge/);
 assert.match(app, /nativeNotificationRouter/);
+assert.match(app, /physicalQaTelemetry/);
+assert.match(app, /<PhysicalQaPanel/);
 assert.match(app, /PendingListingModeration/);
 assert.match(app, /AccountDeletionQueue/);
 assert.match(profile, /sellerReputationEvidence/);
@@ -90,9 +96,30 @@ assert.match(accountHardener, /resource\.data\.status == 'processing'/);
 assert.match(smoke, /favorito real apunta a listing canónico/);
 assert.match(smoke, /autoaprobación del vendedor bloqueada/);
 assert.match(smoke, /re-aprobación devuelve listing editado al marketplace/);
+
+// Physical QA 0.9 diagnostics must remain privacy-safe and useful on a real phone.
+assert.match(qaTelemetry, /tutop\.physical-qa\.events\.v1/);
+assert.match(qaTelemetry, /replace\(\/\\b\\d\{10,13\}\\b\/g, '\[redacted-number\]'\)/);
+assert.match(qaTelemetry, /\[redacted-token\]/);
+assert.match(qaTelemetry, /network_online/);
+assert.match(qaTelemetry, /network_offline/);
+assert.match(qaTelemetry, /visibilitychange/);
+assert.match(qaTelemetry, /unhandledrejection/);
+assert.match(qaTelemetry, /tutop-beta-vicmdlb-1356585881/);
+assert.match(qaTelemetry, /getNativeAppCheckToken/);
+assert.match(qaTelemetry, /nativePushPermission/);
+assert.doesNotMatch(qaTelemetry, /refreshToken|idToken|password/);
+assert.match(qaPanel, /Ejecutar diagnóstico/);
+assert.match(qaPanel, /Copiar reporte/);
+assert.match(qaPanel, /Limpiar eventos QA locales/);
+assert.match(qaProtocol, /0 P0 abiertos/);
+assert.match(qaProtocol, /foreground\/background\/cold-start/);
+assert.match(qaProtocol, /App Check seguirá UNENFORCED/);
+
 assert.equal(pkg.version, '0.9.0-beta.0');
 assert.equal(lock.version, '0.9.0-beta.0');
 assert.equal(lock.packages?.['']?.version, '0.9.0-beta.0');
+assert.equal(project.currentBetaVersion, '0.9.0-beta.0');
 
 console.log('PASS feed controls and canonical V2 marketplace authority');
 console.log('PASS shipping derives only from delivery methods and description is visibly bounded');
@@ -101,5 +128,6 @@ console.log('PASS reputation requires evidence instead of fake default percentag
 console.log('PASS V2 seller actions and structured offers stay canonical');
 console.log('PASS native push has receive/action routing and persistent read receipts');
 console.log('PASS account deletion has guarded operations and dry-run erasure processor');
-console.log('PASS root package metadata matches Android beta version');
+console.log('PASS Physical QA 0.9 diagnostics are privacy-safe and lifecycle-aware');
+console.log('PASS root/lock/project metadata matches TuTop 0.9 beta');
 console.log('Physical QA regression contract: PASS');
