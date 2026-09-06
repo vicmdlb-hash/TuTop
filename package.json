@@ -32,7 +32,7 @@
     "firebase:link": "node scripts/link-firebase-project.mjs",
     "firebase:deploy:spark": "firebase deploy --only firestore:rules,firestore:indexes,hosting",
     "firebase:emulators:spark": "firebase emulators:start --only auth,firestore,hosting",
-    "v2:rules:prepare": "node scripts/prepare-firestore-v2-rules.mjs && node scripts/harden-canonical-v2-rules.mjs && node scripts/harden-runtime-v2-rules.mjs",
+    "v2:rules:prepare": "node scripts/prepare-firestore-v2-rules.mjs && node scripts/harden-canonical-v2-rules.mjs && node scripts/harden-runtime-v2-rules.mjs && node scripts/optimize-listing-rate-limit-rules.mjs",
     "v2:catalog:plan": "node scripts/seed-v2-catalog.mjs",
     "v2:catalog:seed": "node scripts/seed-v2-catalog.mjs --apply",
     "v2:staging:readiness:test": "node scripts/staging-v2-readiness-tests.mjs",
