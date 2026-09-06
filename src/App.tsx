@@ -21,6 +21,7 @@ import NationalAccountControls from './components/NationalAccountControls';
 import './services/nationalBackendCanonicalBridge';
 import './services/rateLimitedOnlineBridge';
 import { nationalSchemaEnabled } from './services/nationalBackend';
+import { initializeNativeFirebaseSecurity } from './services/nativeFirebaseSecurity';
 import { useAppStore } from './store/useAppStore';
 import type { AppTab } from './types';
 import AdminDashboard from './admin/AdminDashboard';
@@ -43,6 +44,11 @@ function MobileApp() {
   const { activeTab, setActiveTab, chats, activeChatId, selectedProductId, closeChat, closeProduct } = useAppStore();
   const unread = chats.reduce((sum, chat) => sum + (chat.sin_leer || 0), 0);
   const v2 = nationalSchemaEnabled();
+
+  useEffect(() => {
+    if (!v2) return;
+    void initializeNativeFirebaseSecurity();
+  }, [v2]);
 
   useEffect(() => {
     const onPopState = () => {
