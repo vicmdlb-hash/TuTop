@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BellRing, ChevronDown, ChevronUp, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
+import { BellRing, ChevronDown, ChevronUp, KeyRound, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NOTIFICATION_PRIORITY, type NotificationPreferenceKey, type NotificationPreferences } from '../lib/notificationPreferences.ts';
 import { nationalSchemaEnabled } from '../services/nationalBackend.ts';
 import { disableNativePushNotifications, enableNativePushNotifications, nativePushPermission } from '../services/nativeFirebaseSecurity.ts';
@@ -32,6 +32,10 @@ export default function NationalAccountControls() {
   const [deletionBusy, setDeletionBusy] = useState(false);
   const [pushPermission, setPushPermission] = useState<DevicePushPermission>('unavailable');
   const [pushBusy, setPushBusy] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [nextPassword, setNextPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,6 +95,24 @@ export default function NationalAccountControls() {
     } finally { setPushBusy(false); }
   };
 
+  const rotatePassword = async () => {
+    if (passwordBusy) return;
+    if (nextPassword.length < 8) { setMessage('La nueva Clave TuTop necesita al menos 8 caracteres.'); return; }
+    if (nextPassword !== confirmPassword) { setMessage('Las dos claves no coinciden.'); return; }
+    setPasswordBusy(true);
+    setMessage(null);
+    try {
+      await nationalUserSettings.changePassword(nextPassword);
+      setNextPassword('');
+      setConfirmPassword('');
+      setPasswordOpen(false);
+      setMessage('Clave TuTop actualizada. Úsala la próxima vez que inicies sesión.');
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      setMessage(/WEAK_PASSWORD/i.test(raw) ? 'La nueva clave es demasiado débil.' : /TOKEN_EXPIRED|INVALID_ID_TOKEN|CREDENTIAL_TOO_OLD_LOGIN_AGAIN/i.test(raw) ? 'Por seguridad, cierra sesión y vuelve a entrar antes de cambiar la clave.' : 'No pudimos actualizar tu Clave TuTop.');
+    } finally { setPasswordBusy(false); }
+  };
+
   const requestDeletion = async () => {
     if (deletion || deletionBusy) return;
     const confirmed = window.confirm('¿Quieres solicitar la eliminación de tu cuenta y datos? Algunas evidencias de fraude, disputas u obligaciones legales pueden conservarse temporalmente según la política de retención.');
@@ -117,7 +139,7 @@ export default function NationalAccountControls() {
     <section className="mx-4 mt-4 rounded-2xl border border-white/[0.06] bg-[#0b1420] p-3">
       <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-center gap-2 text-left">
         <BellRing className="h-4 w-4 text-violet-300" />
-        <span className="flex-1"><strong className="block text-[11px]">Notificaciones y privacidad V2</strong><small className="text-[9px] text-slate-500">Control granular, sin notificaciones basura.</small></span>
+        <span className="flex-1"><strong className="block text-[11px]">Notificaciones y privacidad V2</strong><small className="text-[9px] text-slate-500">Control granular, seguridad y privacidad de tu cuenta.</small></span>
         {open ? <ChevronUp className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
       </button>
 
@@ -126,6 +148,11 @@ export default function NationalAccountControls() {
           <div className="flex items-center gap-2"><BellRing className="h-4 w-4 text-violet-300" /><div className="flex-1"><strong className="block text-[10px] text-slate-200">Notificaciones del dispositivo</strong><small className="text-[8px] text-slate-500">{pushPermission === 'granted' ? 'Activadas en este teléfono' : pushPermission === 'denied' ? 'Bloqueadas por Android' : 'Aún no autorizadas'}</small></div></div>
           <button type="button" onClick={() => void toggleDevicePush()} disabled={pushBusy} className={`mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl text-[9px] font-black disabled:opacity-50 ${pushPermission === 'granted' ? 'bg-white/[0.05] text-slate-300' : 'bg-violet-500/15 text-violet-200'}`}>{pushBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{pushPermission === 'granted' ? 'Desactivar push en este dispositivo' : 'Activar notificaciones del dispositivo'}</button>
         </div>}
+
+        <div className="rounded-xl border border-sky-400/10 bg-sky-500/[0.035] p-3">
+          <button type="button" onClick={() => setPasswordOpen((value) => !value)} className="flex w-full items-center gap-2 text-left"><KeyRound className="h-4 w-4 text-sky-300"/><span className="flex-1"><strong className="block text-[10px] text-slate-200">Cambiar Clave TuTop</strong><small className="text-[8px] text-slate-500">Disponible mientras tienes una sesión válida.</small></span>{passwordOpen ? <ChevronUp className="h-4 w-4 text-slate-500"/> : <ChevronDown className="h-4 w-4 text-slate-500"/>}</button>
+          {passwordOpen && <div className="mt-3 space-y-2"><input type="password" autoComplete="new-password" value={nextPassword} onChange={(event) => setNextPassword(event.target.value)} placeholder="Nueva clave · mínimo 8 caracteres" className="w-full rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[10px] text-white outline-none placeholder:text-slate-600"/><input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite la nueva clave" className="w-full rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[10px] text-white outline-none placeholder:text-slate-600"/><button type="button" onClick={() => void rotatePassword()} disabled={passwordBusy || nextPassword.length < 8 || nextPassword !== confirmPassword} className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-sky-500/10 text-[9px] font-black text-sky-200 disabled:opacity-40">{passwordBusy && <Loader2 className="h-3.5 w-3.5 animate-spin"/>}Actualizar clave</button><p className="text-[8px] leading-4 text-slate-600">Esto cambia la clave de una cuenta ya autenticada. Recuperar una clave olvidada todavía requiere un canal de verificación de identidad; TuTop no fingirá que el número está verificado por SMS mientras esa capacidad no esté activada.</p></div>}
+        </div>
 
         <p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Importantes</p>
         {highPriority.map(renderToggle)}
