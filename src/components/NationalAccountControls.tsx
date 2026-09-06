@@ -76,7 +76,8 @@ export default function NationalAccountControls() {
     try {
       if (pushPermission === 'granted') {
         const disabled = await disableNativePushNotifications();
-        setPushPermission(disabled ? 'prompt' : await nativePushPermission());
+        const permission = disabled ? 'prompt' : await nativePushPermission();
+        setPushPermission(permission as DevicePushPermission);
         setMessage(disabled ? 'Notificaciones push desactivadas en este dispositivo.' : 'No pudimos desactivar el token del dispositivo.');
       } else {
         const result = await enableNativePushNotifications();
@@ -85,7 +86,8 @@ export default function NationalAccountControls() {
       }
     } catch {
       setMessage('No pudimos cambiar las notificaciones del dispositivo.');
-      setPushPermission(await nativePushPermission().catch(() => 'unavailable'));
+      const permission = await nativePushPermission().catch(() => 'unavailable' as const);
+      setPushPermission(permission as DevicePushPermission);
     } finally { setPushBusy(false); }
   };
 
