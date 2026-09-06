@@ -33,28 +33,53 @@ const fatal = evaluatePhysicalQaReport({
 assert.equal(fatal.overall, 'fail');
 assert(fatal.findings.some((finding) => finding.code === 'runtime:unhandled-error'));
 
+const passChecks = base.checks.map((check) => check.key === 'push-permission' || check.key === 'app-check' ? { ...check, status: 'pass', detail: 'ok' } : check);
 const pushReady = evaluatePhysicalQaReport({
   ...base,
-  checks: base.checks.map((check) => check.key === 'push-permission' || check.key === 'app-check' ? { ...check, status: 'pass', detail: 'ok' } : check),
+  checks: passChecks,
   events: [
     ...base.events,
-    { at: new Date(2).toISOString(), kind: 'push_received', detail: 'chat' },
-    { at: new Date(3).toISOString(), kind: 'push_action', detail: 'chat' },
+    { at: new Date(2).toISOString(), kind: 'network_offline', detail: 'seq=1' },
+    { at: new Date(3).toISOString(), kind: 'network_online', detail: 'seq=1 duration_ms=1000' },
+    { at: new Date(4).toISOString(), kind: 'push_received', detail: 'target=chat correlation=abc123' },
+    { at: new Date(5).toISOString(), kind: 'push_action', detail: 'target=chat correlation=abc123' },
   ],
 });
 assert.equal(pushReady.overall, 'pass');
 assert.equal(pushReady.score, 100);
 
+const mismatch = evaluatePhysicalQaReport({
+  ...base,
+  checks: passChecks,
+  events: [
+    ...base.events,
+    { at: new Date(2).toISOString(), kind: 'push_received', detail: 'target=listing correlation=one111' },
+    { at: new Date(3).toISOString(), kind: 'push_action', detail: 'target=listing correlation=two222' },
+  ],
+});
+assert.equal(mismatch.overall, 'fail');
+assert(mismatch.findings.some((finding) => finding.code === 'push:correlation-mismatch'));
+
+const noReconnect = evaluatePhysicalQaReport({
+  ...base,
+  checks: passChecks,
+  events: [...base.events, { at: new Date(2).toISOString(), kind: 'network_offline', detail: 'seq=7' }],
+});
+assert.equal(noReconnect.overall, 'warn');
+assert(noReconnect.findings.some((finding) => finding.code === 'network:no-reconnect-evidence'));
+
 const noTap = evaluatePhysicalQaReport({
   ...base,
-  checks: base.checks.map((check) => check.key === 'push-permission' || check.key === 'app-check' ? { ...check, status: 'pass', detail: 'ok' } : check),
-  events: [...base.events, { at: new Date(2).toISOString(), kind: 'push_received', detail: 'listing' }],
+  checks: passChecks,
+  events: [...base.events, { at: new Date(2).toISOString(), kind: 'push_received', detail: 'target=listing correlation=abc123' }],
 });
 assert.equal(noTap.overall, 'warn');
 assert(noTap.findings.some((finding) => finding.code === 'push:no-tap-evidence'));
 
 console.log('PASS pre-push device classifies as WARN');
 console.log('PASS structural/runtime failures classify as FAIL');
-console.log('PASS push receive + action + App Check can classify as PASS');
+console.log('PASS correlated push + reconnect + App Check can classify as PASS');
+console.log('PASS mismatched push tap correlation classifies as FAIL');
+console.log('PASS missing reconnect evidence remains WARN');
 console.log('PASS missing push tap evidence remains WARN');
 console.log('Physical QA evaluator scenarios: PASS');
