@@ -1,3 +1,4 @@
+# One-shot rerun after fixing the single-transaction native dependency install.
 name: One-shot TuTop 0.8.5 hardened APK validation
 
 on:
