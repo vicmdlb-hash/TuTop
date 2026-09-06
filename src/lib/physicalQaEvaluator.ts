@@ -17,6 +17,11 @@ type PhysicalQaReportLike = {
 
 const weight = (severity: QaSeverity) => severity === 'fail' ? 30 : severity === 'warn' ? 10 : 0;
 
+function detailValue(detail: string | undefined, key: string) {
+  const match = String(detail || '').match(new RegExp(`(?:^|\\s)${key}=([^\\s]+)`));
+  return match?.[1] || '';
+}
+
 export function evaluatePhysicalQaReport(report: PhysicalQaReportLike): QaAssessment {
   const findings: QaFinding[] = [];
   for (const check of report.checks) {
@@ -27,15 +32,26 @@ export function evaluatePhysicalQaReport(report: PhysicalQaReportLike): QaAssess
   const globalErrors = report.events.filter((event) => event.kind === 'window_error' || event.kind === 'unhandled_rejection');
   if (globalErrors.length) findings.push({ severity: 'fail', code: 'runtime:unhandled-error', message: `Se detectaron ${globalErrors.length} errores globales/rechazos no manejados.` });
 
-  const offline = report.events.filter((event) => event.kind === 'network_offline').length;
-  const online = report.events.filter((event) => event.kind === 'network_online').length;
-  if (offline > 0 && online === 0 && report.online) findings.push({ severity: 'warn', code: 'network:no-reconnect-evidence', message: 'Hubo evento offline pero no quedó evidencia de reconexión.' });
+  const offlineEvents = report.events.filter((event) => event.kind === 'network_offline');
+  const onlineEvents = report.events.filter((event) => event.kind === 'network_online');
+  const offlineSequences = new Set(offlineEvents.map((event) => detailValue(event.detail, 'seq')).filter(Boolean));
+  const reconnectedSequences = new Set(onlineEvents.map((event) => detailValue(event.detail, 'seq')).filter((value) => value && value !== '0'));
+  const missingReconnect = [...offlineSequences].filter((sequence) => !reconnectedSequences.has(sequence));
+  if (missingReconnect.length) findings.push({ severity: 'warn', code: 'network:no-reconnect-evidence', message: `Falta evidencia de reconexión para ${missingReconnect.length} corte(s) de red.` });
+  if (offlineEvents.length > 0 && onlineEvents.length === 0 && report.online) findings.push({ severity: 'warn', code: 'network:legacy-no-reconnect-evidence', message: 'Hubo evento offline pero no quedó evidencia de reconexión.' });
 
-  const pushesReceived = report.events.filter((event) => event.kind === 'push_received').length;
-  const pushActions = report.events.filter((event) => event.kind === 'push_action').length;
+  const received = report.events.filter((event) => event.kind === 'push_received');
+  const actions = report.events.filter((event) => event.kind === 'push_action');
+  const receivedCorrelations = new Set(received.map((event) => detailValue(event.detail, 'correlation')).filter((value) => value && value !== 'none' && value !== 'unavailable'));
+  const actionCorrelations = new Set(actions.map((event) => detailValue(event.detail, 'correlation')).filter((value) => value && value !== 'none' && value !== 'unavailable'));
+  const correlatedTaps = [...receivedCorrelations].filter((correlation) => actionCorrelations.has(correlation));
   const pushPermission = report.checks.find((check) => check.key === 'push-permission');
-  if (pushPermission?.status === 'pass' && pushesReceived === 0) findings.push({ severity: 'warn', code: 'push:not-exercised', message: 'Push está autorizado, pero este reporte no contiene una notificación recibida.' });
-  if (pushesReceived > 0 && pushActions === 0) findings.push({ severity: 'warn', code: 'push:no-tap-evidence', message: 'Hay recepción push, pero todavía no hay evidencia de tap/deep-link.' });
+  if (pushPermission?.status === 'pass' && received.length === 0) findings.push({ severity: 'warn', code: 'push:not-exercised', message: 'Push está autorizado, pero este reporte no contiene una notificación recibida.' });
+  if (received.length > 0 && actions.length === 0) findings.push({ severity: 'warn', code: 'push:no-tap-evidence', message: 'Hay recepción push, pero todavía no hay evidencia de tap/deep-link.' });
+  if (receivedCorrelations.size > 0 && actions.length > 0 && correlatedTaps.length === 0) findings.push({ severity: 'fail', code: 'push:correlation-mismatch', message: 'Hay recepción y tap push, pero ninguna acción corresponde a la misma notificación correlacionada.' });
+
+  const appCheck = report.checks.find((check) => check.key === 'app-check');
+  if (report.native_runtime && appCheck?.status !== 'pass') findings.push({ severity: 'warn', code: 'app-check:no-physical-token', message: 'Runtime nativo sin evidencia de token App Check; enforcement debe permanecer bloqueado.' });
 
   if (!report.native_runtime) findings.push({ severity: 'warn', code: 'runtime:not-native', message: 'El reporte no proviene de runtime Android nativo.' });
   if (report.viewport.width < 300 || report.viewport.height < 480) findings.push({ severity: 'warn', code: 'viewport:compact', message: `Viewport compacto ${report.viewport.width}×${report.viewport.height}; revisar overflow y safe areas.` });
