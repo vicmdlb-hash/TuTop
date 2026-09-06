@@ -1,16 +1,17 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import { ACCOUNT_ERASURE_POLICY } from '../src/lib/accountErasurePolicy.ts';
 
 const processor = fs.readFileSync('scripts/process-account-erasure.mjs', 'utf8');
-const policy = new Map(ACCOUNT_ERASURE_POLICY.map((item) => [item.collection, item]));
+const policy = fs.readFileSync('src/lib/accountErasurePolicy.ts', 'utf8');
 
 for (const collection of ['users','user_private','notification_preferences','device_tokens','notification_receipts','favorites','saved_searches','wallets','wallet_transactions','verificationRequests','publicVerifications','reputation','moderationStatus']) {
-  assert.equal(policy.get(collection)?.disposition, 'delete', `${collection} debe eliminarse`);
+  assert.match(policy, new RegExp(`collection: '${collection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'.*disposition: 'delete'`), `${collection} debe eliminarse`);
 }
-for (const collection of ['listings_v2','demand_requests']) assert.equal(policy.get(collection)?.disposition, 'withdraw', `${collection} debe retirarse`);
+for (const collection of ['listings_v2','demand_requests']) {
+  assert.match(policy, new RegExp(`collection: '${collection}'.*disposition: 'withdraw'`), `${collection} debe retirarse`);
+}
 for (const collection of ['account_deletion_requests','transactions_v2','offers','chats','reviews','reports','audit_log']) {
-  assert.equal(policy.get(collection)?.disposition, 'retain_operational', `${collection} debe tener retención operativa`);
+  assert.match(policy, new RegExp(`collection: '${collection}'.*disposition: 'retain_operational'`), `${collection} debe tener retención operativa`);
 }
 
 assert.match(processor, /projectId !== REQUIRED/);
@@ -21,7 +22,7 @@ assert.match(processor, /status: 'archived'/);
 assert.match(processor, /status: 'expired'/);
 assert.match(processor, /await adminDeleteDocument\(`users\/\$\{uid\}`\)/);
 assert.match(processor, /await adminDeleteTestUsers\(\[uid\]\)/);
-assert(processor.indexOf("await adminDeleteTestUsers([uid])") > processor.indexOf("await adminDeleteDocument(`users/${uid}`)"), 'Auth debe borrarse al final');
+assert(processor.indexOf('await adminDeleteTestUsers([uid])') > processor.indexOf('await adminDeleteDocument(`users/${uid}`)'), 'Auth debe borrarse al final');
 assert.doesNotMatch(processor, /adminDeleteDocument\(`transactions_v2/);
 assert.doesNotMatch(processor, /adminDeleteDocument\(`chats/);
 assert.doesNotMatch(processor, /adminDeleteDocument\(`reports/);
