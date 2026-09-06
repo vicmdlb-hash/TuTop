@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 const processor = fs.readFileSync('scripts/process-account-erasure.mjs', 'utf8');
 const planner = fs.readFileSync('scripts/account-erasure-planner.mjs', 'utf8');
+const liveSmoke = fs.readFileSync('scripts/staging-account-erasure-smoke.mjs', 'utf8');
+const smokeWorkflow = fs.readFileSync('.github/workflows/staging-v2-smoke.yml', 'utf8');
 const policy = fs.readFileSync('src/lib/accountErasurePolicy.ts', 'utf8');
 
 for (const collection of ['users','user_private','notification_preferences','device_tokens','notification_receipts','favorites','saved_searches','wallets','wallet_transactions','verificationRequests','publicVerifications','reputation','moderationStatus']) {
@@ -30,9 +32,19 @@ assert.doesNotMatch(processor, /adminDeleteDocument\(`transactions_v2/);
 assert.doesNotMatch(processor, /adminDeleteDocument\(`chats/);
 assert.doesNotMatch(processor, /adminDeleteDocument\(`reports/);
 
+assert.match(liveSmoke, /createUserWithEmailAndPassword/);
+assert.match(liveSmoke, /account_deletion_requests/);
+assert.match(liveSmoke, /process-account-erasure\.mjs', '--uid', uid, '--apply'/);
+assert.match(liveSmoke, /signInWithEmailAndPassword/);
+assert.match(liveSmoke, /Real staging account erasure smoke: PASS/);
+assert.match(smokeWorkflow, /Real controlled account erasure smoke/);
+assert.match(smokeWorkflow, /TUTOP_ALLOW_ACCOUNT_ERASURE: staging-reviewed/);
+assert.match(smokeWorkflow, /node scripts\/staging-account-erasure-smoke\.mjs/);
+
 console.log('PASS erasure policy distinguishes delete, withdraw and operational retention');
 console.log('PASS shared planner owns dry-run/apply mode and auth-delete-last contract');
 console.log('PASS processor defaults to dry-run and requires explicit staging apply gate');
 console.log('PASS Auth deletion occurs only after Firestore withdrawal/deletion');
 console.log('PASS transaction/chat/report evidence is not blindly deleted');
+console.log('PASS real staging smoke exercises synthetic destructive erasure behind explicit gate');
 console.log('Account erasure safety contract: PASS');
