@@ -30,7 +30,8 @@ const assistant = read('src/lib/productAssistant.ts');
 if (cap.appId !== 'mx.tutop.app') errors.push('Capacitor appId no es mx.tutop.app');
 if (project.applicationId !== 'mx.tutop.app' || project.applicationIdConfirmed !== true) errors.push('config/project.json no confirma mx.tutop.app');
 if (!app.includes('<BackendGate>')) errors.push('App no está protegida por BackendGate');
-if (!runtime.includes('BUILT_IN_CONFIG') || !runtime.includes("projectId: 'tutop-3a4f7'")) errors.push('Falta configuración online integrada para instalaciones nuevas');
+if (!runtime.includes('BUILT_IN_CONFIG') || !runtime.includes("const HISTORICAL_PROJECT_ID = 'tutop-3a4f7'")) errors.push('Falta configuración online V1 integrada para instalaciones estables');
+if (!runtime.includes('V2_LEGACY_FIREBASE_BLOCKED') || !runtime.includes('V2_STAGING_PROJECT_MISMATCH')) errors.push('Runtime V2 no bloquea proyecto histórico / mismatch staging');
 if (/Firebase|Firestore|projectId/i.test(gate)) {
   const consumerText = gate.replace(/CONFIGURATION_NOT_FOUND/g, '').replace(/onlineBackend/g, '').replace(/configureFromRuntime/g, '');
   if (/Firebase|Firestore|projectId/i.test(consumerText)) errors.push('BackendGate expone lenguaje técnico al usuario');
@@ -38,9 +39,10 @@ if (/Firebase|Firestore|projectId/i.test(gate)) {
 if (!online.includes('FirebaseRestClient')) errors.push('Backend online no usa FirebaseRestClient');
 if (!rules.includes('match /wallets/{uid}')) errors.push('Rules no protegen Wallet');
 if (!rules.includes('match /admins/{uid}')) errors.push('Rules no protegen administradores');
-if (!workflow.includes('assembleDebug')) errors.push('Workflow no genera APK debug');
-if (!workflow.includes('test:rules') && !workflow.includes('firestore.rules.test')) errors.push('Workflow no ejecuta pruebas de Firestore Rules');
+if (!workflow.includes('assembleDebug')) errors.push('Workflow estable no genera APK debug');
+if (!workflow.includes('test:rules') && !workflow.includes('firestore.rules.test')) errors.push('Workflow estable no ejecuta pruebas de Firestore Rules');
 if (!qualityWorkflow.includes('npm run typecheck') || !qualityWorkflow.includes('npm run build')) errors.push('Quality workflow no cubre typecheck/build');
+if (!qualityWorkflow.includes('npm run native-security:test')) errors.push('Quality workflow no valida seguridad Firebase nativa');
 if (!dependabot.includes('package-ecosystem: "npm"') || !dependabot.includes('package-ecosystem: "github-actions"')) errors.push('Dependabot no cubre npm + GitHub Actions');
 if (!privacy.includes('no se verifica por SMS') || !privacy.includes('no se usan Cloud Storage, Cloud Functions')) errors.push('Aviso de privacidad no refleja correctamente las limitaciones Spark/SMS de la beta');
 if (!terms.includes('alcohol') || !terms.includes('vapeadores') || !terms.includes('medicamentos sujetos a receta')) errors.push('Reglas públicas no enumeran categorías sensibles bloqueadas en la beta');
@@ -64,7 +66,7 @@ for (const file of activeUiFiles) {
   if (/modo demo|datos demo|demo local/i.test(text)) errors.push(`Texto de demo visible en ${file}`);
 }
 
-notes.push(`Versión ${pkg.version || 'desconocida'}`);
+notes.push(`Paquete base ${pkg.version || 'desconocida'} · beta producto ${project.currentBetaVersion || '0.8.5-beta.0'}`);
 notes.push(`Application ID ${cap.appId || 'desconocido'}`);
 notes.push('Backend beta: Firebase REST + Firestore Security Rules');
 notes.push('Distribución inmediata: APK debug por GitHub Actions, sin Play Console');
