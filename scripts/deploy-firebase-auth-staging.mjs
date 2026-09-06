@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_FIREBASE_DEPLOY || '').trim();
 const historicalProject = 'tutop-3a4f7';
+const firebaseTools = 'firebase-tools@15.29.0';
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -18,7 +19,7 @@ if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUT
 }
 
 const result = spawnSync('npx', [
-  'firebase-tools',
+  '--yes', firebaseTools,
   'deploy',
   '--config', 'firebase.v2.json',
   '--project', projectId,
@@ -31,4 +32,5 @@ const result = spawnSync('npx', [
 
 if (result.status !== 0) process.exit(result.status || 1);
 console.log(`✅ Firebase Authentication base (Email/Password) desplegado en ${projectId}.`);
+console.log(`Firebase CLI efímero y fijado: ${firebaseTools}.`);
 console.log('No se solicita upgrade a Identity Platform y no se cambia el plan de facturación.');
