@@ -137,4 +137,4 @@ jobs:
         run: npm run v2:rules:prepare
 
       - name: Firestore V2 abuse + atomic batch + governance + runtime services tests
-        run: npx --yes firebase-tools@15.29.0 emulators:exec --only firestore --config firebase.v2.json --project demo-tutop-v2-rules "node --test tests/firestore.v2.rules.test.mjs tests/firestore.v2.atomic.test.mjs tests/firestore.v2.acceptance-atomic.test.mjs tests/firestore.v2.reputation-trust.test.mjs tests/firestore.v2.governance.test.mjs tests/firestore.v2.runtime-services.test.mjs"
+        run: npx --yes firebase-tools@15.29.0 emulators:exec --only firestore --config firebase.v2.json --project demo-tutop-v2-rules "node --test tests/firestore.v2.rules.test.mjs tests/firestore.v2.atomic.test.mjs tests/firestore.v2.acceptance-atomic.test.mjs tests/firestore.v2.reputation-trust.test.mjs tests/firestore.v2.governance.test.mjs tests/firestore.v2.runtime-services.test.mjs tests/firestore.v2.account-operations.test.mjs"
