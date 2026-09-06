@@ -21,8 +21,11 @@ const store = read('src/store/useAppStore.ts');
 const online = read('src/services/onlineBackend.ts');
 const rules = read('firebase/firestore.rules');
 const workflow = read('.github/workflows/android-debug-apk.yml');
+const hardenedWorkflow = read('.github/workflows/one-shot-085-hardened.yml');
 const qualityWorkflow = read('.github/workflows/quality.yml');
 const dependabot = read('.github/dependabot.yml');
+const mobileDeps = read('scripts/install-mobile-deps.mjs');
+const androidBootstrap = read('scripts/android-bootstrap.mjs');
 const privacy = read('public/privacy.html');
 const terms = read('public/terms.html');
 const assistant = read('src/lib/productAssistant.ts');
@@ -44,6 +47,12 @@ if (!rules.includes('match /wallets/{uid}')) errors.push('Rules no protegen Wall
 if (!rules.includes('match /admins/{uid}')) errors.push('Rules no protegen administradores');
 if (!workflow.includes('assembleDebug')) errors.push('Workflow estable no genera APK debug');
 if (!workflow.includes('test:rules') && !workflow.includes('firestore.rules.test')) errors.push('Workflow estable no ejecuta pruebas de Firestore Rules');
+if (!workflow.includes('git diff --exit-code -- package.json package-lock.json')) errors.push('Workflow Android no prueba inmutabilidad de manifests npm');
+if (!mobileDeps.includes("'--no-save'") || !mobileDeps.includes("'--package-lock=false'")) errors.push('Instalación móvil debe ser efímera y no modificar package manifests');
+const sdkPackages = "packages: 'platform-tools platforms;android-36 build-tools;36.0.0'";
+if (!workflow.includes(sdkPackages) || !hardenedWorkflow.includes(sdkPackages)) errors.push('Workflows Android no fijan SDK 36 mediante setup-android');
+if (workflow.includes('yes | sdkmanager --licenses') || hardenedWorkflow.includes('yes | sdkmanager --licenses')) errors.push('Workflow Android conserva aceptación SDK redundante y ruidosa');
+if (!androidBootstrap.includes('libdatastore_shared_counter.so') || !androidBootstrap.includes('keepDebugSymbols')) errors.push('Bootstrap Android no declara la librería JNI no-strippable');
 if (!qualityWorkflow.includes('npm run typecheck') || !qualityWorkflow.includes('npm run build')) errors.push('Quality workflow no cubre typecheck/build');
 if (!qualityWorkflow.includes('npm run native-security:test')) errors.push('Quality workflow no valida seguridad Firebase nativa');
 if (!dependabot.includes('package-ecosystem: "npm"') || !dependabot.includes('package-ecosystem: "github-actions"')) errors.push('Dependabot no cubre npm + GitHub Actions');
@@ -70,6 +79,7 @@ for (const file of activeUiFiles) {
 }
 
 notes.push(`Core npm/base ${pkg.version || 'desconocida'} · release Android beta ${project.currentBetaVersion || 'desconocida'}`);
+notes.push('La separación 0.7.0 core / 0.8.5 Android es intencional y está validada por CI');
 notes.push(`Application ID ${cap.appId || 'desconocido'}`);
 notes.push('Backend beta: Firebase REST + Firestore Security Rules');
 notes.push('Distribución inmediata: APK debug por GitHub Actions, sin Play Console');
