@@ -23,6 +23,16 @@ function requireSession(firebase: FirebaseRestClient) {
   return session;
 }
 
+async function readJson(response: Response) {
+  const text = await response.text();
+  let data: any = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+  }
+  if (!response.ok) throw new Error(String(data?.error?.message || data?.raw || `HTTP ${response.status}`));
+  return data;
+}
+
 export const nationalUserSettings = {
   async loadNotificationPreferences(): Promise<NotificationPreferences> {
     const firebase = client();
@@ -40,6 +50,21 @@ export const nationalUserSettings = {
       updated_at: new Date(),
     });
     return preferences;
+  },
+
+  async changePassword(nextPassword: string) {
+    const firebase = client();
+    requireSession(firebase);
+    if (nextPassword.length < 8) throw new Error('WEAK_PASSWORD');
+    if (nextPassword.length > 128) throw new Error('PASSWORD_TOO_LONG');
+    const token = await firebase.getIdToken();
+    const config = getFirebaseConfig();
+    await readJson(await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${encodeURIComponent(config.apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: token, password: nextPassword, returnSecureToken: false }),
+    }));
+    return true;
   },
 
   async requestAccountDeletion(): Promise<AccountDeletionRequest> {
