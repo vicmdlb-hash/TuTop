@@ -14,8 +14,8 @@ function replaceOnce(from, to, label) {
 
 replaceOnce(
   "    function productDoc(productId) { return get(/databases/$(database)/documents/products/$(productId)); }",
-  "    function productDoc(productId) { return get(/databases/$(database)/documents/products/$(productId)); }\n    function listingDoc(listingId) { return get(/databases/$(database)/documents/listings_v2/$(listingId)); }",
-  'helper listingDoc',
+  "    function listingDoc(listingId) { return get(/databases/$(database)/documents/listings_v2/$(listingId)); }",
+  'replace legacy productDoc with canonical listingDoc',
 );
 
 replaceOnce(
@@ -73,5 +73,10 @@ replaceOnce(
   'seller-second completion atomically sells canonical listing',
 );
 
+if (rules.includes('productDoc(')) {
+  console.error('DETENIDO: quedó una referencia legacy productDoc en las Rules V2 generadas.');
+  process.exit(2);
+}
+
 fs.writeFileSync(path, rules);
-console.log('✅ Rules V2 endurecidas: listing canónico para edición/re-moderación, favoritos, chat, ofertas, boosts, meetup y reseñas.');
+console.log('✅ Rules V2 endurecidas: listing canónico para edición/re-moderación, favoritos, chat, ofertas, boosts, meetup y reseñas; sin helper legacy productDoc.');
