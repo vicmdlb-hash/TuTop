@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
 
 // Rules are generated exactly once by the CI step before the emulator starts.
 // Test files must never rewrite the shared generated file because node --test runs files concurrently.
@@ -83,6 +83,19 @@ function canonicalListing(seller = 'uatx-user') {
   };
 }
 
+function createListingWithRate(db, listingId, listing, count = 1, windowStart = now()) {
+  const batch = writeBatch(db);
+  batch.set(doc(db, `listings_v2/${listingId}`), listing);
+  batch.set(doc(db, 'rate_limits/uatx-user-listing_create'), {
+    uid: 'uatx-user',
+    action: 'listing_create',
+    window_start: windowStart,
+    count,
+    updated_at: now(),
+  });
+  return batch.commit();
+}
+
 test('moderador institucional sólo puede leer y resolver reportes de su institución', async () => {
   await seedBase();
   const uatx = env.authenticatedContext('uatxmod').firestore();
@@ -138,9 +151,10 @@ test('reviewer de verificación no obtiene permisos generales de moderación', a
 test('listings_v2 requiere identidad de campus y propietario real', async () => {
   await seedBase();
   const seller = env.authenticatedContext('uatx-user').firestore();
-  await assertSucceeds(setDoc(doc(seller, 'listings_v2/l1'), canonicalListing()));
-  await assertFails(setDoc(doc(seller, 'listings_v2/l2'), { ...canonicalListing(), institution_id: 'buap', campus_id: 'buap-cu' }));
-  await assertFails(setDoc(doc(seller, 'listings_v2/l3'), { ...canonicalListing(), seller_id: 'buap-user' }));
+  const windowStart = now();
+  await assertSucceeds(createListingWithRate(seller, 'l1', canonicalListing(), 1, windowStart));
+  await assertFails(createListingWithRate(seller, 'l2', { ...canonicalListing(), institution_id: 'buap', campus_id: 'buap-cu' }, 2, windowStart));
+  await assertFails(createListingWithRate(seller, 'l3', { ...canonicalListing(), seller_id: 'buap-user' }, 2, windowStart));
 });
 
 test('listing pendiente es privado hasta aprobación y moderación respeta institución', async () => {
@@ -149,7 +163,7 @@ test('listing pendiente es privado hasta aprobación y moderación respeta insti
   const stranger = env.authenticatedContext('viewer').firestore();
   const uatxMod = env.authenticatedContext('uatxmod').firestore();
   const buapMod = env.authenticatedContext('buapmod').firestore();
-  await assertSucceeds(setDoc(doc(seller, 'listings_v2/l1'), canonicalListing()));
+  await assertSucceeds(createListingWithRate(seller, 'l1', canonicalListing()));
   await assertSucceeds(getDoc(doc(seller, 'listings_v2/l1')));
   await assertFails(getDoc(doc(stranger, 'listings_v2/l1')));
   await assertSucceeds(getDoc(doc(uatxMod, 'listings_v2/l1')));
@@ -161,7 +175,7 @@ test('listing pendiente es privado hasta aprobación y moderación respeta insti
 test('reserva no existe como estado canónico de listings_v2', async () => {
   await seedBase();
   const seller = env.authenticatedContext('uatx-user').firestore();
-  await assertSucceeds(setDoc(doc(seller, 'listings_v2/l1'), canonicalListing()));
+  await assertSucceeds(createListingWithRate(seller, 'l1', canonicalListing()));
   await assertFails(updateDoc(doc(seller, 'listings_v2/l1'), { status: 'reserved', updated_at: now() }));
   await assertSucceeds(updateDoc(doc(seller, 'listings_v2/l1'), { status: 'paused', updated_at: now() }));
 });
