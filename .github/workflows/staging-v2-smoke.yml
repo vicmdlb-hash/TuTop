@@ -11,11 +11,14 @@ on:
       - "src/services/canonicalListingsBackend.ts"
       - "src/services/canonicalTransactionsBackend.ts"
       - "src/services/nationalBackendCanonicalBridge.ts"
+      - "src/services/rateLimit.ts"
+      - "src/services/rateLimitedOnlineBridge.ts"
       - "scripts/deploy-firebase-auth-staging.mjs"
       - "scripts/prepare-firestore-v2-rules.mjs"
       - "scripts/harden-canonical-v2-rules.mjs"
       - "scripts/harden-runtime-v2-rules.mjs"
       - "scripts/prepare-staging-v2-auth.mjs"
+      - "scripts/prepare-staging-android-app.mjs"
       - "scripts/configure-app-check-staging.mjs"
       - "scripts/staging-v2-admin.mjs"
       - "scripts/staging-v2-e2e-smoke.mjs"
@@ -37,6 +40,9 @@ jobs:
       TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
       TUTOP_ALLOW_FIREBASE_DEPLOY: staging-v2
       TUTOP_ALLOW_V2_SEED: staging-v2
+      TUTOP_ALLOW_ANDROID_APP_SETUP: staging-v2
+      TUTOP_ANDROID_PACKAGE_NAME: mx.tutop.app
+      TUTOP_ANDROID_GOOGLE_SERVICES_PATH: .tutop-staging-google-services.json
       TUTOP_ALLOW_APP_CHECK: staging-v2
       TUTOP_APP_CHECK_MODE: UNENFORCED
       TUTOP_STAGING_WEB_CONFIG_PATH: .tutop-staging-web-config.json
@@ -77,12 +83,15 @@ jobs:
       - name: Prepare staging Web App runtime config
         run: node scripts/prepare-staging-v2-auth.mjs
 
+      - name: Provision and validate staging Android Firebase app
+        run: node scripts/prepare-staging-android-app.mjs
+
       - name: Real two-user marketplace smoke
         run: node scripts/staging-v2-e2e-smoke.mjs
 
       - name: Enable App Check monitoring only
         run: node scripts/configure-app-check-staging.mjs
 
-      - name: Remove local runtime config
+      - name: Remove temporary Firebase client configs
         if: always()
-        run: rm -f .tutop-staging-web-config.json
+        run: rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json
