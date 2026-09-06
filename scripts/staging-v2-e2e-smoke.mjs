@@ -57,6 +57,12 @@ async function bootstrap(db, uid, name, phone) {
   docsToClean.push(`wallet_transactions/${welcome}`, `wallets/${uid}`, `user_private/${uid}`, `users/${uid}`);
 }
 
+async function buyerFindsListing(db) {
+  const search = query(collection(db, 'listings_v2'), where('status', '==', 'active'), where('moderation_status', '==', 'approved'), where('campus_id', '==', 'uatx-riberena'), orderBy('updated_at', 'desc'), limit(10));
+  const found = await getDocs(search);
+  return found.docs.some((item) => item.id === listingId);
+}
+
 try {
   sellerApp = initializeApp(firebaseConfig, `smoke-seller-${run}`);
   buyerApp = initializeApp(firebaseConfig, `smoke-buyer-${run}`);
@@ -88,11 +94,34 @@ try {
 
   await adminPatchDocument(`listings_v2/${listingId}`, { moderation_status: 'approved', updated_at: new Date() });
   ok('moderación trusted aprobó el listing');
-
-  const search = query(collection(buyerDb, 'listings_v2'), where('status', '==', 'active'), where('moderation_status', '==', 'approved'), where('campus_id', '==', 'uatx-riberena'), orderBy('updated_at', 'desc'), limit(10));
-  const found = await getDocs(search);
-  assert(found.docs.some((item) => item.id === listingId), 'búsqueda por campus no encontró el listing');
+  assert.equal(await buyerFindsListing(buyerDb), true, 'búsqueda por campus no encontró el listing aprobado');
   ok('búsqueda real por campus');
+
+  const favoriteId = `${buyer.uid}_${listingId}`;
+  await setDoc(doc(buyerDb, 'favorites', favoriteId), { uid: buyer.uid, product_id: listingId, created_at: Timestamp.now() });
+  docsToClean.push(`favorites/${favoriteId}`);
+  assert.equal((await getDoc(doc(buyerDb, 'favorites', favoriteId))).data()?.product_id, listingId);
+  ok('favorito real apunta a listing canónico');
+
+  const edited = Timestamp.now();
+  await updateDoc(doc(sellerDb, 'listings_v2', listingId), {
+    title: 'Calculadora Casio smoke V2 editada',
+    price_mxn: 490,
+    moderation_status: 'pending',
+    updated_at: edited,
+  });
+  assert.equal((await getDoc(doc(sellerDb, 'listings_v2', listingId))).data()?.moderation_status, 'pending');
+  assert.equal(await buyerFindsListing(buyerDb), false, 'listing editado pendiente siguió visible públicamente');
+  ok('edición del vendedor vuelve a pending y sale del feed público');
+
+  let selfApprovalBlocked = false;
+  try { await updateDoc(doc(sellerDb, 'listings_v2', listingId), { moderation_status: 'approved', updated_at: Timestamp.now() }); } catch { selfApprovalBlocked = true; }
+  assert(selfApprovalBlocked, 'el vendedor pudo autoaprobar su listing');
+  ok('autoaprobación del vendedor bloqueada');
+
+  await adminPatchDocument(`listings_v2/${listingId}`, { moderation_status: 'approved', updated_at: new Date() });
+  assert.equal(await buyerFindsListing(buyerDb), true, 'listing re-aprobado no volvió al feed');
+  ok('re-aprobación devuelve listing editado al marketplace');
 
   const chatId = `chat-${buyer.uid}-${listingId}`;
   const chatTime = Timestamp.now();
@@ -105,7 +134,7 @@ try {
   consumeRate(chatBatch, buyerDb, buyer.uid, 'chat_create');
   await chatBatch.commit();
   docsToClean.push(`chats/${chatId}`);
-  ok('chat real + rate bucket atómicos');
+  ok('chat real sobre listing canónico + rate bucket atómicos');
 
   const offerTime = Timestamp.now();
   const first = writeBatch(buyerDb);
@@ -167,7 +196,7 @@ try {
   ok('reputación trusted visible');
 
   console.log('\n🎯 TUTOP V2 REAL FIREBASE SMOKE: PASS');
-  console.log('auth → red → listing+quota → search → chat+quota → offer+quota → counter+quota → reserve → meetup → bilateral completion → review → reputation');
+  console.log('auth → red → listing+quota → moderation → search → favorite → seller edit→pending→reapprove → chat → offer → counter → reserve → meetup → bilateral completion → review → reputation');
 } finally {
   try { if (sellerApp) await signOut(getAuth(sellerApp)); } catch {}
   try { if (buyerApp) await signOut(getAuth(buyerApp)); } catch {}
