@@ -30,6 +30,10 @@ function auditId(action: string, targetId: string) {
   return `admin-${action}-${targetId}-${random}`.slice(0, 240);
 }
 
+function canModerateListings(admin: AdminContext) {
+  return !['verification_reviewer', 'support'].includes(admin.role);
+}
+
 export function moderationQueryScope(admin: AdminContext, kind?: ModerationCaseKind) {
   if (!admin.active) throw new Error('ADMIN_REQUIRED');
   if (admin.role === 'institution_moderator') {
@@ -94,6 +98,20 @@ export const scopedAdminBackend = {
     return firebase.runQuery<any>('moderation_cases', moderationQueryScope(admin, kind), [{ field: 'updated_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
   },
 
+  async pendingListings(limit = 100) {
+    const firebase = client();
+    const admin = await this.context();
+    if (!canModerateListings(admin)) throw new Error('ROLE_SCOPE_DENIED');
+    const filters: Array<{ field: string; op: 'EQUAL'; value: unknown }> = [
+      { field: 'moderation_status', op: 'EQUAL', value: 'pending' },
+    ];
+    if (admin.role === 'institution_moderator') {
+      if (!admin.institution_id) throw new Error('INSTITUTION_SCOPE_REQUIRED');
+      filters.push({ field: 'institution_id', op: 'EQUAL', value: admin.institution_id });
+    }
+    return firebase.runQuery<any>('listings_v2', filters, [{ field: 'updated_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
+  },
+
   async reports(limit = 100) {
     const firebase = client();
     const admin = await this.context();
@@ -122,6 +140,25 @@ export const scopedAdminBackend = {
     }
     if (admin.role === 'verification_reviewer' || admin.role === 'support') return [];
     return firebase.runQuery<any>('audit_log', [], [{ field: 'created_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
+  },
+
+  async moderateListing(listingId: string, status: 'approved' | 'rejected', institutionId?: string) {
+    const firebase = client();
+    const admin = await this.context();
+    if (!canModerateListings(admin)) throw new Error('ROLE_SCOPE_DENIED');
+    const listing = await firebase.getDocument<any>(`listings_v2/${listingId}`);
+    if (!listing) throw new Error('LISTING_NOT_FOUND');
+    const listingInstitution = String(listing.data.institution_id || '');
+    if (admin.role === 'institution_moderator' && admin.institution_id !== listingInstitution) throw new Error('INSTITUTION_SCOPE_DENIED');
+    if (listing.data.moderation_status !== 'pending') throw new Error('LISTING_NOT_PENDING');
+    await auditedPatch({
+      path: `listings_v2/${listingId}`,
+      patch: { moderation_status: status },
+      action: `listing_${status}`,
+      targetType: 'listing',
+      targetId: listingId,
+      institutionId: institutionId || listingInstitution || undefined,
+    });
   },
 
   async resolveModerationCase(caseId: string, status: 'reviewing' | 'resolved' | 'dismissed', institutionId?: string) {
