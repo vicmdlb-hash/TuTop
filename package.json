@@ -53,6 +53,7 @@
     "listing-schema-v2:test": "node scripts/listing-schema-v2-tests.mjs",
     "offline-performance:test": "node scripts/offline-performance-tests.mjs",
     "native-security:test": "node scripts/native-security-tests.mjs",
+    "account-erasure:test": "node scripts/account-erasure-tests.mjs",
     "deps:mobile:blaze": "node scripts/install-mobile-deps-blaze.mjs",
     "ci:summary": "node scripts/ci-summary.mjs",
     "beta:ready": "node scripts/beta-ready.mjs",
