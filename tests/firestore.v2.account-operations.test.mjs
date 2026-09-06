@@ -56,6 +56,19 @@ test('support puede rechazar pending pero no alterar identidad ni fecha original
   await assertSucceeds(updateDoc(ref, { status: 'rejected', updated_at: now() }));
 });
 
+test('support audita sólo operaciones de eliminación de cuenta', async () => {
+  const support = env.authenticatedContext('support').firestore();
+  await assertSucceeds(setDoc(doc(support, 'audit_log/delete-alice'), {
+    admin_uid: 'support', actor_type: 'admin', role: 'support', action: 'account_deletion_processing',
+    target_type: 'account_deletion_request', target_id: 'alice', created_at: now(),
+  }));
+  await assertSucceeds(getDoc(doc(support, 'audit_log/delete-alice')));
+  await assertFails(setDoc(doc(support, 'audit_log/moderate-product'), {
+    admin_uid: 'support', actor_type: 'admin', role: 'support', action: 'listing_approved',
+    target_type: 'listing', target_id: 'listing-1', created_at: now(),
+  }));
+});
+
 test('moderator general no hereda permisos de privacidad de soporte', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'account_deletion_requests/alice'), { uid: 'alice', status: 'pending', requested_at: now(), updated_at: now() });
