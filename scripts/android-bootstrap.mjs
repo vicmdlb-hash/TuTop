@@ -52,6 +52,23 @@ if (fs.existsSync(variables)) {
   fs.writeFileSync(variables, source);
 }
 
+// Firebase Datastore ships a native shared counter library that is already packaged
+// with the symbols it needs. Mark it explicitly so AGP does not attempt a futile strip
+// pass and emit a misleading warning on every APK build.
+const appGradle = path.join(root, 'android/app/build.gradle');
+if (fs.existsSync(appGradle)) {
+  let source = fs.readFileSync(appGradle, 'utf8');
+  if (!source.includes('libdatastore_shared_counter.so')) {
+    const marker = 'android {';
+    if (!source.includes(marker)) stop('no pude localizar android { en android/app/build.gradle.');
+    source = source.replace(
+      marker,
+      `${marker}\n    packaging {\n        jniLibs {\n            keepDebugSymbols += ['**/libdatastore_shared_counter.so']\n        }\n    }`,
+    );
+    fs.writeFileSync(appGradle, source);
+  }
+}
+
 if (v2) {
   const destination = path.join(root, 'android/app/google-services.json');
   fs.copyFileSync(googleServicesSource, destination);
