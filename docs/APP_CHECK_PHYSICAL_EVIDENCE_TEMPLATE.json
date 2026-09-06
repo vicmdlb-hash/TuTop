@@ -1,0 +1,11 @@
+{
+  "status": "pending_human",
+  "platform": "android",
+  "app_version": "0.9.0-beta.0",
+  "staging_project": "tutop-beta-vicmdlb-1356585881",
+  "device_count": 0,
+  "app_check_token_observed": false,
+  "verified_at": null,
+  "contains_raw_token": false,
+  "evidence_note": "Completar únicamente a partir de Physical QA real. Nunca pegar el token App Check; sólo registrar que fue observado."
+}
