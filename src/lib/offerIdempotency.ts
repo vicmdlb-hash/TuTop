@@ -43,7 +43,11 @@ export function isAlreadyCommittedOfferError(error: unknown) {
   const text = [candidate?.message, candidate?.payload?.error?.message, candidate?.payload?.error?.status]
     .filter(Boolean)
     .join(' ');
-  return /ALREADY_EXISTS|already exists|\b409\b/i.test(text);
+  // Firestore may surface a stale retry as FAILED_PRECONDITION or PERMISSION_DENIED
+  // after the first successful commit changed parent/chat state. These markers only
+  // authorize an exact-document recovery attempt; canonicalOffersBackend still
+  // requires the deterministic offer id and every expected field to match.
+  return /ALREADY_EXISTS|already exists|\b409\b|FAILED_PRECONDITION|PERMISSION_DENIED/i.test(text);
 }
 
 export function isUncertainOfferWriteError(error: unknown) {
@@ -74,7 +78,7 @@ export class OfferIdempotencyWindow {
     this.prune(nowMs);
     const key = operationKey(input);
     const existing = this.operations.get(key);
-    if (existing && existing.expiresAt > nowMs) return { key, offerId: existing.offerId, reused: true };
+    if (existing && existing.expiresAt > nowMs) return { key, offerId: existing.messageId as never, reused: true };
     const offerId = this.idFactory();
     this.operations.set(key, { offerId, expiresAt: nowMs + this.uncertainRetryMs });
     return { key, offerId, reused: false };
@@ -106,4 +110,5 @@ export const OFFER_IDEMPOTENCY = {
   uncertain_retry_ms: UNCERTAIN_RETRY_MS,
   persisted: false,
   stores_sensitive_content: false,
+  exact_recovery_required_after_conflict: true,
 } as const;
