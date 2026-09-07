@@ -59,15 +59,22 @@ pass('App Check enforcement still requires explicit client-ready guard',
   appCheckStaging.includes('TUTOP_ALLOW_APP_CHECK_ENFORCEMENT')
   && appCheckStaging.includes('staging-v2-client-ready'));
 
-pass('dispatchable Android workflow keeps stable main push path',
+pass('Android workflow preserves stable main path and enables automatic physical QA builds',
   androidWorkflow.includes('workflow_dispatch:')
-  && androidWorkflow.includes('branches: ["main"]')
-  && androidWorkflow.includes("if: github.event_name == 'push' || github.ref_name != 'feat/tutop-0.8-p0'"));
-pass('dispatch on physical QA branch selects V2 staging only',
-  androidWorkflow.includes("if: github.event_name == 'workflow_dispatch' && github.ref_name == 'feat/tutop-0.8-p0'")
-  && androidWorkflow.includes('TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881')
+  && androidWorkflow.includes('branches: ["main", "feat/tutop-0.8-p0"]')
+  && androidWorkflow.includes("if: github.ref_name != 'feat/tutop-0.8-p0'")
+  && androidWorkflow.includes("if: github.ref_name == 'feat/tutop-0.8-p0' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')"));
+pass('physical QA branch selects V2 staging only and remains isolated from legacy Firebase',
+  androidWorkflow.includes('TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881')
   && androidWorkflow.includes("grep -q 'tutop-3a4f7'")
-  && androidWorkflow.includes('export-staging-v2-build-env.mjs'));
+  && androidWorkflow.includes('export-staging-v2-build-env.mjs')
+  && androidWorkflow.includes('permissions:\n      contents: write'));
+pass('physical QA distribution is durable without enabling production',
+  androidWorkflow.includes('retention-days: 90')
+  && androidWorkflow.includes('Publish durable Physical QA prerelease')
+  && androidWorkflow.includes('gh release create')
+  && androidWorkflow.includes('--prerelease')
+  && androidWorkflow.includes('Not production-ready, not Play-ready'));
 pass('0.9 Android version is deterministic before packaging',
   androidWorkflow.includes('TUTOP_BETA_VERSION: 0.9.0-beta.0')
   && androidWorkflow.includes('TUTOP_ANDROID_VERSION_CODE: 90000')
