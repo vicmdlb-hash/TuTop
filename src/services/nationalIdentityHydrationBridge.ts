@@ -1,10 +1,13 @@
 import { identityFor, verificationBadge } from '../lib/universityNetwork';
-import type { VerificationLevel } from '../types';
+import type { UniversityIdentity, VerificationLevel } from '../types';
 import { canonicalListingsBackend } from './canonicalListingsBackend';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { onlineBackend } from './onlineBackend';
 import { getFirebaseConfig } from './runtimeConfig';
+
+const IDENTITY_CACHE_TTL_MS = 5 * 60_000;
+const identityCache = new Map<string, { identity: UniversityIdentity; level: VerificationLevel; expiresAt: number }>();
 
 if (nationalSchemaEnabled()) {
   const originalLoadSnapshot = onlineBackend.loadSnapshot.bind(onlineBackend);
@@ -16,20 +19,28 @@ if (nationalSchemaEnabled()) {
     const uid = firebase.currentSession?.uid;
     if (!uid || uid !== snapshot.user.id) return snapshot;
 
-    const profile = await firebase.getDocument<Record<string, unknown>>(`users/${uid}`).catch(() => null);
-    if (!profile) return snapshot;
-    const data = profile.data;
-    const identity = identityFor(
-      data.institution_id ? String(data.institution_id) : undefined,
-      data.campus_id ? String(data.campus_id) : undefined,
-      data.faculty_id ? String(data.faculty_id) : undefined,
-      data.career_id ? String(data.career_id) : undefined,
-    );
-    const rawLevel = Number(data.verification_level ?? (snapshot.user.esta_verificado ? 2 : 0));
-    const level = Math.max(0, Math.min(4, Number.isFinite(rawLevel) ? Math.trunc(rawLevel) : 0)) as VerificationLevel;
+    const cached = identityCache.get(uid);
+    let identity: UniversityIdentity;
+    let level: VerificationLevel;
 
-    // In schema V2 the feed has one authority only: listings_v2. This prevents the
-    // legacy `products` snapshot and V2 hydrator from racing every 30 seconds.
+    if (cached && cached.expiresAt > Date.now()) {
+      identity = cached.identity;
+      level = cached.level;
+    } else {
+      const profile = await firebase.getDocument<Record<string, unknown>>(`users/${uid}`).catch(() => null);
+      if (!profile) return snapshot;
+      const data = profile.data;
+      identity = identityFor(
+        data.institution_id ? String(data.institution_id) : undefined,
+        data.campus_id ? String(data.campus_id) : undefined,
+        data.faculty_id ? String(data.faculty_id) : undefined,
+        data.career_id ? String(data.career_id) : undefined,
+      );
+      const rawLevel = Number(data.verification_level ?? (snapshot.user.esta_verificado ? 2 : 0));
+      level = Math.max(0, Math.min(4, Number.isFinite(rawLevel) ? Math.trunc(rawLevel) : 0)) as VerificationLevel;
+      identityCache.set(uid, { identity, level, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS });
+    }
+
     const products = await canonicalListingsBackend.loadMarketplaceProducts({
       campusId: identity.campus_id,
       institutionId: identity.institution_id,
