@@ -30,9 +30,12 @@ assert.equal(transactionMatchesOfferRetry({ ...existing, status: 'completed' }, 
 
 assert.equal(isRecoverableTransactionRetryError(new Error('LISTING_ALREADY_RESERVED')), true);
 assert.equal(isRecoverableTransactionRetryError(new Error('ALREADY_EXISTS')), true);
+assert.equal(isRecoverableTransactionRetryError(new Error('FAILED_PRECONDITION')), true);
+assert.equal(isRecoverableTransactionRetryError(new Error('PERMISSION_DENIED')), true);
+assert.equal(isRecoverableTransactionRetryError(new Error('409 conflict')), true);
 assert.equal(isRecoverableTransactionRetryError(new TypeError('fetch failed')), true);
 assert.equal(isRecoverableTransactionRetryError(new Error('UNAVAILABLE')), true);
-assert.equal(isRecoverableTransactionRetryError(new Error('PERMISSION_DENIED')), false);
+assert.equal(isRecoverableTransactionRetryError(new Error('INVALID_ARGUMENT')), false);
 assert.equal(isRecoverableTransactionRetryError(new Error('TRANSACTION_ACTION_DENIED')), false);
 
 const backend = fs.readFileSync('src/services/canonicalTransactionRetryBackend.ts', 'utf8');
@@ -45,6 +48,6 @@ assert.match(bridge, /createTransactionFromAcceptedOffer: canonicalTransactionRe
 
 console.log('PASS retry recovery accepts only exact deterministic transaction match');
 console.log('PASS competing offer/listing/buyer/amount cannot be mistaken for prior commit');
-console.log('PASS only uncertain/already-committed failures enter recovery path');
+console.log('PASS Firestore conflict/uncertain statuses only enter exact recovery path');
 console.log('PASS V2 bridge routes reservation creation through safe recovery wrapper');
 console.log('Transaction retry idempotency tests: PASS');
