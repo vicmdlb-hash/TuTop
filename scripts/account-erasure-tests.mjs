@@ -13,13 +13,15 @@ for (const collection of ['users','user_private','notification_preferences','dev
 for (const collection of ['listings_v2','demand_requests']) {
   assert.match(policy, new RegExp(`collection: '${collection}'.*disposition: 'withdraw'`), `${collection} debe retirarse`);
 }
-for (const collection of ['account_deletion_requests','transactions_v2','offers','chats','reviews','reports','audit_log']) {
+for (const collection of ['account_deletion_requests','transactions_v2','listing_reservation_locks','offers','chats','reviews','reports','audit_log']) {
   assert.match(policy, new RegExp(`collection: '${collection}'.*disposition: 'retain_operational'`), `${collection} debe tener retención operativa`);
 }
 
 assert.match(processor, /projectId !== REQUIRED/);
 assert.match(processor, /TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed'/);
 assert.match(processor, /buildAccountErasurePlan/);
+assert.match(processor, /\['listing_reservation_locks', 'buyer_id'\]/);
+assert.match(processor, /\['listing_reservation_locks', 'seller_id'\]/);
 assert.match(planner, /mode: apply \? 'apply' : 'dry-run'/);
 assert.match(planner, /auth_delete_last: true/);
 assert.match(processor, /DRY-RUN: no se modificó Firestore\/Auth/);
@@ -29,6 +31,7 @@ assert.match(processor, /await adminDeleteDocument\(`users\/\$\{uid\}`\)/);
 assert.match(processor, /await adminDeleteTestUsers\(\[uid\]\)/);
 assert(processor.indexOf('await adminDeleteTestUsers([uid])') > processor.indexOf('await adminDeleteDocument(`users/${uid}`)'), 'Auth debe borrarse al final');
 assert.doesNotMatch(processor, /adminDeleteDocument\(`transactions_v2/);
+assert.doesNotMatch(processor, /adminDeleteDocument\(`listing_reservation_locks/);
 assert.doesNotMatch(processor, /adminDeleteDocument\(`chats/);
 assert.doesNotMatch(processor, /adminDeleteDocument\(`reports/);
 
@@ -43,8 +46,9 @@ assert.match(smokeWorkflow, /node scripts\/staging-account-erasure-smoke\.mjs/);
 
 console.log('PASS erasure policy distinguishes delete, withdraw and operational retention');
 console.log('PASS shared planner owns dry-run/apply mode and auth-delete-last contract');
+console.log('PASS processor reports transaction reservation locks as retained evidence');
 console.log('PASS processor defaults to dry-run and requires explicit staging apply gate');
 console.log('PASS Auth deletion occurs only after Firestore withdrawal/deletion');
-console.log('PASS transaction/chat/report evidence is not blindly deleted');
+console.log('PASS transaction/lock/chat/report evidence is not blindly deleted');
 console.log('PASS real staging smoke exercises synthetic destructive erasure behind explicit gate');
 console.log('Account erasure safety contract: PASS');
