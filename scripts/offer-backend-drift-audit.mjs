@@ -10,15 +10,16 @@ assert.match(canonical, /PARENT_OFFER_MISMATCH/);
 assert.match(canonical, /OFFER_NOT_PENDING/);
 assert.match(canonical, /OFFER_EXPIRED/);
 assert.match(canonical, /assertOfferableListing/);
+assert.match(canonical, /async listOffersForChat\(chatId: string, force = false\)/);
 
 const chatUsesLegacyOffers = /nationalBackend\.createOffer\(/.test(chat) || /nationalBackend\.createCounterOffer\(/.test(chat);
 const legacyMissingCanonicalGuards = !/PARENT_OFFER_MISMATCH/.test(national) || !/SELF_OFFER_DENIED/.test(national);
 
 if (chatUsesLegacyOffers && legacyMissingCanonicalGuards) {
-  console.warn('WARN P0_OFFER_BACKEND_DRIFT: ChatConversation still uses nationalBackend offer mutations without all canonical guards.');
-  console.warn('WARN Required consolidation: route chat create/counter offer mutations through canonicalOffersBackend or port identical guards before release validation.');
-} else {
-  console.log('PASS chat offer mutations are aligned with canonical guards');
+  console.error('FAIL P0_OFFER_BACKEND_DRIFT: ChatConversation still uses nationalBackend offer mutations without all canonical guards.');
+  console.error('Required before release: route chat create/counter offer mutations through canonicalOffersBackend or port identical guards and prove parity.');
+  process.exit(1);
 }
 
-console.log('Offer backend drift audit: COMPLETE');
+console.log('PASS chat offer mutations are aligned with canonical guards');
+console.log('Offer backend drift audit: PASS');
