@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { getFirestore, Timestamp, writeBatch, doc, setDoc, updateDoc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { getFirestore, Timestamp, writeBatch, doc, setDoc, updateDoc, deleteDoc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { adminPatchDocument, adminDeleteDocument, adminDeleteTestUsers } from './staging-v2-admin.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -179,12 +179,15 @@ try {
   const complete = writeBatch(sellerDb);
   complete.update(doc(sellerDb, 'transactions_v2', txId), { status: 'completed', seller_confirmed_at: sellerConfirmed, updated_at: sellerConfirmed });
   complete.update(doc(sellerDb, 'listings_v2', listingId), { status: 'sold_out', updated_at: sellerConfirmed });
-  complete.delete(doc(sellerDb, 'listing_reservation_locks', listingId));
   await complete.commit();
   assert.equal((await getDoc(doc(sellerDb, 'transactions_v2', txId))).data()?.status, 'completed');
   assert.equal((await getDoc(doc(sellerDb, 'listings_v2', listingId))).data()?.status, 'sold_out');
+  assert.equal((await getDoc(doc(sellerDb, 'listing_reservation_locks', listingId))).exists(), true, 'lock debe permanecer hasta confirmar la fase 1');
+  ok('fase 1 atómica: confirmación bilateral completó tx + sold_out');
+
+  await deleteDoc(doc(sellerDb, 'listing_reservation_locks', listingId));
   assert.equal((await getDoc(doc(sellerDb, 'listing_reservation_locks', listingId))).exists(), false);
-  ok('confirmación bilateral completó tx + sold_out y liberó reservation lock atómicamente');
+  ok('fase 2 segura: reservation lock completado fue liberado después de sold_out');
 
   const reviewId = `${chatId}_${buyer.uid}`;
   await setDoc(doc(buyerDb, 'reviews', reviewId), { chat_id: chatId, evaluador_id: buyer.uid, evaluado_id: seller.uid, calificacion: 'positive', comentario: 'Operación smoke confirmada', fecha: Timestamp.now() });
@@ -203,7 +206,7 @@ try {
   ok('reputación trusted visible');
 
   console.log('\n🎯 TUTOP V2 REAL FIREBASE SMOKE: PASS');
-  console.log('auth → red → listing+quota → moderation → search → favorite → seller edit→pending→reapprove → chat → offer → counter → reserve → meetup → bilateral completion → review → reputation');
+  console.log('auth → red → listing+quota → moderation → search → favorite → seller edit→pending→reapprove → chat → offer → counter → reserve → meetup → bilateral completion → sold_out → safe lock cleanup → review → reputation');
 } finally {
   try { if (sellerApp) await signOut(getAuth(sellerApp)); } catch {}
   try { if (buyerApp) await signOut(getAuth(buyerApp)); } catch {}
