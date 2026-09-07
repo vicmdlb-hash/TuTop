@@ -1,12 +1,6 @@
 name: TuTop quality gate
 
 on:
-  pull_request:
-    branches: ["main"]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "play/**"
   workflow_dispatch:
 
 permissions:
