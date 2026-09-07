@@ -1,10 +1,12 @@
 import type { Chat, ChatMessage } from '../types';
 import { FirebaseRestClient, type FirestoreDocument } from './firebaseRest';
+import { firestoreMessageCountBackend } from './firestoreMessageCountBackend';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { onlineBackend } from './onlineBackend';
 import { getFirebaseConfig } from './runtimeConfig';
 
 const PUBLIC_NAME_TTL_MS = 5 * 60_000;
+const AGGREGATION_SAFE_READ_MARKER_AFTER = Date.parse('2026-10-01T00:00:00.000Z');
 const nameCache = new Map<string, { name: string; expiresAt: number }>();
 
 function nowIso() { return new Date().toISOString(); }
@@ -43,6 +45,17 @@ function summaryMessage(data: any, buyerId: string, viewerUid: string): ChatMess
 
 async function countUnreadSince(chatId: string, uid: string, readAt: number, lastMessageAt: number) {
   if (Number.isFinite(readAt) && Number.isFinite(lastMessageAt) && readAt >= lastMessageAt) return 0;
+
+  // New-runtime read markers are advanced in the same commit as the user's own
+  // outgoing message. Therefore every message after the marker is truly unread
+  // for that user and an aggregation COUNT is exact without downloading docs.
+  if (Number.isFinite(readAt) && readAt >= AGGREGATION_SAFE_READ_MARKER_AFTER) {
+    return firestoreMessageCountBackend.countAfter(chatId, new Date(readAt).toISOString()).catch(() => 0);
+  }
+
+  // Conservative migration path for old markers: older clients did not advance
+  // the marker when sending, so own messages could exist after read_at. Keep the
+  // document-level filter until the marker has been refreshed by the new runtime.
   const client = getClient();
   const filters = Number.isFinite(readAt) && readAt > 0
     ? [{ field: 'created_at' as const, op: 'GREATER_THAN' as const, value: new Date(readAt).toISOString() }]
