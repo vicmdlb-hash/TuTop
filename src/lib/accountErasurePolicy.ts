@@ -25,6 +25,7 @@ export const ACCOUNT_ERASURE_POLICY: ErasureCollectionRule[] = [
   { collection: 'demand_requests', owner_field: 'buyer_id', disposition: 'withdraw', reason: 'Retirar solicitudes abiertas de demanda.' },
   { collection: 'account_deletion_requests', disposition: 'retain_operational', reason: 'Conservar evidencia mínima del cumplimiento de la solicitud.' },
   { collection: 'transactions_v2', disposition: 'retain_operational', reason: 'Integridad de disputas, cumplimiento y auditoría.' },
+  { collection: 'listing_reservation_locks', disposition: 'retain_operational', reason: 'Lock transaccional temporal; no se elimina mientras la operación asociada siga activa o disputada.' },
   { collection: 'offers', disposition: 'retain_operational', reason: 'Integridad del historial de negociación.' },
   { collection: 'chats', disposition: 'retain_operational', reason: 'Puede contener evidencia de una operación o disputa.' },
   { collection: 'reviews', disposition: 'retain_operational', reason: 'Evidencia de operaciones y confianza del marketplace.' },
