@@ -1,0 +1,64 @@
+name: TuTop October 01 consolidated validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-october-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  consolidated-gate:
+    name: Static + build + Firestore emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact ref
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install application dependencies once
+        run: npm ci
+
+      - name: Install emulator harness without mutating manifests
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@latest firebase@12.18.0
+
+      - name: Verify dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
+
+      - name: Static regression and policy gate
+        run: npm run check
+
+      - name: Repository readiness
+        run: |
+          npm run github:ready
+          npm run beta:ready
+          npm run v2:staging:readiness:test
+
+      - name: Typecheck and web build
+        run: |
+          npm run typecheck
+          npm run build
+
+      - name: Prepare strict V2 Rules
+        run: npm run v2:rules:prepare
+
+      - name: Firestore V2 emulator security suite
+        run: npx --yes firebase-tools@15.29.0 emulators:exec --only firestore --config firebase.v2.json --project demo-tutop-v2-rules "node --test tests/firestore.v2.rules.test.mjs tests/firestore.v2.atomic.test.mjs tests/firestore.v2.acceptance-atomic.test.mjs tests/firestore.v2.reputation-trust.test.mjs tests/firestore.v2.governance.test.mjs tests/firestore.v2.runtime-services.test.mjs tests/firestore.v2.account-operations.test.mjs tests/firestore.v2.notification-receipts.test.mjs tests/firestore.v2.transaction-lock.test.mjs"
+
+      - name: Final immutability check
+        run: git diff --exit-code -- package.json package-lock.json
