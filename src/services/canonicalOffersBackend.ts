@@ -7,11 +7,18 @@ import { getFirebaseConfig } from './runtimeConfig';
 
 const operations = new OfferIdempotencyWindow();
 const DEFAULT_OFFER_TTL_MS = 24 * 60 * 60_000;
+const OFFER_LIST_CACHE_TTL_MS = 30_000;
+const offerListCache = new Map<string, { offers: Offer[]; expiresAt: number }>();
+const offerListInflight = new Map<string, Promise<Offer[]>>();
 
 function nowIso() { return new Date().toISOString(); }
 function defaultOfferExpiry() { return new Date(Date.now() + DEFAULT_OFFER_TTL_MS).toISOString(); }
 function patchWrite(client: FirebaseRestClient, path: string, data: Record<string, unknown>) {
   return { update: client.encodeDocumentForWrite(path, data), updateMask: { fieldPaths: Object.keys(data) } };
+}
+function invalidateOfferList(chatId: string) {
+  offerListCache.delete(chatId);
+  offerListInflight.delete(chatId);
 }
 
 function getClient() {
@@ -86,12 +93,14 @@ async function commitOfferWithRecovery(
   try {
     await commitWithRateLimit(client, 'offer_create', writes);
     operations.markSuccess(operation.key);
+    invalidateOfferList(offer.chat_id);
     return offer;
   } catch (error) {
     if (isAlreadyCommittedOfferError(error)) {
       const recovered = await recoverCommittedOffer(client, operation.offerId, expected);
       if (recovered) {
         operations.markSuccess(operation.key);
+        invalidateOfferList(offer.chat_id);
         return recovered;
       }
     }
@@ -102,6 +111,26 @@ async function commitOfferWithRecovery(
 }
 
 export const canonicalOffersBackend = {
+  async listOffersForChat(chatId: string, force = false) {
+    const cleanChatId = chatId.trim();
+    if (!cleanChatId) throw new Error('CHAT_ID_REQUIRED');
+    const cached = offerListCache.get(cleanChatId);
+    if (!force && cached && cached.expiresAt > Date.now()) return cached.offers.map((offer) => ({ ...offer }));
+    const inflight = offerListInflight.get(cleanChatId);
+    if (!force && inflight) return inflight;
+
+    const client = getClient();
+    const request = client.runQuery<any>('offers', [{ field: 'chat_id', op: 'EQUAL', value: cleanChatId }], [{ field: 'created_at', direction: 'DESCENDING' }], 30)
+      .then((docs) => docs.map((doc) => ({ id: doc.id, ...doc.data } as Offer)))
+      .then((offers) => {
+        offerListCache.set(cleanChatId, { offers, expiresAt: Date.now() + OFFER_LIST_CACHE_TTL_MS });
+        return offers.map((offer) => ({ ...offer }));
+      })
+      .finally(() => offerListInflight.delete(cleanChatId));
+    offerListInflight.set(cleanChatId, request);
+    return request;
+  },
+
   async createOffer(input: { listingId: string; chatId: string; sellerId: string; amountMxn: number; expiresAt?: string }) {
     const client = getClient();
     const buyerId = client.currentSession!.uid;
