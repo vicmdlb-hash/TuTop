@@ -120,6 +120,10 @@ const reusedScreenshot = structuredClone(b);
 reusedScreenshot.screenshots[0].sha256 = a.screenshots[0].sha256;
 assert.equal(validateTwoDeviceEvidence([a, reusedScreenshot], now, candidate).pass, false);
 
+const reusedFcmCorrelation = structuredClone(b);
+reusedFcmCorrelation.fcm_fixture_report.scenarios[0].events[1].correlation = a.fcm_fixture_report.scenarios[0].events[1].correlation;
+assert.equal(validateTwoDeviceEvidence([a, reusedFcmCorrelation], now, candidate).pass, false);
+
 const missingVisual = structuredClone(b);
 missingVisual.screenshots = missingVisual.screenshots.filter((shot) => shot.case !== 'rotation');
 assert.equal(validateTwoDeviceEvidence([a, missingVisual], now, candidate).pass, false);
@@ -140,7 +144,7 @@ const templateA = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_DEVICE_A_0.9.json
 const templateB = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_DEVICE_B_0.9.json', 'utf8'));
 assert.equal(validateTwoDeviceEvidence([templateA, templateB], now, candidate).pass, false);
 console.log('PASS two distinct fresh physical sessions can satisfy the combined gate');
-console.log('PASS duplicate device/session and reused screenshot evidence fail closed');
+console.log('PASS duplicate device/session, screenshot and cross-device FCM replay evidence fail closed');
 console.log('PASS visual evidence, FCM session/window and per-device App Check binding are required');
 console.log('PASS reversed, stale and out-of-order evidence sessions fail closed');
 console.log('PASS Device A/B templates remain blocked until real evidence exists');
