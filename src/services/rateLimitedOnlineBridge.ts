@@ -98,7 +98,7 @@ if (nationalSchemaEnabled()) {
       let task: Promise<void>;
       task = commitWithRateLimit(firebase, 'message_create', [
         { update: firebase.encodeDocumentForWrite(`chats/${chatId}/messages/${operation.messageId}`, messageData), currentDocument: { exists: false } },
-        patchWrite(firebase, `chats/${chatId}`, { updated_at: at, last_message: lastMessage.slice(0, 180), last_message_at: at, last_sender_id: uid }),
+        patchWrite(firebase, `chats/${chatId}`, { updated_at: at, last_message: lastMessage.slice(0, 180), last_message_at: at }),
       ], at).then(() => {
         messageIdempotency.markSuccess(operation.key);
       }).catch((error) => {
