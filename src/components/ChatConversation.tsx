@@ -106,6 +106,13 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
     feedbackMessage();
   };
 
+  const refreshCanonicalOffers = () => {
+    if (!nationalSchemaEnabled()) return;
+    void canonicalOffersBackend.listOffersForChat(chatId, true)
+      .then((offers) => setStructuredOffers(offers))
+      .catch(() => undefined);
+  };
+
   const submit = () => { if (!text.trim()) return; submitText(text); setText(''); };
 
   const submitOffer = async () => {
@@ -152,6 +159,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
         if (kind === 'accept') {
           const result = await nationalBackend.acceptOfferAndCreateTransaction(visibleOffer.structured, 120);
           setStructuredOffers((current) => current.map((item) => item.id === visibleOffer.structured!.id ? { ...item, status: 'accepted', updated_at: new Date().toISOString() } : item));
+          refreshCanonicalOffers();
           if (result.transaction) {
             setFinalizedOfferId(visibleOffer.structured.id);
             setStructuredMessage(`En trato · reservado por 2 h · operación ${result.transaction.id.slice(-6)}`);
@@ -161,6 +169,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
         } else {
           await nationalBackend.updateOffer(visibleOffer.structured.id, 'rejected');
           setStructuredOffers((current) => current.map((item) => item.id === visibleOffer.structured!.id ? { ...item, status: 'rejected', updated_at: new Date().toISOString() } : item));
+          refreshCanonicalOffers();
           setStructuredMessage('Oferta rechazada y registrada.');
         }
       }
@@ -176,6 +185,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
       setStructuredBusy(true); setStructuredMessage(null);
       const transaction = await nationalBackend.createTransactionFromAcceptedOffer(finalizableAccepted, 120);
       setFinalizedOfferId(finalizableAccepted.id);
+      refreshCanonicalOffers();
       setStructuredMessage(`En trato · reservado por 2 h · operación ${transaction.id.slice(-6)}`);
       submitText(`Confirmo el trato por $${finalizableAccepted.amount_mxn.toLocaleString('es-MX')}. El artículo queda reservado por 2 horas mientras acordamos la entrega.`);
     } catch { setStructuredMessage('No pudimos iniciar la reserva. Puede que la operación ya exista; actualiza la conversación.'); }
