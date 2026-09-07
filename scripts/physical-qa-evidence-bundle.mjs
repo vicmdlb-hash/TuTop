@@ -10,6 +10,7 @@ const requiredCases = [
 const allowedCase = new Set(['pass','warn','fail','pending','not_applicable']);
 const forbiddenKeys = new Set(['refreshToken','idToken','password','FIREBASE_TOKEN']);
 const requiredDeviceFields = ['label','manufacturer','model','android_version','viewport','installation'];
+const MAX_DIAGNOSTIC_AGE_MS = 24 * 60 * 60_000;
 
 function scanSensitive(value, errors, pathParts = []) {
   if (Array.isArray(value)) {
@@ -36,7 +37,18 @@ function isPlaceholder(value) {
   return !text || /PENDIENTE|TODO|TBD/i.test(text) || text.includes('|');
 }
 
-export function validatePhysicalQaEvidence(bundle) {
+function validateFreshNativeDiagnostic(bundle, errors, now = Date.now()) {
+  const report = bundle?.diagnostic_report;
+  if (!report) return;
+  if (report.version !== bundle.app_version) errors.push('diagnostic_report.version no coincide con app_version');
+  if (report.platform !== 'android') errors.push('diagnostic_report.platform debe ser android');
+  if (report.native_runtime !== true) errors.push('diagnostic_report debe provenir de runtime Android nativo');
+  const generatedAt = Date.parse(String(report.generated_at || ''));
+  if (!Number.isFinite(generatedAt)) errors.push('diagnostic_report.generated_at inválido');
+  else if (generatedAt > now + 5 * 60_000 || now - generatedAt > MAX_DIAGNOSTIC_AGE_MS) errors.push('diagnostic_report fuera de ventana fresca de 24 h');
+}
+
+export function validatePhysicalQaEvidence(bundle, now = Date.now()) {
   const errors = [];
   const warnings = [];
   if (bundle?.schema !== 'tutop.physical-qa-evidence.v1') errors.push('schema inválido');
@@ -54,6 +66,7 @@ export function validatePhysicalQaEvidence(bundle) {
     if (!allowedCase.has(value)) errors.push(`required_cases.${key} inválido`);
   }
   scanSensitive(bundle || {}, errors);
+  if (bundle?.device?.physical === true) validateFreshNativeDiagnostic(bundle, errors, now);
 
   let assessment = null;
   if (bundle?.diagnostic_report) {
