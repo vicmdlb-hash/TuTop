@@ -121,7 +121,7 @@ export default function UniversityNetworkSetup() {
   if (!user.id) return null;
 
   return <>
-    <button onClick={begin} className="fixed right-3 top-[calc(68px+env(safe-area-inset-top))] z-[56] flex max-w-[210px] items-center gap-2 rounded-2xl border border-violet-300/15 bg-[#111827]/95 px-3 py-2 text-left shadow-xl backdrop-blur" aria-label="Configurar universidad y campus">
+    <button onClick={begin} className="fixed right-3 top-[calc(68px+env(safe-area-inset-top))] z-[56] flex max-w-[calc(100vw-128px)] items-center gap-2 rounded-2xl border border-violet-300/15 bg-[#111827]/95 px-3 py-2 text-left shadow-xl backdrop-blur sm:max-w-[210px]" aria-label="Configurar universidad y campus">
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-violet-500/15 text-violet-300"><Network className="h-4 w-4" /></span>
       <span className="min-w-0 flex-1"><strong className="block truncate text-[10px] text-slate-100">{hasIdentity ? identityLabel : 'Configura tu universidad'}</strong><span className="block truncate text-[8px] text-slate-500">{hasIdentity ? campusLabel || 'Elige tu campus' : 'TuTop México · red universitaria'}</span></span>
       <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-600" />
