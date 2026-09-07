@@ -3,9 +3,13 @@
   "platform": "android",
   "app_version": "0.9.0-beta.0",
   "staging_project": "tutop-beta-vicmdlb-1356585881",
+  "candidate_apk_sha256": "57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493",
+  "candidate_artifact_id": 10002986519,
+  "candidate_build_run_id": 34078588228,
+  "candidate_build_tree_sha": "d1d90343806871479d1685783d1c1e5db1b5c341",
   "device_count": 0,
   "app_check_token_observed": false,
   "verified_at": null,
   "contains_raw_token": false,
-  "evidence_note": "Completar únicamente a partir de Physical QA real en al menos 2 dispositivos Android y dentro de los 7 días previos al gate. Nunca pegar el token App Check; sólo registrar que fue observado."
+  "evidence_note": "Completar únicamente a partir de Physical QA real del APK 20 exacto en al menos 2 dispositivos Android y dentro de los 7 días previos al gate. Nunca pegar el token App Check; sólo registrar que fue observado."
 }
