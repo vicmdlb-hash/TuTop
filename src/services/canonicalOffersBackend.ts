@@ -1,5 +1,5 @@
 import { OfferIdempotencyWindow, isAlreadyCommittedOfferError, isUncertainOfferWriteError } from '../lib/offerIdempotency';
-import type { Offer } from '../types';
+import type { Offer, OfferStatus } from '../types';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { commitWithRateLimit } from './rateLimit';
@@ -36,18 +36,26 @@ async function assertOfferableListing(client: FirebaseRestClient, listingId: str
   if (listing.data.moderation_status !== 'approved') throw new Error('LISTING_NOT_APPROVED');
 }
 
+function assertOfferNotExpired(offer: Offer) {
+  const expiresAt = offer.expires_at ? Date.parse(offer.expires_at) : NaN;
+  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) throw new Error('OFFER_EXPIRED');
+}
+
+async function loadCurrentOffer(client: FirebaseRestClient, offerId: string) {
+  const stored = await client.getDocument<any>(`offers/${offerId}`);
+  if (!stored) throw new Error('OFFER_NOT_FOUND');
+  return { id: stored.id, ...stored.data } as Offer;
+}
+
 async function assertCurrentPendingParent(client: FirebaseRestClient, parent: Offer, actorId: string) {
-  const stored = await client.getDocument<any>(`offers/${parent.id}`);
-  if (!stored) throw new Error('PARENT_OFFER_NOT_FOUND');
-  const data = stored.data || {};
-  if (data.listing_id !== parent.listing_id || data.chat_id !== parent.chat_id || data.buyer_id !== parent.buyer_id || data.seller_id !== parent.seller_id) {
+  const current = await loadCurrentOffer(client, parent.id);
+  if (current.listing_id !== parent.listing_id || current.chat_id !== parent.chat_id || current.buyer_id !== parent.buyer_id || current.seller_id !== parent.seller_id) {
     throw new Error('PARENT_OFFER_MISMATCH');
   }
-  if (data.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
-  if ((data.created_by || data.buyer_id) === actorId) throw new Error('COUNTERPARTY_REQUIRED');
-  const expiresAt = typeof data.expires_at === 'string' ? Date.parse(data.expires_at) : NaN;
-  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) throw new Error('OFFER_EXPIRED');
-  return { id: parent.id, ...data } as Offer;
+  if (current.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
+  if ((current.created_by || current.buyer_id) === actorId) throw new Error('COUNTERPARTY_REQUIRED');
+  assertOfferNotExpired(current);
+  return current;
 }
 
 async function recoverCommittedOffer(client: FirebaseRestClient, offerId: string, expected: {
@@ -129,6 +137,29 @@ export const canonicalOffersBackend = {
       .finally(() => offerListInflight.delete(cleanChatId));
     offerListInflight.set(cleanChatId, request);
     return request;
+  },
+
+  async updateOffer(offerId: string, status: Extract<OfferStatus, 'accepted' | 'rejected' | 'countered' | 'withdrawn'>, counterOfferId?: string) {
+    const client = getClient();
+    const actor = client.currentSession!.uid;
+    const current = await loadCurrentOffer(client, offerId);
+    if (actor !== current.buyer_id && actor !== current.seller_id) throw new Error('PARTICIPANT_REQUIRED');
+    if (current.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
+    assertOfferNotExpired(current);
+    const creator = current.created_by || current.buyer_id;
+
+    if (status === 'rejected') {
+      if (creator === actor) throw new Error('COUNTERPARTY_REQUIRED');
+    } else if (status === 'withdrawn') {
+      if (creator !== actor) throw new Error('OFFER_CREATOR_REQUIRED');
+    } else {
+      throw new Error('GENERIC_OFFER_STATUS_DISABLED');
+    }
+
+    const at = nowIso();
+    await client.setDocument(`offers/${offerId}`, { status, ...(counterOfferId ? { counter_offer_id: counterOfferId } : {}), updated_at: at }, { merge: true });
+    invalidateOfferList(current.chat_id);
+    return { ...current, status, ...(counterOfferId ? { counter_offer_id: counterOfferId } : {}), updated_at: at } as Offer;
   },
 
   async createOffer(input: { listingId: string; chatId: string; sellerId: string; amountMxn: number; expiresAt?: string }) {
