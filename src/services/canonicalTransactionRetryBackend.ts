@@ -12,6 +12,34 @@ function getClient() {
   return client;
 }
 
+function assertSameOffer(stored: Offer, expected: Offer) {
+  if (stored.id !== expected.id
+    || stored.listing_id !== expected.listing_id
+    || stored.chat_id !== expected.chat_id
+    || stored.buyer_id !== expected.buyer_id
+    || stored.seller_id !== expected.seller_id
+    || Number(stored.amount_mxn) !== Number(expected.amount_mxn)
+    || String(stored.parent_offer_id || '') !== String(expected.parent_offer_id || '')) {
+    throw new Error('OFFER_MISMATCH');
+  }
+}
+
+function assertNotExpired(offer: Offer) {
+  const expiresAt = offer.expires_at ? Date.parse(offer.expires_at) : NaN;
+  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) throw new Error('OFFER_EXPIRED');
+}
+
+async function loadStoredOffer(expected: Offer, requiredStatus: 'pending' | 'accepted') {
+  const client = getClient();
+  const stored = await client.getDocument<any>(`offers/${expected.id}`);
+  if (!stored) throw new Error('OFFER_NOT_FOUND');
+  const offer = { id: stored.id, ...stored.data } as Offer;
+  assertSameOffer(offer, expected);
+  if (offer.status !== requiredStatus) throw new Error(requiredStatus === 'pending' ? 'OFFER_NOT_PENDING' : 'OFFER_NOT_ACCEPTED');
+  assertNotExpired(offer);
+  return offer;
+}
+
 async function recoverExistingTransaction(offer: Offer, originalError: unknown) {
   if (!isRecoverableTransactionRetryError(originalError)) throw originalError;
   const client = getClient();
@@ -35,22 +63,24 @@ async function recoverExistingTransaction(offer: Offer, originalError: unknown) 
 
 export const canonicalTransactionRetryBackend = {
   async acceptOfferAndCreateTransaction(offer: Offer, reserveMinutes: 30 | 120 | 1440 = 120) {
+    const storedOffer = await loadStoredOffer(offer, 'pending');
     try {
-      return await canonicalTransactionsBackend.acceptOfferAndCreateTransaction(offer, reserveMinutes);
+      return await canonicalTransactionsBackend.acceptOfferAndCreateTransaction(storedOffer, reserveMinutes);
     } catch (error) {
-      const transaction = await recoverExistingTransaction(offer, error);
+      const transaction = await recoverExistingTransaction(storedOffer, error);
       return {
-        offer: { ...offer, status: 'accepted' as const, updated_at: transaction.updated_at },
+        offer: { ...storedOffer, status: 'accepted' as const, updated_at: transaction.updated_at },
         transaction,
       };
     }
   },
 
   async createTransactionFromAcceptedOffer(offer: Offer, reserveMinutes: 30 | 120 | 1440 = 120) {
+    const storedOffer = await loadStoredOffer(offer, 'accepted');
     try {
-      return await canonicalTransactionsBackend.createTransactionFromAcceptedOffer(offer, reserveMinutes);
+      return await canonicalTransactionsBackend.createTransactionFromAcceptedOffer(storedOffer, reserveMinutes);
     } catch (error) {
-      return recoverExistingTransaction(offer, error);
+      return recoverExistingTransaction(storedOffer, error);
     }
   },
 };
