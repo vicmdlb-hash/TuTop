@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, Timestamp, writeBatch, deleteDoc } from 'firebase/firestore';
 
 const projectId = process.env.GCLOUD_PROJECT || 'demo-tutop-v2-rules';
 const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
@@ -19,7 +19,7 @@ async function seedCatalog(db) {
   await setDoc(doc(db, 'campuses/campus'), { institution_id: 'uatx', name: 'Campus', active: true });
 }
 
-async function seedCanonicalListing(db, at = now()) {
+async function seedCanonicalListing(db, at = now(), status = 'active') {
   await setDoc(doc(db, 'listings_v2/listing-1'), {
     schema_version: 2,
     seller_id: 'seller',
@@ -37,7 +37,7 @@ async function seedCanonicalListing(db, at = now()) {
     meeting_point_ids: [],
     shipping_available: false,
     photo_urls: ['data:image/png;base64,AA'],
-    status: 'active',
+    status,
     moderation_status: 'approved',
     visibility_scope: 'campus',
     published_at: at,
@@ -75,12 +75,12 @@ function reserveBatch(db, suffix, buyer, amount) {
   return batch;
 }
 
-async function seedCompletionState() {
+async function seedCompletionState({ txStatus = 'meetup_scheduled', listingStatus = 'active' } = {}) {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     const at = now();
     await seedCatalog(db);
-    await seedCanonicalListing(db, at);
+    await seedCanonicalListing(db, at, listingStatus);
     await setDoc(doc(db, 'transactions_v2/tx-done'), {
       listing_id: 'listing-1',
       chat_id: 'chat-done',
@@ -88,11 +88,12 @@ async function seedCompletionState() {
       seller_id: 'seller',
       accepted_offer_id: 'offer-done',
       agreed_amount_mxn: 400,
-      status: 'meetup_scheduled',
+      status: txStatus,
       reservation_expires_at: future(),
       meeting_point_id: 'point-done',
       meetup_at: future(60),
       buyer_confirmed_at: at,
+      ...(txStatus === 'completed' ? { seller_confirmed_at: at } : {}),
       created_at: at,
       updated_at: at,
     });
@@ -102,7 +103,7 @@ async function seedCompletionState() {
   });
 }
 
-function completionBatch(db, { sellOut = true, completeTx = true } = {}) {
+function completionPhaseOne(db, { sellOut = true, completeTx = true } = {}) {
   const at = now();
   const batch = writeBatch(db);
   if (completeTx) {
@@ -111,7 +112,6 @@ function completionBatch(db, { sellOut = true, completeTx = true } = {}) {
     });
   }
   if (sellOut) batch.update(doc(db, 'listings_v2/listing-1'), { status: 'sold_out', updated_at: at });
-  batch.delete(doc(db, 'listing_reservation_locks/listing-1'));
   return batch;
 }
 
@@ -154,20 +154,35 @@ test('cancelar sin borrar lock queda bloqueado', async () => {
   await assertFails(bad.commit());
 });
 
-test('completion real: tx completed + listing sold_out + lock delete es atómico', async () => {
+test('fase 1: tx completed + listing sold_out es atómica y conserva lock', async () => {
   await seedCompletionState();
   const seller = env.authenticatedContext('seller').firestore();
-  await assertSucceeds(completionBatch(seller).commit());
+  await assertSucceeds(completionPhaseOne(seller).commit());
+  const lock = await getDoc(doc(seller, 'listing_reservation_locks/listing-1'));
+  if (!lock.exists()) throw new Error('lock debe sobrevivir hasta la fase 2');
 });
 
-test('completion sin sold_out no puede liberar lock', async () => {
-  await seedCompletionState();
+test('fase 2: lock completado se libera cuando listing ya está sold_out', async () => {
+  await seedCompletionState({ txStatus: 'completed', listingStatus: 'sold_out' });
   const seller = env.authenticatedContext('seller').firestore();
-  await assertFails(completionBatch(seller, { sellOut: false, completeTx: true }).commit());
+  await assertSucceeds(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
 });
 
-test('sold_out sin completar transacción no puede liberar lock', async () => {
+test('completion sin sold_out queda bloqueada por regla de transacción', async () => {
   await seedCompletionState();
   const seller = env.authenticatedContext('seller').firestore();
-  await assertFails(completionBatch(seller, { sellOut: true, completeTx: false }).commit());
+  await assertFails(completionPhaseOne(seller, { sellOut: false, completeTx: true }).commit());
+});
+
+test('sold_out sin completar tx no autoriza liberar lock', async () => {
+  await seedCompletionState();
+  const seller = env.authenticatedContext('seller').firestore();
+  await assertSucceeds(completionPhaseOne(seller, { sellOut: true, completeTx: false }).commit());
+  await assertFails(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
+});
+
+test('lock histórico completed no se libera si listing sigue active', async () => {
+  await seedCompletionState({ txStatus: 'completed', listingStatus: 'active' });
+  const seller = env.authenticatedContext('seller').firestore();
+  await assertFails(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
 });
