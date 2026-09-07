@@ -9,6 +9,7 @@ on:
     paths:
       - "src/lib/reservationReconciliation.ts"
       - "scripts/reconcile-v2-reservations.mjs"
+      - "scripts/reservation-lock-residue-audit.mjs"
       - "scripts/v2-trusted-maintenance.mjs"
       - "scripts/v2-observability-snapshot.mjs"
       - ".github/workflows/v2-trusted-maintenance.yml"
@@ -54,6 +55,9 @@ jobs:
 
       - name: Expire reservations and repair completed listings
         run: node scripts/reconcile-v2-reservations.mjs --apply
+
+      - name: Verify reservation lock residues fail closed
+        run: node scripts/reservation-lock-residue-audit.mjs
 
       - name: Rebuild trusted reputation purge credentials queue alerts and send push
         run: node scripts/v2-trusted-maintenance.mjs --apply
