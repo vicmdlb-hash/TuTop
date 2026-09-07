@@ -182,12 +182,20 @@ try {
   await complete.commit();
   assert.equal((await getDoc(doc(sellerDb, 'transactions_v2', txId))).data()?.status, 'completed');
   assert.equal((await getDoc(doc(sellerDb, 'listings_v2', listingId))).data()?.status, 'sold_out');
-  assert.equal((await getDoc(doc(sellerDb, 'listing_reservation_locks', listingId))).exists(), true, 'lock debe permanecer hasta confirmar la fase 1');
+  assert.equal((await getDoc(doc(sellerDb, 'listing_reservation_locks', listingId))).exists(), true, 'lock debe permanecer hasta cleanup trusted');
   ok('fase 1 atómica: confirmación bilateral completó tx + sold_out');
 
-  await deleteDoc(doc(sellerDb, 'listing_reservation_locks', listingId));
+  let clientLockCleanupBlocked = false;
+  try { await deleteDoc(doc(sellerDb, 'listing_reservation_locks', listingId)); } catch { clientLockCleanupBlocked = true; }
+  assert(clientLockCleanupBlocked, 'el cliente pudo borrar un lock completed; cleanup debe ser trusted-only');
+  ok('cliente no puede borrar lock completed');
+
+  await adminDeleteDocument(`listing_reservation_locks/${listingId}`);
   assert.equal((await getDoc(doc(sellerDb, 'listing_reservation_locks', listingId))).exists(), false);
-  ok('fase 2 segura: reservation lock completado fue liberado después de sold_out');
+  const lockPath = `listing_reservation_locks/${listingId}`;
+  const lockIndex = docsToClean.indexOf(lockPath);
+  if (lockIndex >= 0) docsToClean.splice(lockIndex, 1);
+  ok('cleanup trusted/admin liberó reservation lock después de completed + sold_out');
 
   const reviewId = `${chatId}_${buyer.uid}`;
   await setDoc(doc(buyerDb, 'reviews', reviewId), { chat_id: chatId, evaluador_id: buyer.uid, evaluado_id: seller.uid, calificacion: 'positive', comentario: 'Operación smoke confirmada', fecha: Timestamp.now() });
@@ -206,7 +214,7 @@ try {
   ok('reputación trusted visible');
 
   console.log('\n🎯 TUTOP V2 REAL FIREBASE SMOKE: PASS');
-  console.log('auth → red → listing+quota → moderation → search → favorite → seller edit→pending→reapprove → chat → offer → counter → reserve → meetup → bilateral completion → sold_out → safe lock cleanup → review → reputation');
+  console.log('auth → red → listing+quota → moderation → search → favorite → seller edit→pending→reapprove → chat → offer → counter → reserve → meetup → bilateral completion → sold_out → client cleanup denied → trusted lock cleanup → review → reputation');
 } finally {
   try { if (sellerApp) await signOut(getAuth(sellerApp)); } catch {}
   try { if (buyerApp) await signOut(getAuth(buyerApp)); } catch {}
