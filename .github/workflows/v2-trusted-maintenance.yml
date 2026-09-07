@@ -3,16 +3,7 @@ name: TuTop V2 trusted maintenance
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 * * * *"
-  pull_request:
-    branches: ["main"]
-    paths:
-      - "src/lib/reservationReconciliation.ts"
-      - "scripts/reconcile-v2-reservations.mjs"
-      - "scripts/reservation-lock-residue-audit.mjs"
-      - "scripts/v2-trusted-maintenance.mjs"
-      - "scripts/v2-observability-snapshot.mjs"
-      - ".github/workflows/v2-trusted-maintenance.yml"
+    - cron: "17 */6 * * *"
 
 permissions:
   contents: read
@@ -23,7 +14,6 @@ concurrency:
 
 jobs:
   maintain-staging:
-    if: github.event_name != 'pull_request' || github.head_ref == 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
