@@ -8,6 +8,27 @@ const requiredCases = [
   'offline_reconnect','push_foreground','push_background','push_cold_start','push_deep_link','app_check_token_observed',
 ];
 const allowedCase = new Set(['pass','warn','fail','pending','not_applicable']);
+const forbiddenKeys = new Set(['refreshToken','idToken','password','FIREBASE_TOKEN']);
+
+function scanSensitive(value, errors, pathParts = []) {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => scanSensitive(item, errors, [...pathParts, String(index)]));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      if (forbiddenKeys.has(key)) errors.push(`dato prohibido detectado en campo: ${[...pathParts, key].join('.')}`);
+      scanSensitive(child, errors, [...pathParts, key]);
+    }
+    return;
+  }
+  if (typeof value !== 'string') return;
+  // Human notes may name forbidden concepts (e.g. "no incluir password") without
+  // containing the secret itself. Values are inspected for token/phone-like payloads,
+  // while exact forbidden field names are rejected structurally above.
+  if (/\b\d{10,13}\b/.test(value)) errors.push(`posible número telefónico/identificador sensible sin redactar en ${pathParts.join('.') || 'root'}`);
+  if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push(`posible token/identificador largo sin redactar en ${pathParts.join('.') || 'root'}`);
+}
 
 export function validatePhysicalQaEvidence(bundle) {
   const errors = [];
@@ -21,12 +42,7 @@ export function validatePhysicalQaEvidence(bundle) {
     const value = bundle?.required_cases?.[key];
     if (!allowedCase.has(value)) errors.push(`required_cases.${key} inválido`);
   }
-  const serialized = JSON.stringify(bundle || {});
-  for (const forbidden of ['refreshToken','idToken','password','FIREBASE_TOKEN']) {
-    if (serialized.includes(forbidden)) errors.push(`dato prohibido detectado: ${forbidden}`);
-  }
-  if (/\b\d{10,13}\b/.test(serialized)) errors.push('posible número telefónico/identificador sensible sin redactar');
-  if (/[A-Za-z0-9_-]{120,}/.test(serialized)) errors.push('posible token/identificador largo sin redactar');
+  scanSensitive(bundle || {}, errors);
 
   let assessment = null;
   if (bundle?.diagnostic_report) {
