@@ -8,6 +8,10 @@ import { nationalSchemaEnabled } from './nationalBackend.ts';
 import { commitWithRateLimit } from './rateLimit.ts';
 import { getFirebaseConfig } from './runtimeConfig.ts';
 
+const SELLER_NAME_CACHE_TTL_MS = 10 * 60_000;
+const sellerNameCache = new Map<string, { name: string; expiresAt: number }>();
+const sellerNameInflight = new Map<string, Promise<string>>();
+
 function localId() {
   const random = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `listing-${random}`;
@@ -61,6 +65,24 @@ function contextLabel(data: CanonicalListingV2) {
   const campus = CAMPUSES.find((item) => item.id === data.campus_id)?.name;
   if (campus) return campus;
   return INSTITUTIONS.find((item) => item.id === data.institution_id)?.short_name || 'Red universitaria';
+}
+
+async function sellerNameFor(client: FirebaseRestClient, uid: string) {
+  const cached = sellerNameCache.get(uid);
+  if (cached && cached.expiresAt > Date.now()) return cached.name;
+  const inflight = sellerNameInflight.get(uid);
+  if (inflight) return inflight;
+
+  const request = client.getDocument<{ nombre?: string }>(`users/${uid}`)
+    .then((profile) => String(profile?.data?.nombre || 'Estudiante'))
+    .catch(() => 'Estudiante')
+    .then((name) => {
+      sellerNameCache.set(uid, { name, expiresAt: Date.now() + SELLER_NAME_CACHE_TTL_MS });
+      return name;
+    })
+    .finally(() => sellerNameInflight.delete(uid));
+  sellerNameInflight.set(uid, request);
+  return request;
 }
 
 export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListingV2>, sellerName = 'Estudiante'): Product {
@@ -168,10 +190,7 @@ export const canonicalListingsBackend = {
     const docs = [...byId.values()];
     const sellerIds = [...new Set(docs.map((doc) => doc.data.seller_id).filter(Boolean))];
     const names = new Map<string, string>();
-    await Promise.all(sellerIds.map(async (uid) => {
-      const profile = await client.getDocument<{ nombre?: string }>(`users/${uid}`).catch(() => null);
-      names.set(uid, String(profile?.data?.nombre || 'Estudiante'));
-    }));
+    await Promise.all(sellerIds.map(async (uid) => names.set(uid, await sellerNameFor(client, uid))));
     return docs
       .map((doc) => canonicalListingToProduct(doc, names.get(doc.data.seller_id) || 'Estudiante'))
       .sort((a, b) => Date.parse(b.updated_at || b.fecha_creacion) - Date.parse(a.updated_at || a.fecha_creacion));
