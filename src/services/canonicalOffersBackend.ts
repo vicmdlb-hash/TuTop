@@ -1,0 +1,163 @@
+import { OfferIdempotencyWindow, isAlreadyCommittedOfferError, isUncertainOfferWriteError } from '../lib/offerIdempotency';
+import type { Offer } from '../types';
+import { FirebaseRestClient } from './firebaseRest';
+import { nationalSchemaEnabled } from './nationalBackend';
+import { commitWithRateLimit } from './rateLimit';
+import { getFirebaseConfig } from './runtimeConfig';
+
+const operations = new OfferIdempotencyWindow();
+
+function nowIso() { return new Date().toISOString(); }
+function patchWrite(client: FirebaseRestClient, path: string, data: Record<string, unknown>) {
+  return { update: client.encodeDocumentForWrite(path, data), updateMask: { fieldPaths: Object.keys(data) } };
+}
+
+function getClient() {
+  if (!nationalSchemaEnabled()) throw new Error('SCHEMA_V2_DISABLED');
+  const client = new FirebaseRestClient(getFirebaseConfig());
+  if (!client.currentSession?.uid) throw new Error('AUTH_REQUIRED');
+  return client;
+}
+
+async function assertOfferableListing(client: FirebaseRestClient, listingId: string, sellerId: string) {
+  const listing = await client.getDocument<any>(`listings_v2/${listingId}`);
+  if (!listing) throw new Error('LISTING_NOT_FOUND');
+  if (listing.data.seller_id !== sellerId) throw new Error('SELLER_MISMATCH');
+  if (listing.data.status !== 'active') throw new Error('LISTING_NOT_ACTIVE');
+  if (listing.data.moderation_status !== 'approved') throw new Error('LISTING_NOT_APPROVED');
+}
+
+async function recoverCommittedOffer(client: FirebaseRestClient, offerId: string, expected: {
+  listingId: string;
+  chatId: string;
+  buyerId: string;
+  sellerId: string;
+  actorId: string;
+  amountMxn: number;
+  parentOfferId?: string;
+}) {
+  const stored = await client.getDocument<any>(`offers/${offerId}`);
+  if (!stored) return null;
+  const data = stored.data || {};
+  const amount = Math.round(Number(data.amount_mxn) * 100) / 100;
+  const expectedAmount = Math.round(expected.amountMxn * 100) / 100;
+  const matches = data.listing_id === expected.listingId
+    && data.chat_id === expected.chatId
+    && data.buyer_id === expected.buyerId
+    && data.seller_id === expected.sellerId
+    && (data.created_by || data.buyer_id) === expected.actorId
+    && amount === expectedAmount
+    && String(data.parent_offer_id || '') === String(expected.parentOfferId || '');
+  if (!matches) throw new Error('OFFER_IDEMPOTENCY_COLLISION');
+  return { id: offerId, ...data } as Offer;
+}
+
+async function commitOfferWithRecovery(
+  client: FirebaseRestClient,
+  operation: { key: string; offerId: string },
+  offer: Offer,
+  writes: any[],
+) {
+  const expected = {
+    listingId: offer.listing_id,
+    chatId: offer.chat_id,
+    buyerId: offer.buyer_id,
+    sellerId: offer.seller_id,
+    actorId: offer.created_by || offer.buyer_id,
+    amountMxn: offer.amount_mxn,
+    parentOfferId: offer.parent_offer_id,
+  };
+  try {
+    await commitWithRateLimit(client, 'offer_create', writes);
+    operations.markSuccess(operation.key);
+    return offer;
+  } catch (error) {
+    if (isAlreadyCommittedOfferError(error)) {
+      const recovered = await recoverCommittedOffer(client, operation.offerId, expected);
+      if (recovered) {
+        operations.markSuccess(operation.key);
+        return recovered;
+      }
+    }
+    if (isUncertainOfferWriteError(error)) operations.markUncertain(operation.key);
+    else operations.forget(operation.key);
+    throw error;
+  }
+}
+
+export const canonicalOffersBackend = {
+  async createOffer(input: { listingId: string; chatId: string; sellerId: string; amountMxn: number; expiresAt?: string }) {
+    const client = getClient();
+    const buyerId = client.currentSession!.uid;
+    if (buyerId === input.sellerId) throw new Error('SELF_OFFER_DENIED');
+    if (!Number.isFinite(input.amountMxn) || input.amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
+    await assertOfferableListing(client, input.listingId, input.sellerId);
+    const amountMxn = Math.round(input.amountMxn * 100) / 100;
+    const operation = operations.begin({
+      actorId: buyerId,
+      listingId: input.listingId,
+      chatId: input.chatId,
+      sellerId: input.sellerId,
+      amountMxn,
+    });
+    const at = nowIso();
+    const offer: Offer = {
+      id: operation.offerId,
+      listing_id: input.listingId,
+      chat_id: input.chatId,
+      buyer_id: buyerId,
+      seller_id: input.sellerId,
+      created_by: buyerId,
+      amount_mxn: amountMxn,
+      status: 'pending',
+      expires_at: input.expiresAt,
+      created_at: at,
+      updated_at: at,
+    };
+    const { id: _id, ...data } = offer;
+    return commitOfferWithRecovery(client, operation, offer, [
+      { update: client.encodeDocumentForWrite(`offers/${operation.offerId}`, data), currentDocument: { exists: false } },
+      patchWrite(client, `chats/${input.chatId}`, { current_offer_id: operation.offerId, updated_at: at }),
+    ]);
+  },
+
+  async createCounterOffer(parent: Offer, amountMxn: number, expiresAt?: string) {
+    const client = getClient();
+    const actor = client.currentSession!.uid;
+    if (actor !== parent.buyer_id && actor !== parent.seller_id) throw new Error('PARTICIPANT_REQUIRED');
+    if ((parent.created_by || parent.buyer_id) === actor) throw new Error('COUNTERPARTY_REQUIRED');
+    if (parent.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
+    if (!Number.isFinite(amountMxn) || amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
+    await assertOfferableListing(client, parent.listing_id, parent.seller_id);
+    const normalizedAmount = Math.round(amountMxn * 100) / 100;
+    const operation = operations.begin({
+      actorId: actor,
+      listingId: parent.listing_id,
+      chatId: parent.chat_id,
+      sellerId: parent.seller_id,
+      amountMxn: normalizedAmount,
+      parentOfferId: parent.id,
+    });
+    const at = nowIso();
+    const counter: Offer = {
+      id: operation.offerId,
+      listing_id: parent.listing_id,
+      chat_id: parent.chat_id,
+      buyer_id: parent.buyer_id,
+      seller_id: parent.seller_id,
+      created_by: actor,
+      amount_mxn: normalizedAmount,
+      status: 'pending',
+      parent_offer_id: parent.id,
+      expires_at: expiresAt || new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+      created_at: at,
+      updated_at: at,
+    };
+    const { id: _id, ...data } = counter;
+    return commitOfferWithRecovery(client, operation, counter, [
+      { update: client.encodeDocumentForWrite(`offers/${operation.offerId}`, data), currentDocument: { exists: false } },
+      patchWrite(client, `offers/${parent.id}`, { status: 'countered', counter_offer_id: operation.offerId, updated_at: at }),
+      patchWrite(client, `chats/${parent.chat_id}`, { current_offer_id: operation.offerId, updated_at: at }),
+    ]);
+  },
+};
