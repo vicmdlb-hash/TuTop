@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const MAX_EVIDENCE_AGE_MS = 30 * 24 * 60 * 60_000;
+const MAX_EVIDENCE_AGE_MS = 7 * 24 * 60 * 60_000;
+const MIN_DEVICE_COUNT = 2;
 
 export function validateAppCheckPhysicalEvidence(input, now = Date.now()) {
   const errors = [];
@@ -11,12 +12,12 @@ export function validateAppCheckPhysicalEvidence(input, now = Date.now()) {
   if (!/^0\.9\.0-beta\./.test(String(input.app_version || ''))) errors.push('app_version_not_0_9_beta');
   if (input.app_check_token_observed !== true) errors.push('app_check_token_not_observed');
   if (input.staging_project !== 'tutop-beta-vicmdlb-1356585881') errors.push('wrong_staging_project');
-  if (!Number.isInteger(input.device_count) || input.device_count < 1) errors.push('device_count_missing');
+  if (!Number.isInteger(input.device_count) || input.device_count < MIN_DEVICE_COUNT) errors.push('two_device_evidence_required');
   const verifiedAt = Date.parse(String(input.verified_at || ''));
   if (!Number.isFinite(verifiedAt)) errors.push('verified_at_invalid');
   else if (verifiedAt > now + 5 * 60_000 || now - verifiedAt > MAX_EVIDENCE_AGE_MS) errors.push('evidence_stale_or_future');
   if (input.contains_raw_token === true) errors.push('raw_token_must_not_be_stored');
-  return { ready: errors.length === 0, errors };
+  return { ready: errors.length === 0, errors, min_device_count: MIN_DEVICE_COUNT, max_age_days: 7 };
 }
 
 export function requireAppCheckPhysicalEvidence(filePath, now = Date.now()) {
