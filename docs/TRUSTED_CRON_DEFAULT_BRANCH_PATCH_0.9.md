@@ -2,14 +2,16 @@
 
 ## Estado actual
 
-`.github/workflows/v2-trusted-maintenance.yml` ya declara:
+`.github/workflows/v2-trusted-maintenance.yml` ya declara una cadencia conservadora de **cada 6 horas**:
 
 ```yaml
 schedule:
-  - cron: "17 * * * *"
+  - cron: "17 */6 * * *"
 ```
 
 GitHub ejecuta `schedule` únicamente desde la rama por defecto. Mientras `main` no contenga este workflow, el cron NO está activo automáticamente.
+
+La reducción desde una frecuencia horaria evita que mantenimiento staging consuma por sí solo una fracción desproporcionada del presupuesto mensual de GitHub Actions. El workflow tampoco se dispara en cada pull request; `workflow_dispatch` queda disponible para validaciones puntuales.
 
 ## Patch futuro exacto
 
@@ -21,7 +23,7 @@ Antes de aplicar:
 2. Confirmar credential válida para staging.
 3. Confirmar `TUTOP_FIREBASE_PROJECT_ID=tutop-beta-vicmdlb-1356585881`.
 4. Mantener `cancel-in-progress: false`.
-5. No cambiar `schedule` ni convertir staging en producción.
+5. Mantener la cadencia de cada 6 horas salvo evidencia operativa que justifique otra frecuencia.
 6. Ejecutar primero `workflow_dispatch` desde la rama candidata y verificar PASS.
 7. Aplicar el archivo como PR aislado de infraestructura, nunca mezclado con features.
 
