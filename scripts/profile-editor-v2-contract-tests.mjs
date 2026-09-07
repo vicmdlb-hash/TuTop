@@ -5,15 +5,11 @@ const profile = fs.readFileSync('src/components/Profile.tsx', 'utf8');
 const listingFields = fs.readFileSync('src/lib/nationalListingFields.ts', 'utf8');
 
 assert.match(listingFields, /nationalFieldsFor\(/);
+assert.doesNotMatch(profile, /<select[^>]*value=\{editingProduct\.categoria\}/);
+assert.doesNotMatch(profile, /categoria:\s*editingProduct\.categoria/);
+assert.match(profile, /Para cambiar de categoría, crea una nueva publicación/);
+assert.match(profile, /aria-label="Categoría actual"/);
 
-const categoryEditable = /<select[^>]*value=\{editingProduct\.categoria\}/.test(profile);
-const editorHasNationalFields = /nationalFieldsFor\(/.test(profile) || /attributes/.test(profile);
-
-if (categoryEditable && !editorHasNationalFields) {
-  console.error('FAIL PROFILE_EDITOR_V2_CATEGORY_DRIFT: Profile lets sellers change category without rendering/validating the new category attributes.');
-  console.error('Required before release: either make category read-only in this legacy editor or render nationalFieldsFor(newCategory) and validate required attributes before save.');
-  process.exit(1);
-}
-
-console.log('PASS profile editor cannot change category without V2 attribute validation');
+console.log('PASS legacy profile editor keeps category read-only');
+console.log('PASS category changes must go through a fresh V2 publication with correct required fields');
 console.log('Profile editor V2 contract: PASS');
