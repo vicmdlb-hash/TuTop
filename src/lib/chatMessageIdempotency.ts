@@ -27,12 +27,19 @@ function newMessageId() {
 
 export class ChatMessageIdempotencyWindow {
   private operations = new Map<string, OperationRecord>();
+  private readonly successGraceMs: number;
+  private readonly uncertainRetryMs: number;
+  private readonly idFactory: () => string;
 
   constructor(
-    private readonly successGraceMs = SUCCESS_GRACE_MS,
-    private readonly uncertainRetryMs = UNCERTAIN_RETRY_MS,
-    private readonly idFactory: () => string = newMessageId,
-  ) {}
+    successGraceMs = SUCCESS_GRACE_MS,
+    uncertainRetryMs = UNCERTAIN_RETRY_MS,
+    idFactory: () => string = newMessageId,
+  ) {
+    this.successGraceMs = successGraceMs;
+    this.uncertainRetryMs = uncertainRetryMs;
+    this.idFactory = idFactory;
+  }
 
   begin(input: { uid: string; chatId: string; text: string; imageUrl?: string }, nowMs = Date.now()): ChatMessageOperation {
     this.prune(nowMs);
