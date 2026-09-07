@@ -13,6 +13,7 @@ const steps = [
   [process.execPath, ['scripts/local-topi-favorites-tests.mjs']],
   [process.execPath, ['scripts/firestore-cost-geography-tests.mjs']],
   [process.execPath, ['scripts/seller-profile-cache-tests.mjs']],
+  [process.execPath, ['scripts/canonical-offer-read-cache-tests.mjs']],
   [process.execPath, ['scripts/offer-backend-drift-audit.mjs']],
   [process.execPath, ['scripts/october-static-readiness-tests.mjs']],
   [process.execPath, ['scripts/firestore-static-contract-tests.mjs']],
