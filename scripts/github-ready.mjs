@@ -7,6 +7,9 @@ const warnings = [];
 const required = [
   '.github/workflows/android-debug-apk.yml',
   '.github/workflows/quality.yml',
+  '.github/workflows/firestore-v2-security.yml',
+  '.github/workflows/staging-v2-smoke.yml',
+  '.github/workflows/v2-trusted-maintenance.yml',
   '.github/dependabot.yml',
   '.github/pull_request_template.md',
   '.github/CODEOWNERS',
@@ -19,6 +22,9 @@ for (const relative of required) {
 
 const android = fs.readFileSync(path.join(root, '.github/workflows/android-debug-apk.yml'), 'utf8');
 const quality = fs.readFileSync(path.join(root, '.github/workflows/quality.yml'), 'utf8');
+const firestore = fs.readFileSync(path.join(root, '.github/workflows/firestore-v2-security.yml'), 'utf8');
+const staging = fs.readFileSync(path.join(root, '.github/workflows/staging-v2-smoke.yml'), 'utf8');
+const trusted = fs.readFileSync(path.join(root, '.github/workflows/v2-trusted-maintenance.yml'), 'utf8');
 const project = JSON.parse(fs.readFileSync(path.join(root, 'config/project.json'), 'utf8'));
 
 for (const marker of ['npm ci', 'npm run check', 'npm run beta:ready', 'assembleDebug', 'actions/upload-artifact']) {
@@ -27,9 +33,13 @@ for (const marker of ['npm ci', 'npm run check', 'npm run beta:ready', 'assemble
 for (const marker of ['npm ci', 'npm run check', 'npm run typecheck', 'npm run build', 'actions/upload-artifact']) {
   if (!quality.includes(marker)) errors.push(`Workflow quality no contiene: ${marker}`);
 }
+if (!firestore.includes('Firestore V2 emulator security') || !firestore.includes('firebase/**')) errors.push('Firestore V2 dejó de tener gate aislado por cambios de Rules.');
+if (/\n\s+push:|\n\s+pull_request:/.test(android)) errors.push('Android debe permanecer manual-only para preservar minutos.');
+if (/\n\s+push:|\n\s+pull_request:/.test(staging)) errors.push('Staging real debe permanecer manual-only para preservar minutos.');
+if (!trusted.includes('cron: "17 */6 * * *"')) errors.push('Trusted maintenance excede la cadencia presupuestada de cada 6 horas.');
 
 if (project.zeroInvestmentMode !== true || project.billingAllowed !== false) errors.push('El proyecto dejó de estar bloqueado a cero inversión.');
-if (/secrets\.[A-Z0-9_]+/.test(android + quality)) warnings.push('Hay referencias a GitHub Secrets. Revísalas antes de activar el workflow.');
+if (/secrets\.[A-Z0-9_]+/.test(android + quality + firestore + staging + trusted)) warnings.push('Hay referencias a GitHub Secrets. Revísalas antes de activar workflows manuales/cron.');
 
 for (const warning of warnings) console.log(`WARN ${warning}`);
 for (const error of errors) console.error(`FAIL ${error}`);
