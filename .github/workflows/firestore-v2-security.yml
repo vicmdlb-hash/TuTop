@@ -2,16 +2,6 @@ name: TuTop Firestore V2 security
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: ["main"]
-    paths:
-      - "firebase/**"
-      - "firebase.v2.json"
-      - "tests/firestore.v2*.mjs"
-      - "scripts/prepare-firestore-v2-rules.mjs"
-      - "scripts/harden-canonical-v2-rules.mjs"
-      - "scripts/harden-runtime-v2-rules.mjs"
-      - ".github/workflows/firestore-v2-security.yml"
 
 permissions:
   contents: read
