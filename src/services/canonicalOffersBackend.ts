@@ -6,8 +6,10 @@ import { commitWithRateLimit } from './rateLimit';
 import { getFirebaseConfig } from './runtimeConfig';
 
 const operations = new OfferIdempotencyWindow();
+const DEFAULT_OFFER_TTL_MS = 24 * 60 * 60_000;
 
 function nowIso() { return new Date().toISOString(); }
+function defaultOfferExpiry() { return new Date(Date.now() + DEFAULT_OFFER_TTL_MS).toISOString(); }
 function patchWrite(client: FirebaseRestClient, path: string, data: Record<string, unknown>) {
   return { update: client.encodeDocumentForWrite(path, data), updateMask: { fieldPaths: Object.keys(data) } };
 }
@@ -124,7 +126,7 @@ export const canonicalOffersBackend = {
       created_by: buyerId,
       amount_mxn: amountMxn,
       status: 'pending',
-      expires_at: input.expiresAt,
+      expires_at: input.expiresAt || defaultOfferExpiry(),
       created_at: at,
       updated_at: at,
     };
@@ -162,7 +164,7 @@ export const canonicalOffersBackend = {
       amount_mxn: normalizedAmount,
       status: 'pending',
       parent_offer_id: currentParent.id,
-      expires_at: expiresAt || new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+      expires_at: expiresAt || defaultOfferExpiry(),
       created_at: at,
       updated_at: at,
     };
