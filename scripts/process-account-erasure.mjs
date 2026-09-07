@@ -45,6 +45,7 @@ const withdrawals = [
 
 const retainedOperational = [
   ['transactions_v2', 'buyer_id'], ['transactions_v2', 'seller_id'],
+  ['listing_reservation_locks', 'buyer_id'], ['listing_reservation_locks', 'seller_id'],
   ['offers', 'buyer_id'], ['offers', 'seller_id'],
   ['chats', 'buyer_id'], ['chats', 'seller_id'],
   ['reviews', 'evaluador_id'], ['reviews', 'evaluado_id'],
