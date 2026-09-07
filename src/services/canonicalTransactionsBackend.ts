@@ -163,9 +163,12 @@ export const canonicalTransactionsBackend = {
     const next = { ...transaction, [field]: at, status, updated_at: at } as MarketplaceTransaction;
     const confirmationWrite = patchWrite(client, `transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at });
     if (status === 'completed' && actor === transaction.seller_id) {
+      const lock = await client.getDocument<any>(reservationLockPath(transaction.listing_id));
+      if (lock && lock.data.transaction_id !== transaction.id) throw new Error('RESERVATION_LOCK_MISMATCH');
       await client.commit([
         confirmationWrite,
         patchWrite(client, `listings_v2/${transaction.listing_id}`, { status: 'sold_out', updated_at: at }),
+        ...(lock ? [{ delete: client.documentName(reservationLockPath(transaction.listing_id)) }] : []),
       ]);
     } else await client.commit([confirmationWrite]);
     return next;
@@ -176,7 +179,13 @@ export const canonicalTransactionsBackend = {
     const actor = client.currentSession!.uid;
     if (actor !== transaction.seller_id) throw new Error('SELLER_REQUIRED');
     if (transaction.status !== 'completed' || !transaction.buyer_confirmed_at || !transaction.seller_confirmed_at) throw new Error('TRANSACTION_NOT_COMPLETED');
-    await client.setDocument(`listings_v2/${transaction.listing_id}`, { status: 'sold_out', updated_at: new Date() }, { merge: true });
+    const at = nowIso();
+    const lock = await client.getDocument<any>(reservationLockPath(transaction.listing_id));
+    if (lock && lock.data.transaction_id !== transaction.id) throw new Error('RESERVATION_LOCK_MISMATCH');
+    await client.commit([
+      patchWrite(client, `listings_v2/${transaction.listing_id}`, { status: 'sold_out', updated_at: at }),
+      ...(lock ? [{ delete: client.documentName(reservationLockPath(transaction.listing_id)) }] : []),
+    ]);
   },
 
   async disputeTransaction(transaction: MarketplaceTransaction) {
