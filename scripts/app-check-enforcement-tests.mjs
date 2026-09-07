@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { validateAppCheckPhysicalEvidence } from './app-check-enforcement-readiness.mjs';
 
-const now = Date.parse('2026-09-06T23:40:00.000Z');
+const now = Date.parse('2026-09-07T04:30:00.000Z');
 const valid = {
   status: 'verified',
   platform: 'android',
@@ -12,8 +12,12 @@ const valid = {
   candidate_build_run_id: 34078588228,
   candidate_build_tree_sha: 'd1d90343806871479d1685783d1c1e5db1b5c341',
   device_count: 2,
+  devices: [
+    { slot: 'A', physical: true, evidence_session_id: 'appcheck-session-a', profile_fingerprint_sha256: 'a'.repeat(64), app_check_token_observed: true, verified_at: '2026-09-07T04:20:00.000Z' },
+    { slot: 'B', physical: true, evidence_session_id: 'appcheck-session-b', profile_fingerprint_sha256: 'b'.repeat(64), app_check_token_observed: true, verified_at: '2026-09-07T04:21:00.000Z' },
+  ],
   app_check_token_observed: true,
-  verified_at: '2026-09-06T23:35:00.000Z',
+  verified_at: '2026-09-07T04:22:00.000Z',
   contains_raw_token: false,
 };
 const ready = validateAppCheckPhysicalEvidence(valid, now);
@@ -31,20 +35,41 @@ for (const mutate of [
   (x) => { x.contains_raw_token = true; },
   (x) => { x.verified_at = '2026-08-20T00:00:00.000Z'; },
 ]) {
-  const candidate = structuredClone(valid);
-  mutate(candidate);
-  assert.equal(validateAppCheckPhysicalEvidence(candidate, now).ready, false);
+  const evidence = structuredClone(valid);
+  mutate(evidence);
+  assert.equal(validateAppCheckPhysicalEvidence(evidence, now).ready, false);
 }
 
 const oneDevice = structuredClone(valid);
+oneDevice.devices = [oneDevice.devices[0]];
 oneDevice.device_count = 1;
 assert(validateAppCheckPhysicalEvidence(oneDevice, now).errors.includes('two_device_evidence_required'));
 
-const eightDaysOld = structuredClone(valid);
-eightDaysOld.verified_at = '2026-08-29T23:35:00.000Z';
-assert(validateAppCheckPhysicalEvidence(eightDaysOld, now).errors.includes('evidence_stale_or_future'));
+const fakeCount = structuredClone(valid);
+fakeCount.device_count = 2;
+fakeCount.devices = [fakeCount.devices[0]];
+assert.equal(validateAppCheckPhysicalEvidence(fakeCount, now).ready, false);
 
-// Evidence from an older APK with the same semantic version must never unlock enforcement.
+const duplicateSession = structuredClone(valid);
+duplicateSession.devices[1].evidence_session_id = duplicateSession.devices[0].evidence_session_id;
+assert(validateAppCheckPhysicalEvidence(duplicateSession, now).errors.includes('independent_evidence_sessions_required'));
+
+const duplicateFingerprint = structuredClone(valid);
+duplicateFingerprint.devices[1].profile_fingerprint_sha256 = duplicateFingerprint.devices[0].profile_fingerprint_sha256;
+assert(validateAppCheckPhysicalEvidence(duplicateFingerprint, now).errors.includes('independent_device_fingerprints_required'));
+
+const nonPhysical = structuredClone(valid);
+nonPhysical.devices[1].physical = false;
+assert.equal(validateAppCheckPhysicalEvidence(nonPhysical, now).ready, false);
+
+const perDeviceStale = structuredClone(valid);
+perDeviceStale.devices[1].verified_at = '2026-08-20T00:00:00.000Z';
+assert.equal(validateAppCheckPhysicalEvidence(perDeviceStale, now).ready, false);
+
+const rawNestedToken = structuredClone(valid);
+rawNestedToken.devices[0].app_check_token = 'must-never-be-stored';
+assert(validateAppCheckPhysicalEvidence(rawNestedToken, now).errors.includes('raw_token_must_not_be_stored'));
+
 for (const [field, value, expectedError] of [
   ['candidate_apk_sha256', '71975f84cd26adb1526db895e76dcb455aed2f258e3f6cf01035c9fd90c95321', 'wrong_apk_candidate'],
   ['candidate_artifact_id', 10002002950, 'wrong_artifact_candidate'],
@@ -59,9 +84,7 @@ for (const [field, value, expectedError] of [
 }
 
 console.log('PASS App Check enforcement accepts fresh verified Android evidence only');
-console.log('PASS enforcement requires at least two physical Android devices');
-console.log('PASS App Check evidence older than seven days is rejected');
-console.log('PASS pending/template evidence cannot unlock enforcement');
-console.log('PASS historical Firebase and raw-token evidence are rejected');
+console.log('PASS two independent A/B device records, sessions and sanitized fingerprints are required');
+console.log('PASS fake device_count, duplicate evidence, stale devices and nested raw tokens fail closed');
 console.log('PASS same-version evidence from a different APK/artifact/run/tree is rejected');
 console.log('App Check enforcement readiness contract: PASS');

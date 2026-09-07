@@ -42,6 +42,10 @@
   "diagnostic_report": null,
   "fcm_fixture_report": null,
   "app_check_evidence": null,
-  "screenshots": [],
-  "notes": "Template Device A ligado a APK 20 exacta. Registrar inicio/fin reales de la sesión. No incluir teléfono, password, tokens, idToken, refreshToken ni notification IDs crudos."
+  "screenshots": [
+    { "case": "keyboard", "captured_at": "PENDIENTE-ISO8601", "sha256": "PENDIENTE-SHA256" },
+    { "case": "safe_areas", "captured_at": "PENDIENTE-ISO8601", "sha256": "PENDIENTE-SHA256" },
+    { "case": "rotation", "captured_at": "PENDIENTE-ISO8601", "sha256": "PENDIENTE-SHA256" }
+  ],
+  "notes": "Template Device A ligado a APK 20 exacta. Los screenshots deben ser capturas reales distintas, con SHA-256 del archivo y timestamp dentro de la sesión. FCM/App Check deben enlazar este mismo slot y evidence_session_id."
 }

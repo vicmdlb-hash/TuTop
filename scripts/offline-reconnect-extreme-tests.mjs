@@ -20,11 +20,32 @@ const failedOnce = offline.markOfflineActionFailed(initial, t0);
 assert.equal(offline.dueOfflineActions([failedOnce], new Date(t0.getTime() + 3_999)).length, 0);
 assert.equal(offline.dueOfflineActions([failedOnce], new Date(t0.getTime() + 4_000)).length, 1);
 
-const superseded = offline.enqueueOfflineAction([failedOnce], action('retry-2', 'saved_search_save', 'search-retry', { query: 'laptop gamer' }), new Date(t0.getTime() + 5_000));
+const failedTwice = offline.markOfflineActionFailed(failedOnce, new Date(t0.getTime() + 4_000));
+assert.equal(offline.dueOfflineActions([failedTwice], new Date(t0.getTime() + 11_999)).length, 0);
+assert.equal(offline.dueOfflineActions([failedTwice], new Date(t0.getTime() + 12_000)).length, 1);
+const failedThree = offline.markOfflineActionFailed(failedTwice, new Date(t0.getTime() + 12_000));
+assert.equal(offline.dueOfflineActions([failedThree], new Date(t0.getTime() + 27_999)).length, 0);
+assert.equal(offline.dueOfflineActions([failedThree], new Date(t0.getTime() + 28_000)).length, 1);
+
+const superseded = offline.enqueueOfflineAction([failedThree], action('retry-2', 'saved_search_save', 'search-retry', { query: 'laptop gamer' }), new Date(t0.getTime() + 13_000));
 assert.equal(superseded.length, 1);
 assert.equal(superseded[0].id, 'retry-2');
 assert.equal(superseded[0].attempts, 0);
-assert.equal(offline.dueOfflineActions(superseded, new Date(t0.getTime() + 5_000)).length, 1);
+assert.equal(offline.dueOfflineActions(superseded, new Date(t0.getTime() + 13_000)).length, 1);
+
+let reconnectCycle = offline.enqueueOfflineAction([], action('cycle-1', 'listing_draft_save', 'draft-cycle', { title: 'v1' }), t0);
+for (let cycle = 0; cycle < 4; cycle += 1) {
+  const dueNow = offline.dueOfflineActions(reconnectCycle, new Date(Date.parse(reconnectCycle[0].next_attempt_at)));
+  assert.equal(dueNow.length, 1);
+  if (cycle < 3) {
+    reconnectCycle = [offline.markOfflineActionFailed(dueNow[0], new Date(Date.parse(dueNow[0].next_attempt_at)))];
+    const oneMsEarly = new Date(Date.parse(reconnectCycle[0].next_attempt_at) - 1);
+    assert.equal(offline.dueOfflineActions(reconnectCycle, oneMsEarly).length, 0);
+  } else {
+    reconnectCycle = offline.removeOfflineAction(reconnectCycle, dueNow[0].id);
+  }
+}
+assert.equal(reconnectCycle.length, 0);
 
 let storm = [];
 for (let index = 0; index < 500; index += 1) {
@@ -55,10 +76,22 @@ for (let index = 0; index < offline.OFFLINE_QUEUE_LIMITS.max_items + 75; index +
 assert.equal(saturated.length, offline.OFFLINE_QUEUE_LIMITS.max_items);
 assert.equal(saturated[0].entity_id, 'draft-75');
 assert.equal(saturated.at(-1)?.entity_id, `draft-${offline.OFFLINE_QUEUE_LIMITS.max_items + 74}`);
-assert.equal(offline.summarizeOfflineQueue(saturated, new Date(t0.getTime() + 1_000)).duplicate_keys, 0);
+const saturationSummary = offline.summarizeOfflineQueue(saturated, new Date(t0.getTime() + 1_000));
+assert.equal(saturationSummary.duplicate_keys, 0);
+assert.equal(saturationSummary.total, saturationSummary.due + saturationSummary.delayed + saturationSummary.exhausted);
 
-console.log('PASS retry backoff does not replay early and becomes due deterministically');
+const mixed = [
+  offline.markOfflineActionFailed(offline.enqueueOfflineAction([], action('m1', 'saved_search_save', 'mix-1', { query: 'uno' }), t0)[0], t0),
+  exhausted,
+  offline.enqueueOfflineAction([], action('m3', 'listing_draft_save', 'mix-3', { title: 'tres' }), new Date(t0.getTime() + 60_000))[0],
+];
+const mixedSummary = offline.summarizeOfflineQueue(mixed, new Date(t0.getTime() + 5_000));
+assert.equal(mixedSummary.total, mixedSummary.due + mixedSummary.delayed + mixedSummary.exhausted);
+assert.equal(mixedSummary.exhausted, 1);
+
+console.log('PASS retry backoff survives repeated offline/online cycles without early replay');
 console.log('PASS a newer logical intent supersedes failed/exhausted stale work and resets attempts');
 console.log('PASS reconnect storms compact 500 opposite favorite intents to one final state');
 console.log('PASS queue saturation retains only the newest bounded work without duplicate logical keys');
+console.log('PASS queue health accounting remains internally consistent across due/delayed/exhausted work');
 console.log('Offline/reconnect extreme contract: PASS');

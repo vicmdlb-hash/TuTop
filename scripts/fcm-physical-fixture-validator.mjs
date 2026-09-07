@@ -3,8 +3,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const REQUIRED = new Set(['foreground', 'background', 'cold_start', 'deep_link']);
+const ALLOWED_EVENT_KINDS = new Set(['app_foreground', 'app_background', 'app_boot', 'push_received', 'push_action', 'route_opened', 'push_invalid_payload']);
 const FORBIDDEN_KEYS = new Set(['token', 'fcm_token', 'notification_id', 'raw_notification_id', 'phone', 'idToken', 'refreshToken']);
 const SAFE_CORRELATION = /^[a-z0-9_-]{6,80}$/i;
+const MAX_SESSION_MS = 6 * 60 * 60_000;
+const MAX_EVIDENCE_AGE_MS = 24 * 60 * 60_000;
+const CLOCK_SKEW_MS = 5 * 60_000;
 
 function scan(value, errors, pathParts = []) {
   if (Array.isArray(value)) return value.forEach((item, index) => scan(item, errors, [...pathParts, String(index)]));
@@ -19,7 +23,21 @@ function placeholder(value) {
   return !String(value || '').trim() || /PENDIENTE|TODO|TBD/i.test(String(value));
 }
 
-export function validateFcmPhysicalFixture(fixture, candidate) {
+function validateWindow(fixture, now, errors) {
+  const started = Date.parse(String(fixture?.evidence_started_at || ''));
+  const completed = Date.parse(String(fixture?.evidence_completed_at || ''));
+  if (!Number.isFinite(started)) errors.push('evidence_started_at ISO-8601 real requerido');
+  if (!Number.isFinite(completed)) errors.push('evidence_completed_at ISO-8601 real requerido');
+  if (!Number.isFinite(started) || !Number.isFinite(completed)) return null;
+  const duration = completed - started;
+  if (duration <= 0) errors.push('la sesión FCM debe terminar después de iniciar');
+  if (duration > MAX_SESSION_MS) errors.push('la sesión FCM excede 6 horas');
+  if (completed > now + CLOCK_SKEW_MS) errors.push('evidencia FCM completada en el futuro');
+  if (now - completed > MAX_EVIDENCE_AGE_MS) errors.push('evidencia FCM supera 24 horas de antigüedad');
+  return Math.max(0, duration);
+}
+
+export function validateFcmPhysicalFixture(fixture, candidate, now = Date.now()) {
   const errors = [];
   if (fixture?.schema !== 'tutop.fcm-physical-fixture.v1') errors.push('schema inválido');
   for (const field of ['artifact_id','build_run_id','build_tree_sha','apk_sha256']) {
@@ -27,6 +45,7 @@ export function validateFcmPhysicalFixture(fixture, candidate) {
   }
   if (!['A','B'].includes(fixture?.device_slot)) errors.push('device_slot debe ser A o B');
   if (placeholder(fixture?.evidence_session_id)) errors.push('evidence_session_id real requerido');
+  const sessionDurationMs = validateWindow(fixture, now, errors);
   scan(fixture, errors);
   const scenarios = Array.isArray(fixture?.scenarios) ? fixture.scenarios : [];
   const names = scenarios.map((scenario) => scenario?.name);
@@ -41,9 +60,14 @@ export function validateFcmPhysicalFixture(fixture, candidate) {
     if (!events.length) { errors.push(`${name}: sin eventos`); continue; }
     let previous = -Infinity;
     for (const event of events) {
+      if (!ALLOWED_EVENT_KINDS.has(event?.kind)) errors.push(`${name}: kind desconocido ${String(event?.kind)}`);
       if (!Number.isFinite(event?.at_ms)) errors.push(`${name}: at_ms inválido`);
-      else if (event.at_ms < previous) errors.push(`${name}: eventos fuera de orden temporal`);
-      else previous = event.at_ms;
+      else {
+        if (event.at_ms < 0) errors.push(`${name}: at_ms no puede ser negativo`);
+        if (event.at_ms < previous) errors.push(`${name}: eventos fuera de orden temporal`);
+        previous = event.at_ms;
+        if (Number.isFinite(sessionDurationMs) && event.at_ms > sessionDurationMs) errors.push(`${name}: evento fuera de la ventana de evidencia`);
+      }
       if (event?.kind === 'push_invalid_payload') errors.push(`${name}: payload inválido observado`);
     }
     const received = events.filter((event) => event.kind === 'push_received');

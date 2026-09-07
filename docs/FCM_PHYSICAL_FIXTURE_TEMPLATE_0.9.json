@@ -8,11 +8,13 @@
   },
   "device_slot": "A|B",
   "evidence_session_id": "PENDIENTE-FCM-SESSION",
+  "evidence_started_at": "PENDIENTE-ISO8601",
+  "evidence_completed_at": "PENDIENTE-ISO8601",
   "scenarios": [
     { "name": "foreground", "events": [] },
     { "name": "background", "events": [] },
     { "name": "cold_start", "events": [] },
     { "name": "deep_link", "events": [] }
   ],
-  "notes": "Normalizar sólo correlaciones sanitizadas y destino lógico. Una correlación no debe reciclarse entre escenarios. No incluir FCM token, notification ID crudo, teléfono ni payload sensible."
+  "notes": "Normalizar sólo correlaciones sanitizadas y destino lógico. at_ms es relativo al inicio de la sesión y debe quedar dentro de su ventana. No incluir FCM token, notification ID crudo, teléfono ni payload sensible."
 }
