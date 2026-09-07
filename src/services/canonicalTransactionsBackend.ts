@@ -9,6 +9,21 @@ function nowIso() { return new Date().toISOString(); }
 function patchWrite(client: FirebaseRestClient, path: string, data: Record<string, unknown>) {
   return { update: client.encodeDocumentForWrite(path, data), updateMask: { fieldPaths: Object.keys(data) } };
 }
+function reservationLockPath(listingId: string) { return `listing_reservation_locks/${listingId}`; }
+function reservationLockWrite(client: FirebaseRestClient, transaction: MarketplaceTransaction) {
+  const at = transaction.created_at;
+  return {
+    update: client.encodeDocumentForWrite(reservationLockPath(transaction.listing_id), {
+      listing_id: transaction.listing_id,
+      transaction_id: transaction.id,
+      buyer_id: transaction.buyer_id,
+      seller_id: transaction.seller_id,
+      created_at: at,
+      updated_at: at,
+    }),
+    currentDocument: { exists: false },
+  };
+}
 
 function getClient() {
   if (!nationalSchemaEnabled()) throw new Error('SCHEMA_V2_DISABLED');
@@ -29,6 +44,21 @@ function assertCancelable(transaction: MarketplaceTransaction, actor: string) {
   if (actor !== transaction.buyer_id && actor !== transaction.seller_id) throw new Error('PARTICIPANT_REQUIRED');
   if (!['reserved', 'meetup_scheduled'].includes(transaction.status)) throw new Error('TRANSACTION_NOT_CANCELLABLE');
   if (transaction.buyer_confirmed_at || transaction.seller_confirmed_at) throw new Error('CONFIRMED_TRANSACTION_NOT_CANCELLABLE');
+}
+
+async function terminalTransactionWrites(client: FirebaseRestClient, transaction: MarketplaceTransaction, patch: Record<string, unknown>) {
+  const lock = await client.getDocument<any>(reservationLockPath(transaction.listing_id));
+  if (lock && lock.data.transaction_id !== transaction.id) throw new Error('RESERVATION_LOCK_MISMATCH');
+  return [
+    patchWrite(client, `transactions_v2/${transaction.id}`, patch),
+    ...(lock ? [{ delete: client.documentName(reservationLockPath(transaction.listing_id)) }] : []),
+  ];
+}
+
+function normalizeReservationError(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/ALREADY_EXISTS|already exists|409/i.test(message)) throw new Error('LISTING_ALREADY_RESERVED');
+  throw error;
 }
 
 export const canonicalTransactionsBackend = {
@@ -61,11 +91,14 @@ export const canonicalTransactionsBackend = {
       updated_at: at,
     };
     const { id: _id, ...transactionData } = transaction;
-    await client.commit([
-      patchWrite(client, `offers/${offer.id}`, { status: 'accepted', updated_at: at }),
-      { update: client.encodeDocumentForWrite(`transactions_v2/${transactionId}`, transactionData), currentDocument: { exists: false } },
-      patchWrite(client, `chats/${offer.chat_id}`, { transaction_id: transactionId, current_offer_id: offer.id, updated_at: at }),
-    ]);
+    try {
+      await client.commit([
+        patchWrite(client, `offers/${offer.id}`, { status: 'accepted', updated_at: at }),
+        { update: client.encodeDocumentForWrite(`transactions_v2/${transactionId}`, transactionData), currentDocument: { exists: false } },
+        reservationLockWrite(client, transaction),
+        patchWrite(client, `chats/${offer.chat_id}`, { transaction_id: transactionId, current_offer_id: offer.id, updated_at: at }),
+      ]);
+    } catch (error) { normalizeReservationError(error); }
     return { offer: { ...offer, status: 'accepted' as const, updated_at: at }, transaction };
   },
 
@@ -91,10 +124,13 @@ export const canonicalTransactionsBackend = {
       updated_at: at,
     };
     const { id: _id, ...transactionData } = transaction;
-    await client.commit([
-      { update: client.encodeDocumentForWrite(`transactions_v2/${transactionId}`, transactionData), currentDocument: { exists: false } },
-      patchWrite(client, `chats/${offer.chat_id}`, { transaction_id: transactionId, current_offer_id: offer.id, updated_at: at }),
-    ]);
+    try {
+      await client.commit([
+        { update: client.encodeDocumentForWrite(`transactions_v2/${transactionId}`, transactionData), currentDocument: { exists: false } },
+        reservationLockWrite(client, transaction),
+        patchWrite(client, `chats/${offer.chat_id}`, { transaction_id: transactionId, current_offer_id: offer.id, updated_at: at }),
+      ]);
+    } catch (error) { normalizeReservationError(error); }
     return transaction;
   },
 
@@ -159,7 +195,7 @@ export const canonicalTransactionsBackend = {
     const at = nowIso();
     const outcomeCode: TransactionOutcomeCode = actor === transaction.buyer_id ? 'buyer_cancelled' : 'seller_cancelled';
     const patch = { status: 'cancelled' as const, outcome_code: outcomeCode, outcome_actor_id: actor, outcome_recorded_at: at, updated_at: at };
-    await client.setDocument(`transactions_v2/${transaction.id}`, patch, { merge: true });
+    await client.commit(await terminalTransactionWrites(client, transaction, patch));
     return { ...transaction, ...patch } as MarketplaceTransaction;
   },
 
@@ -220,7 +256,7 @@ export const canonicalTransactionsBackend = {
     const actor = client.currentSession!.uid;
     if (!canActOnTransaction(transaction, actor, 'expire')) throw new Error('RESERVATION_NOT_EXPIRED');
     const at = nowIso();
-    await client.setDocument(`transactions_v2/${transaction.id}`, { status: 'expired', updated_at: at }, { merge: true });
+    await client.commit(await terminalTransactionWrites(client, transaction, { status: 'expired', updated_at: at }));
     return { ...transaction, status: 'expired' as const, updated_at: at };
   },
 };
