@@ -25,6 +25,7 @@ import './services/nationalBackendCanonicalBridge';
 import './services/rateLimitedOnlineBridge';
 import './services/canonicalStoreBridge';
 import './services/v2LeanChatSnapshotBridge';
+import './services/v2StoreChatMutationBridge';
 import './services/nationalIdentityHydrationBridge';
 import './services/notificationReceiptStoreBridge';
 import './services/physicalQaTelemetry';
