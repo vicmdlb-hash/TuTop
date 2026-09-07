@@ -22,6 +22,7 @@ const steps = [
   [process.execPath, ['scripts/chat-lazy-history-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-lean-chat-snapshot-tests.mjs']],
   [process.execPath, ['scripts/unread-aggregation-migration-tests.mjs']],
+  [process.execPath, ['scripts/unread-emulator-gate-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-chat-post-send-stability-tests.mjs']],
   [process.execPath, ['scripts/october-static-readiness-tests.mjs']],
   [process.execPath, ['scripts/firestore-static-contract-tests.mjs']],
