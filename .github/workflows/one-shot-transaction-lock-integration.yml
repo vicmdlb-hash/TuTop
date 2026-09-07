@@ -1,0 +1,44 @@
+name: One-shot apply transaction reservation lock integration
+
+on:
+  push:
+    branches: ["feat/tutop-0.8-p0"]
+    paths:
+      - ".github/workflows/one-shot-transaction-lock-integration.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/tutop-0.8-p0
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Guard feature branch
+        run: |
+          test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
+          test "$(git branch --show-current)" = "feat/tutop-0.8-p0"
+      - name: Apply integration codemod
+        run: node scripts/apply-transaction-lock-integration.mjs
+      - name: Validate
+        run: |
+          npm ci
+          npm run check
+          npm run v2:rules:prepare
+          npm run typecheck
+          npm run build
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/staging-v2-e2e-smoke.mjs scripts/v2-trusted-maintenance.mjs scripts/reconcile-v2-reservations.mjs
+          git commit -m "fix: integrate unique listing reservation locks"
+          git push origin HEAD:feat/tutop-0.8-p0
