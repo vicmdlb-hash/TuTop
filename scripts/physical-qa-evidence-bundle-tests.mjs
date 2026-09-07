@@ -37,13 +37,18 @@ assert.equal(pass.overall, 'pass');
 assert.equal(pass.release_blocked, false);
 
 const leaked = structuredClone(good);
-leaked.notes = 'password=secret idToken=abc';
+leaked.password = 'secret';
+leaked.diagnostic_report.idToken = 'abc';
 const bad = validatePhysicalQaEvidence(leaked);
 assert.equal(bad.overall, 'fail');
 assert(bad.errors.some((x) => x.includes('password')));
 assert(bad.errors.some((x) => x.includes('idToken')));
 
+const explanatory = structuredClone(good);
+explanatory.notes = 'No incluir password, idToken, refreshToken ni otros secretos en evidencia.';
+assert.equal(validatePhysicalQaEvidence(explanatory).overall, 'pass');
+
 console.log('PASS physical evidence template remains blocked until real evidence exists');
 console.log('PASS complete physical evidence can reach PASS');
-console.log('PASS sensitive fields fail closed');
+console.log('PASS sensitive fields fail closed without false-positive explanatory notes');
 console.log('Physical QA evidence bundle contract: PASS');
