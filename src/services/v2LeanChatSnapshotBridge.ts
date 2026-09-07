@@ -43,25 +43,27 @@ function summaryMessage(data: any, buyerId: string, viewerUid: string): ChatMess
   }];
 }
 
-async function countUnreadSince(chatId: string, uid: string, readAt: number, lastMessageAt: number) {
-  if (Number.isFinite(readAt) && Number.isFinite(lastMessageAt) && readAt >= lastMessageAt) return 0;
-
-  // New-runtime read markers are advanced in the same commit as the user's own
-  // outgoing message. Therefore every message after the marker is truly unread
-  // for that user and an aggregation COUNT is exact without downloading docs.
-  if (Number.isFinite(readAt) && readAt >= AGGREGATION_SAFE_READ_MARKER_AFTER) {
-    return firestoreMessageCountBackend.countAfter(chatId, new Date(readAt).toISOString()).catch(() => 0);
-  }
-
-  // Conservative migration path for old markers: older clients did not advance
-  // the marker when sending, so own messages could exist after read_at. Keep the
-  // document-level filter until the marker has been refreshed by the new runtime.
+async function legacyExactUnreadCount(chatId: string, uid: string, readAt: number) {
   const client = getClient();
   const filters = Number.isFinite(readAt) && readAt > 0
     ? [{ field: 'created_at' as const, op: 'GREATER_THAN' as const, value: new Date(readAt).toISOString() }]
     : [];
   const recent = await client.runQuery<any>('messages', filters, [{ field: 'created_at', direction: 'ASCENDING' }], 80, `chats/${chatId}`).catch(() => []);
   return recent.filter((message) => String(message.data.sender_id || '') !== uid).length;
+}
+
+async function countUnreadSince(chatId: string, uid: string, readAt: number, lastMessageAt: number) {
+  if (Number.isFinite(readAt) && Number.isFinite(lastMessageAt) && readAt >= lastMessageAt) return 0;
+
+  if (Number.isFinite(readAt) && readAt >= AGGREGATION_SAFE_READ_MARKER_AFTER) {
+    try {
+      return await firestoreMessageCountBackend.countAfter(chatId, new Date(readAt).toISOString());
+    } catch {
+      return legacyExactUnreadCount(chatId, uid, readAt);
+    }
+  }
+
+  return legacyExactUnreadCount(chatId, uid, readAt);
 }
 
 async function loadLeanChat(doc: FirestoreDocument<any>, uid: string): Promise<Chat> {
