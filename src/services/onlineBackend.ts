@@ -42,7 +42,7 @@ function asProduct(doc: FirestoreDocument<any>): Product {
     precio_mxn: Number(data.precio_mxn || 0),
     stock: Math.max(1, Number(data.stock || 1)),
     categoria: normalizeCategory(String(data.categoria || 'Otros')),
-    facultad: String(data.facultad || 'Turismo Internacional'),
+    facultad: String(data.facultad || 'Comunidad universitaria'),
     punto_encuentro: data.punto_encuentro,
     imagen_url: String(data.imagen_url || (Array.isArray(data.imagenes_url) ? data.imagenes_url[0] : '') || ''),
     imagenes_url: Array.isArray(data.imagenes_url) ? data.imagenes_url.map(String).slice(0, 4) : undefined,
@@ -86,7 +86,6 @@ export class TuTopOnlineBackend {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!/EMAIL_EXISTS/i.test(message)) throw error;
-      // Recovery path for the rare case where Auth was created but the atomic Firestore bootstrap failed.
       createdAuthIdentity = false;
       session = await client.signInWithPhonePassword(phone, password);
       const existingProfile = await client.getDocument<any>(`users/${session.uid}`);
@@ -99,7 +98,6 @@ export class TuTopOnlineBackend {
       await this.createInitialAccount(session, profile);
       await this.ensureMarketplaceCatalog();
     } catch (error) {
-      // Delete only identities created by this attempt. Never delete an existing account during repair.
       if (createdAuthIdentity) {
         try { await client.deleteAuthAccount(); } catch { client.signOut(); }
       } else client.signOut();
@@ -227,7 +225,7 @@ export class TuTopOnlineBackend {
       id: session.uid,
       telefono: session.phone,
       nombre: String(profile.nombre || 'Estudiante'),
-      facultad: String(profile.facultad || 'Turismo Internacional'),
+      facultad: String(profile.facultad || 'Comunidad universitaria'),
       saldo_ucoins: Number(wallet.balance || 0),
       puntos_prestigio: Number(wallet.prestige || 0),
       nivel_vendedor: sellerLevelFor(Number(wallet.prestige || 0)),
