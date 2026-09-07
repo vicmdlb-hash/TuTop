@@ -1,4 +1,4 @@
-# Autonomous hardening APK rerun: correlated push/reconnect telemetry and App Check evidence gate included.
+# Physical QA APK 18 trigger: trusted-only completed reservation lock cleanup validated in staging.
 name: One-shot TuTop 0.9 physical QA APK validation
 
 on:
