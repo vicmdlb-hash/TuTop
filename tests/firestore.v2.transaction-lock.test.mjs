@@ -14,9 +14,15 @@ beforeEach(async () => env.clearFirestore());
 const now = () => Timestamp.now();
 const future = (minutes = 120) => Timestamp.fromMillis(Date.now() + minutes * 60_000);
 
+async function seedCatalog(db) {
+  await setDoc(doc(db, 'institutions/uatx'), { name: 'UATx', active: true });
+  await setDoc(doc(db, 'campuses/campus'), { institution_id: 'uatx', name: 'Campus', active: true });
+}
+
 async function seed() {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
+    await seedCatalog(db);
     await setDoc(doc(db, 'listings_v2/listing-1'), { seller_id: 'seller', institution_id: 'uatx', campus_id: 'campus', status: 'active', moderation_status: 'approved' });
     for (const buyer of ['buyer-a', 'buyer-b']) {
       const suffix = buyer === 'buyer-a' ? 'a' : 'b';
@@ -85,6 +91,7 @@ test('venta completada sólo libera lock junto con sold_out', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     const at = now();
+    await seedCatalog(db);
     await setDoc(doc(db, 'listings_v2/listing-1'), { seller_id: 'seller', institution_id: 'uatx', campus_id: 'campus', status: 'active', moderation_status: 'approved', created_at: at, updated_at: at });
     await setDoc(doc(db, 'transactions_v2/tx-done'), {
       listing_id: 'listing-1', chat_id: 'chat-done', buyer_id: 'buyer-a', seller_id: 'seller', accepted_offer_id: 'offer-done', agreed_amount_mxn: 400,
