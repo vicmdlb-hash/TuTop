@@ -33,10 +33,14 @@ for (const marker of ['npm ci', 'npm run check', 'npm run beta:ready', 'assemble
 for (const marker of ['npm ci', 'npm run check', 'npm run typecheck', 'npm run build', 'actions/upload-artifact']) {
   if (!quality.includes(marker)) errors.push(`Workflow quality no contiene: ${marker}`);
 }
-if (!firestore.includes('Firestore V2 emulator security') || !firestore.includes('firebase/**')) errors.push('Firestore V2 dejó de tener gate aislado por cambios de Rules.');
-if (/\n\s+push:|\n\s+pull_request:/.test(android)) errors.push('Android debe permanecer manual-only para preservar minutos.');
-if (/\n\s+push:|\n\s+pull_request:/.test(staging)) errors.push('Staging real debe permanecer manual-only para preservar minutos.');
+if (!firestore.includes('Firestore V2 emulator security')) errors.push('Firestore V2 dejó de tener su gate aislado.');
+
+for (const [name, workflow] of [['Android', android], ['Staging real', staging], ['Quality', quality], ['Firestore V2', firestore]]) {
+  if (!workflow.includes('workflow_dispatch:')) errors.push(`${name} dejó de poder ejecutarse manualmente.`);
+  if (/\n\s+push:|\n\s+pull_request:/.test(workflow)) errors.push(`${name} debe permanecer manual-only mientras Actions no tenga minutos.`);
+}
 if (!trusted.includes('cron: "17 */6 * * *"')) errors.push('Trusted maintenance excede la cadencia presupuestada de cada 6 horas.');
+if (/\n\s+push:|\n\s+pull_request:/.test(trusted)) errors.push('Trusted maintenance no debe ejecutarse por push/PR.');
 
 if (project.zeroInvestmentMode !== true || project.billingAllowed !== false) errors.push('El proyecto dejó de estar bloqueado a cero inversión.');
 if (/secrets\.[A-Z0-9_]+/.test(android + quality + firestore + staging + trusted)) warnings.push('Hay referencias a GitHub Secrets. Revísalas antes de activar workflows manuales/cron.');
