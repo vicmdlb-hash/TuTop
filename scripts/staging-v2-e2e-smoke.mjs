@@ -179,10 +179,12 @@ try {
   const complete = writeBatch(sellerDb);
   complete.update(doc(sellerDb, 'transactions_v2', txId), { status: 'completed', seller_confirmed_at: sellerConfirmed, updated_at: sellerConfirmed });
   complete.update(doc(sellerDb, 'listings_v2', listingId), { status: 'sold_out', updated_at: sellerConfirmed });
+  complete.delete(doc(sellerDb, 'listing_reservation_locks', listingId));
   await complete.commit();
   assert.equal((await getDoc(doc(sellerDb, 'transactions_v2', txId))).data()?.status, 'completed');
   assert.equal((await getDoc(doc(sellerDb, 'listings_v2', listingId))).data()?.status, 'sold_out');
-  ok('confirmación bilateral completó tx + sold_out atómicamente');
+  assert.equal((await getDoc(doc(sellerDb, 'listing_reservation_locks', listingId))).exists(), false);
+  ok('confirmación bilateral completó tx + sold_out y liberó reservation lock atómicamente');
 
   const reviewId = `${chatId}_${buyer.uid}`;
   await setDoc(doc(buyerDb, 'reviews', reviewId), { chat_id: chatId, evaluador_id: buyer.uid, evaluado_id: seller.uid, calificacion: 'positive', comentario: 'Operación smoke confirmada', fecha: Timestamp.now() });
