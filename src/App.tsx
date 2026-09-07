@@ -79,8 +79,14 @@ function MobileApp() {
     <div className="app-shell">
       <OfflineBanner />
       <WelcomeTour />
-      {showFeedUtilities && <UniversityNetworkSetup />}
-      {showFeedUtilities && <DemandRequestComposer />}
+      {showFeedUtilities && (
+        <div className="page-pad pt-safe pb-1">
+          <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2" aria-label="Acciones de comunidad">
+            <DemandRequestComposer />
+            <UniversityNetworkSetup />
+          </div>
+        </div>
+      )}
       {v2 && <V2ListingsHydrator />}
       <main className="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))]">
         <AnimatePresence mode="wait">
