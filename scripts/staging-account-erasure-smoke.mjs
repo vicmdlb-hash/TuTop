@@ -32,6 +32,7 @@ const password = `Erase-${run}-TuTop!A9`;
 const listingId = `erasure-listing-${run}`;
 const demandId = `erasure-demand-${run}`;
 const txId = `erasure-tx-${run}`;
+const lockPath = `listing_reservation_locks/${listingId}`;
 const chatId = `erasure-chat-${run}`;
 const reportId = `erasure-report-${run}`;
 const queryDeletePaths = [
@@ -79,6 +80,7 @@ async function cleanup() {
     ...queryDeletePaths,
     ...retainedPaths,
     ...withdrawalPaths,
+    lockPath,
     ...(uid ? [`users/${uid}`, `account_deletion_requests/${uid}`] : []),
   ];
   for (const path of [...new Set(paths)]) {
@@ -145,10 +147,11 @@ try {
     updated_at: now,
   });
 
-  await adminPatchDocument(`transactions_v2/${txId}`, { buyer_id: uid, seller_id: 'synthetic-control-seller', status: 'completed', updated_at: now });
+  await adminPatchDocument(`transactions_v2/${txId}`, { listing_id: listingId, buyer_id: uid, seller_id: 'synthetic-control-seller', status: 'reserved', updated_at: now });
+  await adminPatchDocument(lockPath, { listing_id: listingId, transaction_id: txId, buyer_id: uid, seller_id: 'synthetic-control-seller', created_at: now, updated_at: now });
   await adminPatchDocument(`chats/${chatId}`, { buyer_id: 'synthetic-control-buyer', seller_id: uid, updated_at: now });
   await adminPatchDocument(`reports/${reportId}`, { created_by: uid, status: 'open', updated_at: now });
-  ok('fixture de privacidad/marketplace/retención creado');
+  ok('fixture de privacidad/marketplace/retención creado con transacción activa');
 
   const requestTime = Timestamp.now();
   await setDoc(doc(db, 'account_deletion_requests', uid), {
@@ -160,13 +163,30 @@ try {
   ok('solicitud de eliminación creada por el propio usuario bajo Security Rules');
 
   await signOut(auth);
+
+  const blockedResult = spawnSync(process.execPath, ['scripts/process-account-erasure.mjs', '--uid', uid, '--apply'], {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+    env: { ...process.env, TUTOP_ALLOW_ACCOUNT_ERASURE: 'staging-reviewed' },
+  });
+  assert.notEqual(blockedResult.status, 0, 'el procesador permitió erasure con una transacción reserved activa');
+  await mustExist(`users/${uid}`);
+  await mustExist(lockPath);
+  const stillPending = await mustExist(`account_deletion_requests/${uid}`);
+  assert.equal(fieldString(stillPending, 'status'), 'pending');
+  ok('transacción activa bloqueó erasure antes de cualquier mutación destructiva');
+
+  await adminPatchDocument(`transactions_v2/${txId}`, { status: 'completed', updated_at: new Date() });
+  await adminDeleteDocument(lockPath);
+  ok('fixture pasó a estado terminal y liberó lock para reintentar erasure');
+
   const result = spawnSync(process.execPath, ['scripts/process-account-erasure.mjs', '--uid', uid, '--apply'], {
     cwd: process.cwd(),
     stdio: 'inherit',
     env: { ...process.env, TUTOP_ALLOW_ACCOUNT_ERASURE: 'staging-reviewed' },
   });
   assert.equal(result.status, 0, `procesador erasure terminó con código ${result.status}`);
-  ok('procesador destructivo staging ejecutado sobre cuenta sintética');
+  ok('procesador destructivo staging ejecutado sobre cuenta sintética ya sin operación activa');
 
   await mustBeGone(`users/${uid}`);
   for (const path of directPaths) await mustBeGone(path);
