@@ -25,15 +25,16 @@ async function publicName(uid: string) {
   return name;
 }
 
-function summaryMessage(data: any, buyerId: string, sellerId: string): ChatMessage[] {
+function summaryMessage(data: any, buyerId: string, viewerUid: string): ChatMessage[] {
   const text = String(data.last_message || '');
   const at = String(data.last_message_at || data.updated_at || data.created_at || nowIso());
   if (!text) return [];
   const senderId = String(data.last_sender_id || '');
+  const effectiveSender = senderId || viewerUid;
   return [{
     id: `summary-${at}`,
-    sender_id: senderId || undefined,
-    emisor: senderId ? (senderId === buyerId ? 'comprador' : 'vendedor') : 'vendedor',
+    sender_id: effectiveSender || undefined,
+    emisor: effectiveSender === buyerId ? 'comprador' : 'vendedor',
     texto: text,
     hora: at,
     leido: true,
@@ -74,7 +75,7 @@ async function loadLeanChat(doc: FirestoreDocument<any>, uid: string): Promise<C
     comprador_id: buyerId,
     vendedor_id: sellerId,
     nombre_otro_usuario: otherName || String(data.nombre_otro_usuario || 'Estudiante'),
-    mensajes: summaryMessage(data, buyerId, sellerId),
+    mensajes: summaryMessage(data, buyerId, uid),
     entrega_confirmada: completed,
     entrega_estado: completed ? 'completada' : confirmations.length ? 'esperando_confirmacion' : 'negociando',
     confirmaciones_entrega: { comprador: buyerConfirmed, vendedor: sellerConfirmed },
@@ -82,8 +83,6 @@ async function loadLeanChat(doc: FirestoreDocument<any>, uid: string): Promise<C
   };
 }
 
-// Transitional V2-only override. loadSnapshot() calls this.loadChat dynamically,
-// so replacing the private method at runtime avoids touching the stable V1 path.
 if (nationalSchemaEnabled()) {
   (onlineBackend as any).loadChat = loadLeanChat;
 }
