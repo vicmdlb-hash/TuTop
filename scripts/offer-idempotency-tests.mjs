@@ -42,7 +42,9 @@ assert.notEqual(afterForget.offerId, counter.offerId);
 
 assert.equal(isAlreadyCommittedOfferError(new Error('ALREADY_EXISTS')), true);
 assert.equal(isAlreadyCommittedOfferError(Object.assign(new Error('conflict'), { payload: { error: { status: 'ALREADY_EXISTS' } } })), true);
-assert.equal(isAlreadyCommittedOfferError(new Error('PERMISSION_DENIED')), false);
+assert.equal(isAlreadyCommittedOfferError(new Error('FAILED_PRECONDITION')), true);
+assert.equal(isAlreadyCommittedOfferError(new Error('PERMISSION_DENIED')), true);
+assert.equal(isAlreadyCommittedOfferError(new Error('INVALID_ARGUMENT')), false);
 assert.equal(isUncertainOfferWriteError(new TypeError('fetch failed')), true);
 assert.equal(isUncertainOfferWriteError(new Error('UNAVAILABLE')), true);
 assert.equal(isUncertainOfferWriteError(new Error('PERMISSION_DENIED')), false);
@@ -62,6 +64,6 @@ assert.match(bridge, /createCounterOffer: canonicalOffersBackend\.createCounterO
 console.log('PASS concurrent identical offers reuse one operation id');
 console.log('PASS uncertain retry and accidental double tap cannot duplicate an offer');
 console.log('PASS intentional later repeat and distinct counteroffer inputs receive new ids');
-console.log('PASS already-committed vs uncertain error classification is fail-closed');
+console.log('PASS Firestore conflict statuses only authorize exact committed-offer recovery attempts');
 console.log('PASS V2 bridge routes offers through canonical retry-idempotent backend');
 console.log('Offer idempotency tests: PASS');
