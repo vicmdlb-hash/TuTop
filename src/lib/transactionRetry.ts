@@ -3,8 +3,11 @@ export function isRecoverableTransactionRetryError(error: unknown) {
   const text = [candidate?.message, candidate?.payload?.error?.message, candidate?.payload?.error?.status]
     .filter(Boolean)
     .join(' ');
+  // A retry after a successful reservation may see the lock/offer state already changed
+  // and surface FAILED_PRECONDITION or PERMISSION_DENIED instead of ALREADY_EXISTS.
+  // These markers only enter an exact deterministic transaction read/compare path.
   return error instanceof TypeError
-    || /LISTING_ALREADY_RESERVED|ALREADY_EXISTS|UNAVAILABLE|DEADLINE_EXCEEDED|timeout|timed out|network|fetch failed|ECONN|ETIMEDOUT/i.test(text);
+    || /LISTING_ALREADY_RESERVED|ALREADY_EXISTS|\b409\b|FAILED_PRECONDITION|PERMISSION_DENIED|UNAVAILABLE|DEADLINE_EXCEEDED|timeout|timed out|network|fetch failed|ECONN|ETIMEDOUT/i.test(text);
 }
 
 export function transactionMatchesOfferRetry(
@@ -34,4 +37,5 @@ export const TRANSACTION_RETRY_CONTRACT = {
   deterministic_transaction_id_from_offer: true,
   recover_only_exact_offer_match: true,
   competing_offer_lock_collision_must_not_be_recovered: true,
+  firestore_conflict_statuses_only_trigger_exact_recovery: true,
 } as const;
