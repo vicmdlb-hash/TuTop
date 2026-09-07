@@ -15,7 +15,9 @@ if (process.env.TUTOP_NODE_TS_STRIP !== '1') {
 }
 
 const sourceUrl = pathToFileURL(path.resolve('src/lib/productAssistant.ts')).href;
+const publishSourceUrl = pathToFileURL(path.resolve('src/lib/publishAssistant.ts')).href;
 const logic = await import(`${sourceUrl}?t=${Date.now()}`);
+const publishLogic = await import(`${publishSourceUrl}?t=${Date.now()}`);
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
@@ -61,6 +63,18 @@ test('permite apuntes y tutorías legítimas', () => {
 });
 
 test('detecta punto de encuentro', () => assert.equal(logic.detectMeetingPoint('en la entrada principal'), 'Puerta Principal'));
+test('Topi detecta condición y negociación', () => {
+  assert.equal(publishLogic.detectListingCondition('Audífonos como nuevos, casi sin uso'), 'Como nuevo');
+  assert.equal(publishLogic.detectListingCondition('Laptop no enciende, para reparar'), 'Para reparar');
+  assert.equal(publishLogic.detectNegotiableIntent('Precio negociable, escucho ofertas'), true);
+  assert.equal(publishLogic.detectNegotiableIntent('Precio fijo'), false);
+});
+test('Topi detecta entrega y alcance', () => {
+  assert.deepEqual(publishLogic.detectDeliveryIntent('Entrego en Campus Ribereña'), ['campus_meetup']);
+  assert.deepEqual(publishLogic.detectDeliveryIntent('Hago envío nacional por paquetería'), ['shipping']);
+  assert.equal(publishLogic.detectVisibilityIntent('Envío a todo México'), 'national');
+  assert.equal(publishLogic.detectVisibilityIntent('Entrego en campus'), 'campus');
+});
 test('niveles PP', () => { assert.equal(logic.sellerLevelFor(49), 'Novato'); assert.equal(logic.sellerLevelFor(50), 'Pro'); assert.equal(logic.sellerLevelFor(200), 'Leyenda'); });
 test('confiabilidad acotada', () => { assert.equal(logic.reliabilityFor(0), 98); assert.ok(logic.reliabilityFor(3) >= 0); });
 
