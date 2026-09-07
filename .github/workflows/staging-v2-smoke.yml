@@ -2,32 +2,6 @@ name: TuTop V2 real staging smoke
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches: ["main"]
-    paths:
-      - "firebase/**"
-      - "firebase.v2.json"
-      - "src/lib/listingSchemaV2.ts"
-      - "src/lib/accountErasurePolicy.ts"
-      - "src/services/canonicalListingsBackend.ts"
-      - "src/services/canonicalTransactionsBackend.ts"
-      - "src/services/nationalBackendCanonicalBridge.ts"
-      - "src/services/rateLimit.ts"
-      - "src/services/rateLimitedOnlineBridge.ts"
-      - "scripts/deploy-firebase-auth-staging.mjs"
-      - "scripts/deploy-firebase-staging.mjs"
-      - "scripts/prepare-firestore-v2-rules.mjs"
-      - "scripts/harden-canonical-v2-rules.mjs"
-      - "scripts/harden-runtime-v2-rules.mjs"
-      - "scripts/prepare-staging-v2-auth.mjs"
-      - "scripts/prepare-staging-android-app.mjs"
-      - "scripts/configure-app-check-staging.mjs"
-      - "scripts/staging-v2-admin.mjs"
-      - "scripts/staging-v2-e2e-smoke.mjs"
-      - "scripts/staging-account-erasure-smoke.mjs"
-      - "scripts/process-account-erasure.mjs"
-      - "scripts/account-erasure-planner.mjs"
-      - ".github/workflows/staging-v2-smoke.yml"
 
 permissions:
   contents: read
@@ -38,7 +12,6 @@ concurrency:
 
 jobs:
   smoke:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
