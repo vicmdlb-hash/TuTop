@@ -7,31 +7,28 @@ const trusted = fs.readFileSync('.github/workflows/v2-trusted-maintenance.yml', 
 const quality = fs.readFileSync('.github/workflows/quality.yml', 'utf8');
 const firestore = fs.readFileSync('.github/workflows/firestore-v2-security.yml', 'utf8');
 
-assert.match(android, /workflow_dispatch:/);
-assert.doesNotMatch(android, /\n\s+push:/);
-assert.doesNotMatch(android, /\n\s+pull_request:/);
+const assertManualOnly = (name, workflow) => {
+  assert.match(workflow, /workflow_dispatch:/, `${name} debe conservar ejecución manual`);
+  assert.doesNotMatch(workflow, /\n\s+push:/, `${name} no debe ejecutarse por push`);
+  assert.doesNotMatch(workflow, /\n\s+pull_request:/, `${name} no debe ejecutarse por PR mientras Actions está pausado`);
+};
+
+assertManualOnly('Android', android);
 assert.match(android, /retention-days: 90/);
 assert.match(android, /gh release create/);
 
-assert.match(staging, /workflow_dispatch:/);
-assert.doesNotMatch(staging, /\n\s+pull_request:/);
-assert.doesNotMatch(staging, /\n\s+push:/);
-
-assert.match(trusted, /cron: "17 \*\/6 \* \* \*"/);
-assert.doesNotMatch(trusted, /\n\s+pull_request:/);
-
-assert.match(quality, /pull_request:/);
-assert.match(quality, /paths-ignore:/);
-assert.match(quality, /docs\/\*\*/);
+assertManualOnly('staging real', staging);
+assertManualOnly('Quality', quality);
 assert.doesNotMatch(quality, /Firestore V2 emulator security/);
-
-assert.match(firestore, /pull_request:/);
-assert.match(firestore, /firebase\/\*\*/);
-assert.match(firestore, /tests\/firestore\.v2\*\.mjs/);
+assertManualOnly('Firestore V2', firestore);
 assert.match(firestore, /Firestore V2 emulator security/);
 
-console.log('PASS Android and real staging are manual-only');
-console.log('PASS trusted maintenance is capped at four scheduled runs/day');
-console.log('PASS docs-only PR updates do not consume quality minutes');
-console.log('PASS Firestore emulator runs only for relevant security changes or manual dispatch');
+assert.match(trusted, /workflow_dispatch:/);
+assert.match(trusted, /cron: "17 \*\/6 \* \* \*"/);
+assert.doesNotMatch(trusted, /\n\s+pull_request:/);
+assert.doesNotMatch(trusted, /\n\s+push:/);
+
+console.log('PASS Android, staging, Quality and Firestore are manual-only while Actions is exhausted');
+console.log('PASS trusted maintenance is capped at four scheduled runs/day and is not PR-triggered');
+console.log('PASS expensive gates remain available for explicit October validation');
 console.log('GitHub Actions budget policy: PASS');
