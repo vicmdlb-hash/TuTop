@@ -59,10 +59,12 @@ export default function UniversityNetworkSetup() {
   const identityLabel = user.university?.institution_name || INSTITUTIONS.find((item) => item.id === user.institution_id)?.short_name;
   const campusLabel = user.university?.campus_name || CAMPUSES.find((item) => item.id === user.campus_id)?.name;
   const v2Enabled = nationalSchemaEnabled();
+  const campusRequired = campusOptions.length > 0;
+  const identityReady = Boolean(institutionId && (!campusRequired || campusId));
 
   const begin = () => {
     const stored = readStored();
-    const existingInstitution = stored?.institution_id || user.institution_id || user.university?.institution_id || 'uatx';
+    const existingInstitution = stored?.institution_id || user.institution_id || user.university?.institution_id || '';
     const existingCampus = stored?.campus_id || user.campus_id || user.university?.campus_id || '';
     const existingFaculty = stored?.faculty_id || user.faculty_id || user.university?.faculty_id || '';
     const existingCareer = stored?.career_id || user.career_id || user.university?.career_id || '';
@@ -75,6 +77,10 @@ export default function UniversityNetworkSetup() {
   };
 
   const save = async () => {
+    if (campusRequired && !campusId) {
+      setSaveNote('Selecciona tu campus para que TuTop pueda mostrarte publicaciones realmente cercanas.');
+      return;
+    }
     const identity = identityFor(institutionId, campusId, facultyId, careerId);
     if (!identity.institution_id || saving) return;
     setSaving(true);
@@ -99,7 +105,7 @@ export default function UniversityNetworkSetup() {
     if (v2Enabled) {
       try {
         await nationalBackend.updateUniversityIdentity(identity, legacyFaculty);
-        setSaveNote('Universidad y campus guardados en tu cuenta.');
+        setSaveNote(campusId ? 'Universidad y campus guardados en tu cuenta.' : 'Universidad guardada. Podrás agregar campus cuando esté disponible.');
         window.setTimeout(() => setOpen(false), 500);
       } catch (error) {
         console.error('[TuTop national identity]', error);
@@ -127,7 +133,8 @@ export default function UniversityNetworkSetup() {
 
         <label className="auth-label">Institución</label><div className="relative"><Building2 className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={institutionId} onChange={(event) => { setInstitutionId(event.target.value); setCampusId(''); setFacultyId(''); setCareerId(''); }} className="auth-input pl-10"><option value="">Selecciona tu universidad</option>{INSTITUTIONS.map((item) => <option key={item.id} value={item.id}>{item.short_name} · {item.name}</option>)}</select></div>
 
-        <label className="auth-label">Campus</label><div className="relative"><MapPin className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={campusId} disabled={!institutionId} onChange={(event) => { setCampusId(event.target.value); setFacultyId(''); setCareerId(''); }} className="auth-input pl-10 disabled:opacity-40"><option value="">{campusOptions.length ? 'Selecciona tu campus' : 'Campus pendiente de agregar'}</option>{campusOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+        <label className="auth-label">Campus</label><div className="relative"><MapPin className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={campusId} disabled={!institutionId || !campusOptions.length} onChange={(event) => { setCampusId(event.target.value); setFacultyId(''); setCareerId(''); }} className="auth-input pl-10 disabled:opacity-40"><option value="">{campusOptions.length ? 'Selecciona tu campus' : 'Campus aún no disponible en catálogo'}</option>{campusOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+        {institutionId && !campusOptions.length && <p className="mt-1 text-[9px] leading-4 text-slate-500">Puedes guardar tu universidad ahora. TuTop te pedirá el campus cuando esté disponible en el catálogo.</p>}
 
         <label className="auth-label">Facultad / escuela <span className="font-normal text-slate-700">(opcional)</span></label><div className="relative"><GraduationCap className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={facultyId} disabled={!institutionId} onChange={(event) => { setFacultyId(event.target.value); setCareerId(''); }} className="auth-input pl-10 disabled:opacity-40"><option value="">Prefiero elegirla después</option>{facultyOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
 
@@ -136,7 +143,7 @@ export default function UniversityNetworkSetup() {
         {selectedInstitution && <div className="mt-5 rounded-2xl border border-emerald-400/10 bg-emerald-500/[0.06] p-3"><div className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" /><div><strong className="text-[10px] text-emerald-100">Identidad universitaria progresiva</strong><p className="mt-1 text-[9px] leading-4 text-slate-500">Elegir tu universidad no significa que TuTop ya la verificó. La insignia de estudiante se obtiene después mediante correo institucional o credencial.</p></div></div></div>}
 
         {saveNote && <p className="mt-4 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-[9px] leading-4 text-slate-400">{saveNote}</p>}
-        <button disabled={!institutionId || saving} onClick={() => void save()} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-black disabled:opacity-40">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{saving ? 'Guardando…' : 'Guardar mi comunidad'}</button>
+        <button disabled={!identityReady || saving} onClick={() => void save()} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-black disabled:opacity-40">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{saving ? 'Guardando…' : 'Guardar mi comunidad'}</button>
         <p className="mt-3 text-center text-[8px] leading-4 text-slate-700">{v2Enabled ? 'Sincronización nacional V2 activa en este ambiente.' : 'Catálogo inicial en expansión · sincronización V2 aún protegida por feature flag.'}</p>
       </div>
     </div>}
