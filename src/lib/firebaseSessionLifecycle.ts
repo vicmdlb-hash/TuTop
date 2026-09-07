@@ -26,6 +26,28 @@ export class FirebaseSessionLifecycle<T> {
   beginAuthReplacement() {
     this.generation += 1;
     this.inflight = null;
+    return this.generation;
+  }
+
+  completeAuthReplacement(generation: number, value: T | null, restore: (session: T | null) => void) {
+    if (this.generation !== generation) {
+      restore(this.authoritative);
+      return false;
+    }
+    this.authoritative = value;
+    // Re-apply the winning session because a stale refresh may have restored the
+    // previous authoritative value after the raw auth call persisted `value`.
+    restore(value);
+    return true;
+  }
+
+  failAuthReplacement(generation: number, current: T | null, restore: (session: T | null) => void) {
+    if (this.generation !== generation) {
+      restore(this.authoritative);
+      return false;
+    }
+    this.authoritative = current;
+    return true;
   }
 
   acceptAuthoritative(value: T | null) {
@@ -85,4 +107,6 @@ export const FIREBASE_SESSION_LIFECYCLE_CONTRACT = {
   stale_refresh_cannot_restore_signed_out_session: true,
   terminal_refresh_failure_clears_session: true,
   transient_network_failure_preserves_session_for_retry: true,
+  latest_auth_replacement_wins: true,
+  stale_refresh_cannot_overwrite_new_login: true,
 } as const;
