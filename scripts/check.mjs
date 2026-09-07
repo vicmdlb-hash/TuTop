@@ -15,6 +15,8 @@ const steps = [
   [process.execPath, ['--experimental-strip-types', 'scripts/firebase-session-hardening-tests.mjs']],
   [process.execPath, ['scripts/reservation-lock-residue-audit-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-regression-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/physical-qa-evidence-bundle-tests.mjs']],
+  [process.execPath, ['scripts/app-check-enforcement-tests.mjs']],
 ];
 for (const file of fs.readdirSync('scripts').filter((name) => name.endsWith('.mjs')).sort()) {
   steps.unshift([process.execPath, ['--check', `scripts/${file}`]]);
