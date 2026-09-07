@@ -9,6 +9,7 @@ const requiredCases = [
 ];
 const allowedCase = new Set(['pass','warn','fail','pending','not_applicable']);
 const forbiddenKeys = new Set(['refreshToken','idToken','password','FIREBASE_TOKEN']);
+const requiredDeviceFields = ['label','manufacturer','model','android_version','viewport','installation'];
 
 function scanSensitive(value, errors, pathParts = []) {
   if (Array.isArray(value)) {
@@ -30,6 +31,11 @@ function scanSensitive(value, errors, pathParts = []) {
   if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push(`posible token/identificador largo sin redactar en ${pathParts.join('.') || 'root'}`);
 }
 
+function isPlaceholder(value) {
+  const text = String(value || '').trim();
+  return !text || /PENDIENTE|TODO|TBD/i.test(text) || text.includes('|');
+}
+
 export function validatePhysicalQaEvidence(bundle) {
   const errors = [];
   const warnings = [];
@@ -38,6 +44,11 @@ export function validatePhysicalQaEvidence(bundle) {
   if (bundle?.environment !== 'staging') errors.push('environment debe ser staging');
   if (!bundle?.device || typeof bundle.device !== 'object') errors.push('device requerido');
   if (bundle?.device?.physical !== true) warnings.push('evidencia todavía no proviene de dispositivo físico real');
+  if (bundle?.device?.physical === true) {
+    for (const field of requiredDeviceFields) {
+      if (isPlaceholder(bundle?.device?.[field])) errors.push(`device.${field} debe contener evidencia real, no placeholder`);
+    }
+  }
   for (const key of requiredCases) {
     const value = bundle?.required_cases?.[key];
     if (!allowedCase.has(value)) errors.push(`required_cases.${key} inválido`);
@@ -52,13 +63,33 @@ export function validatePhysicalQaEvidence(bundle) {
     warnings.push('diagnostic_report todavía no adjunto');
   }
 
-  const caseValues = Object.values(bundle?.required_cases || {});
+  const caseValues = requiredCases.map((key) => bundle?.required_cases?.[key]);
   const failedCases = caseValues.filter((value) => value === 'fail').length;
   const pendingCases = caseValues.filter((value) => value === 'pending').length;
+  const warningCases = caseValues.filter((value) => value === 'warn').length;
+  const notApplicableCases = caseValues.filter((value) => value === 'not_applicable').length;
+  const incompleteCases = caseValues.filter((value) => value !== 'pass').length;
+  if (warningCases) warnings.push(`${warningCases} caso(s) obligatorio(s) siguen en WARN`);
+  if (notApplicableCases) warnings.push(`${notApplicableCases} caso(s) obligatorio(s) fueron marcados NOT_APPLICABLE y requieren resolución`);
+
   const overall = errors.length || failedCases || assessment?.overall === 'fail' ? 'fail'
-    : warnings.length || pendingCases || assessment?.overall === 'warn' ? 'warn' : 'pass';
-  const releaseBlocked = overall !== 'pass' || bundle?.device?.physical !== true || pendingCases > 0;
-  return { overall, release_blocked: releaseBlocked, errors, warnings, failed_cases: failedCases, pending_cases: pendingCases, assessment };
+    : warnings.length || pendingCases || warningCases || notApplicableCases || assessment?.overall === 'warn' ? 'warn' : 'pass';
+  const releaseBlocked = overall !== 'pass'
+    || bundle?.device?.physical !== true
+    || incompleteCases > 0
+    || assessment?.overall !== 'pass';
+  return {
+    overall,
+    release_blocked: releaseBlocked,
+    errors,
+    warnings,
+    failed_cases: failedCases,
+    pending_cases: pendingCases,
+    warning_cases: warningCases,
+    not_applicable_cases: notApplicableCases,
+    incomplete_cases: incompleteCases,
+    assessment,
+  };
 }
 
 function main() {
@@ -75,6 +106,9 @@ function main() {
     `release_blocked=${result.release_blocked}`,
     `failed_cases=${result.failed_cases}`,
     `pending_cases=${result.pending_cases}`,
+    `warning_cases=${result.warning_cases}`,
+    `not_applicable_cases=${result.not_applicable_cases}`,
+    `incomplete_cases=${result.incomplete_cases}`,
     ...result.errors.map((x) => `ERROR ${x}`),
     ...result.warnings.map((x) => `WARN ${x}`),
   ].join('\n'));
