@@ -21,6 +21,7 @@
 | `demand_requests` | Solicitudes Busco | Retirar/anonimizar | Evitar contenido activo huérfano | PENDIENTE LEGAL |
 | `account_deletion_requests` | Evidencia de cumplimiento | Retener operacionalmente | Auditoría del proceso de borrado | PENDIENTE LEGAL |
 | `transactions_v2` | Operaciones marketplace | Retener operacionalmente | Disputas, fraude, integridad | PENDIENTE LEGAL |
+| `listing_reservation_locks` | Exclusión mutua de reserva por listing | Retener mientras la operación asociada siga activa/disputada; limpiar al terminar cuando proceda | Evita reservas dobles y preserva integridad transaccional | PENDIENTE LEGAL |
 | `offers` | Negociación | Retener operacionalmente | Evidencia de operación | PENDIENTE LEGAL |
 | `chats` | Conversación transaccional | Retener operacionalmente | Puede contener evidencia de disputa | PENDIENTE LEGAL |
 | `reviews` | Reputación post-operación | Retener operacionalmente | Evidencia de transacción/confianza | PENDIENTE LEGAL |
@@ -31,5 +32,6 @@
 
 - Ningún plazo `PENDIENTE LEGAL` puede convertirse en política pública sin revisión humana especializada.
 - El procesador staging puede validar **qué** se elimina/retira/retiene, pero no decide por sí solo **cuánto tiempo** debe conservarse evidencia operacional en producción.
+- `listing_reservation_locks` es un artefacto de integridad, no una nueva fuente de identidad: debe mantenerse alineado con su `transactions_v2` asociada y limpiarse al llegar a estados terminales cuando sea seguro hacerlo.
 - Nunca almacenar tokens App Check, claves, OTP o contraseñas como evidencia de cumplimiento.
 - Toda automatización productiva futura deberá ser idempotente, auditable y capaz de generar un reporte de residuos por UID.
