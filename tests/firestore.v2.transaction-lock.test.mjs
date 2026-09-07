@@ -159,13 +159,13 @@ test('fase 1: tx completed + listing sold_out es atómica y conserva lock', asyn
   const seller = env.authenticatedContext('seller').firestore();
   await assertSucceeds(completionPhaseOne(seller).commit());
   const lock = await getDoc(doc(seller, 'listing_reservation_locks/listing-1'));
-  if (!lock.exists()) throw new Error('lock debe sobrevivir hasta la fase 2');
+  if (!lock.exists()) throw new Error('lock debe sobrevivir hasta cleanup trusted');
 });
 
-test('fase 2: lock completado se libera cuando listing ya está sold_out', async () => {
+test('cliente no puede borrar lock completado aunque listing ya esté sold_out', async () => {
   await seedCompletionState({ txStatus: 'completed', listingStatus: 'sold_out' });
   const seller = env.authenticatedContext('seller').firestore();
-  await assertSucceeds(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
+  await assertFails(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
 });
 
 test('completion sin sold_out queda bloqueada por regla de transacción', async () => {
@@ -181,7 +181,7 @@ test('sold_out sin completar tx no autoriza liberar lock', async () => {
   await assertFails(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
 });
 
-test('lock histórico completed no se libera si listing sigue active', async () => {
+test('lock histórico completed no se libera desde cliente aunque listing siga active', async () => {
   await seedCompletionState({ txStatus: 'completed', listingStatus: 'active' });
   const seller = env.authenticatedContext('seller').firestore();
   await assertFails(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
