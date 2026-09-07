@@ -148,7 +148,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   removeProduct: (id) => {
-    // Zero-cost beta keeps an audit trail: hiding is represented as Vendido rather than hard deletion.
     get().updateProduct(id, { estado: 'Vendido', es_top: false, jerarquia_top: 0 });
   },
 
@@ -229,9 +228,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   markChatRead: (chatId) => {
     const before = get().chats.find((chat) => chat.id === chatId);
+    if (!before || (before.sin_leer || 0) === 0) return;
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, sin_leer: 0 } : chat) }));
     void onlineBackend.markChatRead(chatId).catch((error) => {
-      if (before) set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? before : chat) }));
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? before : chat) }));
       reportSyncError(set, error);
     });
   },
@@ -288,8 +288,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ favorites: favoriteState(state.favorites, productId, shouldFavorite) });
 
     void onlineBackend.toggleFavorite(productId, shouldFavorite).catch((error) => {
-      // An older request must never roll back a newer tap. Restore only this product
-      // and leave unrelated favorite mutations untouched.
       if (favoriteMutationVersion.get(productId) === version) {
         set((current) => ({ favorites: favoriteState(current.favorites, productId, wasFavorite) }));
       }
