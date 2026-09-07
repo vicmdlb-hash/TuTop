@@ -35,15 +35,13 @@ for (const marker of ['npm ci', 'npm run check', 'npm run typecheck', 'npm run b
 }
 if (!firestore.includes('Firestore V2 emulator security')) errors.push('Firestore V2 dejó de tener su gate aislado.');
 
-for (const [name, workflow] of [['Android', android], ['Staging real', staging], ['Quality', quality], ['Firestore V2', firestore]]) {
+for (const [name, workflow] of [['Android', android], ['Staging real', staging], ['Quality', quality], ['Firestore V2', firestore], ['Trusted maintenance', trusted]]) {
   if (!workflow.includes('workflow_dispatch:')) errors.push(`${name} dejó de poder ejecutarse manualmente.`);
-  if (/\n\s+push:|\n\s+pull_request:/.test(workflow)) errors.push(`${name} debe permanecer manual-only mientras Actions no tenga minutos.`);
+  if (/\n\s+push:|\n\s+pull_request:|\n\s+schedule:/.test(workflow)) errors.push(`${name} debe permanecer manual-only para preservar minutos.`);
 }
-if (!trusted.includes('cron: "17 */6 * * *"')) errors.push('Trusted maintenance excede la cadencia presupuestada de cada 6 horas.');
-if (/\n\s+push:|\n\s+pull_request:/.test(trusted)) errors.push('Trusted maintenance no debe ejecutarse por push/PR.');
 
 if (project.zeroInvestmentMode !== true || project.billingAllowed !== false) errors.push('El proyecto dejó de estar bloqueado a cero inversión.');
-if (/secrets\.[A-Z0-9_]+/.test(android + quality + firestore + staging + trusted)) warnings.push('Hay referencias a GitHub Secrets. Revísalas antes de activar workflows manuales/cron.');
+if (/secrets\.[A-Z0-9_]+/.test(android + quality + firestore + staging + trusted)) warnings.push('Hay referencias a GitHub Secrets. Revísalas antes de activar workflows manuales.');
 
 for (const warning of warnings) console.log(`WARN ${warning}`);
 for (const error of errors) console.error(`FAIL ${error}`);
