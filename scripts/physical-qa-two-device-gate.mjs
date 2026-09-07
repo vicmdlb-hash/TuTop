@@ -9,6 +9,7 @@ const MAX_EVIDENCE_AGE_MS = 24 * 60 * 60_000;
 const CLOCK_SKEW_MS = 5 * 60_000;
 const SHA256 = /^[a-f0-9]{64}$/i;
 const VISUAL_CASES = ['keyboard', 'safe_areas', 'rotation'];
+const FCM_CORRELATION_EVENTS = new Set(['push_received', 'push_action', 'route_opened']);
 
 function placeholder(value) {
   return !String(value || '').trim() || /PENDIENTE|TODO|TBD/i.test(String(value));
@@ -42,6 +43,20 @@ function validateScreenshots(bundle, index, started, completed, errors) {
     }
   }
   return new Set(hashes);
+}
+
+function collectFcmCorrelations(bundle) {
+  const correlations = new Set();
+  const scenarios = Array.isArray(bundle?.fcm_fixture_report?.scenarios) ? bundle.fcm_fixture_report.scenarios : [];
+  for (const scenario of scenarios) {
+    const events = Array.isArray(scenario?.events) ? scenario.events : [];
+    for (const event of events) {
+      if (!FCM_CORRELATION_EVENTS.has(event?.kind)) continue;
+      const correlation = String(event?.correlation || '').trim();
+      if (correlation) correlations.add(correlation);
+    }
+  }
+  return correlations;
 }
 
 function validateLinkedEvidence(bundle, index, started, completed, now, candidate, errors) {
@@ -138,6 +153,11 @@ export function validateTwoDeviceEvidence(bundles, now = Date.now(), candidate =
   }
   const crossDeviceDuplicates = [...screenshotSets[0]].filter((sha) => screenshotSets[1].has(sha));
   if (crossDeviceDuplicates.length) errors.push('Device A y Device B reutilizan screenshot SHA-256; la evidencia debe ser independiente');
+  const fcmCorrelationSets = bundles.map(collectFcmCorrelations);
+  const crossDeviceFcmReplay = [...fcmCorrelationSets[0]].filter((correlation) => fcmCorrelationSets[1].has(correlation));
+  if (crossDeviceFcmReplay.length) {
+    errors.push('Device A y Device B reutilizan correlaciones FCM; la evidencia push debe ser independiente por dispositivo');
+  }
   return { pass: errors.length === 0, errors, assessments };
 }
 
@@ -147,7 +167,7 @@ function main() {
     console.error('Uso: node --experimental-strip-types scripts/physical-qa-two-device-gate.mjs <device-a.json> <device-b.json> [--json]');
     process.exit(2);
   }
-  const bundles = files.map((file) => JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')));
+  const bundles = files.map((file) => JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
   const result = validateTwoDeviceEvidence(bundles);
   console.log(process.argv.includes('--json') ? JSON.stringify(result, null, 2) : [
     `Two-device Physical QA: ${result.pass ? 'PASS' : 'BLOCKED'}`,
