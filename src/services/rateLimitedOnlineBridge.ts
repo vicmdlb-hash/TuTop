@@ -98,13 +98,10 @@ if (nationalSchemaEnabled()) {
       let task: Promise<void>;
       task = commitWithRateLimit(firebase, 'message_create', [
         { update: firebase.encodeDocumentForWrite(`chats/${chatId}/messages/${operation.messageId}`, messageData), currentDocument: { exists: false } },
-        patchWrite(firebase, `chats/${chatId}`, { updated_at: at, last_message: lastMessage.slice(0, 180), last_message_at: at }),
+        patchWrite(firebase, `chats/${chatId}`, { updated_at: at, last_message: lastMessage.slice(0, 180), last_message_at: at, last_sender_id: uid }),
       ], at).then(() => {
         messageIdempotency.markSuccess(operation.key);
       }).catch((error) => {
-        // A lost network response can leave the server commit successful but the client uncertain.
-        // Keep the same document id for a short retry window. ALREADY_EXISTS then proves the
-        // earlier atomic commit landed and is treated as success instead of creating a duplicate.
         if (isAlreadyCommitted(error)) {
           messageIdempotency.markSuccess(operation.key);
           return;
