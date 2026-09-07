@@ -19,11 +19,38 @@ async function seedCatalog(db) {
   await setDoc(doc(db, 'campuses/campus'), { institution_id: 'uatx', name: 'Campus', active: true });
 }
 
+async function seedCanonicalListing(db, at = now()) {
+  await setDoc(doc(db, 'listings_v2/listing-1'), {
+    schema_version: 2,
+    seller_id: 'seller',
+    institution_id: 'uatx',
+    campus_id: 'campus',
+    category_id: 'electronics',
+    title: 'Listing QA',
+    description: 'Fixture canónico completo para pruebas de reserva.',
+    attributes: {},
+    price_mxn: 400,
+    negotiable: true,
+    quantity: 1,
+    condition: 'good',
+    delivery_methods: ['meetup'],
+    meeting_point_ids: [],
+    shipping_available: false,
+    photo_urls: ['data:image/png;base64,AA'],
+    status: 'active',
+    moderation_status: 'approved',
+    visibility_scope: 'campus',
+    published_at: at,
+    created_at: at,
+    updated_at: at,
+  });
+}
+
 async function seed() {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await seedCatalog(db);
-    await setDoc(doc(db, 'listings_v2/listing-1'), { seller_id: 'seller', institution_id: 'uatx', campus_id: 'campus', status: 'active', moderation_status: 'approved' });
+    await seedCanonicalListing(db);
     for (const buyer of ['buyer-a', 'buyer-b']) {
       const suffix = buyer === 'buyer-a' ? 'a' : 'b';
       await setDoc(doc(db, `chats/chat-${suffix}`), { product_id: 'listing-1', buyer_id: buyer, seller_id: 'seller', participants: [buyer, 'seller'], last_message: '', updated_at: now(), last_message_at: now() });
@@ -45,6 +72,46 @@ function reserveBatch(db, suffix, buyer, amount) {
     listing_id: 'listing-1', transaction_id: txId, buyer_id: buyer, seller_id: 'seller', created_at: at, updated_at: at,
   });
   batch.update(doc(db, `chats/chat-${suffix}`), { transaction_id: txId, current_offer_id: `offer-${suffix}`, updated_at: at });
+  return batch;
+}
+
+async function seedCompletionState() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    const at = now();
+    await seedCatalog(db);
+    await seedCanonicalListing(db, at);
+    await setDoc(doc(db, 'transactions_v2/tx-done'), {
+      listing_id: 'listing-1',
+      chat_id: 'chat-done',
+      buyer_id: 'buyer-a',
+      seller_id: 'seller',
+      accepted_offer_id: 'offer-done',
+      agreed_amount_mxn: 400,
+      status: 'meetup_scheduled',
+      reservation_expires_at: future(),
+      meeting_point_id: 'point-done',
+      meetup_at: future(60),
+      buyer_confirmed_at: at,
+      created_at: at,
+      updated_at: at,
+    });
+    await setDoc(doc(db, 'listing_reservation_locks/listing-1'), {
+      listing_id: 'listing-1', transaction_id: 'tx-done', buyer_id: 'buyer-a', seller_id: 'seller', created_at: at, updated_at: at,
+    });
+  });
+}
+
+function completionBatch(db, { sellOut = true, completeTx = true } = {}) {
+  const at = now();
+  const batch = writeBatch(db);
+  if (completeTx) {
+    batch.update(doc(db, 'transactions_v2/tx-done'), {
+      status: 'completed', seller_confirmed_at: at, updated_at: at,
+    });
+  }
+  if (sellOut) batch.update(doc(db, 'listings_v2/listing-1'), { status: 'sold_out', updated_at: at });
+  batch.delete(doc(db, 'listing_reservation_locks/listing-1'));
   return batch;
 }
 
@@ -87,28 +154,20 @@ test('cancelar sin borrar lock queda bloqueado', async () => {
   await assertFails(bad.commit());
 });
 
-test('venta completada sólo libera lock junto con sold_out', async () => {
-  await env.withSecurityRulesDisabled(async (ctx) => {
-    const db = ctx.firestore();
-    const at = now();
-    await seedCatalog(db);
-    await setDoc(doc(db, 'listings_v2/listing-1'), { seller_id: 'seller', institution_id: 'uatx', campus_id: 'campus', status: 'active', moderation_status: 'approved', created_at: at, updated_at: at });
-    await setDoc(doc(db, 'transactions_v2/tx-done'), {
-      listing_id: 'listing-1', chat_id: 'chat-done', buyer_id: 'buyer-a', seller_id: 'seller', accepted_offer_id: 'offer-done', agreed_amount_mxn: 400,
-      status: 'completed', reservation_expires_at: future(), buyer_confirmed_at: at, seller_confirmed_at: at, created_at: at, updated_at: at,
-    });
-    await setDoc(doc(db, 'listing_reservation_locks/listing-1'), {
-      listing_id: 'listing-1', transaction_id: 'tx-done', buyer_id: 'buyer-a', seller_id: 'seller', created_at: at, updated_at: at,
-    });
-  });
+test('completion real: tx completed + listing sold_out + lock delete es atómico', async () => {
+  await seedCompletionState();
   const seller = env.authenticatedContext('seller').firestore();
-  await assertFails((async () => {
-    const bad = writeBatch(seller);
-    bad.delete(doc(seller, 'listing_reservation_locks/listing-1'));
-    return bad.commit();
-  })());
-  const complete = writeBatch(seller);
-  complete.update(doc(seller, 'listings_v2/listing-1'), { status: 'sold_out', updated_at: now() });
-  complete.delete(doc(seller, 'listing_reservation_locks/listing-1'));
-  await assertSucceeds(complete.commit());
+  await assertSucceeds(completionBatch(seller).commit());
+});
+
+test('completion sin sold_out no puede liberar lock', async () => {
+  await seedCompletionState();
+  const seller = env.authenticatedContext('seller').firestore();
+  await assertFails(completionBatch(seller, { sellOut: false, completeTx: true }).commit());
+});
+
+test('sold_out sin completar transacción no puede liberar lock', async () => {
+  await seedCompletionState();
+  const seller = env.authenticatedContext('seller').firestore();
+  await assertFails(completionBatch(seller, { sellOut: true, completeTx: false }).commit());
 });
