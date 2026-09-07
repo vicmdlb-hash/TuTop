@@ -1,0 +1,33 @@
+{
+  "schema": "tutop.physical-qa-evidence.v1",
+  "app_version": "0.9.0-beta.0",
+  "environment": "staging",
+  "device": {
+    "label": "PENDIENTE-DISPOSITIVO-REAL",
+    "manufacturer": "PENDIENTE",
+    "model": "PENDIENTE",
+    "android_version": "PENDIENTE",
+    "viewport": "PENDIENTE",
+    "installation": "clean|upgrade|reinstall",
+    "physical": false
+  },
+  "required_cases": {
+    "install_boot": "pending",
+    "auth_identity": "pending",
+    "reinstall_identity": "pending",
+    "keyboard": "pending",
+    "android_back": "pending",
+    "lifecycle": "pending",
+    "safe_areas": "pending",
+    "rotation": "pending",
+    "offline_reconnect": "pending",
+    "push_foreground": "pending",
+    "push_background": "pending",
+    "push_cold_start": "pending",
+    "push_deep_link": "pending",
+    "app_check_token_observed": "pending"
+  },
+  "diagnostic_report": null,
+  "screenshots": [],
+  "notes": "Template: no cuenta como evidencia física hasta physical=true y datos reales. No incluir teléfono, password, tokens, idToken, refreshToken ni notification IDs crudos."
+}
