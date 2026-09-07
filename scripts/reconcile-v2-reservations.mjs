@@ -93,19 +93,27 @@ async function requestJson(url, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+async function runCollectionQuery(collectionId) {
+  const response = await requestJson(`${base}:runQuery`, {
+    method: 'POST',
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], limit: maxDocs } }),
+  });
+  return (response || []).filter((row) => row.document).map((row) => ({
+    id: row.document.name.split('/').pop(),
+    ...decodeFields(row.document.fields || {}),
+  }));
+}
+
 assertStagingTarget();
 const token = await accessToken();
 const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
-const queryResponse = await requestJson(`${base}:runQuery`, {
-  method: 'POST',
-  body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'transactions_v2' }], limit: maxDocs } }),
-});
+const [transactions, locks] = await Promise.all([
+  runCollectionQuery('transactions_v2'),
+  runCollectionQuery('listing_reservation_locks'),
+]);
 
-const transactions = (queryResponse || []).filter((row) => row.document).map((row) => ({
-  id: row.document.name.split('/').pop(),
-  ...decodeFields(row.document.fields || {}),
-}));
-
+const txById = new Map(transactions.map((tx) => [tx.id, tx]));
+const listingStatusById = new Map();
 const plans = [];
 for (const transaction of transactions) {
   if (!transaction.listing_id) continue;
@@ -113,6 +121,7 @@ for (const transaction of transactions) {
   try {
     const listing = await requestJson(`${base}/listings_v2/${encodeURIComponent(transaction.listing_id)}`);
     listingStatus = decodeFields(listing.fields || {}).status || listingStatus;
+    listingStatusById.set(transaction.listing_id, listingStatus);
   } catch (error) {
     plans.push({ transaction_id: transaction.id, listing_id: transaction.listing_id, kind: 'none', reason: `listing_unavailable:${error.message}` });
     continue;
@@ -122,10 +131,34 @@ for (const transaction of transactions) {
 }
 
 const actionable = plans.filter((plan) => plan.kind !== 'none');
+const terminalLockPlans = [];
+for (const lock of locks) {
+  const transaction = txById.get(lock.transaction_id);
+  if (!transaction || transaction.listing_id !== lock.listing_id) continue;
+  const listingStatus = listingStatusById.get(lock.listing_id);
+  const completedSafe = transaction.status === 'completed'
+    && Boolean(transaction.buyer_confirmed_at)
+    && Boolean(transaction.seller_confirmed_at)
+    && listingStatus === 'sold_out';
+  const terminalSafe = ['cancelled', 'expired', 'no_show'].includes(transaction.status);
+  if (completedSafe || terminalSafe) {
+    terminalLockPlans.push({
+      lock_id: lock.id,
+      listing_id: lock.listing_id,
+      transaction_id: transaction.id,
+      transaction_status: transaction.status,
+      listing_status: listingStatus || 'unknown',
+      reason: completedSafe ? 'completed_sold_out_trusted_cleanup' : 'terminal_transaction_trusted_cleanup',
+    });
+  }
+}
+
 console.log(`TuTop V2 reservation reconciliation · ${projectId}`);
-console.log(`Revisadas: ${plans.length} · Accionables: ${actionable.length} · Modo: ${apply ? 'APPLY' : 'DRY RUN'}`);
+console.log(`Transacciones revisadas: ${plans.length} · Reparaciones: ${actionable.length} · Locks terminales: ${terminalLockPlans.length} · Modo: ${apply ? 'APPLY' : 'DRY RUN'}`);
 if (actionable.length) console.table(actionable);
-else console.log('Sin reparaciones necesarias en la muestra revisada.');
+else console.log('Sin reparaciones de transacción/listing necesarias en la muestra revisada.');
+if (terminalLockPlans.length) console.table(terminalLockPlans);
+else console.log('Sin reservation locks terminales para cleanup trusted.');
 
 if (!apply) {
   console.log('\nDRY RUN: no se escribió nada.');
@@ -150,5 +183,14 @@ for (const plan of actionable) {
   applied += 1;
 }
 
-console.log(`\n✅ Reconciliación canonical V2 completada: ${applied} operación(es) reparada(s).`);
-console.log('El worker no cambia visibilidad al reservar; expira transactions, limpia reservation locks terminales y repara sold_out tras confirmación bilateral.');
+let cleanedLocks = 0;
+for (const lockPlan of terminalLockPlans) {
+  await requestJson(`${base}:commit`, {
+    method: 'POST',
+    body: JSON.stringify({ writes: [deleteWrite(`listing_reservation_locks/${lockPlan.lock_id}`)] }),
+  });
+  cleanedLocks += 1;
+}
+
+console.log(`\n✅ Reconciliación canonical V2 completada: ${applied} operación(es) reparada(s), ${cleanedLocks} lock(s) terminal(es) limpiados por trusted maintenance.`);
+console.log('El worker no cambia visibilidad al reservar; expira transactions, repara sold_out tras confirmación bilateral y limpia reservation locks terminales fuera de autoridad cliente.');
