@@ -29,7 +29,7 @@ const passReport = {
   ],
 };
 const good = structuredClone(template);
-good.device = { label: 'qa-device-a', manufacturer: 'Synthetic', model: 'Contract', android_version: '15', viewport: '412x915', installation: 'clean', physical: true };
+good.device = { label: 'qa-device-a', manufacturer: 'Google', model: 'Pixel-contract', android_version: '15', viewport: '412x915', installation: 'clean', physical: true };
 good.required_cases = Object.fromEntries(Object.keys(good.required_cases).map((key) => [key, 'pass']));
 good.diagnostic_report = passReport;
 const pass = validatePhysicalQaEvidence(good);
@@ -48,7 +48,34 @@ const explanatory = structuredClone(good);
 explanatory.notes = 'No incluir password, idToken, refreshToken ni otros secretos en evidencia.';
 assert.equal(validatePhysicalQaEvidence(explanatory).overall, 'pass');
 
+// Required cases cannot be waved through as WARN or NOT_APPLICABLE.
+const warned = structuredClone(good);
+warned.required_cases.keyboard = 'warn';
+const warnResult = validatePhysicalQaEvidence(warned);
+assert.equal(warnResult.overall, 'warn');
+assert.equal(warnResult.release_blocked, true);
+assert.equal(warnResult.warning_cases, 1);
+
+const skipped = structuredClone(good);
+skipped.required_cases.push_cold_start = 'not_applicable';
+const skippedResult = validatePhysicalQaEvidence(skipped);
+assert.equal(skippedResult.overall, 'warn');
+assert.equal(skippedResult.release_blocked, true);
+assert.equal(skippedResult.not_applicable_cases, 1);
+
+// Simply toggling physical=true on the template must never create valid evidence.
+const fakePhysical = structuredClone(template);
+fakePhysical.device.physical = true;
+fakePhysical.required_cases = Object.fromEntries(Object.keys(fakePhysical.required_cases).map((key) => [key, 'pass']));
+fakePhysical.diagnostic_report = passReport;
+const fakeResult = validatePhysicalQaEvidence(fakePhysical);
+assert.equal(fakeResult.overall, 'fail');
+assert.equal(fakeResult.release_blocked, true);
+assert(fakeResult.errors.some((x) => x.includes('placeholder')));
+
 console.log('PASS physical evidence template remains blocked until real evidence exists');
 console.log('PASS complete physical evidence can reach PASS');
 console.log('PASS sensitive fields fail closed without false-positive explanatory notes');
+console.log('PASS WARN/NOT_APPLICABLE required cases cannot produce false release PASS');
+console.log('PASS physical=true cannot bypass placeholder device metadata');
 console.log('Physical QA evidence bundle contract: PASS');
