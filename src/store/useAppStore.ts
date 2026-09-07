@@ -48,8 +48,17 @@ interface AppState {
   markAllNotificationsRead: () => void;
 }
 
+const NEUTRAL_COMMUNITY_LABEL = 'Comunidad universitaria';
+const favoriteMutationVersion = new Map<string, number>();
+
+function favoriteState(favorites: string[], productId: string, favorited: boolean) {
+  const exists = favorites.includes(productId);
+  if (exists === favorited) return favorites;
+  return favorited ? [...favorites, productId] : favorites.filter((id) => id !== productId);
+}
+
 const emptyUser: User = {
-  id: '', telefono: '', nombre: '', facultad: 'Turismo Internacional', saldo_ucoins: 0,
+  id: '', telefono: '', nombre: '', facultad: NEUTRAL_COMMUNITY_LABEL, saldo_ucoins: 0,
   puntos_prestigio: 0, nivel_vendedor: 'Novato', esta_verificado: false, strikes: 0,
   fecha_registro: new Date(0).toISOString(),
 };
@@ -62,7 +71,7 @@ function blankState() {
     reviews: [] as Review[],
     transactions: [] as WalletTransaction[],
     notifications: [] as AppNotification[],
-    currentFacultad: 'Turismo Internacional',
+    currentFacultad: NEUTRAL_COMMUNITY_LABEL,
     favorites: [] as string[],
     activeTab: 'feed' as AppTab,
     activeChatId: null as string | null,
@@ -272,10 +281,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleFavorite: (productId) => {
     const state = get();
-    const shouldFavorite = !state.favorites.includes(productId);
-    set({ favorites: shouldFavorite ? [...state.favorites, productId] : state.favorites.filter((id) => id !== productId) });
+    const wasFavorite = state.favorites.includes(productId);
+    const shouldFavorite = !wasFavorite;
+    const version = (favoriteMutationVersion.get(productId) || 0) + 1;
+    favoriteMutationVersion.set(productId, version);
+    set({ favorites: favoriteState(state.favorites, productId, shouldFavorite) });
+
     void onlineBackend.toggleFavorite(productId, shouldFavorite).catch((error) => {
-      set({ favorites: state.favorites });
+      // An older request must never roll back a newer tap. Restore only this product
+      // and leave unrelated favorite mutations untouched.
+      if (favoriteMutationVersion.get(productId) === version) {
+        set((current) => ({ favorites: favoriteState(current.favorites, productId, wasFavorite) }));
+      }
       reportSyncError(set, error);
     });
   },
