@@ -11,6 +11,7 @@ if (nationalSchemaEnabled()) {
   Object.assign(nationalBackend, {
     createOffer: canonicalOffersBackend.createOffer,
     createCounterOffer: canonicalOffersBackend.createCounterOffer,
+    updateOffer: canonicalOffersBackend.updateOffer,
     acceptOfferAndCreateTransaction: canonicalTransactionRetryBackend.acceptOfferAndCreateTransaction,
     createTransactionFromAcceptedOffer: canonicalTransactionRetryBackend.createTransactionFromAcceptedOffer,
     loadTransactionForChat: canonicalTransactionsBackend.loadTransactionForChat,
