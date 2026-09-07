@@ -10,6 +10,7 @@ const steps = [
   [process.execPath, ['scripts/security-tests.mjs']],
   [process.execPath, ['scripts/policy-scan.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/chat-message-idempotency-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/firebase-session-hardening-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-regression-tests.mjs']],
 ];
 for (const file of fs.readdirSync('scripts').filter((name) => name.endsWith('.mjs')).sort()) {
