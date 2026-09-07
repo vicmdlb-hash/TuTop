@@ -55,6 +55,22 @@ async function terminalTransactionWrites(client: FirebaseRestClient, transaction
   ];
 }
 
+async function completedReservationLock(client: FirebaseRestClient, transaction: MarketplaceTransaction) {
+  const lock = await client.getDocument<any>(reservationLockPath(transaction.listing_id));
+  if (lock && lock.data.transaction_id !== transaction.id) throw new Error('RESERVATION_LOCK_MISMATCH');
+  return lock;
+}
+
+async function releaseCompletedLockBestEffort(client: FirebaseRestClient, transaction: MarketplaceTransaction, lock: any) {
+  if (!lock) return;
+  try {
+    await client.commit([{ delete: client.documentName(reservationLockPath(transaction.listing_id)) }]);
+  } catch {
+    // The completed transaction + sold_out listing are already authoritative and safe.
+    // Trusted reconciliation can remove a stale lock later; do not report a false sale failure.
+  }
+}
+
 function normalizeReservationError(error: unknown): never {
   const message = error instanceof Error ? error.message : String(error);
   if (/ALREADY_EXISTS|already exists|409/i.test(message)) throw new Error('LISTING_ALREADY_RESERVED');
@@ -163,13 +179,15 @@ export const canonicalTransactionsBackend = {
     const next = { ...transaction, [field]: at, status, updated_at: at } as MarketplaceTransaction;
     const confirmationWrite = patchWrite(client, `transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at });
     if (status === 'completed' && actor === transaction.seller_id) {
-      const lock = await client.getDocument<any>(reservationLockPath(transaction.listing_id));
-      if (lock && lock.data.transaction_id !== transaction.id) throw new Error('RESERVATION_LOCK_MISMATCH');
+      const lock = await completedReservationLock(client, transaction);
+      // Production Firestore validates completion most reliably as two safety phases:
+      // (1) transaction completed + listing sold_out atomically, then (2) stale-safe lock cleanup.
+      // A lock left behind cannot reopen a sold_out listing and trusted maintenance can reconcile it.
       await client.commit([
         confirmationWrite,
         patchWrite(client, `listings_v2/${transaction.listing_id}`, { status: 'sold_out', updated_at: at }),
-        ...(lock ? [{ delete: client.documentName(reservationLockPath(transaction.listing_id)) }] : []),
       ]);
+      await releaseCompletedLockBestEffort(client, transaction, lock);
     } else await client.commit([confirmationWrite]);
     return next;
   },
@@ -180,12 +198,11 @@ export const canonicalTransactionsBackend = {
     if (actor !== transaction.seller_id) throw new Error('SELLER_REQUIRED');
     if (transaction.status !== 'completed' || !transaction.buyer_confirmed_at || !transaction.seller_confirmed_at) throw new Error('TRANSACTION_NOT_COMPLETED');
     const at = nowIso();
-    const lock = await client.getDocument<any>(reservationLockPath(transaction.listing_id));
-    if (lock && lock.data.transaction_id !== transaction.id) throw new Error('RESERVATION_LOCK_MISMATCH');
+    const lock = await completedReservationLock(client, transaction);
     await client.commit([
       patchWrite(client, `listings_v2/${transaction.listing_id}`, { status: 'sold_out', updated_at: at }),
-      ...(lock ? [{ delete: client.documentName(reservationLockPath(transaction.listing_id)) }] : []),
     ]);
+    await releaseCompletedLockBestEffort(client, transaction, lock);
   },
 
   async disputeTransaction(transaction: MarketplaceTransaction) {
