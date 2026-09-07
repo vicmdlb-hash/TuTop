@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, Timestamp, writeBatch, doc, setDoc, updateDoc, deleteDoc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
-import { adminPatchDocument, adminDeleteDocument, adminDeleteTestUsers } from './staging-v2-admin.mjs';
+import { adminGetDocument, adminPatchDocument, adminDeleteDocument, adminDeleteTestUsers } from './staging-v2-admin.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const configPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-staging-web-config.json').trim();
@@ -191,7 +191,7 @@ try {
   ok('cliente no puede borrar lock completed');
 
   await adminDeleteDocument(`listing_reservation_locks/${listingId}`);
-  assert.equal((await getDoc(doc(sellerDb, 'listing_reservation_locks', listingId))).exists(), false);
+  assert.equal(await adminGetDocument(`listing_reservation_locks/${listingId}`), null, 'cleanup trusted no eliminó reservation lock');
   const lockPath = `listing_reservation_locks/${listingId}`;
   const lockIndex = docsToClean.indexOf(lockPath);
   if (lockIndex >= 0) docsToClean.splice(lockIndex, 1);
