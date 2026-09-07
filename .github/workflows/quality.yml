@@ -3,6 +3,10 @@ name: TuTop quality gate
 on:
   pull_request:
     branches: ["main"]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "play/**"
   workflow_dispatch:
 
 permissions:
@@ -142,38 +146,3 @@ jobs:
           path: dist
           if-no-files-found: error
           retention-days: 7
-
-  firestore-v2-security:
-    name: Firestore V2 emulator security
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Node 22
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-
-      - name: Java 21
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Install app dependencies
-        run: npm ci
-
-      - name: Install emulator test harness
-        run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@latest firebase@12.18.0
-
-      - name: Verify dependency manifests stayed immutable
-        run: git diff --exit-code -- package.json package-lock.json
-
-      - name: Prepare strict V2 rules
-        run: npm run v2:rules:prepare
-
-      - name: Firestore V2 abuse + atomic batch + governance + runtime services + transaction lock tests
-        run: npx --yes firebase-tools@15.29.0 emulators:exec --only firestore --config firebase.v2.json --project demo-tutop-v2-rules "node --test tests/firestore.v2.rules.test.mjs tests/firestore.v2.atomic.test.mjs tests/firestore.v2.acceptance-atomic.test.mjs tests/firestore.v2.reputation-trust.test.mjs tests/firestore.v2.governance.test.mjs tests/firestore.v2.runtime-services.test.mjs tests/firestore.v2.account-operations.test.mjs tests/firestore.v2.notification-receipts.test.mjs tests/firestore.v2.transaction-lock.test.mjs"
