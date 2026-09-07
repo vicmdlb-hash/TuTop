@@ -7,5 +7,5 @@
   "app_check_token_observed": false,
   "verified_at": null,
   "contains_raw_token": false,
-  "evidence_note": "Completar únicamente a partir de Physical QA real. Nunca pegar el token App Check; sólo registrar que fue observado."
+  "evidence_note": "Completar únicamente a partir de Physical QA real en al menos 2 dispositivos Android y dentro de los 7 días previos al gate. Nunca pegar el token App Check; sólo registrar que fue observado."
 }
