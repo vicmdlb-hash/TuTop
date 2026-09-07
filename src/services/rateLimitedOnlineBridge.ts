@@ -1,4 +1,5 @@
 import type { Chat } from '../types';
+import { ChatMessageIdempotencyWindow } from '../lib/chatMessageIdempotency';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { onlineBackend } from './onlineBackend';
@@ -8,6 +9,17 @@ import { getFirebaseConfig } from './runtimeConfig';
 function id(prefix: string) {
   const random = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${random}`;
+}
+
+const messageIdempotency = new ChatMessageIdempotencyWindow();
+const inflightMessageOps = new Map<string, Promise<void>>();
+
+function messageOf(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isAlreadyCommitted(error: unknown) {
+  return /ALREADY_EXISTS|already exists|409/i.test(messageOf(error));
 }
 
 function client() {
@@ -73,15 +85,37 @@ if (nationalSchemaEnabled()) {
       const clean = text.trim().slice(0, 1500);
       if (!clean && !imageUrl) throw new Error('EMPTY_MESSAGE');
       if (imageUrl && (!imageUrl.startsWith('data:image/') || imageUrl.length > 130000)) throw new Error('Imagen de chat inválida.');
-      const messageId = id('msg');
+
+      const operation = messageIdempotency.begin({ uid, chatId, text: clean, imageUrl });
+      const active = inflightMessageOps.get(operation.key);
+      if (active) return active;
+
       const at = new Date();
       const messageData: Record<string, unknown> = { sender_id: uid, text: clean, created_at: at };
       if (imageUrl) messageData.image_url = imageUrl;
       const lastMessage = clean || '📷 Foto';
-      await commitWithRateLimit(firebase, 'message_create', [
-        { update: firebase.encodeDocumentForWrite(`chats/${chatId}/messages/${messageId}`, messageData), currentDocument: { exists: false } },
+
+      let task: Promise<void>;
+      task = commitWithRateLimit(firebase, 'message_create', [
+        { update: firebase.encodeDocumentForWrite(`chats/${chatId}/messages/${operation.messageId}`, messageData), currentDocument: { exists: false } },
         patchWrite(firebase, `chats/${chatId}`, { updated_at: at, last_message: lastMessage.slice(0, 180), last_message_at: at }),
-      ], at);
+      ], at).then(() => {
+        messageIdempotency.markSuccess(operation.key);
+      }).catch((error) => {
+        // A lost network response can leave the server commit successful but the client uncertain.
+        // Keep the same document id for a short retry window. ALREADY_EXISTS then proves the
+        // earlier atomic commit landed and is treated as success instead of creating a duplicate.
+        if (isAlreadyCommitted(error)) {
+          messageIdempotency.markSuccess(operation.key);
+          return;
+        }
+        messageIdempotency.markUncertain(operation.key);
+        throw error;
+      }).finally(() => {
+        if (inflightMessageOps.get(operation.key) === task) inflightMessageOps.delete(operation.key);
+      });
+      inflightMessageOps.set(operation.key, task);
+      return task;
     },
 
     async submitReport(targetType: 'product' | 'user' | 'chat', targetId: string, reason: string) {
