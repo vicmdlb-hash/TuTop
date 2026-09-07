@@ -11,6 +11,7 @@ const steps = [
   [process.execPath, ['scripts/policy-scan.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/chat-message-idempotency-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/offer-idempotency-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/transaction-retry-idempotency-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/firebase-session-hardening-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-regression-tests.mjs']],
 ];
