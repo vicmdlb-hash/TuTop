@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Bell, BookmarkPlus, Building2, Clock3, Globe2, Heart, ListFilter, MapPin, PlusCircle, Search, SlidersHorizontal, Sparkles, Store, X } from 'lucide-react';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant';
@@ -39,20 +39,26 @@ function userCity(user: User) { return user.university?.city_id; }
 
 function sameCampus(product: Product, user: User, legacyFaculty: string) {
   const campus = userCampus(user);
-  if (product.campus_id && campus) return product.campus_id === campus;
-  return product.facultad === legacyFaculty;
+  if (campus) {
+    if (product.campus_id) return product.campus_id === campus;
+    // Legacy migration fallback stays limited to the user's old faculty label.
+    return Boolean(legacyFaculty && product.facultad === legacyFaculty);
+  }
+  return Boolean(legacyFaculty && product.facultad === legacyFaculty);
 }
 
 function sameInstitution(product: Product, user: User) {
   const institution = userInstitution(user);
-  if (product.institution_id && institution) return product.institution_id === institution;
-  return !product.institution_id;
+  if (!institution) return false;
+  // Once a user has national identity, unknown legacy geography must not leak
+  // into an institution-wide browse scope.
+  return Boolean(product.institution_id && product.institution_id === institution);
 }
 
 function sameCity(product: Product, user: User) {
   const city = userCity(user);
-  if (product.city_id && city) return product.city_id === city;
-  return !product.city_id;
+  if (!city) return false;
+  return Boolean(product.city_id && product.city_id === city);
 }
 
 function visibleByPublicationScope(product: Product, user: User, legacyFaculty: string) {
@@ -88,18 +94,13 @@ export default function Feed() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchHistory, setSearchHistory] = useState(() => readLocalList(SEARCH_KEY, 6));
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
-  const [listingMetadata, setListingMetadata] = useState<Record<string, Partial<Product>>>({});
   const recentIds = readLocalList(RECENT_KEY, 12);
   const onboardingInterests = readLocalList(ONBOARDING_INTERESTS_KEY, 8);
 
-  useEffect(() => {
-    if (!nationalSchemaEnabled()) { setListingMetadata({}); return; }
-    let active = true;
-    void nationalBackend.loadListingMetadata(250).then((metadata) => { if (active) setListingMetadata(metadata); }).catch(() => undefined);
-    return () => { active = false; };
-  }, [products.length, user.id]);
-
-  const scopedProducts = useMemo(() => products.map((product) => ({ ...product, ...(listingMetadata[product.id] || {}) })), [products, listingMetadata]);
+  // In schema V2, V2ListingsHydrator already supplies canonical national fields.
+  // Re-querying up to 250 products here duplicated Firestore reads on every length
+  // change and could also overwrite fresher canonical state with a second snapshot.
+  const scopedProducts = products;
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
   const activeFilterCount = Number(Boolean(maxPrice)) + Number(favoritesOnly) + Number(verifiedOnly) + Number(negotiableOnly) + Number(deliveryOnly) + Number(sortMode !== 'relevant');
   const myActiveProducts = scopedProducts.filter((product) => product.vendedor_id === user.id && product.estado === 'Activo');
