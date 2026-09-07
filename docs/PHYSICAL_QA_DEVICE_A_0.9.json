@@ -11,6 +11,8 @@
     "apk_sha256": "57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493"
   },
   "evidence_session_id": "PENDIENTE-DEVICE-A",
+  "evidence_started_at": "PENDIENTE-ISO8601",
+  "evidence_completed_at": "PENDIENTE-ISO8601",
   "device": {
     "slot": "A",
     "label": "PENDIENTE-DISPOSITIVO-A",
@@ -41,5 +43,5 @@
   "fcm_fixture_report": null,
   "app_check_evidence": null,
   "screenshots": [],
-  "notes": "Template Device A ligado a APK 20 exacta. No incluir teléfono, password, tokens, idToken, refreshToken ni notification IDs crudos."
+  "notes": "Template Device A ligado a APK 20 exacta. Registrar inicio/fin reales de la sesión. No incluir teléfono, password, tokens, idToken, refreshToken ni notification IDs crudos."
 }

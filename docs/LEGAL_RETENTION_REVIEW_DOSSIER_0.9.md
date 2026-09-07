@@ -1,6 +1,15 @@
 # TuTop 0.9 — dossier de decisión legal de retención
 
-Estado: **PENDIENTE REVISIÓN LEGAL**. Este dossier no fija plazos, bases legales ni excepciones. Ingeniería sólo prepara las preguntas y la evidencia técnica para una decisión autorizada.
+Estado: **PENDIENTE REVISIÓN LEGAL**. Este dossier no fija plazos, bases legales, jurisdicción ni excepciones. Ingeniería sólo prepara las preguntas y la evidencia técnica para una decisión autorizada.
+
+## Registro de decisión obligatorio
+
+- Jurisdicción aplicable: **PENDIENTE LEGAL**
+- ID / referencia de decisión: **PENDIENTE LEGAL**
+- Referencia de evidencia técnica revisada: **PENDIENTE LEGAL**
+- Responsable/aprobador: **PENDIENTE LEGAL**
+- Fecha de aprobación: **PENDIENTE LEGAL**
+- Fecha de entrada en vigor: **PENDIENTE LEGAL**
 
 ## Decisiones obligatorias antes de producción
 
@@ -23,8 +32,9 @@ Estado: **PENDIENTE REVISIÓN LEGAL**. Este dossier no fija plazos, bases legale
 - Plantilla `LEGAL_RETENTION_REVIEW_TEMPLATE_0.9.md`.
 - Flujo de account erasure y evidencia del smoke sintético staging.
 - Lista de colecciones y clasificación `delete / withdraw-anonymize / operational-retain`.
+- Snapshot/version exacta del esquema y Rules revisados.
 - Confirmación de que producción, billing y proveedores reales de recovery siguen fuera de alcance.
 
 ## Gate
 
-No reemplazar `PENDIENTE LEGAL` por una duración, base jurídica o excepción inferida por ingeniería. Una decisión sólo se considera cerrada cuando un responsable autorizado completa todos los campos y deja trazabilidad de aprobación.
+No reemplazar `PENDIENTE LEGAL` por una duración, base jurídica, jurisdicción o excepción inferida por ingeniería. Una decisión sólo se considera cerrada cuando un responsable autorizado completa todos los campos, identifica la evidencia revisada y deja trazabilidad de aprobación y vigencia.

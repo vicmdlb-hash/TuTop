@@ -13,6 +13,19 @@ Estado: **PREPARED, NOT MIGRATED**. `FIREBASE_TOKEN` permanece como fallback fun
 | Trusted maintenance | operativo | pendiente | reconciliation + residue audit PASS |
 | App Check | monitoring only | pendiente | debe continuar UNENFORCED |
 
+## Registro de evidencia de paridad — sin secretos
+
+- HEAD exacto: `PENDIENTE`
+- Run fallback comparable: `PENDIENTE`
+- Run OIDC/WIF shadow comparable: `PENDIENTE`
+- Provider/pool metadata externa presente: `PENDIENTE` (sólo identificadores no secretos)
+- Intercambio real de assertion por credencial temporal observado: `PENDIENTE`
+- Expiración/renovación de credencial temporal observada sin fallo: `PENDIENTE`
+- Todos los gates equivalentes: `PENDIENTE`
+- Revisor/decisión de migración: `PENDIENTE`
+
+Nunca registrar en este checklist assertion OIDC, access token, refresh token, service-account JSON o claves privadas.
+
 ## Secuencia reversible
 
 1. Mantener `FIREBASE_TOKEN` intacto.

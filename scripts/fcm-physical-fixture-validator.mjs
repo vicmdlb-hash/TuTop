@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 const REQUIRED = new Set(['foreground', 'background', 'cold_start', 'deep_link']);
 const FORBIDDEN_KEYS = new Set(['token', 'fcm_token', 'notification_id', 'raw_notification_id', 'phone', 'idToken', 'refreshToken']);
+const SAFE_CORRELATION = /^[a-z0-9_-]{6,80}$/i;
 
 function scan(value, errors, pathParts = []) {
   if (Array.isArray(value)) return value.forEach((item, index) => scan(item, errors, [...pathParts, String(index)]));
@@ -14,6 +15,10 @@ function scan(value, errors, pathParts = []) {
   }
 }
 
+function placeholder(value) {
+  return !String(value || '').trim() || /PENDIENTE|TODO|TBD/i.test(String(value));
+}
+
 export function validateFcmPhysicalFixture(fixture, candidate) {
   const errors = [];
   if (fixture?.schema !== 'tutop.fcm-physical-fixture.v1') errors.push('schema inválido');
@@ -21,11 +26,13 @@ export function validateFcmPhysicalFixture(fixture, candidate) {
     if (fixture?.candidate?.[field] !== candidate?.[field]) errors.push(`candidate.${field} no coincide con APK vigente`);
   }
   if (!['A','B'].includes(fixture?.device_slot)) errors.push('device_slot debe ser A o B');
+  if (placeholder(fixture?.evidence_session_id)) errors.push('evidence_session_id real requerido');
   scan(fixture, errors);
   const scenarios = Array.isArray(fixture?.scenarios) ? fixture.scenarios : [];
   const names = scenarios.map((scenario) => scenario?.name);
   for (const name of REQUIRED) if (!names.includes(name)) errors.push(`falta escenario ${name}`);
   if (new Set(names).size !== names.length) errors.push('escenarios duplicados');
+  const correlationsAcrossScenarios = new Map();
 
   for (const scenario of scenarios) {
     const name = scenario?.name;
@@ -43,20 +50,36 @@ export function validateFcmPhysicalFixture(fixture, candidate) {
     const actions = events.filter((event) => event.kind === 'push_action');
     if (!received.length) errors.push(`${name}: falta push_received`);
     const receiveCorrelations = received.map((event) => String(event.correlation || ''));
-    if (receiveCorrelations.some((value) => !value || value === 'none' || value === 'unavailable')) errors.push(`${name}: correlación de recepción inválida`);
+    if (receiveCorrelations.some((value) => !SAFE_CORRELATION.test(value))) errors.push(`${name}: correlación de recepción inválida`);
     if (new Set(receiveCorrelations).size !== receiveCorrelations.length) errors.push(`${name}: recepción duplicada para la misma correlación`);
+    for (const receive of received) {
+      if (!String(receive.target || '').trim()) errors.push(`${name}: recepción sin destino lógico`);
+      const correlation = String(receive.correlation || '');
+      if (SAFE_CORRELATION.test(correlation)) {
+        const prior = correlationsAcrossScenarios.get(correlation);
+        if (prior && prior !== name) errors.push(`${name}: correlación reutilizada desde escenario ${prior}`);
+        else correlationsAcrossScenarios.set(correlation, name);
+      }
+    }
+    const actionCorrelations = actions.map((event) => String(event.correlation || ''));
+    if (actionCorrelations.some((value) => !SAFE_CORRELATION.test(value))) errors.push(`${name}: correlación de acción inválida`);
+    if (new Set(actionCorrelations).size !== actionCorrelations.length) errors.push(`${name}: acción duplicada para la misma correlación`);
     if (name !== 'foreground' && !actions.length) errors.push(`${name}: falta push_action`);
     for (const action of actions) {
       const correlation = String(action.correlation || '');
       const receive = received.find((event) => String(event.correlation || '') === correlation);
       if (!receive) errors.push(`${name}: acción huérfana sin recepción correlacionada`);
-      else if (Number.isFinite(action.at_ms) && Number.isFinite(receive.at_ms) && action.at_ms < receive.at_ms) errors.push(`${name}: push_action ocurrió antes de push_received`);
+      else {
+        if (Number.isFinite(action.at_ms) && Number.isFinite(receive.at_ms) && action.at_ms < receive.at_ms) errors.push(`${name}: push_action ocurrió antes de push_received`);
+        if (String(action.target || '') !== String(receive.target || '')) errors.push(`${name}: destino de acción no coincide con recepción`);
+      }
       if (!String(action.target || '').trim()) errors.push(`${name}: acción sin destino lógico`);
     }
     if (name === 'foreground' && !events.some((event) => event.kind === 'app_foreground')) errors.push('foreground: falta app_foreground');
     if (name === 'background' && !events.some((event) => event.kind === 'app_background')) errors.push('background: falta app_background');
     if (name === 'cold_start') {
-      if (!events.some((event) => event.kind === 'app_boot')) errors.push('cold_start: falta app_boot');
+      const boots = events.filter((event) => event.kind === 'app_boot');
+      if (boots.length !== 1) errors.push(`cold_start: se requiere exactamente un app_boot, observados ${boots.length}`);
       if (!actions.some((event) => event.launch === 'cold_start')) errors.push('cold_start: falta acción marcada launch=cold_start');
     }
     if (name === 'deep_link') {

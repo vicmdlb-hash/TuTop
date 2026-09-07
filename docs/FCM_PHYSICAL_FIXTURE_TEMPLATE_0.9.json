@@ -7,11 +7,12 @@
     "apk_sha256": "57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493"
   },
   "device_slot": "A|B",
+  "evidence_session_id": "PENDIENTE-FCM-SESSION",
   "scenarios": [
     { "name": "foreground", "events": [] },
     { "name": "background", "events": [] },
     { "name": "cold_start", "events": [] },
     { "name": "deep_link", "events": [] }
   ],
-  "notes": "Normalizar únicamente correlaciones sanitizadas y destino lógico. No incluir FCM token, notification ID crudo, teléfono ni payload sensible."
+  "notes": "Normalizar sólo correlaciones sanitizadas y destino lógico. Una correlación no debe reciclarse entre escenarios. No incluir FCM token, notification ID crudo, teléfono ni payload sensible."
 }

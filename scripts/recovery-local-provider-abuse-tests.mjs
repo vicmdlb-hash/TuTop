@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { LocalRecoveryProviderSimulation } from './recovery-local-provider-simulation.mjs';
+import { LocalRecoveryProviderSimulation, RECOVERY_SIMULATION_LIMITS } from './recovery-local-provider-simulation.mjs';
 const now = 1_800_000_000_000;
 const sim = new LocalRecoveryProviderSimulation();
 const issued = sim.issue({ identifier: 'private-user@example.invalid', channel: 'verified_email', correlation_id: 'abuse-test-001', now });
@@ -17,9 +17,21 @@ assert.equal(sim.verify({ challenge_id: locked.challenge_id, code: '000000', now
 assert.equal(sim.verify({ challenge_id: locked.challenge_id, code: locked.synthetic_code, now: now + 4 }).reason, 'locked');
 const expired = sim.issue({ identifier: 'private-user-3', channel: 'verified_sms', correlation_id: 'abuse-test-004', now });
 assert.equal(sim.verify({ challenge_id: expired.challenge_id, code: expired.synthetic_code, now: expired.expires_at + 1 }).reason, 'expired');
-const summaryText = JSON.stringify(sim.summary());
-assert.doesNotMatch(summaryText, /private-user|example\.invalid|synthetic_code|code_hash|identifier_hash/);
-console.log('PASS replay and challenge-id collisions fail closed');
-console.log('PASS unsupported channels, brute force and expiry remain blocked');
-console.log('PASS simulation summaries do not expose identifier/code material');
+
+const rate = new LocalRecoveryProviderSimulation();
+const rate1 = rate.issue({ identifier: 'same-user', channel: 'verified_email', correlation_id: 'rate-test-001', now });
+assert.throws(() => rate.issue({ identifier: 'same-user', channel: 'verified_email', correlation_id: 'rate-test-002', now: now + RECOVERY_SIMULATION_LIMITS.issue_cooldown_ms - 1 }), /RECOVERY_ISSUE_COOLDOWN/);
+const rate2 = rate.issue({ identifier: 'same-user', channel: 'verified_email', correlation_id: 'rate-test-003', now: now + RECOVERY_SIMULATION_LIMITS.issue_cooldown_ms + 1 });
+const rate3 = rate.issue({ identifier: 'same-user', channel: 'recovery_code', correlation_id: 'rate-test-004', now: now + 2 * RECOVERY_SIMULATION_LIMITS.issue_cooldown_ms + 2 });
+assert.throws(() => rate.issue({ identifier: 'same-user', channel: 'verified_sms', correlation_id: 'rate-test-005', now: now + 3 * RECOVERY_SIMULATION_LIMITS.issue_cooldown_ms + 3 }), /RECOVERY_IDENTIFIER_ACTIVE_LIMIT/);
+assert.equal(rate.verify({ challenge_id: rate1.challenge_id, code: rate1.synthetic_code, now: now + 3 * RECOVERY_SIMULATION_LIMITS.issue_cooldown_ms + 4 }).accepted, true);
+const afterConsume = rate.issue({ identifier: 'same-user', channel: 'verified_sms', correlation_id: 'rate-test-006', now: now + 4 * RECOVERY_SIMULATION_LIMITS.issue_cooldown_ms + 5 });
+assert.ok(afterConsume.challenge_id);
+assert.ok(rate2.challenge_id && rate3.challenge_id);
+
+const summaryText = JSON.stringify([...sim.summary(), ...rate.summary()]);
+assert.doesNotMatch(summaryText, /private-user|same-user|example\.invalid|synthetic_code|code_hash|identifier_hash/);
+console.log('PASS replay, challenge-id collision, brute force and expiry fail closed');
+console.log('PASS per-identifier issuance cooldown and active challenge fanout limit abuse');
+console.log('PASS consuming a challenge releases active capacity without exposing identifier material');
 console.log('Recovery local abuse contract: PASS');
