@@ -24,6 +24,7 @@ import PhysicalQaPanel from './components/PhysicalQaPanel';
 import './services/nationalBackendCanonicalBridge';
 import './services/rateLimitedOnlineBridge';
 import './services/canonicalStoreBridge';
+import './services/v2LeanChatSnapshotBridge';
 import './services/nationalIdentityHydrationBridge';
 import './services/notificationReceiptStoreBridge';
 import './services/physicalQaTelemetry';
