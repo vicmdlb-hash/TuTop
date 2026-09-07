@@ -5,6 +5,7 @@ import Feed from './components/Feed';
 import Chatbot from './components/Chatbot';
 import NationalPublishScreen from './components/NationalPublishScreen';
 import V2ListingsHydrator from './components/V2ListingsHydrator';
+import V2ChatHistoryHydrator from './components/V2ChatHistoryHydrator';
 import WalletView from './components/WalletView';
 import Inbox from './components/Inbox';
 import Profile from './components/Profile';
@@ -88,6 +89,7 @@ function MobileApp() {
         </div>
       )}
       {v2 && <V2ListingsHydrator />}
+      {v2 && <V2ChatHistoryHydrator />}
       <main className="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))]">
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
