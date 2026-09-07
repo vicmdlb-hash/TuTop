@@ -27,6 +27,20 @@ async function assertOfferableListing(client: FirebaseRestClient, listingId: str
   if (listing.data.moderation_status !== 'approved') throw new Error('LISTING_NOT_APPROVED');
 }
 
+async function assertCurrentPendingParent(client: FirebaseRestClient, parent: Offer, actorId: string) {
+  const stored = await client.getDocument<any>(`offers/${parent.id}`);
+  if (!stored) throw new Error('PARENT_OFFER_NOT_FOUND');
+  const data = stored.data || {};
+  if (data.listing_id !== parent.listing_id || data.chat_id !== parent.chat_id || data.buyer_id !== parent.buyer_id || data.seller_id !== parent.seller_id) {
+    throw new Error('PARENT_OFFER_MISMATCH');
+  }
+  if (data.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
+  if ((data.created_by || data.buyer_id) === actorId) throw new Error('COUNTERPARTY_REQUIRED');
+  const expiresAt = typeof data.expires_at === 'string' ? Date.parse(data.expires_at) : NaN;
+  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) throw new Error('OFFER_EXPIRED');
+  return { id: parent.id, ...data } as Offer;
+}
+
 async function recoverCommittedOffer(client: FirebaseRestClient, offerId: string, expected: {
   listingId: string;
   chatId: string;
@@ -125,30 +139,29 @@ export const canonicalOffersBackend = {
     const client = getClient();
     const actor = client.currentSession!.uid;
     if (actor !== parent.buyer_id && actor !== parent.seller_id) throw new Error('PARTICIPANT_REQUIRED');
-    if ((parent.created_by || parent.buyer_id) === actor) throw new Error('COUNTERPARTY_REQUIRED');
-    if (parent.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
     if (!Number.isFinite(amountMxn) || amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
-    await assertOfferableListing(client, parent.listing_id, parent.seller_id);
+    const currentParent = await assertCurrentPendingParent(client, parent, actor);
+    await assertOfferableListing(client, currentParent.listing_id, currentParent.seller_id);
     const normalizedAmount = Math.round(amountMxn * 100) / 100;
     const operation = operations.begin({
       actorId: actor,
-      listingId: parent.listing_id,
-      chatId: parent.chat_id,
-      sellerId: parent.seller_id,
+      listingId: currentParent.listing_id,
+      chatId: currentParent.chat_id,
+      sellerId: currentParent.seller_id,
       amountMxn: normalizedAmount,
-      parentOfferId: parent.id,
+      parentOfferId: currentParent.id,
     });
     const at = nowIso();
     const counter: Offer = {
       id: operation.offerId,
-      listing_id: parent.listing_id,
-      chat_id: parent.chat_id,
-      buyer_id: parent.buyer_id,
-      seller_id: parent.seller_id,
+      listing_id: currentParent.listing_id,
+      chat_id: currentParent.chat_id,
+      buyer_id: currentParent.buyer_id,
+      seller_id: currentParent.seller_id,
       created_by: actor,
       amount_mxn: normalizedAmount,
       status: 'pending',
-      parent_offer_id: parent.id,
+      parent_offer_id: currentParent.id,
       expires_at: expiresAt || new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
       created_at: at,
       updated_at: at,
@@ -156,8 +169,8 @@ export const canonicalOffersBackend = {
     const { id: _id, ...data } = counter;
     return commitOfferWithRecovery(client, operation, counter, [
       { update: client.encodeDocumentForWrite(`offers/${operation.offerId}`, data), currentDocument: { exists: false } },
-      patchWrite(client, `offers/${parent.id}`, { status: 'countered', counter_offer_id: operation.offerId, updated_at: at }),
-      patchWrite(client, `chats/${parent.chat_id}`, { current_offer_id: operation.offerId, updated_at: at }),
+      patchWrite(client, `offers/${currentParent.id}`, { status: 'countered', counter_offer_id: operation.offerId, updated_at: at }),
+      patchWrite(client, `chats/${currentParent.chat_id}`, { current_offer_id: operation.offerId, updated_at: at }),
     ]);
   },
 };
