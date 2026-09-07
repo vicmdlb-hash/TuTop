@@ -8,8 +8,26 @@
   "candidate_build_run_id": 34078588228,
   "candidate_build_tree_sha": "d1d90343806871479d1685783d1c1e5db1b5c341",
   "device_count": 0,
+  "devices": [
+    {
+      "slot": "A",
+      "physical": false,
+      "evidence_session_id": "PENDIENTE-DEVICE-A",
+      "profile_fingerprint_sha256": "PENDIENTE-SHA256-SIN-HARDWARE-ID",
+      "app_check_token_observed": false,
+      "verified_at": null
+    },
+    {
+      "slot": "B",
+      "physical": false,
+      "evidence_session_id": "PENDIENTE-DEVICE-B",
+      "profile_fingerprint_sha256": "PENDIENTE-SHA256-SIN-HARDWARE-ID",
+      "app_check_token_observed": false,
+      "verified_at": null
+    }
+  ],
   "app_check_token_observed": false,
   "verified_at": null,
   "contains_raw_token": false,
-  "evidence_note": "Completar únicamente a partir de Physical QA real del APK 20 exacto en al menos 2 dispositivos Android y dentro de los 7 días previos al gate. Nunca pegar el token App Check; sólo registrar que fue observado."
+  "evidence_note": "Completar sólo con Physical QA real del APK 20 exacto. A/B deben ser dispositivos/perfiles físicos independientes, con sesiones y fingerprints sanitizados distintos. Nunca guardar token App Check ni hardware IDs crudos."
 }
