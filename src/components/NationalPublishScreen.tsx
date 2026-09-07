@@ -55,12 +55,14 @@ export default function NationalPublishScreen() {
   const parsedPrice = Number(price);
   const hasValidPrice = price.trim() !== '' && Number.isFinite(parsedPrice) && parsedPrice > 0;
   const shippingAvailable = deliveryMethods.includes('shipping');
+  const prohibitedDraft = isForbiddenProductText(`${title} ${description}`);
   const publishIssues: string[] = [];
   if (!institutionId || !campusId) publishIssues.push('universidad/campus');
   if (!title.trim()) publishIssues.push('título');
   if (!category) publishIssues.push('categoría');
   if (!hasValidPrice) publishIssues.push('precio mayor a $0');
   if (!deliveryMethods.length) publishIssues.push('forma de entrega');
+  if (prohibitedDraft) publishIssues.push('artículo o servicio no permitido');
   if (missing.length) publishIssues.push(`${missing.length} dato${missing.length === 1 ? '' : 's'} obligatorio${missing.length === 1 ? '' : 's'}`);
   if (scope === 'national' && !shippingAvailable) publishIssues.push('paquetería para Todo México');
   const readyToPublish = publishIssues.length === 0;
@@ -140,6 +142,7 @@ export default function NationalPublishScreen() {
     setMessage(null);
     if (!institutionId || !campusId) return setMessage('Primero selecciona tu universidad y campus.');
     if (!title.trim() || !category || !hasValidPrice) return setMessage('Completa título, categoría y un precio mayor a $0.');
+    if (prohibitedDraft) return setMessage('Ese artículo o servicio no está permitido en TuTop. Revisa el título y la descripción.');
     if (!deliveryMethods.length) return setMessage('Selecciona al menos una forma de entrega.');
     if (missing.length) {
       setAdvancedOpen(true);
