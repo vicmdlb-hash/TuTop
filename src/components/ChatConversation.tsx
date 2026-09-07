@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowLeft, Check, CheckCheck, CircleDollarSign, Flag, Im
 import { compressImageForFirestore } from '../lib/imageCompression';
 import { feedbackMessage, feedbackSuccess } from '../lib/feedback';
 import { riskSeverity, scanMessageForSafety } from '../lib/marketplaceGovernance';
+import { canonicalOffersBackend } from '../services/canonicalOffersBackend';
 import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
 import { onlineBackend } from '../services/onlineBackend';
 import { useAppStore } from '../store/useAppStore';
@@ -82,9 +83,19 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
   useEffect(() => {
     if (!nationalSchemaEnabled()) return;
     let active = true;
-    void nationalBackend.listOffersForChat(chatId).then((offers) => { if (active) setStructuredOffers(offers); }).catch(() => undefined);
-    return () => { active = false; };
-  }, [chatId, chat?.mensajes.length]);
+    const refreshOffers = (force = false) => {
+      void canonicalOffersBackend.listOffersForChat(chatId, force)
+        .then((offers) => { if (active) setStructuredOffers(offers); })
+        .catch(() => undefined);
+    };
+    refreshOffers(true);
+    const visible = () => { if (document.visibilityState === 'visible') refreshOffers(false); };
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      active = false;
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [chatId]);
 
   if (!chat || !product) return <div className="page-pad pt-safe"><button onClick={closeChat}>Regresar</button><div className="empty-card mt-4">La conversación ya no está disponible.</div></div>;
 
@@ -104,7 +115,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
       setStructuredBusy(true); setStructuredMessage(null);
       let structured: Offer | undefined;
       if (nationalSchemaEnabled()) {
-        structured = await nationalBackend.createOffer({ listingId: product.id, chatId, sellerId: product.vendedor_id, amountMxn: amount, expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString() });
+        structured = await canonicalOffersBackend.createOffer({ listingId: product.id, chatId, sellerId: product.vendedor_id, amountMxn: amount });
         setStructuredOffers((current) => [structured!, ...current.filter((item) => item.status !== 'pending')]);
       }
       submitText(`Te ofrezco $${Math.round(amount).toLocaleString('es-MX')} por ${product.titulo}. ¿Te funciona?`);
@@ -120,7 +131,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
     try {
       setStructuredBusy(true); setStructuredMessage(null);
       if (nationalSchemaEnabled() && actionableStructured) {
-        const counter = await nationalBackend.createCounterOffer(actionableStructured, amount);
+        const counter = await canonicalOffersBackend.createCounterOffer(actionableStructured, amount);
         setStructuredOffers((current) => [
           counter,
           ...current.map((item) => item.id === actionableStructured.id ? { ...item, status: 'countered' as const, counter_offer_id: counter.id, updated_at: new Date().toISOString() } : item),
