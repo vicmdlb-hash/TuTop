@@ -3,6 +3,8 @@ import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { useAppStore } from '../store/useAppStore';
 
+const FOREGROUND_REFRESH_COOLDOWN_MS = 60_000;
+
 export default function V2ListingsHydrator() {
   const user = useAppStore((state) => state.user);
 
@@ -10,9 +12,11 @@ export default function V2ListingsHydrator() {
     if (!nationalSchemaEnabled() || !user.id) return;
     let active = true;
     let inFlight = false;
+    let lastSuccessfulSync = 0;
 
-    const sync = async () => {
+    const sync = async (force = false) => {
       if (inFlight || !navigator.onLine) return;
+      if (!force && Date.now() - lastSuccessfulSync < FOREGROUND_REFRESH_COOLDOWN_MS) return;
       inFlight = true;
       try {
         const products = await canonicalListingsBackend.loadMarketplaceProducts({
@@ -21,7 +25,10 @@ export default function V2ListingsHydrator() {
           cityId: user.university?.city_id,
           limitPerScope: 30,
         });
-        if (active) useAppStore.setState({ products });
+        if (active) {
+          lastSuccessfulSync = Date.now();
+          useAppStore.setState({ products });
+        }
       } catch (error) {
         console.warn('[TuTop V2 listings sync]', error);
       } finally {
@@ -29,15 +36,15 @@ export default function V2ListingsHydrator() {
       }
     };
 
-    void sync();
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void sync(); }, 30_000);
-    const online = () => void sync();
+    // One initial read is enough while the user remains on the same foreground
+    // session. Mutations that need immediate freshness already refresh explicitly.
+    void sync(true);
+    const online = () => void sync(true);
     const visible = () => { if (document.visibilityState === 'visible') void sync(); };
     window.addEventListener('online', online);
     document.addEventListener('visibilitychange', visible);
     return () => {
       active = false;
-      window.clearInterval(timer);
       window.removeEventListener('online', online);
       document.removeEventListener('visibilitychange', visible);
     };
