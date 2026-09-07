@@ -68,8 +68,31 @@ for (const [collection, field] of retainedOperational) {
   if (docs.length) retained.push({ collection, field, count: docs.length });
 }
 
-const plan = buildAccountErasurePlan({ projectId, uid, status, apply, directDeletes, queryDeletePaths, withdrawDocs, retained });
+// A deletion request may exist while a marketplace operation is still in flight,
+// but destructive erasure must wait until the transaction is terminal. Otherwise
+// the counterpart could lose the account/listing context needed to finish or dispute.
+const transactionDocs = new Map();
+for (const field of ['buyer_id', 'seller_id']) {
+  for (const document of await adminRunQuery('transactions_v2', [{ field, value: uid }], 1000)) transactionDocs.set(document.path, document);
+}
+const terminalStatuses = new Set(['completed', 'cancelled', 'expired', 'no_show']);
+const blockers = [...transactionDocs.values()]
+  .map((document) => ({
+    code: 'active_marketplace_transaction',
+    collection: 'transactions_v2',
+    id: document.path.split('/').pop() || document.path,
+    status: fieldString(document, 'status') || 'unknown',
+  }))
+  .filter((item) => !terminalStatuses.has(item.status));
+
+const plan = buildAccountErasurePlan({ projectId, uid, status, apply, directDeletes, queryDeletePaths, withdrawDocs, retained, blockers });
 console.log(JSON.stringify(plan, null, 2));
+
+if (plan.blocked) {
+  if (apply) throw new Error(`ACCOUNT_ERASURE_BLOCKED:${plan.blockers.map((item) => `${item.id}:${item.status}`).join(',')}`);
+  console.log('DRY-RUN BLOQUEADO: existen operaciones activas; no se modificó Firestore/Auth.');
+  process.exit(0);
+}
 
 if (!apply) {
   console.log('DRY-RUN: no se modificó Firestore/Auth.');
