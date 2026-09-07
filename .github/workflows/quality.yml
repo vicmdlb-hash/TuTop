@@ -105,14 +105,29 @@ jobs:
       - name: Retention matrix alignment
         run: npm run retention-matrix:test
 
+      - name: Legal retention review template
+        run: npm run legal-retention-review:test
+
       - name: Account recovery architecture
         run: npm run account-recovery:test
+
+      - name: Local recovery provider simulation
+        run: npm run account-recovery:local-sim:test
 
       - name: Physical QA automatic evaluator
         run: npm run physical-qa:evaluator:test
 
+      - name: Physical QA evidence bundle
+        run: npm run physical-qa:evidence:test
+
       - name: CI auth migration readiness
         run: npm run ci-auth:readiness:test
+
+      - name: OIDC parallel validation workflow contract
+        run: npm run ci-auth:parallel-workflow:test
+
+      - name: Trusted cron activation patch contract
+        run: npm run trusted-cron:patch:test
 
       - name: Typecheck
         run: npm run typecheck
