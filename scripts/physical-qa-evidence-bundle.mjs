@@ -10,7 +10,19 @@ const requiredCases = [
 const allowedCase = new Set(['pass','warn','fail','pending','not_applicable']);
 const forbiddenKeys = new Set(['refreshToken','idToken','password','FIREBASE_TOKEN']);
 const requiredDeviceFields = ['label','manufacturer','model','android_version','viewport','installation'];
+const requiredCandidateFields = ['artifact_name','artifact_id','build_run_id','build_commit_sha','build_tree_sha','apk_sha256'];
 const MAX_DIAGNOSTIC_AGE_MS = 24 * 60 * 60_000;
+const CANDIDATE_MANIFEST_PATH = path.resolve('docs/PHYSICAL_QA_CANDIDATE_0.9.json');
+
+export function loadPhysicalQaCandidate() {
+  if (!fs.existsSync(CANDIDATE_MANIFEST_PATH)) throw new Error('PHYSICAL_QA_CANDIDATE_MANIFEST_MISSING');
+  const candidate = JSON.parse(fs.readFileSync(CANDIDATE_MANIFEST_PATH, 'utf8'));
+  if (candidate?.schema !== 'tutop.physical-qa-candidate.v1') throw new Error('PHYSICAL_QA_CANDIDATE_SCHEMA_INVALID');
+  if (candidate?.app_version !== '0.9.0-beta.0') throw new Error('PHYSICAL_QA_CANDIDATE_VERSION_INVALID');
+  if (candidate?.environment !== 'staging') throw new Error('PHYSICAL_QA_CANDIDATE_ENVIRONMENT_INVALID');
+  if (candidate?.physical_release_candidate !== true) throw new Error('PHYSICAL_QA_CANDIDATE_NOT_ACTIVE');
+  return candidate;
+}
 
 function scanSensitive(value, errors, pathParts = []) {
   if (Array.isArray(value)) {
@@ -37,6 +49,21 @@ function isPlaceholder(value) {
   return !text || /PENDIENTE|TODO|TBD/i.test(text) || text.includes('|');
 }
 
+function validateCandidateBinding(bundle, expectedCandidate, errors) {
+  if (!bundle?.candidate || typeof bundle.candidate !== 'object') {
+    errors.push('candidate requerido para ligar evidencia al APK exacto');
+    return;
+  }
+  for (const field of requiredCandidateFields) {
+    if (bundle.candidate[field] !== expectedCandidate[field]) {
+      errors.push(`candidate.${field} no coincide con el candidato físico vigente`);
+    }
+  }
+  if (bundle.candidate.apk_sha256 && !/^[a-f0-9]{64}$/.test(String(bundle.candidate.apk_sha256))) {
+    errors.push('candidate.apk_sha256 inválido');
+  }
+}
+
 function validateFreshNativeDiagnostic(bundle, errors, now = Date.now()) {
   const report = bundle?.diagnostic_report;
   if (!report) return;
@@ -48,12 +75,13 @@ function validateFreshNativeDiagnostic(bundle, errors, now = Date.now()) {
   else if (generatedAt > now + 5 * 60_000 || now - generatedAt > MAX_DIAGNOSTIC_AGE_MS) errors.push('diagnostic_report fuera de ventana fresca de 24 h');
 }
 
-export function validatePhysicalQaEvidence(bundle, now = Date.now()) {
+export function validatePhysicalQaEvidence(bundle, now = Date.now(), expectedCandidate = loadPhysicalQaCandidate()) {
   const errors = [];
   const warnings = [];
   if (bundle?.schema !== 'tutop.physical-qa-evidence.v1') errors.push('schema inválido');
   if (bundle?.app_version !== '0.9.0-beta.0') errors.push('app_version debe ser 0.9.0-beta.0');
   if (bundle?.environment !== 'staging') errors.push('environment debe ser staging');
+  validateCandidateBinding(bundle, expectedCandidate, errors);
   if (!bundle?.device || typeof bundle.device !== 'object') errors.push('device requerido');
   if (bundle?.device?.physical !== true) warnings.push('evidencia todavía no proviene de dispositivo físico real');
   if (bundle?.device?.physical === true) {
@@ -101,6 +129,8 @@ export function validatePhysicalQaEvidence(bundle, now = Date.now()) {
     warning_cases: warningCases,
     not_applicable_cases: notApplicableCases,
     incomplete_cases: incompleteCases,
+    candidate_apk_sha256: expectedCandidate.apk_sha256,
+    candidate_artifact_id: expectedCandidate.artifact_id,
     assessment,
   };
 }
@@ -117,6 +147,8 @@ function main() {
   console.log(args.includes('--json') ? JSON.stringify(result, null, 2) : [
     `Physical QA evidence: ${result.overall.toUpperCase()}`,
     `release_blocked=${result.release_blocked}`,
+    `candidate_artifact_id=${result.candidate_artifact_id}`,
+    `candidate_apk_sha256=${result.candidate_apk_sha256}`,
     `failed_cases=${result.failed_cases}`,
     `pending_cases=${result.pending_cases}`,
     `warning_cases=${result.warning_cases}`,
