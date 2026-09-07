@@ -1,0 +1,18 @@
+{
+  "schema": "tutop.physical-qa-candidate.v1",
+  "app_version": "0.9.0-beta.0",
+  "environment": "staging",
+  "application_id": "mx.tutop.app",
+  "staging_project": "tutop-beta-vicmdlb-1356585881",
+  "artifact_name": "TuTop-0.9.0-beta.0-physical-qa-staging-20",
+  "artifact_id": 10002986519,
+  "build_run_id": 34078588228,
+  "build_commit_sha": "43326a9633fd841f95b8ea8f61af5699cc2c9383",
+  "build_tree_sha": "d1d90343806871479d1685783d1c1e5db1b5c341",
+  "apk_sha256": "57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493",
+  "apk_size_bytes": 6496128,
+  "artifact_zip_sha256": "b368aa18ed035e125384503bb9d5be98bd7db88443635a8421b2caa31a27be72",
+  "artifact_zip_size_bytes": 6114633,
+  "physical_release_candidate": true,
+  "notes": "Manifest canónico del candidato APK 20. Toda evidencia física debe referenciar exactamente este APK; una build anterior con la misma versión no cuenta."
+}
