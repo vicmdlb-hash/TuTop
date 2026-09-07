@@ -3,7 +3,7 @@ name: Build TuTop Android APK (zero cost)
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
+    branches: ["main", "feat/tutop-0.8-p0"]
     paths-ignore:
       - "**/*.md"
       - "docs/**"
@@ -19,7 +19,7 @@ concurrency:
 jobs:
   firestore-rules:
     name: Firestore security rules
-    if: github.event_name == 'push' || github.ref_name != 'feat/tutop-0.8-p0'
+    if: github.ref_name != 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -46,7 +46,7 @@ jobs:
 
   android-debug-apk:
     name: TuTop stable debug APK
-    if: github.event_name == 'push' || github.ref_name != 'feat/tutop-0.8-p0'
+    if: github.ref_name != 'feat/tutop-0.8-p0'
     needs: firestore-rules
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -111,13 +111,15 @@ jobs:
             TuTop-debug.apk
             TuTop-debug.apk.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
 
   android-v2-staging:
     name: TuTop 0.9 V2 physical QA staging APK
-    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'feat/tutop-0.8-p0'
+    if: github.ref_name == 'feat/tutop-0.8-p0' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 50
+    permissions:
+      contents: write
     env:
       TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
       TUTOP_STAGING_WEB_CONFIG_PATH: .tutop-staging-web-config.json
@@ -219,7 +221,21 @@ jobs:
             TuTop-0.9.0-beta.0-physical-qa-staging.apk
             TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
+      - name: Publish durable Physical QA prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="tutop-0.9.0-beta.0-physical-qa-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" \
+            TuTop-0.9.0-beta.0-physical-qa-staging.apk \
+            TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256 \
+            --target "$GITHUB_SHA" \
+            --title "TuTop 0.9.0 beta.0 Physical QA — build ${GITHUB_RUN_NUMBER}" \
+            --notes "Physical QA staging candidate only. Not production-ready, not Play-ready. Built from ${GITHUB_SHA}." \
+            --prerelease
       - name: Remove temporary Firebase configs
         if: always()
         run: rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json android/app/google-services.json
