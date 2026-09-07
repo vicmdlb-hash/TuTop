@@ -1,4 +1,5 @@
 import { canonicalOffersBackend } from './canonicalOffersBackend';
+import { canonicalTransactionRetryBackend } from './canonicalTransactionRetryBackend';
 import { canonicalTransactionsBackend } from './canonicalTransactionsBackend';
 import { nationalBackend, nationalSchemaEnabled } from './nationalBackend';
 
@@ -10,8 +11,8 @@ if (nationalSchemaEnabled()) {
   Object.assign(nationalBackend, {
     createOffer: canonicalOffersBackend.createOffer,
     createCounterOffer: canonicalOffersBackend.createCounterOffer,
-    acceptOfferAndCreateTransaction: canonicalTransactionsBackend.acceptOfferAndCreateTransaction,
-    createTransactionFromAcceptedOffer: canonicalTransactionsBackend.createTransactionFromAcceptedOffer,
+    acceptOfferAndCreateTransaction: canonicalTransactionRetryBackend.acceptOfferAndCreateTransaction,
+    createTransactionFromAcceptedOffer: canonicalTransactionRetryBackend.createTransactionFromAcceptedOffer,
     loadTransactionForChat: canonicalTransactionsBackend.loadTransactionForChat,
     scheduleMeetup: canonicalTransactionsBackend.scheduleMeetup,
     confirmDelivery: canonicalTransactionsBackend.confirmDelivery,
