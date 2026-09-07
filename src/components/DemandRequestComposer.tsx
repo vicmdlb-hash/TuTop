@@ -19,6 +19,13 @@ function saveLocal(request: DemandRequest) {
   } catch { /* local fallback is best-effort */ }
 }
 
+function parseOptionalBudget(value: string) {
+  const clean = value.trim();
+  if (!clean) return undefined;
+  const parsed = Number(clean);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) / 100 : null;
+}
+
 export default function DemandRequestComposer() {
   const { user, products, openProduct, setActiveTab } = useAppStore();
   const [open, setOpen] = useState(false);
@@ -34,7 +41,9 @@ export default function DemandRequestComposer() {
   const v2Enabled = nationalSchemaEnabled();
 
   const suggestedScope = useMemo(() => defaultScopeForCategory(category || undefined), [category]);
-  const canSubmit = title.trim().length >= 3 && !busy;
+  const parsedBudget = parseOptionalBudget(maxPrice);
+  const budgetValid = parsedBudget !== null;
+  const canSubmit = title.trim().length >= 3 && budgetValid && !busy;
 
   const chooseCategory = (value: ProductCategory | '') => {
     setCategory(value);
@@ -43,6 +52,10 @@ export default function DemandRequestComposer() {
 
   const submit = async () => {
     if (!canSubmit) return;
+    if (parsedBudget === null) {
+      setMessage('Escribe un presupuesto válido o deja el campo vacío.');
+      return;
+    }
     setBusy(true);
     setMessage(null);
     setMatches([]);
@@ -51,7 +64,7 @@ export default function DemandRequestComposer() {
       title: title.trim().slice(0, 120),
       description: description.trim().slice(0, 1200) || undefined,
       category: category || undefined,
-      max_price_mxn: maxPrice ? Math.max(0, Number(maxPrice)) : undefined,
+      max_price_mxn: parsedBudget,
       needed_by: neededBy ? new Date(`${neededBy}T23:59:59`).toISOString() : undefined,
       institution_id: user.institution_id || user.university?.institution_id,
       campus_id: user.campus_id || user.university?.campus_id,
@@ -116,7 +129,7 @@ export default function DemandRequestComposer() {
 
         <label className="auth-label">Categoría <span className="font-normal text-slate-700">(opcional)</span></label><select value={category} onChange={(event) => chooseCategory(event.target.value as ProductCategory | '')} className="auth-input"><option value="">TuTop puede inferirla después</option>{MARKETPLACE_CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}</select>
 
-        <div className="grid grid-cols-2 gap-2"><div><label className="auth-label">Presupuesto máximo</label><div className="relative"><CircleDollarSign className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><input value={maxPrice} onChange={(event) => setMaxPrice(event.target.value.replace(/[^0-9.]/g, ''))} className="auth-input pl-10" inputMode="decimal" placeholder="500" /></div></div><div><label className="auth-label">Lo necesito antes de</label><input value={neededBy} min={new Date().toISOString().slice(0, 10)} onChange={(event) => setNeededBy(event.target.value)} className="auth-input" type="date" /></div></div>
+        <div className="grid grid-cols-2 gap-2"><div><label className="auth-label">Presupuesto máximo</label><div className="relative"><CircleDollarSign className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><input value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} className={`auth-input pl-10 ${budgetValid ? '' : '!border-rose-400/40'}`} inputMode="decimal" type="number" min="0" step="0.01" placeholder="500" aria-invalid={!budgetValid} /></div>{!budgetValid && <p className="mt-1 text-[8px] text-rose-300">Usa un monto válido o deja el campo vacío.</p>}</div><div><label className="auth-label">Lo necesito antes de</label><input value={neededBy} min={new Date().toISOString().slice(0, 10)} onChange={(event) => setNeededBy(event.target.value)} className="auth-input" type="date" /></div></div>
 
         <label className="auth-label">Detalles <span className="font-normal text-slate-700">(opcional)</span></label><textarea value={description} onChange={(event) => setDescription(event.target.value)} className="auth-input min-h-24 resize-none" maxLength={1200} placeholder="Marca, materia, edición, horario, condición que aceptarías…" />
 
