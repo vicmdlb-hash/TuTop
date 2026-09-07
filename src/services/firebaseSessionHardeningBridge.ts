@@ -1,10 +1,6 @@
 import { FirebaseSessionLifecycle } from '../lib/firebaseSessionLifecycle';
 import { FirebaseRestClient, type AuthSession } from './firebaseRest';
 
-type FirebaseRestInternals = FirebaseRestClient & {
-  persistSession?: (session: AuthSession | null) => void;
-};
-
 const states = new WeakMap<FirebaseRestClient, FirebaseSessionLifecycle<AuthSession>>();
 const proto = FirebaseRestClient.prototype as any;
 const originalGetIdToken = proto.getIdToken;
@@ -22,7 +18,10 @@ function stateFor(client: FirebaseRestClient) {
 }
 
 function restoreAuthoritative(client: FirebaseRestClient, session: AuthSession | null) {
-  const internal = client as FirebaseRestInternals;
+  // Deliberate internal boundary: FirebaseRestClient owns persistence privately, but a
+  // stale async refresh must be able to restore the already-authoritative session.
+  // Keep this cast isolated here rather than weakening FirebaseRestClient's public API.
+  const internal = client as any;
   if (typeof internal.persistSession === 'function') internal.persistSession(session);
   else if (!session) originalSignOut.call(client);
 }
