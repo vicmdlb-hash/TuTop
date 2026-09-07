@@ -16,6 +16,7 @@ export class LocalRecoveryProviderSimulation {
     if (!String(identifier || '').trim()) throw new Error('RECOVERY_IDENTIFIER_REQUIRED');
     if (!/^[a-z0-9-]{8,80}$/i.test(String(correlation_id || ''))) throw new Error('RECOVERY_CORRELATION_INVALID');
     const challenge_id = `sim-${digest(`${correlation_id}:${now}`).slice(0, 20)}`;
+    if (this.#challenges.has(challenge_id)) throw new Error('RECOVERY_CHALLENGE_COLLISION');
     const synthetic_code = String(100000 + (parseInt(digest(challenge_id).slice(0, 8), 16) % 900000));
     this.#challenges.set(challenge_id, {
       identifier_hash: digest(identifier), channel, correlation_id, code_hash: digest(synthetic_code),

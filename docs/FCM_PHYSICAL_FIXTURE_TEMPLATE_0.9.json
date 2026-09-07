@@ -1,0 +1,17 @@
+{
+  "schema": "tutop.fcm-physical-fixture.v1",
+  "candidate": {
+    "artifact_id": 10002986519,
+    "build_run_id": 34078588228,
+    "build_tree_sha": "d1d90343806871479d1685783d1c1e5db1b5c341",
+    "apk_sha256": "57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493"
+  },
+  "device_slot": "A|B",
+  "scenarios": [
+    { "name": "foreground", "events": [] },
+    { "name": "background", "events": [] },
+    { "name": "cold_start", "events": [] },
+    { "name": "deep_link", "events": [] }
+  ],
+  "notes": "Normalizar únicamente correlaciones sanitizadas y destino lógico. No incluir FCM token, notification ID crudo, teléfono ni payload sensible."
+}

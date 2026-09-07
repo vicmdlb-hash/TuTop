@@ -1,0 +1,45 @@
+{
+  "schema": "tutop.physical-qa-evidence.v1",
+  "app_version": "0.9.0-beta.0",
+  "environment": "staging",
+  "candidate": {
+    "artifact_name": "TuTop-0.9.0-beta.0-physical-qa-staging-20",
+    "artifact_id": 10002986519,
+    "build_run_id": 34078588228,
+    "build_commit_sha": "43326a9633fd841f95b8ea8f61af5699cc2c9383",
+    "build_tree_sha": "d1d90343806871479d1685783d1c1e5db1b5c341",
+    "apk_sha256": "57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493"
+  },
+  "evidence_session_id": "PENDIENTE-DEVICE-B",
+  "device": {
+    "slot": "B",
+    "label": "PENDIENTE-DISPOSITIVO-B",
+    "manufacturer": "PENDIENTE",
+    "model": "PENDIENTE",
+    "android_version": "PENDIENTE",
+    "viewport": "PENDIENTE",
+    "installation": "clean|upgrade|reinstall",
+    "physical": false
+  },
+  "required_cases": {
+    "install_boot": "pending",
+    "auth_identity": "pending",
+    "reinstall_identity": "pending",
+    "keyboard": "pending",
+    "android_back": "pending",
+    "lifecycle": "pending",
+    "safe_areas": "pending",
+    "rotation": "pending",
+    "offline_reconnect": "pending",
+    "push_foreground": "pending",
+    "push_background": "pending",
+    "push_cold_start": "pending",
+    "push_deep_link": "pending",
+    "app_check_token_observed": "pending"
+  },
+  "diagnostic_report": null,
+  "fcm_fixture_report": null,
+  "app_check_evidence": null,
+  "screenshots": [],
+  "notes": "Template Device B ligado a APK 20 exacta. Debe representar un segundo perfil/dispositivo físico distinto de Device A."
+}
