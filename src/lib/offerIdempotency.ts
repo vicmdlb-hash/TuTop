@@ -78,7 +78,7 @@ export class OfferIdempotencyWindow {
     this.prune(nowMs);
     const key = operationKey(input);
     const existing = this.operations.get(key);
-    if (existing && existing.expiresAt > nowMs) return { key, offerId: existing.messageId as never, reused: true };
+    if (existing && existing.expiresAt > nowMs) return { key, offerId: existing.offerId, reused: true };
     const offerId = this.idFactory();
     this.operations.set(key, { offerId, expiresAt: nowMs + this.uncertainRetryMs });
     return { key, offerId, reused: false };
