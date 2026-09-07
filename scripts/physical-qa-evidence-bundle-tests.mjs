@@ -1,9 +1,14 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import { validatePhysicalQaEvidence } from './physical-qa-evidence-bundle.mjs';
+import { validatePhysicalQaEvidence, loadPhysicalQaCandidate } from './physical-qa-evidence-bundle.mjs';
 
 const now = Date.parse('2026-09-07T02:50:00.000Z');
 const template = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_EVIDENCE_BUNDLE_0.9.json', 'utf8'));
+const candidateManifest = loadPhysicalQaCandidate();
+assert.equal(candidateManifest.artifact_id, 10002986519);
+assert.equal(candidateManifest.build_run_id, 34078588228);
+assert.equal(candidateManifest.apk_sha256, '57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493');
+
 const pending = validatePhysicalQaEvidence(template, now);
 assert.equal(pending.overall, 'warn');
 assert.equal(pending.release_blocked, true);
@@ -39,6 +44,7 @@ good.diagnostic_report = passReport;
 const pass = validatePhysicalQaEvidence(good, now);
 assert.equal(pass.overall, 'pass');
 assert.equal(pass.release_blocked, false);
+assert.equal(pass.candidate_artifact_id, 10002986519);
 
 const leaked = structuredClone(good);
 leaked.password = 'secret';
@@ -98,10 +104,33 @@ const versionResult = validatePhysicalQaEvidence(wrongVersion, now);
 assert.equal(versionResult.overall, 'fail');
 assert(versionResult.errors.some((x) => x.includes('version')));
 
+// Same app version is not enough: evidence must bind to the exact APK candidate.
+for (const mutate of [
+  (x) => { x.candidate.apk_sha256 = '71975f84cd26adb1526db895e76dcb455aed2f258e3f6cf01035c9fd90c95321'; },
+  (x) => { x.candidate.artifact_id = 10002002950; },
+  (x) => { x.candidate.build_run_id = 34075660334; },
+  (x) => { x.candidate.build_commit_sha = '24f733a7ef35b33b9103afa830bef80fa90c3f92'; },
+  (x) => { x.candidate.build_tree_sha = '0000000000000000000000000000000000000000'; },
+]) {
+  const oldCandidate = structuredClone(good);
+  mutate(oldCandidate);
+  const oldResult = validatePhysicalQaEvidence(oldCandidate, now);
+  assert.equal(oldResult.overall, 'fail');
+  assert.equal(oldResult.release_blocked, true);
+  assert(oldResult.errors.some((x) => x.includes('candidato físico vigente')));
+}
+
+const missingCandidate = structuredClone(good);
+delete missingCandidate.candidate;
+const missingCandidateResult = validatePhysicalQaEvidence(missingCandidate, now);
+assert.equal(missingCandidateResult.overall, 'fail');
+assert(missingCandidateResult.errors.some((x) => x.includes('APK exacto')));
+
 console.log('PASS physical evidence template remains blocked until real evidence exists');
 console.log('PASS complete fresh native Android evidence can reach PASS');
 console.log('PASS sensitive fields fail closed without false-positive explanatory notes');
 console.log('PASS WARN/NOT_APPLICABLE required cases cannot produce false release PASS');
 console.log('PASS physical=true cannot bypass placeholder device metadata');
 console.log('PASS stale, web/non-native, and wrong-version diagnostics cannot unlock release');
+console.log('PASS evidence from older same-version APK/artifact/run/tree cannot unlock release');
 console.log('Physical QA evidence bundle contract: PASS');
