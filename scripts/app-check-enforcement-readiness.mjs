@@ -3,8 +3,16 @@ import path from 'node:path';
 
 const MAX_EVIDENCE_AGE_MS = 7 * 24 * 60 * 60_000;
 const MIN_DEVICE_COUNT = 2;
+const CANDIDATE_MANIFEST_PATH = path.resolve('docs/PHYSICAL_QA_CANDIDATE_0.9.json');
 
-export function validateAppCheckPhysicalEvidence(input, now = Date.now()) {
+function loadCandidateManifest() {
+  if (!fs.existsSync(CANDIDATE_MANIFEST_PATH)) throw new Error('APP_CHECK_CANDIDATE_MANIFEST_MISSING');
+  const candidate = JSON.parse(fs.readFileSync(CANDIDATE_MANIFEST_PATH, 'utf8'));
+  if (candidate?.schema !== 'tutop.physical-qa-candidate.v1') throw new Error('APP_CHECK_CANDIDATE_MANIFEST_INVALID');
+  return candidate;
+}
+
+export function validateAppCheckPhysicalEvidence(input, now = Date.now(), expectedCandidate = loadCandidateManifest()) {
   const errors = [];
   if (!input || typeof input !== 'object') return { ready: false, errors: ['evidence_missing'] };
   if (input.status !== 'verified') errors.push('status_not_verified');
@@ -17,7 +25,20 @@ export function validateAppCheckPhysicalEvidence(input, now = Date.now()) {
   if (!Number.isFinite(verifiedAt)) errors.push('verified_at_invalid');
   else if (verifiedAt > now + 5 * 60_000 || now - verifiedAt > MAX_EVIDENCE_AGE_MS) errors.push('evidence_stale_or_future');
   if (input.contains_raw_token === true) errors.push('raw_token_must_not_be_stored');
-  return { ready: errors.length === 0, errors, min_device_count: MIN_DEVICE_COUNT, max_age_days: 7 };
+
+  if (input.candidate_apk_sha256 !== expectedCandidate.apk_sha256) errors.push('wrong_apk_candidate');
+  if (input.candidate_artifact_id !== expectedCandidate.artifact_id) errors.push('wrong_artifact_candidate');
+  if (input.candidate_build_run_id !== expectedCandidate.build_run_id) errors.push('wrong_build_run_candidate');
+  if (input.candidate_build_tree_sha !== expectedCandidate.build_tree_sha) errors.push('wrong_build_tree_candidate');
+
+  return {
+    ready: errors.length === 0,
+    errors,
+    min_device_count: MIN_DEVICE_COUNT,
+    max_age_days: 7,
+    candidate_artifact_id: expectedCandidate.artifact_id,
+    candidate_apk_sha256: expectedCandidate.apk_sha256,
+  };
 }
 
 export function requireAppCheckPhysicalEvidence(filePath, now = Date.now()) {
