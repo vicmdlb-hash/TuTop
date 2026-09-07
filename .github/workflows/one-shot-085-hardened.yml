@@ -1,4 +1,4 @@
-# Physical QA APK 19 trigger: chat retry idempotency + Firebase session lifecycle hardening exact-head candidate.
+# Physical QA APK 20 trigger: multi-account lifecycle + offer/reservation retry idempotency + stricter physical evidence gates exact-head candidate.
 name: One-shot TuTop 0.9 physical QA APK validation
 
 on:
