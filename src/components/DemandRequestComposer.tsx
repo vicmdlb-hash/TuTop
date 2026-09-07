@@ -104,8 +104,8 @@ export default function DemandRequestComposer() {
   if (!user.id) return null;
 
   return <>
-    <button onClick={() => { setOpen(true); setMessage(null); setMatches([]); }} className="fixed left-3 top-[calc(68px+env(safe-area-inset-top))] z-[55] flex items-center gap-2 rounded-2xl border border-sky-300/15 bg-[#111827]/95 px-3 py-2 text-sky-100 shadow-xl backdrop-blur" aria-label="Publicar lo que buscas">
-      <Search className="h-4 w-4 text-sky-300" /><span className="text-[9px] font-black">Busco…</span>
+    <button onClick={() => { setOpen(true); setMessage(null); setMatches([]); }} className="flex min-w-0 w-full items-center justify-center gap-2 rounded-2xl border border-sky-300/15 bg-[#111827]/95 px-3 py-2 text-sky-100 shadow-lg backdrop-blur" aria-label="Publicar lo que buscas">
+      <Search className="h-4 w-4 shrink-0 text-sky-300" /><span className="truncate text-[9px] font-black">Busco…</span>
     </button>
 
     {open && <div className="fixed inset-0 z-[151] grid items-end bg-black/70 p-2 backdrop-blur-sm sm:place-items-center">
