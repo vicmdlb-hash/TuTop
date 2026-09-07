@@ -159,10 +159,15 @@ try {
   const txTime = Timestamp.now();
   const reserve = writeBatch(sellerDb);
   reserve.set(doc(sellerDb, 'transactions_v2', txId), { listing_id: listingId, chat_id: chatId, buyer_id: buyer.uid, seller_id: seller.uid, accepted_offer_id: counterId, agreed_amount_mxn: 475, status: 'reserved', reservation_expires_at: Timestamp.fromMillis(Date.now() + 7200000), created_at: txTime, updated_at: txTime });
+  reserve.set(doc(sellerDb, 'listing_reservation_locks', listingId), { listing_id: listingId, transaction_id: txId, buyer_id: buyer.uid, seller_id: seller.uid, created_at: txTime, updated_at: txTime });
   reserve.update(doc(sellerDb, 'chats', chatId), { transaction_id: txId, current_offer_id: counterId, updated_at: txTime });
-  await reserve.commit(); docsToClean.push(`transactions_v2/${txId}`);
+  await reserve.commit(); docsToClean.push(`transactions_v2/${txId}`, `listing_reservation_locks/${listingId}`);
+  assert.equal((await getDoc(doc(sellerDb, 'listing_reservation_locks', listingId))).data()?.transaction_id, txId);
+  let lockOverwriteBlocked = false;
+  try { await updateDoc(doc(sellerDb, 'listing_reservation_locks', listingId), { transaction_id: 'tx-forged', updated_at: Timestamp.now() }); } catch { lockOverwriteBlocked = true; }
+  assert(lockOverwriteBlocked, 'reservation lock pudo sobrescribirse');
   assert.equal((await getDoc(doc(sellerDb, 'listings_v2', listingId))).data()?.status, 'active');
-  ok('reserva vive en transaction; listing sigue active');
+  ok('reservation lock único protege listing sin sacarlo del feed');
 
   await updateDoc(doc(buyerDb, 'transactions_v2', txId), { status: 'meetup_scheduled', meeting_point_id: pointId, meetup_at: Timestamp.fromMillis(Date.now() + 3600000), updated_at: Timestamp.now() });
   ok('encuentro en Punto TuTop programado');

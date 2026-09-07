@@ -49,6 +49,7 @@ function patchWrite(path, data, deleteFields = []) {
   return { update: { name: docName(path), fields: encodeFields(data) }, updateMask: { fieldPaths: [...Object.keys(data), ...deleteFields] } };
 }
 function createWrite(path, data) { return { update: { name: docName(path), fields: encodeFields(data) }, currentDocument: { exists: false } }; }
+function deleteWrite(path) { return { delete: docName(path) }; }
 
 async function request(url, options = {}, allowStatuses = []) {
   const response = await fetch(url, {
@@ -95,6 +96,7 @@ async function runOutcomes() {
     const at = new Date().toISOString();
     await commit([
       patchWrite(`transactions_v2/${tx.id}`, { status: 'no_show', outcome_code: expected, outcome_actor_id: claim.accused_uid, outcome_recorded_at: at, updated_at: at }),
+      deleteWrite(`listing_reservation_locks/${tx.listing_id}`),
       auditWrite('no_show_upheld', 'transaction', tx.id, { outcome_code: expected }),
     ]);
     resolvedNoShows += 1;
@@ -114,6 +116,7 @@ async function runOutcomes() {
     const at = new Date().toISOString();
     const writes = [
       patchWrite(`transactions_v2/${tx.id}`, { status: 'cancelled', outcome_code: 'mutual_cancel', outcome_recorded_at: at, updated_at: at }, ['outcome_actor_id']),
+      deleteWrite(`listing_reservation_locks/${tx.listing_id}`),
       auditWrite('mutual_cancel_completed', 'transaction', tx.id),
       ...requests.filter((item) => item.requester_uid === tx.buyer_id || item.requester_uid === tx.seller_id).map((item) => patchWrite(`transaction_cancellation_requests/${item.id}`, { status: 'resolved', updated_at: at })),
     ];

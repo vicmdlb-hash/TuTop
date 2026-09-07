@@ -77,6 +77,9 @@ function patchWrite(documentPath, data) {
     updateMask: { fieldPaths: Object.keys(data) },
   };
 }
+function deleteWrite(documentPath) {
+  return { delete: `projects/${projectId}/databases/(default)/documents/${documentPath}` };
+}
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, {
@@ -137,8 +140,10 @@ for (const plan of actionable) {
   const writes = [];
   if (plan.kind === 'expire_reserved') {
     writes.push(patchWrite(`transactions_v2/${plan.transaction_id}`, { status: 'expired', updated_at: updatedAt }));
+    writes.push(deleteWrite(`listing_reservation_locks/${plan.listing_id}`));
   } else if (plan.kind === 'repair_completed_listing') {
     writes.push(patchWrite(`listings_v2/${plan.listing_id}`, { status: 'sold_out', updated_at: updatedAt }));
+    writes.push(deleteWrite(`listing_reservation_locks/${plan.listing_id}`));
   }
   if (!writes.length) continue;
   await requestJson(`${base}:commit`, { method: 'POST', body: JSON.stringify({ writes }) });
@@ -146,4 +151,4 @@ for (const plan of actionable) {
 }
 
 console.log(`\n✅ Reconciliación canonical V2 completada: ${applied} operación(es) reparada(s).`);
-console.log('El worker nunca reserva/libera el listing; sólo expira transactions y repara sold_out tras confirmación bilateral.');
+console.log('El worker no cambia visibilidad al reservar; expira transactions, limpia reservation locks terminales y repara sold_out tras confirmación bilateral.');
