@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import './services/firebaseSessionHardeningBridge';
 import App from './App';
 import './index.css';
 
