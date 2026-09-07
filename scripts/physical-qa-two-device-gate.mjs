@@ -167,7 +167,10 @@ function main() {
     console.error('Uso: node --experimental-strip-types scripts/physical-qa-two-device-gate.mjs <device-a.json> <device-b.json> [--json]');
     process.exit(2);
   }
-  const bundles = files.map((file) => JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
+  const bundles = files.map((file) => {
+    const raw = fs.readFileSync(path.resolve(file), 'utf8');
+    return JSON.parse(raw);
+  });
   const result = validateTwoDeviceEvidence(bundles);
   console.log(process.argv.includes('--json') ? JSON.stringify(result, null, 2) : [
     `Two-device Physical QA: ${result.pass ? 'PASS' : 'BLOCKED'}`,
