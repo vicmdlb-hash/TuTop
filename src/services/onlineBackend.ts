@@ -28,6 +28,7 @@ function weekId(date = new Date()) {
 }
 
 function nowIso() { return new Date().toISOString(); }
+function v2SnapshotMode() { return String(import.meta.env.VITE_TUTOP_SCHEMA_V2 || '').toLowerCase() === 'true'; }
 
 function asProduct(doc: FirestoreDocument<any>): Product {
   const data = doc.data || {};
@@ -187,11 +188,12 @@ export class TuTopOnlineBackend {
     if (!session) throw new Error('AUTH_REQUIRED');
     await client.getIdToken();
     await this.ensureMarketplaceCatalog().catch(() => undefined);
+    const leanV2 = v2SnapshotMode();
 
     const [profileDoc, walletDoc, productsDocs, chatsDocs, favoritesDocs, ownReviewDocs, receivedReviewDocs, txDocs, publicVerification, adminDoc, moderationDoc, bidDocs] = await Promise.all([
       client.getDocument<any>(`users/${session.uid}`),
       client.getDocument<any>(`wallets/${session.uid}`),
-      client.runQuery<any>('products', [], [{ field: 'fecha_creacion', direction: 'DESCENDING' }], 100),
+      leanV2 ? Promise.resolve([] as FirestoreDocument<any>[]) : client.runQuery<any>('products', [], [{ field: 'fecha_creacion', direction: 'DESCENDING' }], 100),
       client.runQuery<any>('chats', [{ field: 'participants', op: 'ARRAY_CONTAINS', value: session.uid }], [{ field: 'updated_at', direction: 'DESCENDING' }], 60),
       client.runQuery<any>('favorites', [{ field: 'uid', op: 'EQUAL', value: session.uid }], [], 200),
       client.runQuery<any>('reviews', [{ field: 'evaluador_id', op: 'EQUAL', value: session.uid }], [], 100),
@@ -200,7 +202,7 @@ export class TuTopOnlineBackend {
       client.getDocument<any>(`publicVerifications/${session.uid}`),
       client.getDocument<any>(`admins/${session.uid}`),
       client.getDocument<any>(`moderationStatus/${session.uid}`),
-      client.runQuery<any>('bids', [{ field: 'week_id', op: 'EQUAL', value: weekId() }], [], 300),
+      leanV2 ? Promise.resolve([] as FirestoreDocument<any>[]) : client.runQuery<any>('bids', [{ field: 'week_id', op: 'EQUAL', value: weekId() }], [], 300),
     ]);
 
     if (!profileDoc) throw new Error('PROFILE_MISSING');
