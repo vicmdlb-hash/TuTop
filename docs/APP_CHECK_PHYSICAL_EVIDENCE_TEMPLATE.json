@@ -29,5 +29,5 @@
   "app_check_token_observed": false,
   "verified_at": null,
   "contains_raw_token": false,
-  "evidence_note": "Completar sólo con Physical QA real del APK 20 exacto. A/B deben ser dispositivos/perfiles físicos independientes, con sesiones y fingerprints sanitizados distintos. Nunca guardar token App Check ni hardware IDs crudos."
+  "evidence_note": "HISTÓRICO / NO EJECUTAR: binding de APK20 obsoleta conservado sólo para trazabilidad. Regenerar desde candidato active_exact_head con rebind-physical-qa-templates.mjs. Nunca guardar token App Check ni hardware IDs crudos."
 }
