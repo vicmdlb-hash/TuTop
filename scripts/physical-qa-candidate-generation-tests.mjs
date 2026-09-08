@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const generator = fs.readFileSync('scripts/generate-physical-qa-candidate.mjs', 'utf8');
 const verifier = fs.readFileSync('scripts/verify-generated-physical-qa-candidate.mjs', 'utf8');
+const activator = fs.readFileSync('scripts/activate-generated-physical-qa-candidate.mjs', 'utf8');
 const android = fs.readFileSync('.github/workflows/android-debug-apk.yml', 'utf8');
 const canonical = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
 const runbook = fs.readFileSync('docs/PHYSICAL_QA_EXECUTION_RUNBOOK_0.9.md', 'utf8');
@@ -31,6 +32,13 @@ assert.match(verifier, /git\('rev-parse', `HEAD:\$\{repoPath\}`\)/);
 assert.match(verifier, /candidate\.candidate_status !== 'generated_exact_head_pending_repo_activation'/);
 assert.match(verifier, /candidate\.physical_release_candidate !== true/);
 
+assert.match(activator, /TUTOP_ALLOW_PHYSICAL_QA_CANDIDATE_ACTIVATION !== 'exact-head'/);
+assert.match(activator, /verify-generated-physical-qa-candidate\.mjs/);
+assert.match(activator, /candidate_status: 'active_exact_head'/);
+assert.match(activator, /physical_release_candidate: true/);
+assert.match(activator, /replacement_required: false/);
+assert.doesNotMatch(android, /activate-generated-physical-qa-candidate\.mjs/);
+
 assert.match(android, /id: upload-staging/);
 assert.match(android, /steps\.upload-staging\.outputs\.artifact-id/);
 assert.match(android, /node scripts\/generate-physical-qa-candidate\.mjs/);
@@ -46,8 +54,9 @@ assert.match(runbook, /NEW EXACT-HEAD CANDIDATE REQUIRED/);
 assert.match(runbook, /PHYSICAL_QA_CANDIDATE_0\.9\.json` actualizado únicamente con datos reales/);
 assert.match(runbook, /No inventar artifact ID, run ID, SHA, tamaño, timestamp ni evidencia/);
 
-console.log('PASS canonical repository candidate remains explicitly obsolete until real activation');
+console.log('PASS canonical repository candidate remains explicitly obsolete until guarded real activation');
 console.log('PASS Android build derives candidate identity from exact SHA/tree/runtime refs and real upload artifact ID');
 console.log('PASS generated candidate is verified against the checkout before artifact/release publication');
+console.log('PASS activation is exact-head guarded and intentionally absent from automatic Android workflow');
 console.log('PASS cutover flags and same-SHA gate/staging run IDs are bound into candidate metadata');
-console.log('Physical QA exact candidate generation contract: PASS');
+console.log('Physical QA exact candidate generation/activation contract: PASS');
