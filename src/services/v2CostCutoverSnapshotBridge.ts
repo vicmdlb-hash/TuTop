@@ -1,6 +1,6 @@
 import { sellerLevelFor } from '../lib/productAssistant';
-import type { Review, WalletTransaction } from '../types';
-import type { FirestoreDocument } from './firebaseRest';
+import type { Review, User, WalletTransaction } from '../types';
+import { FirebaseRestClient, type FirestoreDocument } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { onlineBackend, type OnlineSnapshot } from './onlineBackend';
 import { reviewStrikeCountBackend } from './reviewStrikeCountBackend';
@@ -15,7 +15,7 @@ if (nationalSchemaEnabled()) {
   if (reviewsCutover || walletCutover) {
     onlineBackend.loadSnapshot = async (): Promise<OnlineSnapshot> => {
       const backend = onlineBackend as any;
-      const client = backend.getClient();
+      const client = backend.getClient() as FirebaseRestClient;
       const session = client.currentSession;
       if (!session) throw new Error('AUTH_REQUIRED');
       await client.getIdToken();
@@ -47,7 +47,7 @@ if (nationalSchemaEnabled()) {
 
       const wallet = walletDoc.data;
       const profile = profileDoc.data;
-      const user = {
+      const user: User = {
         id: session.uid,
         telefono: session.phone,
         nombre: String(profile.nombre || 'Estudiante'),
