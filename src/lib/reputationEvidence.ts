@@ -22,7 +22,7 @@ export function sellerReputationEvidence(
   const hasEvidence = sellerReviews.length > 0 || completedSales > 0;
 
   if (sellerReviews.length) {
-    const label = `${positiveRate}% cumplió · ${sellerReviews.length} ${sellerReviews.length === 1 ? 'reseña' : 'reseñas'}`;
+    const label = `${positiveRate}% en evidencia visible · ${sellerReviews.length} ${sellerReviews.length === 1 ? 'reseña' : 'reseñas'}`;
     return {
       reviewCount: sellerReviews.length,
       positiveReviews,
@@ -30,12 +30,12 @@ export function sellerReputationEvidence(
       completedSales,
       hasEvidence,
       label,
-      detail: `${positiveReviews} de ${sellerReviews.length} experiencias evaluadas terminaron con valoración positiva.`,
+      detail: `${positiveReviews} de ${sellerReviews.length} reseñas visibles para esta sesión son positivas. Esto no representa necesariamente la reputación pública completa.`,
     };
   }
 
   if (completedSales) {
-    const label = `${completedSales} ${completedSales === 1 ? 'entrega confirmada' : 'entregas confirmadas'}`;
+    const label = `${completedSales} ${completedSales === 1 ? 'entrega visible' : 'entregas visibles'}`;
     return {
       reviewCount: 0,
       positiveReviews: 0,
@@ -43,7 +43,7 @@ export function sellerReputationEvidence(
       completedSales,
       hasEvidence,
       label,
-      detail: 'Historial basado en entregas confirmadas; todavía no hay reseñas suficientes para mostrar un porcentaje.',
+      detail: 'Evidencia visible en tus conversaciones actuales; no se presenta como reputación pública completa.',
     };
   }
 
@@ -53,7 +53,7 @@ export function sellerReputationEvidence(
     positiveRate: null,
     completedSales: 0,
     hasEvidence: false,
-    label: 'Sin historial todavía',
-    detail: 'Este vendedor aún no tiene reseñas ni entregas confirmadas en TuTop.',
+    label: 'Sin evidencia visible',
+    detail: 'No hay evidencia visible suficiente en esta sesión para calcular una reputación. TuTop no inventa puntuaciones.',
   };
 }
