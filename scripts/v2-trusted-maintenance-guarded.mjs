@@ -8,5 +8,6 @@ function run(script, args = []) {
   if (result.status !== 0) process.exit(result.status || 1);
 }
 
-run('scripts/trusted-reputation-capacity-guard.mjs');
-run('scripts/v2-trusted-maintenance.mjs', process.argv.slice(2));
+const args = process.argv.slice(2);
+run('scripts/trusted-reputation-capacity-guard.mjs', args);
+run('scripts/v2-trusted-maintenance.mjs', args);
