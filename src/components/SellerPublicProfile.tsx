@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { ArrowLeft, BadgeCheck, PackageCheck, ShieldCheck, Store } from 'lucide-react';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
+import { trustedReputationBackend, type TrustedReputationSnapshot } from '../services/trustedReputationBackend';
 import { useAppStore } from '../store/useAppStore';
 
 export default function SellerPublicProfile({
@@ -16,10 +18,45 @@ export default function SellerPublicProfile({
   onClose: () => void;
 }) {
   const { products, reviews, chats, openProduct } = useAppStore();
-  const reputation = sellerReputationEvidence(sellerId, reviews, chats);
+  const visibleEvidence = sellerReputationEvidence(sellerId, reviews, chats);
+  const [trusted, setTrusted] = useState<TrustedReputationSnapshot | null>(null);
+  const [trustedLoaded, setTrustedLoaded] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setTrustedLoaded(false);
+    void trustedReputationBackend.load(sellerId)
+      .then((value) => {
+        if (!active) return;
+        setTrusted(value);
+        setTrustedLoaded(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setTrusted(null);
+        setTrustedLoaded(true);
+      });
+    return () => { active = false; };
+  }, [sellerId]);
+
   const activeListings = products
     .filter((product) => product.vendedor_id === sellerId && product.estado === 'Activo')
     .sort((a, b) => new Date(b.updated_at || b.fecha_creacion).getTime() - new Date(a.updated_at || a.fecha_creacion).getTime());
+
+  const hasTrustedEvidence = Boolean(trusted && (trusted.seller_review_count > 0 || trusted.completed_as_seller > 0));
+  const reputationLabel = hasTrustedEvidence
+    ? trusted!.seller_review_count > 0 && trusted!.seller_positive_rate != null
+      ? `${Math.round(trusted!.seller_positive_rate)}% cumplió · ${trusted!.seller_review_count} ${trusted!.seller_review_count === 1 ? 'reseña' : 'reseñas'}`
+      : `${trusted!.completed_as_seller} ${trusted!.completed_as_seller === 1 ? 'venta completada' : 'ventas completadas'}`
+    : visibleEvidence.label;
+  const reputationDetail = hasTrustedEvidence
+    ? trusted!.seller_review_count > 0
+      ? `${trusted!.seller_positive_count} de ${trusted!.seller_review_count} reseñas trusted de vendedor son positivas.`
+      : 'Snapshot trusted basado en operaciones completadas registradas por TuTop.'
+    : trustedLoaded
+      ? visibleEvidence.detail
+      : 'Cargando reputación trusted…';
+  const reputationHasEvidence = hasTrustedEvidence || visibleEvidence.hasEvidence;
 
   return (
     <div className="fixed inset-0 z-[90] bg-[#050a13] text-white" role="dialog" aria-modal="true" aria-label={`Perfil público de ${sellerName}`}>
@@ -40,10 +77,10 @@ export default function SellerPublicProfile({
               </div>
             </div>
 
-            <div className={`mt-4 rounded-2xl p-3 ${reputation.hasEvidence ? 'bg-emerald-500/[0.07]' : 'bg-white/[0.025]'}`}>
-              <div className={`flex items-center gap-2 text-[11px] font-black ${reputation.hasEvidence ? 'text-emerald-200' : 'text-slate-500'}`}><ShieldCheck className="h-4 w-4" />{reputation.label}</div>
-              <p className="mt-1 text-[9px] leading-4 text-slate-500">{reputation.detail}</p>
-              <p className="mt-2 text-[8px] leading-4 text-slate-600">TuTop muestra únicamente evidencia disponible de operaciones/reseñas registradas. No publica teléfono, correo ni credenciales del vendedor y no inventa puntuaciones.</p>
+            <div className={`mt-4 rounded-2xl p-3 ${reputationHasEvidence ? 'bg-emerald-500/[0.07]' : 'bg-white/[0.025]'}`}>
+              <div className={`flex items-center gap-2 text-[11px] font-black ${reputationHasEvidence ? 'text-emerald-200' : 'text-slate-500'}`}><ShieldCheck className="h-4 w-4" />{reputationLabel}</div>
+              <p className="mt-1 text-[9px] leading-4 text-slate-500">{reputationDetail}</p>
+              <p className="mt-2 text-[8px] leading-4 text-slate-600">{hasTrustedEvidence ? 'Reputación trusted agregada por TuTop; el cliente no puede fabricarla ni modificarla.' : 'Si no existe snapshot trusted, TuTop muestra sólo evidencia visible para esta sesión y no la presenta como reputación pública completa.'}</p>
             </div>
           </section>
 
