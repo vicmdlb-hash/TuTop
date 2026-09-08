@@ -19,6 +19,7 @@ export type TrustedReputationSnapshot = {
 };
 
 const TRUSTED_REPUTATION_CACHE_TTL_MS = 5 * 60_000;
+export const TRUSTED_REPUTATION_FRESH_MS = 72 * 60 * 60_000;
 const cache = new Map<string, { value: TrustedReputationSnapshot | null; expiresAt: number }>();
 const inflight = new Map<string, Promise<TrustedReputationSnapshot | null>>();
 
@@ -31,6 +32,21 @@ function client() {
 function numberOrZero(value: unknown) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+export function trustedReputationIsFresh(snapshot: TrustedReputationSnapshot | null, now = Date.now()) {
+  if (!snapshot?.updated_at) return false;
+  const updatedAt = Date.parse(snapshot.updated_at);
+  if (!Number.isFinite(updatedAt)) return false;
+  const age = now - updatedAt;
+  return age >= 0 && age <= TRUSTED_REPUTATION_FRESH_MS;
+}
+
+export function trustedReputationAgeHours(snapshot: TrustedReputationSnapshot | null, now = Date.now()) {
+  if (!snapshot?.updated_at) return null;
+  const updatedAt = Date.parse(snapshot.updated_at);
+  if (!Number.isFinite(updatedAt)) return null;
+  return Math.max(0, Math.floor((now - updatedAt) / 3_600_000));
 }
 
 export const trustedReputationBackend = {
