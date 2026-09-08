@@ -19,6 +19,7 @@ const steps = [
   [process.execPath, ['scripts/profile-editor-v2-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-snapshot-cost-audit.mjs']],
   [process.execPath, ['scripts/v2-snapshot-budget-tests.mjs']],
+  [process.execPath, ['scripts/wallet-lazy-history-readiness-tests.mjs']],
   [process.execPath, ['scripts/chat-lazy-history-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-lean-chat-snapshot-tests.mjs']],
   [process.execPath, ['scripts/unread-aggregation-migration-tests.mjs']],
