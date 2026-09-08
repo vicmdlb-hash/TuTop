@@ -51,7 +51,7 @@ const steps = [
   [process.execPath, ['scripts/fcm-physical-fixture-tests.mjs']],
   [process.execPath, ['scripts/app-check-enforcement-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-candidate-drift-tests.mjs']],
-  [process.execPath, ['scripts/physical-qa-candidate-drift.mjs']],
+  [process.execPath, ['scripts/physical-qa-candidate-drift.mjs', '--prebuild']],
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
 ];
 for (const file of fs.readdirSync('scripts').filter((name) => name.endsWith('.mjs')).sort()) {
