@@ -11,6 +11,7 @@ function loadCandidateManifest() {
   if (!fs.existsSync(CANDIDATE_MANIFEST_PATH)) throw new Error('APP_CHECK_CANDIDATE_MANIFEST_MISSING');
   const candidate = JSON.parse(fs.readFileSync(CANDIDATE_MANIFEST_PATH, 'utf8'));
   if (candidate?.schema !== 'tutop.physical-qa-candidate.v1') throw new Error('APP_CHECK_CANDIDATE_MANIFEST_INVALID');
+  if (candidate?.physical_release_candidate !== true) throw new Error('APP_CHECK_CANDIDATE_NOT_ACTIVE');
   return candidate;
 }
 
@@ -40,18 +41,14 @@ export function validateAppCheckPhysicalEvidence(input, now = Date.now(), expect
   if (input.contains_raw_token === true || hasForbiddenKey(input.devices)) errors.push('raw_token_must_not_be_stored');
 
   const devices = Array.isArray(input.devices) ? input.devices : [];
-  if (!Number.isInteger(input.device_count) || input.device_count < MIN_DEVICE_COUNT || input.device_count !== devices.length) {
-    errors.push('two_device_evidence_required');
-  }
+  if (!Number.isInteger(input.device_count) || input.device_count < MIN_DEVICE_COUNT || input.device_count !== devices.length) errors.push('two_device_evidence_required');
   if (devices.length < MIN_DEVICE_COUNT) errors.push('independent_device_records_required');
   const slots = devices.map((device) => String(device?.slot || ''));
   if (new Set(slots).size !== devices.length || !slots.includes('A') || !slots.includes('B')) errors.push('device_slots_A_B_required');
   const sessions = devices.map((device) => String(device?.evidence_session_id || ''));
   if (sessions.some(placeholder) || new Set(sessions).size !== devices.length) errors.push('independent_evidence_sessions_required');
   const fingerprints = devices.map((device) => String(device?.profile_fingerprint_sha256 || '').toLowerCase());
-  if (fingerprints.some((value) => !SHA256.test(value)) || new Set(fingerprints).size !== devices.length) {
-    errors.push('independent_device_fingerprints_required');
-  }
+  if (fingerprints.some((value) => !SHA256.test(value)) || new Set(fingerprints).size !== devices.length) errors.push('independent_device_fingerprints_required');
   devices.forEach((device) => {
     if (device?.physical !== true) errors.push(`device_${String(device?.slot || '?')}_not_physical`);
     if (device?.app_check_token_observed !== true) errors.push(`device_${String(device?.slot || '?')}_token_not_observed`);
