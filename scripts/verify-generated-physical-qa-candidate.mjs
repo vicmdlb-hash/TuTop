@@ -45,6 +45,7 @@ for (const [repoPath, expected] of Object.entries(refs)) {
 
 if (typeof candidate?.cost_cutovers?.reviews_lazy !== 'boolean') stop('reviews_lazy flag inválido');
 if (typeof candidate?.cost_cutovers?.wallet_lazy !== 'boolean') stop('wallet_lazy flag inválido');
+if (typeof candidate?.cost_cutovers?.favorites_visible !== 'boolean') stop('favorites_visible flag inválido');
 
 if (!fs.existsSync(metadataFile)) stop(`falta metadata Android: ${metadataFile}`);
 const metadataCheck = spawnSync(process.execPath, [
