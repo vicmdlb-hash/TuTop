@@ -140,24 +140,31 @@ jobs:
     steps:
       - name: Checkout feature ref
         uses: actions/checkout@v7
-      - name: Require same-SHA green consolidated gate for cost cutovers
-        if: inputs.enable_reviews_lazy_cutover || inputs.enable_wallet_lazy_cutover
+      - name: Require same-SHA green consolidated gate and real staging smoke
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          COUNT="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
-            -f head_sha="$GITHUB_SHA" \
-            -f status=success \
-            -f event=workflow_dispatch \
-            -f per_page=10 \
-            --jq '.total_count')"
-          if [ "${COUNT:-0}" -lt 1 ]; then
-            echo "DETENIDO: los cutovers V2 requieren un october-01-validation exitoso sobre el mismo SHA ${GITHUB_SHA}." >&2
+          GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
+            -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
+            --jq '.workflow_runs[0].id // empty')"
+          if [ -z "$GATE_RUN_ID" ]; then
+            echo "DETENIDO: falta october-01-validation exitoso sobre el mismo SHA ${GITHUB_SHA}." >&2
             exit 43
           fi
-          echo "✅ Gate consolidado verde confirmado para ${GITHUB_SHA}; cutovers staging autorizados para esta build."
+          STAGING_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/staging-v2-smoke.yml/runs" \
+            -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
+            --jq '.workflow_runs[0].id // empty')"
+          if [ -z "$STAGING_RUN_ID" ]; then
+            echo "DETENIDO: falta staging-v2-smoke exitoso sobre el mismo SHA ${GITHUB_SHA}." >&2
+            exit 44
+          fi
+          {
+            echo "TUTOP_VALIDATED_GATE_RUN_ID=$GATE_RUN_ID"
+            echo "TUTOP_VALIDATED_STAGING_RUN_ID=$STAGING_RUN_ID"
+          } >> "$GITHUB_ENV"
+          echo "✅ Cadena validada para ${GITHUB_SHA}: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
       - name: Guard staging credential
         shell: bash
         run: |
@@ -239,6 +246,16 @@ jobs:
           test -s "$APK"
           cp "$APK" TuTop-0.9.0-beta.0-physical-qa-staging.apk
           sha256sum TuTop-0.9.0-beta.0-physical-qa-staging.apk | tee TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256
+          cat > TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt <<EOF
+          head_sha=${GITHUB_SHA}
+          gate_run_id=${TUTOP_VALIDATED_GATE_RUN_ID}
+          staging_smoke_run_id=${TUTOP_VALIDATED_STAGING_RUN_ID}
+          firebase_project=${TUTOP_FIREBASE_PROJECT_ID}
+          version=${TUTOP_BETA_VERSION}
+          version_code=${TUTOP_ANDROID_VERSION_CODE}
+          reviews_lazy_cutover=${VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER}
+          wallet_lazy_cutover=${VITE_TUTOP_V2_WALLET_LAZY_CUTOVER}
+          EOF
       - name: Upload beta APK
         uses: actions/upload-artifact@v7
         with:
@@ -246,6 +263,7 @@ jobs:
           path: |
             TuTop-0.9.0-beta.0-physical-qa-staging.apk
             TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256
+            TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt
           if-no-files-found: error
           retention-days: 90
       - name: Publish durable Physical QA prerelease
@@ -258,9 +276,10 @@ jobs:
           gh release create "$TAG" \
             TuTop-0.9.0-beta.0-physical-qa-staging.apk \
             TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256 \
+            TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt \
             --target "$GITHUB_SHA" \
             --title "TuTop 0.9.0 beta.0 Physical QA — build ${GITHUB_RUN_NUMBER}" \
-            --notes "Physical QA staging candidate only. Not production-ready, not Play-ready. Built from ${GITHUB_SHA}." \
+            --notes "Physical QA staging candidate only. Not production-ready, not Play-ready. SHA=${GITHUB_SHA}. gate=${TUTOP_VALIDATED_GATE_RUN_ID}. staging=${TUTOP_VALIDATED_STAGING_RUN_ID}. reviews_cutover=${VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER}. wallet_cutover=${VITE_TUTOP_V2_WALLET_LAZY_CUTOVER}." \
             --prerelease
       - name: Remove temporary Firebase configs
         if: always()
