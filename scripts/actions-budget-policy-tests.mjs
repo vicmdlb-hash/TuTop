@@ -18,6 +18,10 @@ const assertManualOnly = (name, workflow) => {
 assertManualOnly('Android', android);
 assert.match(android, /retention-days: 90/);
 assert.match(android, /gh release create/);
+assert.match(android, /Require same-SHA green consolidated gate and real staging smoke/);
+assert.match(android, /october-01-validation\.yml\/runs/);
+assert.match(android, /staging-v2-smoke\.yml\/runs/);
+assert.match(android, /physical-qa-staging\.metadata\.txt/);
 
 assertManualOnly('staging real', staging);
 assertManualOnly('Quality', quality);
@@ -39,4 +43,5 @@ console.log('PASS all costly TuTop gates are manual-only while Actions is exhaus
 console.log('PASS no PR/push/cron trigger can burn the future 2,000-minute budget');
 console.log('PASS October combines static, build and Firestore emulator work in one runner');
 console.log('PASS October gate avoids redundant app installs and artifact uploads');
+console.log('PASS V2 APK cannot promote before same-SHA October + real staging smoke and records metadata');
 console.log('GitHub Actions budget policy: PASS');
