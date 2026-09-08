@@ -4,15 +4,16 @@ import { FirebaseRestClient, type FirestoreDocument } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { onlineBackend, type OnlineSnapshot } from './onlineBackend';
 import { reviewStrikeCountBackend } from './reviewStrikeCountBackend';
-import { reviewsLazyCutoverEnabled, walletLazyCutoverEnabled } from './v2CostCutoverFlags';
+import { favoritesVisibleCutoverEnabled, reviewsLazyCutoverEnabled, walletLazyCutoverEnabled } from './v2CostCutoverFlags';
 
 function nowIso() { return new Date().toISOString(); }
 
 if (nationalSchemaEnabled()) {
   const reviewsCutover = reviewsLazyCutoverEnabled();
   const walletCutover = walletLazyCutoverEnabled();
+  const favoritesCutover = favoritesVisibleCutoverEnabled();
 
-  if (reviewsCutover || walletCutover) {
+  if (reviewsCutover || walletCutover || favoritesCutover) {
     onlineBackend.loadSnapshot = async (): Promise<OnlineSnapshot> => {
       const backend = onlineBackend as any;
       const client = backend.getClient() as FirebaseRestClient;
@@ -25,7 +26,7 @@ if (nationalSchemaEnabled()) {
         client.getDocument<any>(`users/${session.uid}`),
         client.getDocument<any>(`wallets/${session.uid}`),
         client.runQuery<any>('chats', [{ field: 'participants', op: 'ARRAY_CONTAINS', value: session.uid }], [{ field: 'updated_at', direction: 'DESCENDING' }], 60),
-        client.runQuery<any>('favorites', [{ field: 'uid', op: 'EQUAL', value: session.uid }], [], 200),
+        favoritesCutover ? Promise.resolve([] as FirestoreDocument<any>[]) : client.runQuery<any>('favorites', [{ field: 'uid', op: 'EQUAL', value: session.uid }], [], 200),
         reviewsCutover ? Promise.resolve([] as FirestoreDocument<any>[]) : client.runQuery<any>('reviews', [{ field: 'evaluador_id', op: 'EQUAL', value: session.uid }], [], 100),
         reviewsCutover ? Promise.resolve([] as FirestoreDocument<any>[]) : client.runQuery<any>('reviews', [{ field: 'evaluado_id', op: 'EQUAL', value: session.uid }], [], 100),
         walletCutover ? Promise.resolve([] as FirestoreDocument<any>[]) : client.runQuery<any>('wallet_transactions', [{ field: 'user_id', op: 'EQUAL', value: session.uid }], [{ field: 'created_at', direction: 'DESCENDING' }], 100),
