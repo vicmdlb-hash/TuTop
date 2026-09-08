@@ -257,12 +257,40 @@ jobs:
           wallet_lazy_cutover=${VITE_TUTOP_V2_WALLET_LAZY_CUTOVER}
           EOF
       - name: Upload beta APK
+        id: upload-staging
         uses: actions/upload-artifact@v7
         with:
           name: TuTop-0.9.0-beta.0-physical-qa-staging-${{ github.run_number }}
           path: |
             TuTop-0.9.0-beta.0-physical-qa-staging.apk
             TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256
+            TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt
+          if-no-files-found: error
+          retention-days: 90
+      - name: Generate exact candidate manifest from uploaded build
+        env:
+          TUTOP_UPLOAD_ARTIFACT_ID: ${{ steps.upload-staging.outputs.artifact-id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          APK_SHA256="$(cut -d ' ' -f1 TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256)"
+          APK_SIZE="$(wc -c < TuTop-0.9.0-beta.0-physical-qa-staging.apk | tr -d ' ')"
+          {
+            echo "artifact_id=${TUTOP_UPLOAD_ARTIFACT_ID}"
+            echo "build_run_id=${GITHUB_RUN_ID}"
+            echo "build_run_number=${GITHUB_RUN_NUMBER}"
+            echo "build_tree_sha=${BUILD_TREE_SHA}"
+            echo "apk_sha256=${APK_SHA256}"
+            echo "apk_size_bytes=${APK_SIZE}"
+          } >> TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt
+          node scripts/generate-physical-qa-candidate.mjs
+      - name: Upload exact candidate manifest and complete metadata
+        uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-0.9.0-beta.0-physical-qa-candidate-${{ github.run_number }}
+          path: |
+            PHYSICAL_QA_CANDIDATE.generated.json
             TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt
           if-no-files-found: error
           retention-days: 90
@@ -277,9 +305,10 @@ jobs:
             TuTop-0.9.0-beta.0-physical-qa-staging.apk \
             TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256 \
             TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt \
+            PHYSICAL_QA_CANDIDATE.generated.json \
             --target "$GITHUB_SHA" \
             --title "TuTop 0.9.0 beta.0 Physical QA — build ${GITHUB_RUN_NUMBER}" \
-            --notes "Physical QA staging candidate only. Not production-ready, not Play-ready. SHA=${GITHUB_SHA}. gate=${TUTOP_VALIDATED_GATE_RUN_ID}. staging=${TUTOP_VALIDATED_STAGING_RUN_ID}. reviews_cutover=${VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER}. wallet_cutover=${VITE_TUTOP_V2_WALLET_LAZY_CUTOVER}." \
+            --notes "Physical QA staging candidate only. Not production-ready, not Play-ready. SHA=${GITHUB_SHA}. artifact=${{ steps.upload-staging.outputs.artifact-id }}. gate=${TUTOP_VALIDATED_GATE_RUN_ID}. staging=${TUTOP_VALIDATED_STAGING_RUN_ID}. reviews_cutover=${VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER}. wallet_cutover=${VITE_TUTOP_V2_WALLET_LAZY_CUTOVER}." \
             --prerelease
       - name: Remove temporary Firebase configs
         if: always()
