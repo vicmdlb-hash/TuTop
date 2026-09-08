@@ -8,7 +8,8 @@ const MAX_PRODUCT_IDS = 300;
 
 type CacheEntry = { favorited: boolean; expiresAt: number };
 const cache = new Map<string, CacheEntry>();
-const inFlight = new Map<string, Promise<Set<string>>>();
+const inFlight = new Map<string, Promise<void>>();
+const mutationVersion = new Map<string, number>();
 
 function client() {
   const config = getFirebaseConfig();
@@ -27,6 +28,7 @@ function normalizeProductIds(productIds: string[]) {
 }
 
 function cacheKey(uid: string, productId: string) { return `${uid}:${productId}`; }
+function currentVersion(uid: string, productId: string) { return mutationVersion.get(cacheKey(uid, productId)) || 0; }
 
 async function queryFavoriteGroup(rest: FirebaseRestClient, uid: string, productIds: string[]) {
   const token = await rest.getIdToken();
@@ -74,6 +76,21 @@ async function queryFavoriteGroup(rest: FirebaseRestClient, uid: string, product
   return found;
 }
 
+export function beginFavoriteMembershipMutation(uid: string, productId: string, favorited: boolean) {
+  const key = cacheKey(uid, productId);
+  const version = (mutationVersion.get(key) || 0) + 1;
+  mutationVersion.set(key, version);
+  cache.set(key, { favorited, expiresAt: Date.now() + CACHE_TTL_MS });
+  return version;
+}
+
+export function rollbackFavoriteMembershipMutation(uid: string, productId: string, version: number, favorited: boolean) {
+  const key = cacheKey(uid, productId);
+  if (mutationVersion.get(key) !== version) return false;
+  cache.set(key, { favorited, expiresAt: Date.now() + CACHE_TTL_MS });
+  return true;
+}
+
 export function invalidateFavoriteMembership(uid: string, productId: string) {
   cache.delete(cacheKey(uid, productId));
 }
@@ -90,32 +107,38 @@ export async function loadFavoriteMembership(productIds: string[]): Promise<Set<
   if (!ids.length) return new Set();
 
   const now = Date.now();
-  const result = new Set<string>();
   const missing: string[] = [];
   for (const productId of ids) {
     const cached = cache.get(cacheKey(session.uid, productId));
-    if (cached && cached.expiresAt > now) {
-      if (cached.favorited) result.add(productId);
-    } else missing.push(productId);
-  }
-  if (!missing.length) return result;
-
-  const requestKey = `${session.uid}:${missing.slice().sort().join('|')}`;
-  let pending = inFlight.get(requestKey);
-  if (!pending) {
-    pending = (async () => {
-      const found = new Set<string>();
-      for (const group of chunk(missing, MAX_IN_VALUES)) {
-        for (const productId of await queryFavoriteGroup(rest, session.uid, group)) found.add(productId);
-      }
-      const expiresAt = Date.now() + CACHE_TTL_MS;
-      for (const productId of missing) cache.set(cacheKey(session.uid, productId), { favorited: found.has(productId), expiresAt });
-      return found;
-    })().finally(() => inFlight.delete(requestKey));
-    inFlight.set(requestKey, pending);
+    if (!cached || cached.expiresAt <= now) missing.push(productId);
   }
 
-  for (const productId of await pending) result.add(productId);
+  if (missing.length) {
+    const requestKey = `${session.uid}:${missing.slice().sort().join('|')}`;
+    let pending = inFlight.get(requestKey);
+    if (!pending) {
+      const startVersions = new Map(missing.map((productId) => [productId, currentVersion(session.uid, productId)]));
+      pending = (async () => {
+        const found = new Set<string>();
+        for (const group of chunk(missing, MAX_IN_VALUES)) {
+          for (const productId of await queryFavoriteGroup(rest, session.uid, group)) found.add(productId);
+        }
+        const expiresAt = Date.now() + CACHE_TTL_MS;
+        for (const productId of missing) {
+          if (currentVersion(session.uid, productId) !== startVersions.get(productId)) continue;
+          cache.set(cacheKey(session.uid, productId), { favorited: found.has(productId), expiresAt });
+        }
+      })().finally(() => inFlight.delete(requestKey));
+      inFlight.set(requestKey, pending);
+    }
+    await pending;
+  }
+
+  const result = new Set<string>();
+  for (const productId of ids) {
+    const cached = cache.get(cacheKey(session.uid, productId));
+    if (cached?.favorited) result.add(productId);
+  }
   return result;
 }
 
