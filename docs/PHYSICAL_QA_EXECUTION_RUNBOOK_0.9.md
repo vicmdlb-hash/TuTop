@@ -17,6 +17,7 @@ Antes de tocar un dispositivo físico debe existir un nuevo candidato generado p
 5. El workflow Android debe haber ejecutado `verify-generated-physical-qa-candidate.mjs` antes de publicar ese generated manifest.
 6. Activar el generated manifest en el repo únicamente con el activador exact-head protegido.
 7. Drift gate estricto verde para el nuevo candidato canónico.
+8. Regenerar templates A/B/FCM/App Check desde ese candidato activo exact-head; todos los campos de evidencia deben permanecer `pending`, `false` o `null`.
 
 No inventar artifact ID, run ID, SHA, tamaño, timestamp ni evidencia.
 
@@ -34,6 +35,8 @@ El workflow Android genera automáticamente `PHYSICAL_QA_CANDIDATE.generated.jso
 - refs Git de todos los inputs empaquetados relevantes;
 - estado de cutover reviews/Wallet.
 
+`verify-generated-physical-qa-candidate.mjs` valida además que la metadata Android coincida campo por campo con el generated candidate antes de publicarlo.
+
 El generated manifest no cambia automáticamente `docs/PHYSICAL_QA_CANDIDATE_0.9.json`. La activación debe realizarse sobre el mismo checkout exacto:
 
 ```bash
@@ -45,7 +48,25 @@ node scripts/activate-generated-physical-qa-candidate.mjs \
 node scripts/physical-qa-candidate-drift.mjs
 ```
 
-El activador vuelve a ejecutar `verify-generated-physical-qa-candidate.mjs`; si SHA, tree o refs no coinciden con HEAD, falla cerrado. No ejecutar este activador automáticamente desde el workflow Android.
+El activador vuelve a ejecutar `verify-generated-physical-qa-candidate.mjs`; si SHA, tree, metadata o refs no coinciden con HEAD, falla cerrado. No ejecutar este activador automáticamente desde el workflow Android.
+
+## Regeneración segura de templates
+
+Los templates actualmente ligados a APK20 son históricos y no deben ejecutarse. Después de activar un nuevo candidato exact-head y confirmar drift estricto verde:
+
+```bash
+TUTOP_ALLOW_PHYSICAL_QA_TEMPLATE_REBIND=exact-head \
+node scripts/rebind-physical-qa-templates.mjs
+```
+
+El rebinder toma únicamente el manifest canónico `active_exact_head` y actualiza bindings de:
+
+- `PHYSICAL_QA_DEVICE_A_0.9.json`;
+- `PHYSICAL_QA_DEVICE_B_0.9.json`;
+- `FCM_PHYSICAL_FIXTURE_TEMPLATE_0.9.json`;
+- `APP_CHECK_PHYSICAL_EVIDENCE_TEMPLATE.json`.
+
+Al hacerlo debe resetear toda evidencia: `physical=false`, casos `pending`, reportes `null`, eventos FCM vacíos, App Check no observado y `device_count=0`. Esto cambia bindings del candidato, no crea evidencia física.
 
 ## Guardrails
 
