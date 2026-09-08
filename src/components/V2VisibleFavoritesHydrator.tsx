@@ -12,7 +12,7 @@ export default function V2VisibleFavoritesHydrator() {
   useEffect(() => {
     if (!favoritesVisibleCutoverEnabled() || !userId || !productIds.length) return;
     let active = true;
-    const before = new Set(useAppStore.getState().favorites);
+    const startVersions = new Map(productIds.map((productId) => [productId, visibleFavoritesBackend.currentVersion(productId)]));
     void visibleFavoritesBackend.load(productIds)
       .then((serverFavorites) => {
         if (!active) return;
@@ -20,9 +20,9 @@ export default function V2VisibleFavoritesHydrator() {
         const visible = new Set(productIds);
         useAppStore.setState((state) => {
           const current = new Set(state.favorites);
-          const next = new Set([...state.favorites].filter((id) => !visible.has(id)));
+          const next = new Set(state.favorites.filter((id) => !visible.has(id)));
           for (const productId of productIds) {
-            const changedDuringLoad = before.has(productId) !== current.has(productId);
+            const changedDuringLoad = visibleFavoritesBackend.currentVersion(productId) !== startVersions.get(productId);
             const shouldKeep = changedDuringLoad ? current.has(productId) : server.has(productId);
             if (shouldKeep) next.add(productId);
           }
