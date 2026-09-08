@@ -35,7 +35,9 @@ if (nationalSchemaEnabled()) {
         useAppStore.setState({ syncError: null });
       }).catch((error) => {
         useAppStore.setState((current) => ({
-          chats: current.chats.map((item) => item.id === chatId ? chat : item),
+          chats: current.chats.map((item) => item.id === chatId
+            ? { ...item, mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id) }
+            : item),
           syncError: syncError(error),
         }));
       });
@@ -60,7 +62,9 @@ if (nationalSchemaEnabled()) {
         useAppStore.setState({ syncError: null });
       }).catch((error) => {
         useAppStore.setState((current) => ({
-          chats: current.chats.map((item) => item.id === chatId ? chat : item),
+          chats: current.chats.map((item) => item.id === chatId
+            ? { ...item, mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id) }
+            : item),
           syncError: syncError(error),
         }));
       });
