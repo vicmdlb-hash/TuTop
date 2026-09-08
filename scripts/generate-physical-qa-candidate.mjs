@@ -76,6 +76,7 @@ if (!/^0\.9\.0-beta\./.test(version)) stop(`versión beta inválida: ${version}`
 
 const reviewsCutover = String(process.env.VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER || 'false') === 'true';
 const walletCutover = String(process.env.VITE_TUTOP_V2_WALLET_LAZY_CUTOVER || 'false') === 'true';
+const favoritesCutover = String(process.env.VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER || 'false') === 'true';
 
 const candidate = {
   schema: 'tutop.physical-qa-candidate.v1',
@@ -97,6 +98,7 @@ const candidate = {
   cost_cutovers: {
     reviews_lazy: reviewsCutover,
     wallet_lazy: walletCutover,
+    favorites_visible: favoritesCutover,
   },
   physical_release_candidate: true,
   candidate_status: 'generated_exact_head_pending_repo_activation',
