@@ -35,13 +35,18 @@ assert.match(maintenance, /const completedChats = new Map/);
 assert.match(maintenance, /patchWrite\(`reputation\/\$\{uid\}`/);
 
 assert.match(guard, /runAggregationQuery/);
-assert.match(guard, /transactions_v2/);
-assert.match(guard, /reviews/);
-assert.match(guard, /moderation_cases/);
+assert.match(guard, /tasksArg/);
+assert.match(guard, /outcomes: \['transactions_v2', 'transaction_outcome_claims', 'transaction_cancellation_requests'\]/);
+assert.match(guard, /reputation: \['transactions_v2', 'reviews', 'moderation_cases'\]/);
+assert.match(guard, /credentials: \['verificationRequests'\]/);
+assert.match(guard, /'saved-searches': \['saved_searches', 'listings_v2'\]/);
+assert.match(guard, /push: \['notification_outbox', 'device_tokens'\]/);
+assert.match(guard, /unknownTasks/);
 assert.match(guard, /count > limit/);
-assert.match(guard, /reputación trusted podría truncarse/);
-assert.match(guardedRunner, /trusted-reputation-capacity-guard\.mjs/);
-assert.match(guardedRunner, /v2-trusted-maintenance\.mjs/);
+assert.match(guard, /mantenimiento trusted podría truncarse/);
+assert.match(guardedRunner, /const args = process\.argv\.slice\(2\)/);
+assert.match(guardedRunner, /trusted-reputation-capacity-guard\.mjs', args/);
+assert.match(guardedRunner, /v2-trusted-maintenance\.mjs', args/);
 
 assert.match(workflow, /on:\s*\n\s*workflow_dispatch:/);
 assert.doesNotMatch(workflow, /schedule:/);
@@ -52,7 +57,8 @@ assert.doesNotMatch(workflow, /run: node scripts\/v2-trusted-maintenance\.mjs --
 console.log('PASS private reviews remain restricted to their participants/admin');
 console.log('PASS seller profile and product detail consume the trusted reputation aggregate');
 console.log('PASS trusted reputation derives from completed transaction evidence in trusted maintenance');
-console.log('PASS oversized reputation datasets abort before trusted maintenance writes');
+console.log('PASS all selected trusted maintenance tasks capacity-check every source they scan');
+console.log('PASS oversized trusted maintenance inputs abort before any guarded maintenance run');
 console.log('PASS stale trusted snapshots are disclosed instead of presented as real-time');
 console.log('PASS trusted maintenance remains manual-only during the Actions outage');
-console.log('Trusted public reputation contract: PASS');
+console.log('Trusted public reputation + maintenance capacity contract: PASS');
