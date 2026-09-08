@@ -17,6 +17,9 @@ assert.match(status, /reviews\/\$\{reviewId\}/);
 assert.match(status, /REVIEW_STATUS_MISMATCH/);
 assert.match(status, /remember\(review: Review\)/);
 
+assert.match(hydrator, /reviewsLazyCutoverEnabled/);
+assert.match(hydrator, /const cutoverEnabled = reviewsLazyCutoverEnabled\(\)/);
+assert.match(hydrator, /if \(!cutoverEnabled \|\| !activeChatId \|\| !userId\) return/);
 assert.match(hydrator, /reviewStatusBackend\.load\(activeChatId\)/);
 assert.match(hydrator, /reviews: \[review, \.\.\.state\.reviews\.filter/);
 
@@ -31,6 +34,7 @@ assert.match(online, /reviews\/\$\{chat\.id\}_\$\{uid\}/);
 assert.match(online, /\{ exists: false \}/);
 
 console.log('PASS current-chat review status uses deterministic reviews/{chatId}_{uid} lookup');
+console.log('PASS point review lookup is fully dormant while the reviews cutover flag is disabled');
 console.log('PASS V2 review submit remains optimistic/idempotent and does not reload the global snapshot');
 console.log('PASS duplicate server review recovers from the stored deterministic review');
 console.log('Review lazy status contract: PASS');
