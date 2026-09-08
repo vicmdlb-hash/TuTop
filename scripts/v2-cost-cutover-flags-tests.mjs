@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 const flags = fs.readFileSync('src/services/v2CostCutoverFlags.ts', 'utf8');
 const bridge = fs.readFileSync('src/services/v2CostCutoverSnapshotBridge.ts', 'utf8');
+const favoritesBackend = fs.readFileSync('src/services/visibleFavoritesBackend.ts', 'utf8');
+const favoritesHydrator = fs.readFileSync('src/components/V2VisibleFavoritesHydrator.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const envExample = fs.readFileSync('.env.example', 'utf8');
 const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
@@ -10,6 +12,8 @@ const android = fs.readFileSync('.github/workflows/android-debug-apk.yml', 'utf8
 
 assert.match(flags, /VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER/);
 assert.match(flags, /VITE_TUTOP_V2_WALLET_LAZY_CUTOVER/);
+assert.match(flags, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER/);
+assert.match(flags, /favoritesVisibleCutoverEnabled/);
 assert.match(flags, /=== 'true'/);
 assert.match(flags, /V2_COST_CUTOVER_REQUIRES_SCHEMA_V2/);
 assert.match(flags, /environment !== 'staging'/);
@@ -17,12 +21,15 @@ assert.match(flags, /V2_COST_CUTOVER_STAGING_ONLY/);
 
 assert.match(envExample, /VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER=false/);
 assert.match(envExample, /VITE_TUTOP_V2_WALLET_LAZY_CUTOVER=false/);
+assert.match(envExample, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER=false/);
 
 const leanChatImport = app.indexOf("import './services/v2LeanChatSnapshotBridge';");
 const cutoverImport = app.indexOf("import './services/v2CostCutoverSnapshotBridge';");
 const identityImport = app.indexOf("import './services/nationalIdentityHydrationBridge';");
 assert.ok(leanChatImport >= 0 && cutoverImport > leanChatImport && identityImport > cutoverImport, 'V2 snapshot bridge order must be lean-chat → cost-cutover → identity hydration');
-assert.match(bridge, /if \(reviewsCutover \|\| walletCutover\)/);
+assert.match(app, /<V2VisibleFavoritesHydrator \/>/);
+assert.match(bridge, /if \(reviewsCutover \|\| walletCutover \|\| favoritesCutover\)/);
+assert.match(bridge, /favoritesCutover \? Promise\.resolve\(\[\] as FirestoreDocument<any>\[\]\) : client\.runQuery<any>\('favorites'/);
 assert.match(bridge, /reviewsCutover \? Promise\.resolve\(\[\] as FirestoreDocument<any>\[\]\) : client\.runQuery<any>\('reviews'/);
 assert.match(bridge, /walletCutover \? Promise\.resolve\(\[\] as FirestoreDocument<any>\[\]\) : client\.runQuery<any>\('wallet_transactions'/);
 assert.match(bridge, /reviewsCutover\s*\? await reviewStrikeCountBackend\.load\(\)/);
@@ -30,6 +37,11 @@ assert.doesNotMatch(bridge, /reviewStrikeCountBackend\.load\(\)\.catch/);
 assert.match(bridge, /backend\.loadChat\(doc, session\.uid\)/);
 assert.match(bridge, /backend\.deriveNotifications\(chats, \[\], \[\], session\.uid\)/);
 assert.match(bridge, /products: \[\]/);
+
+assert.match(favoritesBackend, /MAX_VISIBLE_FAVORITES = 120/);
+assert.match(favoritesBackend, /favorites\/\$\{key\}/);
+assert.match(favoritesHydrator, /changedDuringLoad = before\.has\(productId\) !== current\.has\(productId\)/);
+assert.match(favoritesHydrator, /changedDuringLoad \? current\.has\(productId\) : server\.has\(productId\)/);
 
 assert.match(october, /on:\s*\n\s*workflow_dispatch:/);
 assert.doesNotMatch(october, /schedule:/);
@@ -63,15 +75,17 @@ assert.doesNotMatch(android, /\n\s+schedule:/);
 const currentRootCeiling = 565;
 const reviewsCutoverRootCeiling = currentRootCeiling - 200;
 const reviewsAndWalletCutoverRootCeiling = reviewsCutoverRootCeiling - 100;
+const broadFavoritesRemovedRootCeiling = reviewsAndWalletCutoverRootCeiling - 200;
 assert.equal(reviewsCutoverRootCeiling, 365);
 assert.equal(reviewsAndWalletCutoverRootCeiling, 265);
+assert.equal(broadFavoritesRemovedRootCeiling, 65);
 
 console.log('PASS V2 cost cutovers are default-off, exact-true, schema-V2 and staging-only');
 console.log('PASS bridge order preserves lean chat behavior before canonical identity/listing hydration');
 console.log('PASS reviews cutover removes both 100-doc review queries and fails closed through strike COUNT');
 console.log('PASS wallet cutover removes the 100-doc wallet history query while Wallet owns lazy history');
-console.log('PASS consolidated manual gate compiles with both cutovers enabled without activating runtime staging');
-console.log('PASS every V2 APK requires same-SHA green consolidated gate + real staging smoke');
-console.log('PASS APK metadata records SHA, prerequisite run IDs and cutover state');
-console.log('PASS target root ceilings are 365 with reviews cutover and 265 with reviews+wallet cutover');
+console.log('PASS favorites cutover removes the broad 200-doc query and hydrates exact membership for up to 120 visible V2 listings');
+console.log('PASS late visible-favorites hydration preserves concurrent optimistic toggles');
+console.log('PASS consolidated manual gate compiles reviews+wallet cutovers; favorites remains default-off pending real validation');
+console.log('PASS target root ceilings are 365 reviews-only, 265 reviews+wallet, and 65 before visible favorites membership reads');
 console.log('V2 cost cutover flags contract: PASS');
