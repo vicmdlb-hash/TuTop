@@ -13,6 +13,11 @@ on:
         required: false
         default: false
         type: boolean
+      enable_favorites_visible_cutover:
+        description: 'Staging-only: replace broad favorite list with exact membership for currently hydrated V2 listings'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -136,6 +141,7 @@ jobs:
       TUTOP_ANDROID_VERSION_CODE: 90000
       VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: ${{ inputs.enable_reviews_lazy_cutover }}
       VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: ${{ inputs.enable_wallet_lazy_cutover }}
+      VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: ${{ inputs.enable_favorites_visible_cutover }}
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
     steps:
       - name: Checkout feature ref
@@ -255,6 +261,7 @@ jobs:
           version_code=${TUTOP_ANDROID_VERSION_CODE}
           reviews_lazy_cutover=${VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER}
           wallet_lazy_cutover=${VITE_TUTOP_V2_WALLET_LAZY_CUTOVER}
+          favorites_visible_cutover=${VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER}
           EOF
       - name: Upload beta APK
         id: upload-staging
@@ -309,7 +316,7 @@ jobs:
             PHYSICAL_QA_CANDIDATE.generated.json \
             --target "$GITHUB_SHA" \
             --title "TuTop 0.9.0 beta.0 Physical QA — build ${GITHUB_RUN_NUMBER}" \
-            --notes "Physical QA staging candidate only. Not production-ready, not Play-ready. SHA=${GITHUB_SHA}. artifact=${{ steps.upload-staging.outputs.artifact-id }}. gate=${TUTOP_VALIDATED_GATE_RUN_ID}. staging=${TUTOP_VALIDATED_STAGING_RUN_ID}. reviews_cutover=${VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER}. wallet_cutover=${VITE_TUTOP_V2_WALLET_LAZY_CUTOVER}." \
+            --notes "Physical QA staging candidate only. Not production-ready, not Play-ready. SHA=${GITHUB_SHA}. artifact=${{ steps.upload-staging.outputs.artifact-id }}. gate=${TUTOP_VALIDATED_GATE_RUN_ID}. staging=${TUTOP_VALIDATED_STAGING_RUN_ID}. reviews_cutover=${VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER}. wallet_cutover=${VITE_TUTOP_V2_WALLET_LAZY_CUTOVER}. favorites_cutover=${VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER}." \
             --prerelease
       - name: Remove temporary Firebase configs
         if: always()
