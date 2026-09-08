@@ -11,7 +11,9 @@ const listings = fs.readFileSync('src/components/V2ListingsHydrator.tsx', 'utf8'
 const env = fs.readFileSync('.env.example', 'utf8');
 const indexes = JSON.parse(fs.readFileSync('firebase/firestore.indexes.json', 'utf8'));
 const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
+const firestoreWorkflow = fs.readFileSync('.github/workflows/firestore-v2-security.yml', 'utf8');
 const android = fs.readFileSync('.github/workflows/android-debug-apk.yml', 'utf8');
+const emulatorFixture = fs.readFileSync('tests/firestore.v2.favorite-membership.test.mjs', 'utf8');
 
 assert.match(flags, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER/);
 assert.match(flags, /favoritesVisibleCutoverEnabled/);
@@ -48,8 +50,19 @@ const favoriteIndex = indexes.indexes.find((index) => index.collectionGroup === 
   && index.fields?.some((field) => field.fieldPath === 'product_id' && field.order === 'ASCENDING'));
 assert(favoriteIndex, 'favorites uid+product_id composite index must remain declared');
 
+assert.match(emulatorFixture, /where\('uid', '==', uid\)/);
+assert.match(emulatorFixture, /where\('product_id', 'in', productIds\)/);
+assert.match(emulatorFixture, /membership IN devuelve exactamente los favoritos propios solicitados/);
+assert.match(emulatorFixture, /membership IN respeta subsets/);
+assert.match(emulatorFixture, /otro usuario no puede consultar membership de alice/);
+assert.match(emulatorFixture, /consulta sin filtro uid no puede demostrar ownership y falla cerrada/);
+assert.match(emulatorFixture, /assertFails\(getDocs\(membershipQuery\(bob, 'alice'/);
+
 assert.match(october, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: "true"/);
+assert.match(october, /tests\/firestore\.v2\.favorite-membership\.test\.mjs/);
 assert.doesNotMatch(october, /schedule:/);
+assert.match(firestoreWorkflow, /tests\/firestore\.v2\.favorite-membership\.test\.mjs/);
+assert.doesNotMatch(firestoreWorkflow, /schedule:/);
 assert.match(android, /enable_favorites_visible_cutover/);
 assert.match(android, /default: false/);
 assert.match(android, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: \$\{\{ inputs\.enable_favorites_visible_cutover \}\}/);
@@ -62,6 +75,8 @@ console.log('PASS favorites cutover remains default-off and staging-only');
 console.log('PASS broad up-to-200 snapshot query is skipped only when explicit favorites cutover is active');
 console.log('PASS visible favorite membership uses batched Firestore IN queries of at most 30 IDs with App Check forwarding');
 console.log('PASS explicit favorites uid+product_id index is declared before staging activation');
+console.log('PASS real Emulator fixture covers exact own subset plus foreign/underconstrained query denial');
+console.log('PASS both manual Emulator workflows retain the favorite membership fixture');
 console.log('PASS consolidated gate compiles favorites cutover and Android exposes it as a manual default-false input');
 console.log('PASS optimistic favorite toggles and failed rollbacks share mutation versions with hydration cache');
 console.log('PASS stale in-flight membership reads cannot overwrite a newer favorite mutation');
