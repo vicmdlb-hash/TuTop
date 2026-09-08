@@ -14,7 +14,7 @@ const october = fs.readFileSync('.github/workflows/october-01-validation.yml', '
 const firestoreWorkflow = fs.readFileSync('.github/workflows/firestore-v2-security.yml', 'utf8');
 const android = fs.readFileSync('.github/workflows/android-debug-apk.yml', 'utf8');
 const emulatorFixture = fs.readFileSync('tests/firestore.v2.favorite-membership.test.mjs', 'utf8');
-const favoriteRulesHardener = fs.readFileSync('scripts/harden-favorite-v2-rules.mjs', 'utf8');
+const canonicalRulesHardener = fs.readFileSync('scripts/harden-canonical-v2-rules.mjs', 'utf8');
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 
 assert.match(flags, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER/);
@@ -52,10 +52,12 @@ const favoriteIndex = indexes.indexes.find((index) => index.collectionGroup === 
   && index.fields?.some((field) => field.fieldPath === 'product_id' && field.order === 'ASCENDING'));
 assert(favoriteIndex, 'favorites uid+product_id composite index must remain declared');
 
-assert.match(favoriteRulesHardener, /documents\/products\/\$\(request\.resource\.data\.product_id\)/);
-assert.match(favoriteRulesHardener, /documents\/listings_v2\/\$\(request\.resource\.data\.product_id\)/);
-assert.match(favoriteRulesHardener, /occurrences !== 1/);
-assert.match(pkg.scripts['v2:rules:prepare'], /harden-favorite-v2-rules\.mjs/);
+assert.match(canonicalRulesHardener, /favorites use canonical listing/);
+assert.match(canonicalRulesHardener, /documents\/listings_v2\/\$\(request\.resource\.data\.product_id\)/);
+assert.match(canonicalRulesHardener, /listingDoc\(request\.resource\.data\.product_id\)\.data\.status == 'active'/);
+assert.match(canonicalRulesHardener, /listingDoc\(request\.resource\.data\.product_id\)\.data\.moderation_status == 'approved'/);
+assert.match(pkg.scripts['v2:rules:prepare'], /harden-canonical-v2-rules\.mjs/);
+assert.doesNotMatch(pkg.scripts['v2:rules:prepare'], /harden-favorite-v2-rules\.mjs/);
 
 assert.match(emulatorFixture, /where\('uid', '==', uid\)/);
 assert.match(emulatorFixture, /where\('product_id', 'in', productIds\)/);
@@ -63,8 +65,9 @@ assert.match(emulatorFixture, /membership IN devuelve exactamente los favoritos 
 assert.match(emulatorFixture, /membership IN respeta subsets/);
 assert.match(emulatorFixture, /otro usuario no puede consultar membership de alice/);
 assert.match(emulatorFixture, /consulta sin filtro uid no puede demostrar ownership y falla cerrada/);
-assert.match(emulatorFixture, /crear favorito acepta un listing canónico V2 aunque no exista espejo legacy/);
-assert.match(emulatorFixture, /crear favorito sigue rechazando IDs inexistentes o documentId no determinista/);
+assert.match(emulatorFixture, /crear favorito acepta un listing canónico V2 activo y aprobado/);
+assert.match(emulatorFixture, /crear favorito V2 rechaza target que existe sólo en products legacy/);
+assert.match(emulatorFixture, /listings no aprobados/);
 assert.match(emulatorFixture, /assertFails\(getDocs\(membershipQuery\(bob, 'alice'/);
 
 assert.match(october, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: "true"/);
@@ -84,7 +87,7 @@ console.log('PASS favorites cutover remains default-off and staging-only');
 console.log('PASS broad up-to-200 snapshot query is skipped only when explicit favorites cutover is active');
 console.log('PASS visible favorite membership uses batched Firestore IN queries of at most 30 IDs with App Check forwarding');
 console.log('PASS explicit favorites uid+product_id index is declared before staging activation');
-console.log('PASS generated V2 Rules allow deterministic favorites for both legacy products and canonical listings_v2 targets');
+console.log('PASS V2 favorite creation is canonical-only: active+approved listings_v2, never legacy-only products');
 console.log('PASS real Emulator fixture covers canonical create, exact own subset and foreign/underconstrained denial');
 console.log('PASS both manual Emulator workflows retain the favorite membership fixture');
 console.log('PASS consolidated gate compiles favorites cutover and Android exposes it as a manual default-false input');
