@@ -73,7 +73,8 @@ assert.match(android, /apk_sha256=\$\{APK_SHA256\}/);
 assert.match(android, /apk_size_bytes=\$\{APK_SIZE\}/);
 
 assert.match(runbook, /NEW EXACT-HEAD CANDIDATE REQUIRED/);
-assert.match(runbook, /PHYSICAL_QA_CANDIDATE_0\.9\.json` actualizado únicamente con datos reales/);
+assert.match(runbook, /metadata Android coincida campo por campo/);
+assert.match(runbook, /rebind-physical-qa-templates\.mjs/);
 assert.match(runbook, /No inventar artifact ID, run ID, SHA, tamaño, timestamp ni evidencia/);
 
 console.log('PASS canonical repository candidate remains explicitly obsolete until guarded real activation');
