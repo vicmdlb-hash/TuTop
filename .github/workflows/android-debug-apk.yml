@@ -285,6 +285,7 @@ jobs:
             echo "apk_size_bytes=${APK_SIZE}"
           } >> TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt
           node scripts/generate-physical-qa-candidate.mjs
+          node scripts/verify-generated-physical-qa-candidate.mjs PHYSICAL_QA_CANDIDATE.generated.json
       - name: Upload exact candidate manifest and complete metadata
         uses: actions/upload-artifact@v7
         with:
