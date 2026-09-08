@@ -9,6 +9,9 @@ const hydrator = fs.readFileSync('src/components/V2VisibleFavoritesHydrator.tsx'
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const listings = fs.readFileSync('src/components/V2ListingsHydrator.tsx', 'utf8');
 const env = fs.readFileSync('.env.example', 'utf8');
+const indexes = JSON.parse(fs.readFileSync('firebase/firestore.indexes.json', 'utf8'));
+const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
+const android = fs.readFileSync('.github/workflows/android-debug-apk.yml', 'utf8');
 
 assert.match(flags, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER/);
 assert.match(flags, /favoritesVisibleCutoverEnabled/);
@@ -39,6 +42,18 @@ assert.match(hydrator, /visibleFavoritesBackend\.currentVersion\(productId\)/);
 assert.match(hydrator, /changedDuringLoad/);
 assert.match(hydrator, /changedDuringLoad \? current\.has\(productId\) : server\.has\(productId\)/);
 
+const favoriteIndex = indexes.indexes.find((index) => index.collectionGroup === 'favorites'
+  && index.queryScope === 'COLLECTION'
+  && index.fields?.some((field) => field.fieldPath === 'uid' && field.order === 'ASCENDING')
+  && index.fields?.some((field) => field.fieldPath === 'product_id' && field.order === 'ASCENDING'));
+assert(favoriteIndex, 'favorites uid+product_id composite index must remain declared');
+
+assert.match(october, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: "true"/);
+assert.doesNotMatch(october, /schedule:/);
+assert.match(android, /enable_favorites_visible_cutover/);
+assert.match(android, /default: false/);
+assert.match(android, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: \$\{\{ inputs\.enable_favorites_visible_cutover \}\}/);
+
 assert.match(app, /import '\.\/services\/v2FavoriteMutationCacheBridge'/);
 assert.match(app, /<V2VisibleFavoritesHydrator \/>/);
 assert.match(listings, /limitPerScope: 30/);
@@ -46,7 +61,8 @@ assert.match(listings, /limitPerScope: 30/);
 console.log('PASS favorites cutover remains default-off and staging-only');
 console.log('PASS broad up-to-200 snapshot query is skipped only when explicit favorites cutover is active');
 console.log('PASS visible favorite membership uses batched Firestore IN queries of at most 30 IDs with App Check forwarding');
-console.log('PASS visible scope remains capped at 120, matching four 30-listing V2 scopes');
+console.log('PASS explicit favorites uid+product_id index is declared before staging activation');
+console.log('PASS consolidated gate compiles favorites cutover and Android exposes it as a manual default-false input');
 console.log('PASS optimistic favorite toggles and failed rollbacks share mutation versions with hydration cache');
 console.log('PASS stale in-flight membership reads cannot overwrite a newer favorite mutation');
 console.log('Visible favorites cutover contract: PASS');
