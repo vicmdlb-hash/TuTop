@@ -26,6 +26,14 @@
       ]
     },
     {
+      "collectionGroup": "favorites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "product_id", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "listings_v2",
       "queryScope": "COLLECTION",
       "fields": [
