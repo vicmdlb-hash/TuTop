@@ -40,6 +40,41 @@ Schema V2 treats `listings_v2/{listingId}` as the authoritative listing identity
 | Moderation | `scopedAdminBackend` | `listings_v2` | Canonical |
 | Reviews | generated V2 Rules | completed `transactions_v2` linked by chat | Canonical transaction path |
 
+## V2 delivery completion authority
+
+`transactions_v2` is the **only authoritative delivery-completion state in schema V2**.
+
+- `TransactionReservationCard` performs V2 confirmation through `nationalBackend.confirmDelivery(transaction)`.
+- `buyer_confirmed_at`, `seller_confirmed_at` and `status=completed` are authoritative.
+- `ChatConversation` receives the canonical transaction state and projects it into `entrega_confirmada`, `entrega_estado` and `confirmaciones_entrega` **in local Zustand state only** for UI/review compatibility.
+- V2 must never write `chats/{chatId}/confirmations/{uid}` as completion authority.
+- The old store `confirmDelivery(chatId)` / chat-confirmation subcollection remains V1-only compatibility behavior.
+- A transaction created while the chat is already open is passed to `TransactionReservationCard` through `transactionHint`; no polling or duplicate transaction read is needed to display it.
+- Review UI is unlocked only after the canonical transaction becomes `completed`. Generated Rules independently require the linked `transactions_v2` document to be completed and contain both confirmation timestamps.
+
+This prevents a legacy chat confirmation from making the UI look completed while the authoritative transaction is still incomplete.
+
+## Legacy `onlineBackend` reachability classification
+
+The monolithic backend remains for V1 compatibility. It must not be deleted merely because V2 bridges override selected methods.
+
+### `LEGACY_ONLY_SAFE`
+
+- `Chatbot` + store `publishProduct` → `onlineBackend.createProduct`: App renders `NationalPublishScreen` instead when schema V2 is enabled.
+- legacy `onlineBackend.updateProduct`: V2 store mutation is replaced by `canonicalStoreBridge`.
+- legacy `onlineBackend.createChat`, `sendMessage`, `submitReport`: V2 behavior is replaced by `rateLimitedOnlineBridge`.
+- legacy chat `confirmDelivery` subcollection flow: V2 ChatConversation no longer invokes it.
+
+### `V2_REACHABLE_REQUIRES_BRIDGE_OR_CANONICAL_RULES`
+
+- `onlineBackend.loadSnapshot`: transitional root snapshot only; V2 bridges remove legacy products/bids, lean chat reads and cost-cutover collections.
+- `onlineBackend.toggleFavorite`: still writes the deterministic favorite document; V2 Rules require a canonical active+approved listing and the visible-membership bridge protects mutation races.
+- `onlineBackend.submitReview`: called by `v2StoreReviewMutationBridge`; review creation is guarded by completed canonical transaction Rules.
+- `onlineBackend.markChatRead`: shared read-marker behavior; does not determine transaction completion.
+- shared auth/profile/wallet primitives remain reachable where their collection semantics are not listing-legacy dependent.
+
+Any future V2 call into an unclassified legacy method is a release-blocking integration regression until classified or bridged.
+
 ### Rules source vs generated Rules
 
 `firebase/firestore.v2.rules` still contains legacy source patterns intentionally because `scripts/harden-canonical-v2-rules.mjs` transforms the generated staging Rules. The deploy/test target is `firebase/firestore.v2.generated.rules` via `firebase.v2.json`.
@@ -51,6 +86,20 @@ The hardener must:
 - fail if any `productDoc(` survives.
 
 There must be **one** canonical hardening path. A second favorites-specific hardener was removed because it conflicted with the canonical hardener order.
+
+## Rules composition order
+
+`v2:rules:prepare` is order-sensitive and is frozen by `v2-rules-composition-contract-tests.mjs`:
+
+1. base generator;
+2. canonical listing conversion;
+3. runtime collections/rate-limit/cancellation rules;
+4. listing rate-limit expression optimization;
+5. account-operation transitions;
+6. notification receipts;
+7. reservation-lock hardening.
+
+Later hardeners consume markers created by earlier steps. Marker drift must stop the preparation rather than silently skipping a transformation.
 
 ## Chat mutation integrity
 
@@ -68,4 +117,5 @@ V2 text/image send failures remove only the exact optimistic `msg-local-*` that 
 
 - A listing may remain `active` while reserved so browsing behavior does not change, but exactly one `listing_reservation_locks/{listingId}` document may exist. Transaction creation and lock creation are atomic. Cancellation/expiration must remove the lock atomically; completion makes the listing `sold_out`.
 - In schema V2, any UI field called `product_id` that points at a marketplace listing carries a `listings_v2` ID unless an explicitly legacy-only path states otherwise.
+- In schema V2, `transactions_v2` is the sole delivery-completion authority; legacy chat confirmations are V1-only.
 - No cost cutover becomes active before exact-HEAD static/typecheck/build/Emulator/staging gates are green.
