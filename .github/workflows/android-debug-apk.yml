@@ -2,6 +2,17 @@ name: Build TuTop Android APK (zero cost)
 
 on:
   workflow_dispatch:
+    inputs:
+      enable_reviews_lazy_cutover:
+        description: 'Staging-only: remove review lists from V2 startup snapshot after consolidated gate is green'
+        required: false
+        default: false
+        type: boolean
+      enable_wallet_lazy_cutover:
+        description: 'Staging-only: remove wallet history from V2 startup snapshot after consolidated gate is green'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -122,6 +133,8 @@ jobs:
       TUTOP_ANDROID_PACKAGE_NAME: mx.tutop.app
       TUTOP_BETA_VERSION: 0.9.0-beta.0
       TUTOP_ANDROID_VERSION_CODE: 90000
+      VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: ${{ inputs.enable_reviews_lazy_cutover }}
+      VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: ${{ inputs.enable_wallet_lazy_cutover }}
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
     steps:
       - name: Checkout feature ref
