@@ -6,6 +6,13 @@ import type { MarketplaceTransaction, UniversityIdentity } from '../types';
 
 const IDENTITY_KEY = 'tutop.university-identity.v1';
 
+type TransactionReservationCardProps = {
+  chatId: string;
+  currentUserId: string;
+  onReleased?: () => void;
+  onTransactionChange?: (transaction: MarketplaceTransaction | null) => void;
+};
+
 function remainingLabel(expiresAt?: string, now = Date.now()) {
   if (!expiresAt) return null;
   const ms = Date.parse(expiresAt) - now;
@@ -42,7 +49,7 @@ function meetupShareText(transaction: MarketplaceTransaction, pointName: string)
   ].join('\n');
 }
 
-export default function TransactionReservationCard({ chatId, currentUserId, onReleased }: { chatId: string; currentUserId: string; onReleased?: () => void }) {
+export default function TransactionReservationCard({ chatId, currentUserId, onReleased, onTransactionChange }: TransactionReservationCardProps) {
   const [transaction, setTransaction] = useState<MarketplaceTransaction | null>(null);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
@@ -69,6 +76,10 @@ export default function TransactionReservationCard({ chatId, currentUserId, onRe
     }).catch(() => undefined);
     return () => { active = false; };
   }, [chatId]);
+
+  useEffect(() => {
+    onTransactionChange?.(transaction);
+  }, [transaction, onTransactionChange]);
 
   useEffect(() => {
     if (!transaction?.reservation_expires_at || transaction.status !== 'reserved') return;
