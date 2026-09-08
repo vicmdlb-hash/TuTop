@@ -55,6 +55,7 @@ jobs:
           VITE_TUTOP_ENVIRONMENT: staging
           VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: "true"
           VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: "true"
+          VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: "true"
         run: |
           npm run typecheck
           npm run build
