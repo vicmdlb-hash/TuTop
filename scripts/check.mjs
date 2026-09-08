@@ -51,6 +51,7 @@ const steps = [
   [process.execPath, ['scripts/fcm-physical-fixture-tests.mjs']],
   [process.execPath, ['scripts/app-check-enforcement-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-candidate-drift-tests.mjs']],
+  [process.execPath, ['scripts/physical-qa-candidate-generation-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-candidate-drift.mjs', '--prebuild']],
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
 ];
