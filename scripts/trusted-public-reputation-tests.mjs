@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 const backend = fs.readFileSync('src/services/trustedReputationBackend.ts', 'utf8');
 const profile = fs.readFileSync('src/components/SellerPublicProfile.tsx', 'utf8');
 const inline = fs.readFileSync('src/components/SellerReputationInline.tsx', 'utf8');
+const ownCard = fs.readFileSync('src/components/OwnTrustedReputationCard.tsx', 'utf8');
 const productDetail = fs.readFileSync('src/components/ProductDetail.tsx', 'utf8');
+const app = fs.readFileSync('src/App.tsx', 'utf8');
 const evidence = fs.readFileSync('src/lib/reputationEvidence.ts', 'utf8');
 const rules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
 const maintenance = fs.readFileSync('scripts/v2-trusted-maintenance.mjs', 'utf8');
@@ -24,6 +26,10 @@ assert.match(profile, /no se presentan como información en tiempo real/);
 assert.match(inline, /trustedReputationBackend\.load\(sellerId\)/);
 assert.match(inline, /Snapshot trusted no reciente; no se presenta como información en tiempo real/);
 assert.match(productDetail, /<SellerReputationInline sellerId=\{product\.vendedor_id\} visibleEvidence=\{reputation\} \/>/);
+assert.match(ownCard, /trustedReputationBackend\.load\(uid\)/);
+assert.match(ownCard, /Reputación trusted/);
+assert.match(ownCard, /Snapshot trusted no reciente/);
+assert.match(app, /<OwnTrustedReputationCard \/>/);
 assert.match(evidence, /evidencia visible/);
 assert.match(evidence, /no representa necesariamente la reputación pública completa/);
 
@@ -59,7 +65,7 @@ assert.match(workflow, /node scripts\/v2-trusted-maintenance-guarded\.mjs --appl
 assert.doesNotMatch(workflow, /run: node scripts\/v2-trusted-maintenance\.mjs --apply/);
 
 console.log('PASS private reviews remain restricted to their participants/admin');
-console.log('PASS seller profile and product detail consume the trusted reputation aggregate');
+console.log('PASS seller profile, product detail and current-user profile consume trusted reputation');
 console.log('PASS trusted reputation derives from completed transaction evidence in trusted maintenance');
 console.log('PASS every trusted maintenance task capacity-checks all source collections it scans');
 console.log('PASS oversized tasks fail closed without blocking other safe maintenance tasks');
