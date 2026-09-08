@@ -49,7 +49,12 @@ jobs:
           npm run beta:ready
           npm run v2:staging:readiness:test
 
-      - name: Typecheck and web build
+      - name: Typecheck and web build with V2 cost cutovers compiled
+        env:
+          VITE_TUTOP_SCHEMA_V2: "true"
+          VITE_TUTOP_ENVIRONMENT: staging
+          VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: "true"
+          VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: "true"
         run: |
           npm run typecheck
           npm run build
