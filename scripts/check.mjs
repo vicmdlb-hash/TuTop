@@ -18,6 +18,7 @@ const steps = [
   [process.execPath, ['scripts/transaction-bridge-fresh-offer-tests.mjs']],
   [process.execPath, ['scripts/profile-editor-v2-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-canonical-listing-id-contract-tests.mjs']],
+  [process.execPath, ['scripts/v2-canonical-completion-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-rules-composition-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-snapshot-cost-audit.mjs']],
   [process.execPath, ['scripts/v2-snapshot-budget-tests.mjs']],
