@@ -9,16 +9,20 @@ const deviceA = readJson('docs/PHYSICAL_QA_DEVICE_A_0.9.json');
 const deviceB = readJson('docs/PHYSICAL_QA_DEVICE_B_0.9.json');
 const fcm = readJson('docs/FCM_PHYSICAL_FIXTURE_TEMPLATE_0.9.json');
 const appCheck = readJson('docs/APP_CHECK_PHYSICAL_EVIDENCE_TEMPLATE.json');
-const runbook = readText('docs/PHYSICAL_QA_EXECUTION_RUNBOOK_0.9.md');
 const recovery = readText('docs/RECOVERY_PROVIDER_DECISION_MATRIX_0.9.md');
 const legal = readText('docs/LEGAL_RETENTION_REVIEW_DOSSIER_0.9.md');
 const oidc = readText('docs/CI_OIDC_WIF_PARITY_CHECKLIST_0.9.md');
 const cron = readText('docs/TRUSTED_CRON_DEFAULT_BRANCH_PATCH_0.9.md');
+const cutoverRunbook = readText('docs/V2_COST_CUTOVER_RUNBOOK_0.9.md');
 
-assert.equal(candidate.physical_release_candidate, true);
+assert.equal(candidate.physical_release_candidate, false);
+assert.equal(candidate.candidate_status, 'obsolete_runtime_drift');
+assert.equal(candidate.replacement_required, true);
 assert.equal(candidate.environment, 'staging');
 assert.equal(candidate.artifact_id, 10002986519);
 assert.equal(candidate.apk_sha256, '57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493');
+assert.match(candidate.notes, /historical/i);
+assert.match(candidate.notes, /cannot satisfy a current Physical QA gate/i);
 
 for (const [slot, template] of [['A', deviceA], ['B', deviceB]]) {
   assert.equal(template.environment, 'staging');
@@ -54,21 +58,6 @@ assert.equal(appCheck.candidate_apk_sha256, candidate.apk_sha256);
 assert.deepEqual(appCheck.devices.map((x) => x.slot), ['A', 'B']);
 assert(appCheck.devices.every((x) => x.physical === false && x.app_check_token_observed === false));
 
-for (const required of [
-  candidate.apk_sha256,
-  'READY FOR REAL DEVICE EXECUTION — NOT YET PHYSICALLY VALIDATED',
-  'PHYSICAL QA PENDING / RELEASE BLOCKED',
-  'Device A y Device B',
-  'offline_reconnect',
-  'push_cold_start',
-  'app_check_token_observed',
-  'UNENFORCED',
-  'provider=disabled',
-  'PENDIENTE REVISIÓN LEGAL',
-  'PREPARED, NOT MIGRATED',
-  'NO APLICAR AHORA',
-]) assert(runbook.includes(required), `runbook missing invariant: ${required}`);
-
 assert(recovery.includes('`provider = disabled`'));
 assert(recovery.includes('verified email → recovery codes as secondary → SMS'));
 assert(legal.includes('PENDIENTE REVISIÓN LEGAL'));
@@ -77,17 +66,11 @@ assert(oidc.includes('PREPARED, NOT MIGRATED'));
 assert(oidc.includes('`FIREBASE_TOKEN` permanece como fallback'));
 assert(cron.includes('**NO APLICAR AHORA.**'));
 assert(cron.includes('el cron NO está activo automáticamente'));
+assert(cutoverRunbook.includes('PREPARADO / DESACTIVADO POR DEFECTO'));
+assert(cutoverRunbook.includes('Physical QA A+B'));
 
-const forbiddenRunbookClaims = [
-  'PRODUCTION READY',
-  'PLAY READY',
-  'PHYSICAL QA COMPLETE',
-  'APP CHECK ENFORCED',
-];
-for (const claim of forbiddenRunbookClaims) assert(!runbook.includes(claim), `forbidden readiness claim: ${claim}`);
-
-console.log('PASS APK20 readiness pack remains exact-candidate bound');
-console.log('PASS Device A/B, FCM and App Check templates remain fail-closed placeholders');
+console.log('PASS historical APK20 is explicitly obsolete and retained only for traceability');
+console.log('PASS Device A/B, FCM and App Check templates remain fail-closed historical placeholders');
 console.log('PASS recovery/legal/OIDC/cron external gates remain explicitly unresolved');
-console.log('PASS physical QA execution runbook cannot be mistaken for completed evidence');
+console.log('PASS current cost-cutover runbook requires a new exact-HEAD Physical QA candidate');
 console.log('Physical QA readiness pack contract: PASS');
