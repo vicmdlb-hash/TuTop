@@ -8,6 +8,7 @@ import V2ListingsHydrator from './components/V2ListingsHydrator';
 import V2ChatHistoryHydrator from './components/V2ChatHistoryHydrator';
 import V2ReviewStatusHydrator from './components/V2ReviewStatusHydrator';
 import V2ReviewStrikeHydrator from './components/V2ReviewStrikeHydrator';
+import V2VisibleFavoritesHydrator from './components/V2VisibleFavoritesHydrator';
 import WalletView from './components/WalletView';
 import Inbox from './components/Inbox';
 import Profile from './components/Profile';
@@ -96,6 +97,7 @@ function MobileApp() {
         </div>
       )}
       {v2 && <V2ListingsHydrator />}
+      {v2 && <V2VisibleFavoritesHydrator />}
       {v2 && <V2ChatHistoryHydrator />}
       {v2 && <V2ReviewStatusHydrator />}
       {v2 && <V2ReviewStrikeHydrator />}
