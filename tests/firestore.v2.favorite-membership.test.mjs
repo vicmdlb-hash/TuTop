@@ -62,3 +62,29 @@ test('consulta sin filtro uid no puede demostrar ownership y falla cerrada', asy
   const unsafe = query(collection(alice, 'favorites'), where('product_id', 'in', ['listing-1', 'listing-2']));
   await assertFails(getDocs(unsafe));
 });
+
+test('crear favorito acepta un listing canónico V2 aunque no exista espejo legacy', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'listings_v2/v2-only'), {
+      seller_id: 'seller', status: 'active', moderation_status: 'approved', created_at: Timestamp.now(), updated_at: Timestamp.now(),
+    });
+  });
+  const alice = env.authenticatedContext('alice').firestore();
+  await assertSucceeds(setDoc(doc(alice, 'favorites/alice_v2-only'), {
+    uid: 'alice', product_id: 'v2-only', created_at: Timestamp.now(),
+  }));
+});
+
+test('crear favorito sigue rechazando IDs inexistentes o documentId no determinista', async () => {
+  const alice = env.authenticatedContext('alice').firestore();
+  await assertFails(setDoc(doc(alice, 'favorites/alice_missing'), {
+    uid: 'alice', product_id: 'missing', created_at: Timestamp.now(),
+  }));
+
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'listings_v2/v2-only'), { seller_id: 'seller' });
+  });
+  await assertFails(setDoc(doc(alice, 'favorites/not-deterministic'), {
+    uid: 'alice', product_id: 'v2-only', created_at: Timestamp.now(),
+  }));
+});
