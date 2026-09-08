@@ -4,18 +4,23 @@ import { ArrowDown, ArrowUp, Bell, Coins, Info, LockKeyhole, Star } from 'lucide
 import { useAppStore } from '../store/useAppStore';
 import type { WalletTransaction } from '../types';
 import { WALLET_HISTORY_INITIAL_LIMIT, walletHistoryBackend } from '../services/walletHistoryBackend';
+import { walletLazyCutoverEnabled } from '../services/v2CostCutoverFlags';
 
 export default function WalletView() {
   const { user, transactions } = useAppStore();
+  const lazyCutover = walletLazyCutoverEnabled();
   const [lazyTransactions, setLazyTransactions] = useState<WalletTransaction[]>([]);
-  const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'ready' | 'error'>(transactions.length ? 'ready' : 'idle');
+  const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'ready' | 'error'>(transactions.length || !lazyCutover ? 'ready' : 'idle');
   const history = transactions.length ? transactions : lazyTransactions;
   const nextTarget = user.nivel_vendedor === 'Novato' ? 50 : user.nivel_vendedor === 'Pro' ? 200 : user.puntos_prestigio;
   const levelBase = user.nivel_vendedor === 'Pro' ? 50 : 0;
   const progress = user.nivel_vendedor === 'Leyenda' ? 100 : Math.max(0, Math.min(100, ((user.puntos_prestigio - levelBase) / (nextTarget - levelBase)) * 100));
 
   useEffect(() => {
-    if (transactions.length || historyState !== 'idle') return;
+    // Legacy snapshot mode already owns wallet history, including the legitimate
+    // empty-history case. Only the explicit staging-only cutover may issue the
+    // lazy query, so disabled flags add zero duplicate Firestore reads.
+    if (!lazyCutover || transactions.length || historyState !== 'idle') return;
     let active = true;
     setHistoryState('loading');
     void walletHistoryBackend.load(WALLET_HISTORY_INITIAL_LIMIT)
@@ -28,7 +33,7 @@ export default function WalletView() {
         if (active) setHistoryState('error');
       });
     return () => { active = false; };
-  }, [transactions.length, historyState]);
+  }, [lazyCutover, transactions.length, historyState]);
 
   return (
     <div className="page-pad pt-safe">
