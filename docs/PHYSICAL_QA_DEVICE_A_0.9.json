@@ -47,5 +47,5 @@
     { "case": "safe_areas", "captured_at": "PENDIENTE-ISO8601", "sha256": "PENDIENTE-SHA256" },
     { "case": "rotation", "captured_at": "PENDIENTE-ISO8601", "sha256": "PENDIENTE-SHA256" }
   ],
-  "notes": "Template Device A ligado a APK 20 exacta. Los screenshots deben ser capturas reales distintas, con SHA-256 del archivo y timestamp dentro de la sesión. FCM/App Check deben enlazar este mismo slot y evidence_session_id."
+  "notes": "HISTÓRICO / NO EJECUTAR: este template sigue ligado a APK20 obsoleta sólo para trazabilidad. Debe regenerarse con rebind-physical-qa-templates.mjs después de activar un nuevo candidato exact-head. No contiene evidencia física real."
 }
