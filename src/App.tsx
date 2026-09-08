@@ -30,6 +30,7 @@ import './services/canonicalStoreBridge';
 import './services/v2LeanChatSnapshotBridge';
 import './services/v2StoreChatMutationBridge';
 import './services/v2StoreReviewMutationBridge';
+import './services/v2CostCutoverSnapshotBridge';
 import './services/nationalIdentityHydrationBridge';
 import './services/notificationReceiptStoreBridge';
 import './services/physicalQaTelemetry';
