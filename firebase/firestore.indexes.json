@@ -17,6 +17,15 @@
       ]
     },
     {
+      "collectionGroup": "reviews",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "evaluado_id", "order": "ASCENDING" },
+        { "fieldPath": "calificacion", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "listings_v2",
       "queryScope": "COLLECTION",
       "fields": [
