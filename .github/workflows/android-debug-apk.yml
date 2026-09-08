@@ -125,6 +125,7 @@ jobs:
     timeout-minutes: 50
     permissions:
       contents: write
+      actions: read
     env:
       TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
       TUTOP_STAGING_WEB_CONFIG_PATH: .tutop-staging-web-config.json
@@ -139,6 +140,24 @@ jobs:
     steps:
       - name: Checkout feature ref
         uses: actions/checkout@v7
+      - name: Require same-SHA green consolidated gate for cost cutovers
+        if: inputs.enable_reviews_lazy_cutover || inputs.enable_wallet_lazy_cutover
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          COUNT="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
+            -f head_sha="$GITHUB_SHA" \
+            -f status=success \
+            -f event=workflow_dispatch \
+            -f per_page=10 \
+            --jq '.total_count')"
+          if [ "${COUNT:-0}" -lt 1 ]; then
+            echo "DETENIDO: los cutovers V2 requieren un october-01-validation exitoso sobre el mismo SHA ${GITHUB_SHA}." >&2
+            exit 43
+          fi
+          echo "✅ Gate consolidado verde confirmado para ${GITHUB_SHA}; cutovers staging autorizados para esta build."
       - name: Guard staging credential
         shell: bash
         run: |
