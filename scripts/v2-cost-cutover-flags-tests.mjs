@@ -6,6 +6,7 @@ const bridge = fs.readFileSync('src/services/v2CostCutoverSnapshotBridge.ts', 'u
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const envExample = fs.readFileSync('.env.example', 'utf8');
 const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
+const android = fs.readFileSync('.github/workflows/android-debug-apk.yml', 'utf8');
 
 assert.match(flags, /VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER/);
 assert.match(flags, /VITE_TUTOP_V2_WALLET_LAZY_CUTOVER/);
@@ -37,6 +38,14 @@ assert.match(october, /VITE_TUTOP_ENVIRONMENT: staging/);
 assert.match(october, /VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: "true"/);
 assert.match(october, /VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: "true"/);
 
+assert.match(android, /enable_reviews_lazy_cutover:[\s\S]*?default: false[\s\S]*?type: boolean/);
+assert.match(android, /enable_wallet_lazy_cutover:[\s\S]*?default: false[\s\S]*?type: boolean/);
+assert.match(android, /VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: \$\{\{ inputs\.enable_reviews_lazy_cutover \}\}/);
+assert.match(android, /VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: \$\{\{ inputs\.enable_wallet_lazy_cutover \}\}/);
+assert.doesNotMatch(android, /\n\s+push:/);
+assert.doesNotMatch(android, /\n\s+pull_request:/);
+assert.doesNotMatch(android, /\n\s+schedule:/);
+
 const currentRootCeiling = 565;
 const reviewsCutoverRootCeiling = currentRootCeiling - 200;
 const reviewsAndWalletCutoverRootCeiling = reviewsCutoverRootCeiling - 100;
@@ -48,5 +57,6 @@ console.log('PASS bridge order preserves lean chat behavior before canonical ide
 console.log('PASS reviews cutover removes both 100-doc review queries and fails closed through strike COUNT');
 console.log('PASS wallet cutover removes the 100-doc wallet history query while Wallet owns lazy history');
 console.log('PASS consolidated manual gate compiles with both cutovers enabled without activating runtime staging');
+console.log('PASS Android staging exposes only manual default-false cutover inputs');
 console.log('PASS target root ceilings are 365 with reviews cutover and 265 with reviews+wallet cutover');
 console.log('V2 cost cutover flags contract: PASS');
