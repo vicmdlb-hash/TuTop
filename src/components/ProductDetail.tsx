@@ -8,6 +8,7 @@ import { sellerReputationEvidence } from '../lib/reputationEvidence';
 import { onlineBackend } from '../services/onlineBackend';
 import { useAppStore } from '../store/useAppStore';
 import SellerPublicProfile from './SellerPublicProfile';
+import SellerReputationInline from './SellerReputationInline';
 
 const RECENT_KEY = 'tutop.recent-products.v1';
 
@@ -98,7 +99,7 @@ export default function ProductDetail() {
             <button type="button" onClick={() => setSellerProfileOpen(true)} className="flex w-full items-center gap-2 text-left" aria-label={`Ver perfil público de ${product.vendedor_nombre}`}>
               <div className="avatar-chip">{product.vendedor_nombre.slice(0, 1).toUpperCase()}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-1 text-[13px] font-bold"><span className="truncate">{product.vendedor_nombre}</span>{product.vendedor_verificado && <BadgeCheck className="h-4 w-4 text-sky-400" fill="currentColor" />}</div><p className="mt-0.5 text-[10px] text-muted">Facultad de {product.facultad} · Ver perfil</p></div>{product.vendedor_verificado && <ShieldCheck className="h-5 w-5 text-success" />}
             </button>
-            <div className={`mt-3 rounded-xl p-2.5 ${reputation.hasEvidence ? 'bg-emerald-500/[0.06]' : 'bg-white/[0.025]'}`}><div className={`flex items-center gap-1.5 text-[10px] font-black ${reputation.hasEvidence ? 'text-emerald-200' : 'text-slate-500'}`}><ShieldCheck className="h-3.5 w-3.5" />{reputation.label}</div><p className="mt-1 text-[8px] leading-4 text-slate-600">{reputation.detail}</p><p className="mt-1 text-[7px] leading-3 text-slate-700">La reputación mostrada usa sólo evidencia registrada en TuTop; no se generan estrellas ni puntuaciones estimadas.</p></div>
+            <SellerReputationInline sellerId={product.vendedor_id} visibleEvidence={reputation} />
           </div>
           <div className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-white/5 bg-[#0d1725] p-3 text-[12px] text-[#b6c0cf]"><span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-success" />{deliverySummary}</span><span className="text-[10px] font-bold text-slate-500">{product.stock || 1} disponible{(product.stock || 1) === 1 ? '' : 's'}</span></div>
 
