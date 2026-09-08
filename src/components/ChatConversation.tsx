@@ -190,7 +190,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
           refreshCanonicalOffers();
           if (result.transaction) {
             setFinalizedOfferId(visibleOffer.structured.id);
-            setCanonicalTransaction(result.transaction);
+            syncCanonicalTransaction(result.transaction);
             setStructuredMessage(`En trato · reservado por 2 h · operación ${result.transaction.id.slice(-6)}`);
           } else {
             setStructuredMessage('Contraoferta aceptada. El vendedor debe confirmar la reserva para iniciar la operación.');
@@ -214,7 +214,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
       setStructuredBusy(true); setStructuredMessage(null);
       const transaction = await nationalBackend.createTransactionFromAcceptedOffer(finalizableAccepted, 120);
       setFinalizedOfferId(finalizableAccepted.id);
-      setCanonicalTransaction(transaction);
+      syncCanonicalTransaction(transaction);
       refreshCanonicalOffers();
       setStructuredMessage(`En trato · reservado por 2 h · operación ${transaction.id.slice(-6)}`);
       submitText(`Confirmo el trato por $${finalizableAccepted.amount_mxn.toLocaleString('es-MX')}. El artículo queda reservado por 2 horas mientras acordamos la entrega.`);
@@ -246,7 +246,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
       <div className="mx-4 mt-2 flex items-center gap-2 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.05] px-3 py-2 text-[9px] leading-relaxed text-slate-400"><ShieldCheck className="h-4 w-4 shrink-0 text-emerald-300" />Acuérdense de verse en un lugar público. No compartas tu domicilio exacto si no es necesario.</div>
       {latestIncomingSafety.length > 0 && <div className={`mx-4 mt-2 flex items-start gap-2 rounded-xl border px-3 py-2 text-[9px] ${incomingSeverity === 'critical' || incomingSeverity === 'high' ? 'border-rose-400/20 bg-rose-500/[0.08] text-rose-200' : 'border-amber-400/15 bg-amber-500/[0.06] text-amber-100'}`}><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div><strong className="block">Topi detectó una señal de riesgo</strong><span className="mt-0.5 block opacity-80">{latestIncomingSafety[0].message}</span></div></div>}
       {structuredMessage && <div className="mx-4 mt-2 rounded-xl border border-violet-400/10 bg-violet-500/[0.06] px-3 py-2 text-[9px] text-violet-200">{structuredMessage}</div>}
-      <TransactionReservationCard chatId={chatId} currentUserId={user.id} onTransactionChange={syncCanonicalTransaction} />
+      <TransactionReservationCard chatId={chatId} currentUserId={user.id} transactionHint={canonicalTransaction} onTransactionChange={syncCanonicalTransaction} />
 
       {structuredPending && proposer(structuredPending) === user.id && <div className="mx-4 mt-2 flex items-center gap-2 rounded-xl border border-sky-400/10 bg-sky-500/[0.045] px-3 py-2 text-[9px] text-sky-200"><CircleDollarSign className="h-3.5 w-3.5" /><span>Tu propuesta de <strong>${structuredPending.amount_mxn.toLocaleString('es-MX')}</strong> está esperando respuesta.</span></div>}
       {finalizableAccepted && <div className="mx-4 mt-2 rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.06] p-3"><div className="flex gap-2"><PackageCheck className="h-4 w-4 text-emerald-300" /><div className="flex-1"><strong className="block text-[10px] text-emerald-200">El comprador aceptó tu contraoferta</strong><p className="mt-1 text-[9px] text-slate-500">${finalizableAccepted.amount_mxn.toLocaleString('es-MX')} · Confirma para reservar el artículo 2 horas.</p></div></div><button disabled={structuredBusy} onClick={() => void finalizeAcceptedCounter()} className="mt-3 h-9 w-full rounded-xl bg-emerald-500/15 text-[9px] font-black text-emerald-300 disabled:opacity-50">Confirmar trato y reservar</button></div>}
