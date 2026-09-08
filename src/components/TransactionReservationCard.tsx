@@ -9,6 +9,7 @@ const IDENTITY_KEY = 'tutop.university-identity.v1';
 type TransactionReservationCardProps = {
   chatId: string;
   currentUserId: string;
+  transactionHint?: MarketplaceTransaction | null;
   onReleased?: () => void;
   onTransactionChange?: (transaction: MarketplaceTransaction | null) => void;
 };
@@ -49,7 +50,7 @@ function meetupShareText(transaction: MarketplaceTransaction, pointName: string)
   ].join('\n');
 }
 
-export default function TransactionReservationCard({ chatId, currentUserId, onReleased, onTransactionChange }: TransactionReservationCardProps) {
+export default function TransactionReservationCard({ chatId, currentUserId, transactionHint, onReleased, onTransactionChange }: TransactionReservationCardProps) {
   const [transaction, setTransaction] = useState<MarketplaceTransaction | null>(null);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
@@ -76,6 +77,11 @@ export default function TransactionReservationCard({ chatId, currentUserId, onRe
     }).catch(() => undefined);
     return () => { active = false; };
   }, [chatId]);
+
+  useEffect(() => {
+    if (!transactionHint || transactionHint.chat_id !== chatId) return;
+    setTransaction(transactionHint);
+  }, [chatId, transactionHint]);
 
   useEffect(() => {
     onTransactionChange?.(transaction);
