@@ -13,11 +13,39 @@ Antes de tocar un dispositivo físico debe existir un nuevo candidato generado p
 1. `october-01-validation.yml` verde sobre el SHA exacto.
 2. `staging-v2-smoke.yml` verde sobre el mismo SHA.
 3. `android-debug-apk.yml` sobre ese mismo SHA.
-4. APK, SHA-256 y metadata de build verificables.
-5. `docs/PHYSICAL_QA_CANDIDATE_0.9.json` actualizado únicamente con datos reales del nuevo build y `physical_release_candidate=true`.
-6. Drift gate estricto verde para ese nuevo candidato.
+4. APK, SHA-256, metadata completa y `PHYSICAL_QA_CANDIDATE.generated.json` verificables.
+5. El workflow Android debe haber ejecutado `verify-generated-physical-qa-candidate.mjs` antes de publicar ese generated manifest.
+6. Activar el generated manifest en el repo únicamente con el activador exact-head protegido.
+7. Drift gate estricto verde para el nuevo candidato canónico.
 
 No inventar artifact ID, run ID, SHA, tamaño, timestamp ni evidencia.
+
+## Generación exacta y activación
+
+El workflow Android genera automáticamente `PHYSICAL_QA_CANDIDATE.generated.json` después de subir la APK. El archivo debe incluir datos reales del mismo build:
+
+- upload `artifact_id` devuelto por GitHub;
+- `build_run_id` y run number;
+- `gate_run_id`;
+- `staging_smoke_run_id`;
+- `build_commit_sha`;
+- tree SHA;
+- SHA-256 y tamaño de APK;
+- refs Git de todos los inputs empaquetados relevantes;
+- estado de cutover reviews/Wallet.
+
+El generated manifest no cambia automáticamente `docs/PHYSICAL_QA_CANDIDATE_0.9.json`. La activación debe realizarse sobre el mismo checkout exacto:
+
+```bash
+TUTOP_ALLOW_PHYSICAL_QA_CANDIDATE_ACTIVATION=exact-head \
+node scripts/activate-generated-physical-qa-candidate.mjs \
+  PHYSICAL_QA_CANDIDATE.generated.json \
+  docs/PHYSICAL_QA_CANDIDATE_0.9.json
+
+node scripts/physical-qa-candidate-drift.mjs
+```
+
+El activador vuelve a ejecutar `verify-generated-physical-qa-candidate.mjs`; si SHA, tree o refs no coinciden con HEAD, falla cerrado. No ejecutar este activador automáticamente desde el workflow Android.
 
 ## Guardrails
 
