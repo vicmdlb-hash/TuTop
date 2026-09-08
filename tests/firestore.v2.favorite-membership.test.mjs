@@ -63,7 +63,7 @@ test('consulta sin filtro uid no puede demostrar ownership y falla cerrada', asy
   await assertFails(getDocs(unsafe));
 });
 
-test('crear favorito acepta un listing canónico V2 aunque no exista espejo legacy', async () => {
+test('crear favorito acepta un listing canónico V2 activo y aprobado aunque no exista espejo legacy', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'listings_v2/v2-only'), {
       seller_id: 'seller', status: 'active', moderation_status: 'approved', created_at: Timestamp.now(), updated_at: Timestamp.now(),
@@ -75,15 +75,35 @@ test('crear favorito acepta un listing canónico V2 aunque no exista espejo lega
   }));
 });
 
-test('crear favorito sigue rechazando IDs inexistentes o documentId no determinista', async () => {
+test('crear favorito V2 rechaza target que existe sólo en products legacy', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'products/legacy-only'), {
+      vendedor_id: 'seller', estado: 'Activo', titulo: 'Legacy', created_at: Timestamp.now(), updated_at: Timestamp.now(),
+    });
+  });
+  const alice = env.authenticatedContext('alice').firestore();
+  await assertFails(setDoc(doc(alice, 'favorites/alice_legacy-only'), {
+    uid: 'alice', product_id: 'legacy-only', created_at: Timestamp.now(),
+  }));
+});
+
+test('crear favorito sigue rechazando IDs inexistentes, listings no aprobados o documentId no determinista', async () => {
   const alice = env.authenticatedContext('alice').firestore();
   await assertFails(setDoc(doc(alice, 'favorites/alice_missing'), {
     uid: 'alice', product_id: 'missing', created_at: Timestamp.now(),
   }));
 
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await setDoc(doc(ctx.firestore(), 'listings_v2/v2-only'), { seller_id: 'seller' });
+    await setDoc(doc(ctx.firestore(), 'listings_v2/pending'), {
+      seller_id: 'seller', status: 'active', moderation_status: 'pending', created_at: Timestamp.now(), updated_at: Timestamp.now(),
+    });
+    await setDoc(doc(ctx.firestore(), 'listings_v2/v2-only'), {
+      seller_id: 'seller', status: 'active', moderation_status: 'approved', created_at: Timestamp.now(), updated_at: Timestamp.now(),
+    });
   });
+  await assertFails(setDoc(doc(alice, 'favorites/alice_pending'), {
+    uid: 'alice', product_id: 'pending', created_at: Timestamp.now(),
+  }));
   await assertFails(setDoc(doc(alice, 'favorites/not-deterministic'), {
     uid: 'alice', product_id: 'v2-only', created_at: Timestamp.now(),
   }));
