@@ -44,9 +44,13 @@ assert.match(guard, /push: \['notification_outbox', 'device_tokens'\]/);
 assert.match(guard, /unknownTasks/);
 assert.match(guard, /count > limit/);
 assert.match(guard, /mantenimiento trusted podría truncarse/);
-assert.match(guardedRunner, /const args = process\.argv\.slice\(2\)/);
-assert.match(guardedRunner, /trusted-reputation-capacity-guard\.mjs', args/);
-assert.match(guardedRunner, /v2-trusted-maintenance\.mjs', args/);
+
+assert.match(guardedRunner, /defaultTasks = \['outcomes', 'reputation', 'credentials', 'saved-searches', 'push'\]/);
+assert.match(guardedRunner, /for \(const task of selectedTasks\)/);
+assert.match(guardedRunner, /trusted-reputation-capacity-guard\.mjs', \[\.\.\.sharedArgs, taskArg\]/);
+assert.match(guardedRunner, /v2-trusted-maintenance\.mjs', \[\.\.\.sharedArgs, taskArg\]/);
+assert.match(guardedRunner, /blocked\.push\(task\)/);
+assert.match(guardedRunner, /Las demás tareas seguras sí pudieron continuar/);
 
 assert.match(workflow, /on:\s*\n\s*workflow_dispatch:/);
 assert.doesNotMatch(workflow, /schedule:/);
@@ -57,8 +61,8 @@ assert.doesNotMatch(workflow, /run: node scripts\/v2-trusted-maintenance\.mjs --
 console.log('PASS private reviews remain restricted to their participants/admin');
 console.log('PASS seller profile and product detail consume the trusted reputation aggregate');
 console.log('PASS trusted reputation derives from completed transaction evidence in trusted maintenance');
-console.log('PASS all selected trusted maintenance tasks capacity-check every source they scan');
-console.log('PASS oversized trusted maintenance inputs abort before any guarded maintenance run');
+console.log('PASS every trusted maintenance task capacity-checks all source collections it scans');
+console.log('PASS oversized tasks fail closed without blocking other safe maintenance tasks');
 console.log('PASS stale trusted snapshots are disclosed instead of presented as real-time');
 console.log('PASS trusted maintenance remains manual-only during the Actions outage');
 console.log('Trusted public reputation + maintenance capacity contract: PASS');
