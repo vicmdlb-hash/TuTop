@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 const backend = fs.readFileSync('src/services/trustedReputationBackend.ts', 'utf8');
 const profile = fs.readFileSync('src/components/SellerPublicProfile.tsx', 'utf8');
+const inline = fs.readFileSync('src/components/SellerReputationInline.tsx', 'utf8');
+const productDetail = fs.readFileSync('src/components/ProductDetail.tsx', 'utf8');
 const evidence = fs.readFileSync('src/lib/reputationEvidence.ts', 'utf8');
 const rules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
 const maintenance = fs.readFileSync('scripts/v2-trusted-maintenance.mjs', 'utf8');
@@ -17,6 +19,9 @@ assert.match(backend, /REPUTATION_SUBJECT_MISMATCH/);
 assert.match(profile, /trustedReputationBackend\.load\(sellerId\)/);
 assert.match(profile, /Snapshot trusted pendiente de actualización reciente/);
 assert.match(profile, /no se presentan como información en tiempo real/);
+assert.match(inline, /trustedReputationBackend\.load\(sellerId\)/);
+assert.match(inline, /Snapshot trusted no reciente; no se presenta como información en tiempo real/);
+assert.match(productDetail, /<SellerReputationInline sellerId=\{product\.vendedor_id\} visibleEvidence=\{reputation\} \/>/);
 assert.match(evidence, /evidencia visible/);
 assert.match(evidence, /no representa necesariamente la reputación pública completa/);
 
@@ -31,7 +36,7 @@ assert.doesNotMatch(workflow, /schedule:/);
 assert.match(workflow, /TUTOP_ALLOW_V2_MAINTENANCE: staging-v2/);
 
 console.log('PASS private reviews remain restricted to their participants/admin');
-console.log('PASS public seller reputation reads only the trusted reputation aggregate');
+console.log('PASS seller profile and product detail consume the trusted reputation aggregate');
 console.log('PASS trusted reputation derives from completed transaction evidence in trusted maintenance');
 console.log('PASS stale trusted snapshots are disclosed instead of presented as real-time');
 console.log('PASS trusted maintenance remains manual-only during the Actions outage');
