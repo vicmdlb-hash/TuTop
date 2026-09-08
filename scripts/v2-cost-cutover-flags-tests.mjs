@@ -42,6 +42,13 @@ assert.match(android, /enable_reviews_lazy_cutover:[\s\S]*?default: false[\s\S]*
 assert.match(android, /enable_wallet_lazy_cutover:[\s\S]*?default: false[\s\S]*?type: boolean/);
 assert.match(android, /VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: \$\{\{ inputs\.enable_reviews_lazy_cutover \}\}/);
 assert.match(android, /VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: \$\{\{ inputs\.enable_wallet_lazy_cutover \}\}/);
+assert.match(android, /actions: read/);
+assert.match(android, /Require same-SHA green consolidated gate for cost cutovers/);
+assert.match(android, /actions\/workflows\/october-01-validation\.yml\/runs/);
+assert.match(android, /head_sha="\$GITHUB_SHA"/);
+assert.match(android, /status=success/);
+assert.match(android, /event=workflow_dispatch/);
+assert.match(android, /exit 43/);
 assert.doesNotMatch(android, /\n\s+push:/);
 assert.doesNotMatch(android, /\n\s+pull_request:/);
 assert.doesNotMatch(android, /\n\s+schedule:/);
@@ -57,6 +64,6 @@ console.log('PASS bridge order preserves lean chat behavior before canonical ide
 console.log('PASS reviews cutover removes both 100-doc review queries and fails closed through strike COUNT');
 console.log('PASS wallet cutover removes the 100-doc wallet history query while Wallet owns lazy history');
 console.log('PASS consolidated manual gate compiles with both cutovers enabled without activating runtime staging');
-console.log('PASS Android staging exposes only manual default-false cutover inputs');
+console.log('PASS Android cutover inputs default false and require same-SHA successful consolidated gate');
 console.log('PASS target root ceilings are 365 with reviews cutover and 265 with reviews+wallet cutover');
 console.log('V2 cost cutover flags contract: PASS');
