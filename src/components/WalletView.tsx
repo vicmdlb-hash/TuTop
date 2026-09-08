@@ -1,12 +1,34 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowDown, ArrowUp, Bell, Coins, Info, LockKeyhole, Star } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import type { WalletTransaction } from '../types';
+import { WALLET_HISTORY_INITIAL_LIMIT, walletHistoryBackend } from '../services/walletHistoryBackend';
 
 export default function WalletView() {
   const { user, transactions } = useAppStore();
+  const [lazyTransactions, setLazyTransactions] = useState<WalletTransaction[]>([]);
+  const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'ready' | 'error'>(transactions.length ? 'ready' : 'idle');
+  const history = transactions.length ? transactions : lazyTransactions;
   const nextTarget = user.nivel_vendedor === 'Novato' ? 50 : user.nivel_vendedor === 'Pro' ? 200 : user.puntos_prestigio;
   const levelBase = user.nivel_vendedor === 'Pro' ? 50 : 0;
   const progress = user.nivel_vendedor === 'Leyenda' ? 100 : Math.max(0, Math.min(100, ((user.puntos_prestigio - levelBase) / (nextTarget - levelBase)) * 100));
+
+  useEffect(() => {
+    if (transactions.length || historyState !== 'idle') return;
+    let active = true;
+    setHistoryState('loading');
+    void walletHistoryBackend.load(WALLET_HISTORY_INITIAL_LIMIT)
+      .then((items) => {
+        if (!active) return;
+        setLazyTransactions(items);
+        setHistoryState('ready');
+      })
+      .catch(() => {
+        if (active) setHistoryState('error');
+      });
+    return () => { active = false; };
+  }, [transactions.length, historyState]);
 
   return (
     <div className="page-pad pt-safe">
@@ -19,7 +41,7 @@ export default function WalletView() {
 
       <section className="prestige-card mt-3"><div className="flex items-start justify-between"><div className="flex items-center gap-3"><span className="star-disc"><Star className="h-5 w-5" fill="currentColor" /></span><div><div className="flex items-center gap-1"><h2 className="text-[14px] font-bold">Puntos de Prestigio</h2><Info className="h-3.5 w-3.5 text-muted" /></div><p className="mt-1 text-[25px] font-extrabold">{user.puntos_prestigio} PP</p></div></div><span className="text-[11px] text-muted">{user.nivel_vendedor}</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-[#202B3D]"><motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} className="h-full rounded-full bg-gradient-to-r from-[#7C3AED] to-[#A855F7]" /></div>{user.nivel_vendedor !== 'Leyenda' && <p className="mt-2 text-[11px] text-muted">Faltan <strong className="text-[#FBBF24]">{Math.max(0, nextTarget - user.puntos_prestigio)} PP</strong> para {user.nivel_vendedor === 'Novato' ? 'Pro' : 'Leyenda'}</p>}</section>
 
-      <section className="mt-6"><div className="mb-2 flex items-center justify-between"><h2 className="section-title">Historial de movimientos</h2><span className="text-[10px] text-success">Sincronizado</span></div><div className="transaction-list">{transactions.slice(0, 8).map((tx) => <div key={tx.id} className="transaction-row"><span className={`tx-icon ${tx.type === 'income' ? 'tx-income' : 'tx-expense'}`}>{tx.type === 'income' ? <ArrowUp /> : <ArrowDown />}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-semibold">{tx.description}</p><p className="mt-0.5 text-[10px] text-muted">{new Date(tx.date).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}</p></div><strong className={`text-[12px] ${tx.amount >= 0 ? 'text-success' : 'text-[#FB7185]'}`}>{tx.amount > 0 ? '+' : ''}{tx.amount} UCoins</strong></div>)}</div></section>
+      <section className="mt-6"><div className="mb-2 flex items-center justify-between"><h2 className="section-title">Historial de movimientos</h2><span className={`text-[10px] ${historyState === 'error' ? 'text-amber-300' : 'text-success'}`}>{historyState === 'loading' ? 'Cargando…' : historyState === 'error' ? 'No disponible' : 'Sincronizado'}</span></div><div className="transaction-list">{history.slice(0, 8).map((tx) => <div key={tx.id} className="transaction-row"><span className={`tx-icon ${tx.type === 'income' ? 'tx-income' : 'tx-expense'}`}>{tx.type === 'income' ? <ArrowUp /> : <ArrowDown />}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-semibold">{tx.description}</p><p className="mt-0.5 text-[10px] text-muted">{new Date(tx.date).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}</p></div><strong className={`text-[12px] ${tx.amount >= 0 ? 'text-success' : 'text-[#FB7185]'}`}>{tx.amount > 0 ? '+' : ''}{tx.amount} UCoins</strong></div>)}{historyState === 'ready' && history.length === 0 && <p className="py-3 text-center text-[11px] text-muted">Aún no hay movimientos.</p>}</div></section>
     </div>
   );
 }
