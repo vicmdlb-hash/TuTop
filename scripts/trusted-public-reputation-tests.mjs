@@ -8,6 +8,8 @@ const productDetail = fs.readFileSync('src/components/ProductDetail.tsx', 'utf8'
 const evidence = fs.readFileSync('src/lib/reputationEvidence.ts', 'utf8');
 const rules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
 const maintenance = fs.readFileSync('scripts/v2-trusted-maintenance.mjs', 'utf8');
+const guard = fs.readFileSync('scripts/trusted-reputation-capacity-guard.mjs', 'utf8');
+const guardedRunner = fs.readFileSync('scripts/v2-trusted-maintenance-guarded.mjs', 'utf8');
 const workflow = fs.readFileSync('.github/workflows/v2-trusted-maintenance.yml', 'utf8');
 
 assert.match(backend, /reputation\/\$\{cleanUid\}/);
@@ -31,13 +33,26 @@ assert.match(rules, /match \/reputation\/\{uid\} \{ allow read: if signedIn\(\);
 assert.match(maintenance, /query\('transactions_v2'\), query\('reviews'\), query\('moderation_cases'\)/);
 assert.match(maintenance, /const completedChats = new Map/);
 assert.match(maintenance, /patchWrite\(`reputation\/\$\{uid\}`/);
+
+assert.match(guard, /runAggregationQuery/);
+assert.match(guard, /transactions_v2/);
+assert.match(guard, /reviews/);
+assert.match(guard, /moderation_cases/);
+assert.match(guard, /count > limit/);
+assert.match(guard, /reputación trusted podría truncarse/);
+assert.match(guardedRunner, /trusted-reputation-capacity-guard\.mjs/);
+assert.match(guardedRunner, /v2-trusted-maintenance\.mjs/);
+
 assert.match(workflow, /on:\s*\n\s*workflow_dispatch:/);
 assert.doesNotMatch(workflow, /schedule:/);
 assert.match(workflow, /TUTOP_ALLOW_V2_MAINTENANCE: staging-v2/);
+assert.match(workflow, /node scripts\/v2-trusted-maintenance-guarded\.mjs --apply/);
+assert.doesNotMatch(workflow, /run: node scripts\/v2-trusted-maintenance\.mjs --apply/);
 
 console.log('PASS private reviews remain restricted to their participants/admin');
 console.log('PASS seller profile and product detail consume the trusted reputation aggregate');
 console.log('PASS trusted reputation derives from completed transaction evidence in trusted maintenance');
+console.log('PASS oversized reputation datasets abort before trusted maintenance writes');
 console.log('PASS stale trusted snapshots are disclosed instead of presented as real-time');
 console.log('PASS trusted maintenance remains manual-only during the Actions outage');
 console.log('Trusted public reputation contract: PASS');
