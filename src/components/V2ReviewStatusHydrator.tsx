@@ -1,14 +1,18 @@
 import { useEffect } from 'react';
 import { reviewStatusBackend } from '../services/reviewStatusBackend';
-import { nationalSchemaEnabled } from '../services/nationalBackend';
+import { reviewsLazyCutoverEnabled } from '../services/v2CostCutoverFlags';
 import { useAppStore } from '../store/useAppStore';
 
 export default function V2ReviewStatusHydrator() {
   const activeChatId = useAppStore((state) => state.activeChatId);
   const userId = useAppStore((state) => state.user.id);
+  const cutoverEnabled = reviewsLazyCutoverEnabled();
 
   useEffect(() => {
-    if (!nationalSchemaEnabled() || !activeChatId || !userId) return;
+    // Legacy snapshot mode already carries authored reviews. The point lookup is
+    // enabled only after the explicit staging-only cutover removes those lists,
+    // so disabled flags add zero Firestore reads.
+    if (!cutoverEnabled || !activeChatId || !userId) return;
     let active = true;
     void reviewStatusBackend.load(activeChatId)
       .then((review) => {
@@ -19,7 +23,7 @@ export default function V2ReviewStatusHydrator() {
       })
       .catch((error) => console.warn('[TuTop V2 review status]', error));
     return () => { active = false; };
-  }, [activeChatId, userId]);
+  }, [activeChatId, userId, cutoverEnabled]);
 
   return null;
 }
