@@ -35,6 +35,7 @@ const exact = [
   ['apk_size_bytes', candidate.apk_size_bytes],
   ['reviews_lazy_cutover', candidate?.cost_cutovers?.reviews_lazy],
   ['wallet_lazy_cutover', candidate?.cost_cutovers?.wallet_lazy],
+  ['favorites_visible_cutover', candidate?.cost_cutovers?.favorites_visible],
 ];
 
 for (const [field, expected] of exact) {
@@ -47,6 +48,7 @@ if (!/^[a-f0-9]{40}$/.test(metadata.build_tree_sha || '')) stop('metadata.build_
 if (!/^[a-f0-9]{64}$/.test(metadata.apk_sha256 || '')) stop('metadata.apk_sha256 inválido');
 if (!['true', 'false'].includes(metadata.reviews_lazy_cutover)) stop('reviews_lazy_cutover inválido');
 if (!['true', 'false'].includes(metadata.wallet_lazy_cutover)) stop('wallet_lazy_cutover inválido');
+if (!['true', 'false'].includes(metadata.favorites_visible_cutover)) stop('favorites_visible_cutover inválido');
 
 console.log('PASS Android metadata matches generated Physical QA candidate field by field');
 console.log(`head=${metadata.head_sha} artifact=${metadata.artifact_id} apk_sha256=${metadata.apk_sha256}`);
