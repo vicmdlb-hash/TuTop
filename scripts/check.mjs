@@ -20,6 +20,7 @@ const steps = [
   [process.execPath, ['scripts/v2-snapshot-cost-audit.mjs']],
   [process.execPath, ['scripts/v2-snapshot-budget-tests.mjs']],
   [process.execPath, ['scripts/v2-cost-cutover-flags-tests.mjs']],
+  [process.execPath, ['scripts/visible-favorites-cutover-tests.mjs']],
   [process.execPath, ['scripts/wallet-lazy-history-readiness-tests.mjs']],
   [process.execPath, ['scripts/trusted-public-reputation-tests.mjs']],
   [process.execPath, ['scripts/review-lazy-status-contract-tests.mjs']],
