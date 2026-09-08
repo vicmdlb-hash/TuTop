@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, BadgeCheck, PackageCheck, ShieldCheck, Store } from 'lucide-react';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
-import { trustedReputationBackend, type TrustedReputationSnapshot } from '../services/trustedReputationBackend';
+import {
+  trustedReputationAgeHours,
+  trustedReputationBackend,
+  trustedReputationIsFresh,
+  type TrustedReputationSnapshot,
+} from '../services/trustedReputationBackend';
 import { useAppStore } from '../store/useAppStore';
 
 export default function SellerPublicProfile({
@@ -44,6 +49,8 @@ export default function SellerPublicProfile({
     .sort((a, b) => new Date(b.updated_at || b.fecha_creacion).getTime() - new Date(a.updated_at || a.fecha_creacion).getTime());
 
   const hasTrustedEvidence = Boolean(trusted && (trusted.seller_review_count > 0 || trusted.completed_as_seller > 0));
+  const trustedFresh = trustedReputationIsFresh(trusted);
+  const trustedAgeHours = trustedReputationAgeHours(trusted);
   const reputationLabel = hasTrustedEvidence
     ? trusted!.seller_review_count > 0 && trusted!.seller_positive_rate != null
       ? `${Math.round(trusted!.seller_positive_rate)}% cumplió · ${trusted!.seller_review_count} ${trusted!.seller_review_count === 1 ? 'reseña' : 'reseñas'}`
@@ -57,6 +64,11 @@ export default function SellerPublicProfile({
       ? visibleEvidence.detail
       : 'Cargando reputación trusted…';
   const reputationHasEvidence = hasTrustedEvidence || visibleEvidence.hasEvidence;
+  const trustedFreshnessNote = hasTrustedEvidence
+    ? trustedFresh
+      ? 'Reputación trusted agregada por TuTop y actualizada recientemente; el cliente no puede fabricarla ni modificarla.'
+      : `Snapshot trusted pendiente de actualización reciente${trustedAgeHours == null ? '' : ` · hace ~${trustedAgeHours} h`}. Los valores siguen siendo trusted, pero no se presentan como información en tiempo real.`
+    : 'Si no existe snapshot trusted, TuTop muestra sólo evidencia visible para esta sesión y no la presenta como reputación pública completa.';
 
   return (
     <div className="fixed inset-0 z-[90] bg-[#050a13] text-white" role="dialog" aria-modal="true" aria-label={`Perfil público de ${sellerName}`}>
@@ -80,7 +92,7 @@ export default function SellerPublicProfile({
             <div className={`mt-4 rounded-2xl p-3 ${reputationHasEvidence ? 'bg-emerald-500/[0.07]' : 'bg-white/[0.025]'}`}>
               <div className={`flex items-center gap-2 text-[11px] font-black ${reputationHasEvidence ? 'text-emerald-200' : 'text-slate-500'}`}><ShieldCheck className="h-4 w-4" />{reputationLabel}</div>
               <p className="mt-1 text-[9px] leading-4 text-slate-500">{reputationDetail}</p>
-              <p className="mt-2 text-[8px] leading-4 text-slate-600">{hasTrustedEvidence ? 'Reputación trusted agregada por TuTop; el cliente no puede fabricarla ni modificarla.' : 'Si no existe snapshot trusted, TuTop muestra sólo evidencia visible para esta sesión y no la presenta como reputación pública completa.'}</p>
+              <p className="mt-2 text-[8px] leading-4 text-slate-600">{trustedFreshnessNote}</p>
             </div>
           </section>
 
