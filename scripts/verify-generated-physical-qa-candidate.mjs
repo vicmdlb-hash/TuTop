@@ -3,6 +3,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const file = path.resolve(process.argv[2] || 'PHYSICAL_QA_CANDIDATE.generated.json');
+const metadataFile = path.resolve(process.argv[3] || 'TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt');
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -45,5 +46,13 @@ for (const [repoPath, expected] of Object.entries(refs)) {
 if (typeof candidate?.cost_cutovers?.reviews_lazy !== 'boolean') stop('reviews_lazy flag inválido');
 if (typeof candidate?.cost_cutovers?.wallet_lazy !== 'boolean') stop('wallet_lazy flag inválido');
 
-console.log(`PASS generated Physical QA candidate matches exact checkout: ${head}`);
+if (!fs.existsSync(metadataFile)) stop(`falta metadata Android: ${metadataFile}`);
+const metadataCheck = spawnSync(process.execPath, [
+  'scripts/verify-physical-qa-candidate-metadata.mjs',
+  file,
+  metadataFile,
+], { encoding: 'utf8', shell: false });
+if (metadataCheck.status !== 0) stop(String(metadataCheck.stderr || metadataCheck.stdout || 'metadata mismatch').trim());
+
+console.log(`PASS generated Physical QA candidate matches exact checkout and Android metadata: ${head}`);
 console.log(`artifact=${candidate.artifact_id} run=${candidate.build_run_id} apk_sha256=${candidate.apk_sha256}`);
