@@ -23,6 +23,7 @@ const steps = [
   [process.execPath, ['scripts/trusted-public-reputation-tests.mjs']],
   [process.execPath, ['scripts/review-lazy-status-contract-tests.mjs']],
   [process.execPath, ['scripts/review-strike-cutover-readiness-tests.mjs']],
+  [process.execPath, ['scripts/review-strike-emulator-gate-contract-tests.mjs']],
   [process.execPath, ['scripts/chat-lazy-history-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-lean-chat-snapshot-tests.mjs']],
   [process.execPath, ['scripts/unread-aggregation-migration-tests.mjs']],
