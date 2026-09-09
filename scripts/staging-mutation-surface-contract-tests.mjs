@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 const read = (file) => fs.readFileSync(file, 'utf8');
 const guard = read('scripts/staging-freeze-guard.mjs');
+const rawApplyGuard = read('scripts/dangerous-script-apply-guard.mjs');
+const firebaseAuth = read('scripts/firebase-ci-auth.mjs');
 const deployRules = read('scripts/deploy-firebase-staging.mjs');
 const deployAuth = read('scripts/deploy-firebase-auth-staging.mjs');
 const enableFirestore = read('scripts/enable-firestore-api.mjs');
@@ -64,6 +66,8 @@ for (const workflow of [stagingWorkflow, androidWorkflow, trustedWorkflow]) {
   assert.match(workflow, /head_sha="\$GITHUB_SHA"/);
   assert.match(workflow, /status=success/);
   assert.match(workflow, /event=workflow_dispatch/);
+  assert.match(workflow, /TUTOP_FIREBASE_OAUTH_CLIENT_ID: \$\{\{ secrets\.FIREBASE_OAUTH_CLIENT_ID \}\}/);
+  assert.match(workflow, /TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: \$\{\{ secrets\.FIREBASE_OAUTH_CLIENT_SECRET \}\}/);
 }
 assert.match(androidWorkflow, /TUTOP_VALIDATED_STAGING_SHA=\$GITHUB_SHA/);
 assert.match(trustedWorkflow, /TUTOP_VALIDATED_STAGING_SHA=\$GITHUB_SHA/);
@@ -119,16 +123,29 @@ assert.match(accountErasure, /const REQUIRED = 'tutop-beta-vicmdlb-1356585881'/)
 assert.match(accountErasure, /TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed'/);
 assert.match(accountErasure, /active_marketplace_transaction/);
 
-// Internal implementations keep their own apply switches for compatibility and dry-run tooling.
-// Supported npm/workflow mutation surfaces must never route to them directly.
-assert.match(seed, /process\.argv\.includes\('--apply'\)/);
-assert.match(seed, /TUTOP_ALLOW_V2_SEED/);
-assert.match(reconcile, /process\.argv\.includes\('--apply'\)/);
-assert.match(reconcile, /TUTOP_ALLOW_V2_RECONCILE/);
-assert.match(maintenance, /process\.argv\.includes\('--apply'\)/);
-assert.match(maintenance, /TUTOP_ALLOW_V2_MAINTENANCE/);
-assert.match(observability, /process\.argv\.includes\('--apply'\)/);
-assert.match(observability, /TUTOP_ALLOW_V2_OBSERVABILITY/);
+// Raw internal mutators still keep dry-run/apply compatibility, but firebase-ci-auth
+// installs an entrypoint-aware freeze guard before any token can be obtained.
+assert.match(firebaseAuth, /dangerous-script-apply-guard\.mjs/);
+assert.match(rawApplyGuard, /process\.argv\.includes\('--apply'\)/);
+for (const [filename, allowEnv] of [
+  ['seed-v2-catalog.mjs', 'TUTOP_ALLOW_V2_SEED'],
+  ['reconcile-v2-reservations.mjs', 'TUTOP_ALLOW_V2_RECONCILE'],
+  ['v2-trusted-maintenance.mjs', 'TUTOP_ALLOW_V2_MAINTENANCE'],
+  ['v2-observability-snapshot.mjs', 'TUTOP_ALLOW_V2_OBSERVABILITY'],
+]) {
+  assert.match(rawApplyGuard, new RegExp(filename.replaceAll('.', '\\.')));
+  assert.match(rawApplyGuard, new RegExp(allowEnv));
+}
+for (const source of [seed, reconcile, maintenance, observability]) {
+  assert.match(source, /firebase-ci-auth\.mjs/);
+  assert.match(source, /process\.argv\.includes\('--apply'\)/);
+}
+assert.match(rawApplyGuard, /requireStagingGate: true/);
+
+assert.match(firebaseAuth, /TUTOP_FIREBASE_OAUTH_CLIENT_ID/);
+assert.match(firebaseAuth, /TUTOP_FIREBASE_OAUTH_CLIENT_SECRET/);
+assert.doesNotMatch(firebaseAuth, /const FIREBASE_OAUTH_CLIENT_ID\s*=\s*['"][^'"]+['"]/);
+assert.doesNotMatch(firebaseAuth, /const FIREBASE_OAUTH_CLIENT_SECRET\s*=\s*['"][^'"]+['"]/);
 
 console.log('PASS remote staging entrypoints require exact project, branch, GitHub Actions and October SHA binding');
 console.log('PASS Firestore service enablement is covered by the same central freeze guard');
@@ -136,6 +153,8 @@ console.log('PASS App Check ENFORCED is physically unavailable during Runtime Fr
 console.log('PASS Google Play/Internal App Sharing remains blocked by zero-investment project policy');
 console.log('PASS direct Spark deploy is blocked while local emulators remain available');
 console.log('PASS public npm seed/reconcile/maintenance mutation surfaces route through exact-SHA wrappers');
+console.log('PASS raw seed/reconcile/maintenance/observability --apply invocations are independently guarded before CI auth');
+console.log('PASS Firebase OAuth client credentials are externally managed and not embedded in repository source');
 console.log('PASS public maintenance apply adds the capacity guard before trusted writes');
 console.log('PASS trusted workflow apply surfaces route through October+staging exact-SHA wrapper');
 console.log('PASS destructive account erasure remains exact-staging, reviewed and transaction-aware');
