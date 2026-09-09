@@ -1,13 +1,7 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
-const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
-const REQUIRED_PROJECT = 'tutop-beta-vicmdlb-1356585881';
-const HISTORICAL_PROJECT = 'tutop-3a4f7';
-
-if (!projectId || projectId === HISTORICAL_PROJECT || (projectId !== REQUIRED_PROJECT && process.env.TUTOP_ALLOW_ALTERNATE_STAGING !== '1')) {
-  throw new Error('Staging admin helper bloqueado: project ID no autorizado.');
-}
-
+const projectId = assertStagingFreezeContext();
 const token = await firebaseCiAccessToken();
 const firestoreBase = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
 const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Goog-User-Project': projectId };
