@@ -1,0 +1,56 @@
+{
+  "schema": "tutop.runtime-freeze-candidate.v1",
+  "app_version": "0.9.0-beta.0",
+  "branch": "feat/tutop-0.8-p0",
+  "base_branch": "main",
+  "base_sha": "b3dfb5eaf87c41109e6e1c640bae040c77b5a917",
+  "status": "runtime_freeze_candidate",
+  "runtime_validated": false,
+  "head_binding": "resolve_at_gate_from_GITHUB_SHA",
+  "feature_freeze": true,
+  "allowed_pre_validation_changes": [
+    "P0_or_P1_bug_fix",
+    "security_fix",
+    "integration_fix",
+    "cost_guard",
+    "QA_or_release_hardening",
+    "documentation_that_does_not_change_runtime_behavior"
+  ],
+  "forbidden_without_explicit_authorization": [
+    "merge_main",
+    "production_deploy",
+    "billing_enablement",
+    "play_store_release",
+    "sms_or_identity_platform_enablement",
+    "app_check_enforcement",
+    "physical_qa_candidate_claim_without_exact_head_build"
+  ],
+  "cost_cutovers_default": {
+    "reviews_lazy": false,
+    "wallet_lazy": false,
+    "favorites_visible": false
+  },
+  "required_promotion_sequence": [
+    "october_01_validation_same_sha_green",
+    "staging_v2_smoke_same_sha_green",
+    "android_v2_same_sha_build",
+    "apk_sha256_and_metadata",
+    "generated_candidate_exact_head_verification",
+    "guarded_candidate_activation",
+    "strict_candidate_drift_green",
+    "physical_qa_A_and_B"
+  ],
+  "required_october_evidence": [
+    "npm_run_check",
+    "github_readiness",
+    "beta_readiness",
+    "v2_staging_readiness",
+    "typecheck",
+    "web_build_with_all_three_cutovers_compiled",
+    "v2_rules_prepare",
+    "firestore_emulator_security_suite"
+  ],
+  "required_same_sha_chain": true,
+  "current_physical_qa_candidate": null,
+  "notes": "This manifest freezes promotion invariants, not a commit SHA. The exact candidate SHA is resolved at workflow dispatch through GITHUB_SHA and must remain identical across October, staging and Android. runtime_validated remains false until those real gates pass."
+}
