@@ -51,6 +51,23 @@
     "firestore_emulator_security_suite"
   ],
   "required_same_sha_chain": true,
+  "secondary_workflow_policy": {
+    "diagnostic_manual_only": [
+      "quality.yml",
+      "firestore-v2-security.yml",
+      "ci-auth-parallel-validation.yml"
+    ],
+    "trusted_staging_mutation": {
+      "workflow": "v2-trusted-maintenance.yml",
+      "manual_only": true,
+      "requires_october_same_sha_green": true
+    },
+    "quarantined_self_trigger_workflows": [
+      "one-shot-085-hardened.yml",
+      "provision-firebase-staging-v2.yml"
+    ],
+    "quarantine_rule": "Do not edit, dispatch, or use quarantined self-trigger workflows during the Actions budget outage. Editing either file can trigger a push run. They are not promotion authorities for TuTop 0.9 runtime freeze."
+  },
   "current_physical_qa_candidate": null,
   "notes": "This manifest freezes promotion invariants, not a commit SHA. The exact candidate SHA is resolved at workflow dispatch through GITHUB_SHA and must remain identical across October, staging and Android. runtime_validated remains false until those real gates pass."
 }
