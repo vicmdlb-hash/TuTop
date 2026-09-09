@@ -72,6 +72,15 @@ async function queryGroup(firebase: FirebaseRestClient, uid: string, productIds:
   return found;
 }
 
+async function exactGroup(firebase: FirebaseRestClient, uid: string, productIds: string[]) {
+  const found = new Set<string>();
+  await Promise.all(productIds.map(async (productId) => {
+    const document = await firebase.getDocument<any>(`favorites/${key(uid, productId)}`);
+    if (document?.data?.uid === uid && document.data.product_id === productId) found.add(productId);
+  }));
+  return found;
+}
+
 export const visibleFavoritesBackend = {
   beginMutation(productId: string, favorited: boolean) {
     const firebase = client();
@@ -116,7 +125,16 @@ export const visibleFavoritesBackend = {
         pending = (async () => {
           const found = new Set<string>();
           for (const group of chunks(missing, MAX_IN_VALUES)) {
-            for (const productId of await queryGroup(firebase, uid, group)) found.add(productId);
+            let groupFound: Set<string>;
+            try {
+              groupFound = await queryGroup(firebase, uid, group);
+            } catch {
+              // Fail-safe correctness fallback: favorite IDs are deterministic, so an
+              // unavailable IN query/index must not be interpreted as "not favorited".
+              // Exact document reads preserve truth without restoring the broad 200-doc snapshot.
+              groupFound = await exactGroup(firebase, uid, group);
+            }
+            for (const productId of groupFound) found.add(productId);
           }
           const expiresAt = Date.now() + CACHE_TTL_MS;
           for (const productId of missing) {
