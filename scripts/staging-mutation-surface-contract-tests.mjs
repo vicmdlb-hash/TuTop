@@ -5,6 +5,7 @@ const read = (file) => fs.readFileSync(file, 'utf8');
 const guard = read('scripts/staging-freeze-guard.mjs');
 const rawApplyGuard = read('scripts/dangerous-script-apply-guard.mjs');
 const firebaseAuth = read('scripts/firebase-ci-auth.mjs');
+const firebaseDoctor = read('scripts/firebase-doctor.mjs');
 const deployRules = read('scripts/deploy-firebase-staging.mjs');
 const deployAuth = read('scripts/deploy-firebase-auth-staging.mjs');
 const enableFirestore = read('scripts/enable-firestore-api.mjs');
@@ -109,9 +110,14 @@ for (const source of [releaseInternal, uploadInternal]) {
   assert.match(source, /productionPublishingAllowed !== true/);
 }
 
+assert.equal(packageJson.scripts['firebase:link'], 'node scripts/freeze-blocked-command.mjs firebase:link');
+assert.doesNotMatch(packageJson.scripts['firebase:link'], /link-firebase-project\.mjs/);
 assert.equal(packageJson.scripts['firebase:deploy:spark'], 'node scripts/freeze-blocked-command.mjs firebase:deploy:spark');
 assert.doesNotMatch(packageJson.scripts['firebase:deploy:spark'], /^firebase deploy/);
 assert.match(packageJson.scripts['firebase:emulators:spark'], /firebase emulators:start/);
+assert.match(firebaseDoctor, /Runtime Freeze Candidate \/ NOT VALIDATED/);
+assert.match(firebaseDoctor, /\.firebaserc no es autoridad de staging/);
+assert.doesNotMatch(firebaseDoctor, /Firebase doctor Spark OK/);
 assert.equal(packageJson.scripts['v2:catalog:seed'], 'node scripts/gated-v2-catalog-seed.mjs');
 assert.equal(packageJson.scripts['v2:reservations:reconcile'], 'node scripts/gated-v2-reservation-reconcile.mjs');
 assert.equal(packageJson.scripts['v2:maintenance'], 'node scripts/gated-v2-maintenance.mjs');
@@ -180,7 +186,8 @@ console.log('PASS staging deploy must prove real read-only composite-index readi
 console.log('PASS review/favorites/geography index probes cannot mutate staging data');
 console.log('PASS App Check ENFORCED is physically unavailable during Runtime Freeze Candidate');
 console.log('PASS Google Play/Internal App Sharing remains blocked by zero-investment project policy');
-console.log('PASS direct Spark deploy is blocked while local emulators remain available');
+console.log('PASS legacy firebase:link and direct Spark deploy are blocked while local emulators remain available');
+console.log('PASS Firebase doctor reports PREPARED / NOT VALIDATED and treats .firebaserc as non-authoritative');
 console.log('PASS public npm seed/reconcile/maintenance mutation surfaces route through exact-SHA wrappers');
 console.log('PASS raw seed/reconcile/maintenance/observability --apply invocations are independently guarded before CI auth');
 console.log('PASS Firebase OAuth client credentials are externally managed and not embedded in repository source');
