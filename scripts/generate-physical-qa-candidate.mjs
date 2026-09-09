@@ -48,6 +48,7 @@ const outputPath = path.resolve(process.env.TUTOP_CANDIDATE_OUTPUT_PATH || 'PHYS
 if (!fs.existsSync(apkPath)) stop(`falta APK: ${apkPath}`);
 
 const headSha = required('GITHUB_SHA');
+if (!/^[a-f0-9]{40}$/i.test(headSha)) stop('GITHUB_SHA inválido');
 const resolvedHead = git('rev-parse', 'HEAD');
 if (resolvedHead !== headSha) stop(`HEAD ${resolvedHead} no coincide con GITHUB_SHA ${headSha}`);
 
@@ -60,8 +61,14 @@ if (!Number.isSafeInteger(runNumber) || runNumber <= 0) stop('run number inváli
 
 const gateRunId = Number(required('TUTOP_VALIDATED_GATE_RUN_ID'));
 const stagingRunId = Number(required('TUTOP_VALIDATED_STAGING_RUN_ID'));
+const gateCommitSha = required('TUTOP_VALIDATED_GATE_SHA');
+const stagingSmokeCommitSha = required('TUTOP_VALIDATED_STAGING_SHA');
 if (!Number.isSafeInteger(gateRunId) || gateRunId <= 0) stop('gate run ID inválido');
 if (!Number.isSafeInteger(stagingRunId) || stagingRunId <= 0) stop('staging run ID inválido');
+if (!/^[a-f0-9]{40}$/i.test(gateCommitSha)) stop('gate SHA inválido');
+if (!/^[a-f0-9]{40}$/i.test(stagingSmokeCommitSha)) stop('staging smoke SHA inválido');
+if (gateCommitSha !== headSha) stop(`gate SHA ${gateCommitSha} no coincide con build SHA ${headSha}`);
+if (stagingSmokeCommitSha !== headSha) stop(`staging smoke SHA ${stagingSmokeCommitSha} no coincide con build SHA ${headSha}`);
 
 const apkSha256 = parseSha256File(checksumPath);
 const apkSizeBytes = fs.statSync(apkPath).size;
@@ -89,7 +96,9 @@ const candidate = {
   build_run_id: buildRunId,
   build_run_number: runNumber,
   gate_run_id: gateRunId,
+  gate_commit_sha: gateCommitSha,
   staging_smoke_run_id: stagingRunId,
+  staging_smoke_commit_sha: stagingSmokeCommitSha,
   build_commit_sha: headSha,
   build_tree_sha: buildTreeSha,
   apk_sha256: apkSha256,
@@ -104,7 +113,7 @@ const candidate = {
   candidate_status: 'generated_exact_head_pending_repo_activation',
   replacement_required: false,
   generated_at: new Date().toISOString(),
-  notes: 'Generated from the exact Android Actions build after same-SHA consolidated gate and staging smoke. This file is an immutable build artifact; repo activation requires copying these real values into docs/PHYSICAL_QA_CANDIDATE_0.9.json and rerunning the strict drift gate.',
+  notes: 'Generated from the exact Android Actions build after same-SHA consolidated gate and staging smoke. Gate SHA, staging SHA and build SHA are identical and recorded explicitly. This file is an immutable build artifact; repo activation requires copying these real values into docs/PHYSICAL_QA_CANDIDATE_0.9.json and rerunning the strict drift gate.',
 };
 
 fs.writeFileSync(outputPath, `${JSON.stringify(candidate, null, 2)}\n`);
