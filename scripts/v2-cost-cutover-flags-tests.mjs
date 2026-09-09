@@ -9,6 +9,7 @@ const app = fs.readFileSync('src/App.tsx', 'utf8');
 const envExample = fs.readFileSync('.env.example', 'utf8');
 const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
 const android = fs.readFileSync('.github/workflows/android-debug-apk.yml', 'utf8');
+const exportBuildEnv = fs.readFileSync('scripts/export-staging-v2-build-env.mjs', 'utf8');
 
 assert.match(flags, /VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER/);
 assert.match(flags, /VITE_TUTOP_V2_WALLET_LAZY_CUTOVER/);
@@ -84,6 +85,16 @@ assert.doesNotMatch(android, /\n\s+push:/);
 assert.doesNotMatch(android, /\n\s+pull_request:/);
 assert.doesNotMatch(android, /\n\s+schedule:/);
 
+for (const name of [
+  'VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER',
+  'VITE_TUTOP_V2_WALLET_LAZY_CUTOVER',
+  'VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER',
+]) {
+  assert.match(exportBuildEnv, new RegExp(name));
+}
+assert.match(exportBuildEnv, /no está autorizado para el APK baseline del Runtime Freeze/);
+assert.match(exportBuildEnv, /completar primero Physical QA A\+B con los tres cutovers en false/);
+
 const currentRootCeiling = 565;
 const reviewsCutoverRootCeiling = currentRootCeiling - 200;
 const reviewsAndWalletCutoverRootCeiling = reviewsCutoverRootCeiling - 100;
@@ -99,6 +110,7 @@ console.log('PASS wallet cutover removes the 100-doc wallet history query while 
 console.log('PASS favorites cutover removes the broad 200-doc query and hydrates exact membership for up to 120 visible V2 listings');
 console.log('PASS favorites IN-query failure falls back to deterministic exact membership without broad snapshot reads');
 console.log('PASS late visible-favorites hydration preserves concurrent optimistic toggles');
-console.log('PASS consolidated manual gate compiles all three cutovers; Android keeps each manual input default-off');
+console.log('PASS consolidated manual gate compiles all three cutovers; Android inputs remain default-off');
+console.log('PASS Runtime Freeze Android candidate build fails closed if any cost cutover is true before baseline Physical QA A+B');
 console.log('PASS target root ceilings are 365 reviews-only, 265 reviews+wallet, and 65 before visible favorites membership reads');
 console.log('V2 cost cutover flags contract: PASS');
