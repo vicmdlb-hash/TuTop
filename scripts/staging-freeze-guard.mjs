@@ -9,6 +9,7 @@ export function assertStagingFreezeContext({
   allowEnv,
   allowValue,
   requireOctoberGate = true,
+  requireStagingGate = false,
 } = {}) {
   const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
   if (projectId !== TUTOP_V2_STAGING_PROJECT) {
@@ -32,6 +33,12 @@ export function assertStagingFreezeContext({
     const gateSha = String(process.env.TUTOP_VALIDATED_GATE_SHA || '').trim();
     if (!/^\d+$/.test(gateRunId)) stop('missing_same_sha_october_gate_run_id');
     if (gateSha !== githubSha) stop('october_gate_sha_must_equal_GITHUB_SHA');
+  }
+  if (requireStagingGate) {
+    const stagingRunId = String(process.env.TUTOP_VALIDATED_STAGING_RUN_ID || '').trim();
+    const stagingSha = String(process.env.TUTOP_VALIDATED_STAGING_SHA || '').trim();
+    if (!/^\d+$/.test(stagingRunId)) stop('missing_same_sha_staging_run_id');
+    if (stagingSha !== githubSha) stop('staging_sha_must_equal_GITHUB_SHA');
   }
   return projectId;
 }
