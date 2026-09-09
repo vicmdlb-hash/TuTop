@@ -167,8 +167,9 @@ test('vendedor-segundo: tx completed + listing sold_out es atómica y conserva l
 test('comprador-segundo: tx completed también exige y permite sold_out atómico', async () => {
   await seedCompletionState({ preconfirmed: 'seller' });
   const buyer = env.authenticatedContext('buyer-a').firestore();
+  const seller = env.authenticatedContext('seller').firestore();
   await assertSucceeds(completionPhaseOne(buyer, { actor: 'buyer' }).commit());
-  const listing = await getDoc(doc(buyer, 'listings_v2/listing-1'));
+  const listing = await getDoc(doc(seller, 'listings_v2/listing-1'));
   if (listing.data()?.status !== 'sold_out') throw new Error('buyer-second completion must atomically close listing');
 });
 
