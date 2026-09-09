@@ -78,7 +78,7 @@ assert.doesNotMatch(october, /upload-artifact/);
 
 // Runtime-freeze validation must not drift because npm resolves a new test harness
 // without a TuTop commit. Keep the emulator harness deterministic on costly gates.
-for (const [name, workflow] of [['October', october], ['Firestore V2', firestore]]) {
+for (const [name, workflow] of [['October', october], ['Firestore V2', firestore], ['Android', android]]) {
   assert.equal(
     workflow.includes(`@firebase/rules-unit-testing@${RULES_TESTING_VERSION}`),
     true,
@@ -97,7 +97,7 @@ console.log('PASS October combines static, typecheck+build and Firestore emulato
 console.log('PASS October and Quality perform TypeScript validation once through the canonical npm build command');
 console.log('PASS Quality does not rerun exact offline/AppCheck/recovery/evidence tests already inside npm run check');
 console.log('PASS October gate avoids redundant app installs and artifact uploads');
-console.log(`PASS October and Firestore pin @firebase/rules-unit-testing@${RULES_TESTING_VERSION} to prevent external dependency drift`);
+console.log(`PASS October, Firestore and Android pin @firebase/rules-unit-testing@${RULES_TESTING_VERSION} to prevent external dependency drift`);
 console.log('PASS Android V2 reuses same-SHA October evidence instead of repeating static/typecheck gates');
 console.log('PASS Android V2 still performs the real web build, Android lint/tests/assemble and exact candidate verification');
 console.log('PASS V2 APK cannot promote before same-SHA October + real staging smoke and records metadata');
