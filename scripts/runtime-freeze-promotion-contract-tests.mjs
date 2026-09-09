@@ -7,6 +7,7 @@ const pkg = JSON.parse(read('package.json'));
 const october = read('.github/workflows/october-01-validation.yml');
 const staging = read('.github/workflows/staging-v2-smoke.yml');
 const android = read('.github/workflows/android-debug-apk.yml');
+const androidV2 = android.slice(android.indexOf('  android-v2-staging:'));
 const check = read('scripts/check.mjs');
 const env = read('.env.example');
 
@@ -87,8 +88,15 @@ assert.match(android, /head_sha=\$\{GITHUB_SHA\}/);
 assert.match(android, /gate_run_id=\$\{TUTOP_VALIDATED_GATE_RUN_ID\}/);
 assert.match(android, /staging_smoke_run_id=\$\{TUTOP_VALIDATED_STAGING_RUN_ID\}/);
 assert.match(android, /PHYSICAL_QA_CANDIDATE\.generated\.json/);
+assert.match(androidV2, /npm run build/);
+assert.match(androidV2, /lintDebug testDebugUnitTest assembleDebug/);
+for (const duplicate of ['npm run check', 'npm run typecheck', 'npm run v2:rules:prepare']) {
+  assert.equal(androidV2.includes(duplicate), false, `Android V2 must reuse October same-SHA evidence instead of repeating ${duplicate}`);
+}
 
 assert.equal(pkg.scripts['v2:catalog:seed'], 'node scripts/gated-v2-catalog-seed.mjs');
+assert.equal(pkg.scripts['v2:reservations:reconcile'], 'node scripts/gated-v2-reservation-reconcile.mjs');
+assert.equal(pkg.scripts['v2:maintenance'], 'node scripts/gated-v2-maintenance.mjs');
 assert.equal(pkg.scripts['firebase:deploy:spark'], 'node scripts/freeze-blocked-command.mjs firebase:deploy:spark');
 for (const line of [
   'VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER=false',
@@ -112,6 +120,7 @@ for (const contract of [
 console.log('PASS runtime freeze manifest remains fail-closed and all cost cutovers default-off');
 console.log('PASS October, staging and Android remain manual-only');
 console.log('PASS staging exports October run+SHA authority before any remote mutation');
-console.log('PASS Android binds October + staging evidence to the exact checkout SHA');
-console.log('PASS direct Spark deploy is blocked and V2 catalog apply uses the gated wrapper');
+console.log('PASS Android binds October + staging evidence to the exact checkout SHA and reuses upstream static evidence');
+console.log('PASS public catalog/reconcile/maintenance npm mutation surfaces use exact-SHA wrappers');
+console.log('PASS direct Spark deploy remains blocked during runtime freeze');
 console.log('Runtime freeze promotion contract: PASS');
