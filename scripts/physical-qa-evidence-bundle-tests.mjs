@@ -9,14 +9,37 @@ assert.equal(historical.physical_release_candidate, false);
 assert.equal(historical.candidate_status, 'obsolete_runtime_drift');
 assert.throws(() => loadPhysicalQaCandidate(), /PHYSICAL_QA_CANDIDATE_NOT_ACTIVE/);
 
+const exactSha = String(historical.build_commit_sha || '1'.repeat(40));
 const candidateManifest = {
   ...historical,
   physical_release_candidate: true,
-  candidate_status: 'synthetic_contract_fixture',
+  candidate_status: 'active_exact_head',
   replacement_required: false,
+  build_commit_sha: exactSha,
+  gate_commit_sha: exactSha,
+  staging_smoke_commit_sha: exactSha,
+  artifact_id: 10002986519,
+  build_run_id: 34088114928,
+  gate_run_id: 34088114001,
+  staging_smoke_run_id: 34088114501,
 };
 
-const pending = validatePhysicalQaEvidence(template, now, candidateManifest);
+const candidateBinding = {
+  artifact_name: candidateManifest.artifact_name,
+  artifact_id: candidateManifest.artifact_id,
+  build_run_id: candidateManifest.build_run_id,
+  build_commit_sha: candidateManifest.build_commit_sha,
+  build_tree_sha: candidateManifest.build_tree_sha,
+  apk_sha256: candidateManifest.apk_sha256,
+  gate_run_id: candidateManifest.gate_run_id,
+  gate_commit_sha: candidateManifest.gate_commit_sha,
+  staging_smoke_run_id: candidateManifest.staging_smoke_run_id,
+  staging_smoke_commit_sha: candidateManifest.staging_smoke_commit_sha,
+};
+const boundTemplate = structuredClone(template);
+boundTemplate.candidate = candidateBinding;
+
+const pending = validatePhysicalQaEvidence(boundTemplate, now, candidateManifest);
 assert.equal(pending.overall, 'warn');
 assert.equal(pending.release_blocked, true);
 assert(pending.pending_cases >= 10);
@@ -44,14 +67,14 @@ const passReport = {
     { at: '2026-09-07T02:43:00.000Z', kind: 'push_action', detail: 'target=chat correlation=deadbeefcafebabe' },
   ],
 };
-const good = structuredClone(template);
+const good = structuredClone(boundTemplate);
 good.device = { label: 'qa-device-a', manufacturer: 'Google', model: 'Pixel-contract', android_version: '15', viewport: '412x915', installation: 'clean', physical: true };
 good.required_cases = Object.fromEntries(Object.keys(good.required_cases).map((key) => [key, 'pass']));
 good.diagnostic_report = passReport;
 const pass = validatePhysicalQaEvidence(good, now, candidateManifest);
 assert.equal(pass.overall, 'pass');
 assert.equal(pass.release_blocked, false);
-assert.equal(pass.candidate_artifact_id, historical.artifact_id);
+assert.equal(pass.candidate_artifact_id, candidateManifest.artifact_id);
 
 const leaked = structuredClone(good);
 leaked.password = 'secret';
@@ -77,7 +100,7 @@ const skippedResult = validatePhysicalQaEvidence(skipped, now, candidateManifest
 assert.equal(skippedResult.overall, 'warn');
 assert.equal(skippedResult.release_blocked, true);
 
-const fakePhysical = structuredClone(template);
+const fakePhysical = structuredClone(boundTemplate);
 fakePhysical.device.physical = true;
 fakePhysical.required_cases = Object.fromEntries(Object.keys(fakePhysical.required_cases).map((key) => [key, 'pass']));
 fakePhysical.diagnostic_report = passReport;
@@ -106,17 +129,34 @@ assert.equal(versionResult.overall, 'fail');
 
 for (const mutate of [
   (x) => { x.candidate.apk_sha256 = '71975f84cd26adb1526db895e76dcb455aed2f258e3f6cf01035c9fd90c95321'; },
-  (x) => { x.candidate.artifact_id = 10002002950; },
-  (x) => { x.candidate.build_run_id = 34075660334; },
+  (x) => { x.candidate.artifact_id += 1; },
+  (x) => { x.candidate.build_run_id += 1; },
   (x) => { x.candidate.build_commit_sha = '24f733a7ef35b33b9103afa830bef80fa90c3f92'; },
   (x) => { x.candidate.build_tree_sha = '0000000000000000000000000000000000000000'; },
+  (x) => { x.candidate.gate_run_id += 1; },
+  (x) => { x.candidate.gate_commit_sha = '0'.repeat(40); },
+  (x) => { x.candidate.staging_smoke_run_id += 1; },
+  (x) => { x.candidate.staging_smoke_commit_sha = '0'.repeat(40); },
 ]) {
   const oldCandidate = structuredClone(good);
   mutate(oldCandidate);
   const oldResult = validatePhysicalQaEvidence(oldCandidate, now, candidateManifest);
   assert.equal(oldResult.overall, 'fail');
   assert.equal(oldResult.release_blocked, true);
-  assert(oldResult.errors.some((x) => x.includes('candidato físico vigente')));
+  assert(oldResult.errors.some((x) => x.includes('candidato físico vigente') || x.includes('build_commit_sha')));
+}
+
+for (const mutateExpected of [
+  (x) => { x.gate_commit_sha = '0'.repeat(40); },
+  (x) => { x.staging_smoke_commit_sha = '0'.repeat(40); },
+  (x) => { x.candidate_status = 'synthetic_contract_fixture'; },
+  (x) => { x.replacement_required = true; },
+]) {
+  const invalidExpected = structuredClone(candidateManifest);
+  mutateExpected(invalidExpected);
+  const result = validatePhysicalQaEvidence(good, now, invalidExpected);
+  assert.equal(result.overall, 'fail');
+  assert(result.errors.some((x) => x.includes('identidad exact-head válida')));
 }
 
 const missingCandidate = structuredClone(good);
@@ -125,6 +165,7 @@ const missingCandidateResult = validatePhysicalQaEvidence(missingCandidate, now,
 assert.equal(missingCandidateResult.overall, 'fail');
 
 console.log('PASS obsolete repository manifest cannot load as an active Physical QA candidate');
-console.log('PASS evidence validator remains fully tested with an explicit synthetic active candidate');
+console.log('PASS evidence validator uses an explicit synthetic active_exact_head candidate');
+console.log('PASS evidence bundles bind APK plus October/staging run IDs and SHAs');
 console.log('PASS sensitive, stale, wrong-runtime and wrong-candidate evidence remains fail-closed');
 console.log('Physical QA evidence bundle contract: PASS');
