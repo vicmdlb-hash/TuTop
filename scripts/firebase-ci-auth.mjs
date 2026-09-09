@@ -2,6 +2,13 @@ const FIREBASE_OAUTH_CLIENT_ID = '563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.
 const FIREBASE_OAUTH_CLIENT_SECRET = 'j9iVZfS8kkCEFUPaAeJV0sAi';
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
+function redactOAuthDetail(input = '') {
+  return String(input)
+    .replace(/("(?:access_token|refresh_token|id_token|assertion|client_secret)"\s*:\s*")[^"]+("?)/gi, '$1[REDACTED]$2')
+    .replace(/((?:access_token|refresh_token|id_token|assertion|client_secret)=)[^&\s]+/gi, '$1[REDACTED]')
+    .slice(0, 500);
+}
+
 export async function firebaseCiAccessToken() {
   const explicit = String(process.env.TUTOP_FIREBASE_ACCESS_TOKEN || '').trim();
   if (explicit) return explicit;
@@ -25,8 +32,8 @@ export async function firebaseCiAccessToken() {
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`No se pudo intercambiar FIREBASE_TOKEN por un access token (${response.status}): ${detail.slice(0, 500)}`);
+    const detail = redactOAuthDetail(await response.text());
+    throw new Error(`No se pudo intercambiar FIREBASE_TOKEN por un access token (${response.status}): ${detail}`);
   }
 
   const data = await response.json();
