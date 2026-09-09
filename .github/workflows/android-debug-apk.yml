@@ -126,7 +126,7 @@ jobs:
   android-v2-staging:
     name: TuTop 0.9 V2 physical QA staging APK
     if: github.ref_name == 'feat/tutop-0.8-p0'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, tutop-zero-cost]
     timeout-minutes: 50
     permissions:
       contents: write
