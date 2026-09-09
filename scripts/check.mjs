@@ -21,6 +21,8 @@ const steps = [
   [process.execPath, ['scripts/v2-canonical-completion-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-terminal-state-authority-tests.mjs']],
   [process.execPath, ['scripts/v2-rules-composition-contract-tests.mjs']],
+  [process.execPath, ['scripts/v2-rules-access-budget-tests.mjs']],
+  [process.execPath, ['scripts/v2-canonical-bridge-coverage-tests.mjs']],
   [process.execPath, ['scripts/v2-snapshot-cost-audit.mjs']],
   [process.execPath, ['scripts/v2-snapshot-budget-tests.mjs']],
   [process.execPath, ['scripts/v2-cost-cutover-flags-tests.mjs']],
