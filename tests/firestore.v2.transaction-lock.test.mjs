@@ -75,7 +75,7 @@ function reserveBatch(db, suffix, buyer, amount) {
   return batch;
 }
 
-async function seedCompletionState({ txStatus = 'meetup_scheduled', listingStatus = 'active' } = {}) {
+async function seedCompletionState({ txStatus = 'meetup_scheduled', listingStatus = 'active', preconfirmed = 'buyer' } = {}) {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     const at = now();
@@ -92,8 +92,8 @@ async function seedCompletionState({ txStatus = 'meetup_scheduled', listingStatu
       reservation_expires_at: future(),
       meeting_point_id: 'point-done',
       meetup_at: future(60),
-      buyer_confirmed_at: at,
-      ...(txStatus === 'completed' ? { seller_confirmed_at: at } : {}),
+      ...((preconfirmed === 'buyer' || txStatus === 'completed') ? { buyer_confirmed_at: at } : {}),
+      ...((preconfirmed === 'seller' || txStatus === 'completed') ? { seller_confirmed_at: at } : {}),
       created_at: at,
       updated_at: at,
     });
@@ -103,12 +103,14 @@ async function seedCompletionState({ txStatus = 'meetup_scheduled', listingStatu
   });
 }
 
-function completionPhaseOne(db, { sellOut = true, completeTx = true } = {}) {
+function completionPhaseOne(db, { sellOut = true, completeTx = true, actor = 'seller' } = {}) {
   const at = now();
   const batch = writeBatch(db);
   if (completeTx) {
     batch.update(doc(db, 'transactions_v2/tx-done'), {
-      status: 'completed', seller_confirmed_at: at, updated_at: at,
+      status: 'completed',
+      ...(actor === 'buyer' ? { buyer_confirmed_at: at } : { seller_confirmed_at: at }),
+      updated_at: at,
     });
   }
   if (sellOut) batch.update(doc(db, 'listings_v2/listing-1'), { status: 'sold_out', updated_at: at });
@@ -154,12 +156,32 @@ test('cancelar sin borrar lock queda bloqueado', async () => {
   await assertFails(bad.commit());
 });
 
-test('fase 1: tx completed + listing sold_out es atómica y conserva lock', async () => {
-  await seedCompletionState();
+test('vendedor-segundo: tx completed + listing sold_out es atómica y conserva lock', async () => {
+  await seedCompletionState({ preconfirmed: 'buyer' });
   const seller = env.authenticatedContext('seller').firestore();
-  await assertSucceeds(completionPhaseOne(seller).commit());
+  await assertSucceeds(completionPhaseOne(seller, { actor: 'seller' }).commit());
   const lock = await getDoc(doc(seller, 'listing_reservation_locks/listing-1'));
   if (!lock.exists()) throw new Error('lock debe sobrevivir hasta cleanup trusted');
+});
+
+test('comprador-segundo: tx completed también exige y permite sold_out atómico', async () => {
+  await seedCompletionState({ preconfirmed: 'seller' });
+  const buyer = env.authenticatedContext('buyer-a').firestore();
+  await assertSucceeds(completionPhaseOne(buyer, { actor: 'buyer' }).commit());
+  const listing = await getDoc(doc(buyer, 'listings_v2/listing-1'));
+  if (listing.data()?.status !== 'sold_out') throw new Error('buyer-second completion must atomically close listing');
+});
+
+test('comprador-segundo no puede completar tx sin sold_out', async () => {
+  await seedCompletionState({ preconfirmed: 'seller' });
+  const buyer = env.authenticatedContext('buyer-a').firestore();
+  await assertFails(completionPhaseOne(buyer, { actor: 'buyer', sellOut: false }).commit());
+});
+
+test('comprador no puede marcar sold_out sin completar su transacción', async () => {
+  await seedCompletionState({ preconfirmed: 'seller' });
+  const buyer = env.authenticatedContext('buyer-a').firestore();
+  await assertFails(completionPhaseOne(buyer, { actor: 'buyer', completeTx: false, sellOut: true }).commit());
 });
 
 test('cliente no puede borrar lock completado aunque listing ya esté sold_out', async () => {
@@ -168,16 +190,16 @@ test('cliente no puede borrar lock completado aunque listing ya esté sold_out',
   await assertFails(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
 });
 
-test('completion sin sold_out queda bloqueada por regla de transacción', async () => {
-  await seedCompletionState();
+test('completion vendedor-segundo sin sold_out queda bloqueada por regla de transacción', async () => {
+  await seedCompletionState({ preconfirmed: 'buyer' });
   const seller = env.authenticatedContext('seller').firestore();
-  await assertFails(completionPhaseOne(seller, { sellOut: false, completeTx: true }).commit());
+  await assertFails(completionPhaseOne(seller, { actor: 'seller', sellOut: false, completeTx: true }).commit());
 });
 
-test('sold_out sin completar tx no autoriza liberar lock', async () => {
-  await seedCompletionState();
+test('sold_out del seller sin completar tx no autoriza liberar lock', async () => {
+  await seedCompletionState({ preconfirmed: 'buyer' });
   const seller = env.authenticatedContext('seller').firestore();
-  await assertSucceeds(completionPhaseOne(seller, { sellOut: true, completeTx: false }).commit());
+  await assertSucceeds(completionPhaseOne(seller, { actor: 'seller', sellOut: true, completeTx: false }).commit());
   await assertFails(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
 });
 
