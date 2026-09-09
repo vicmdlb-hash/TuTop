@@ -67,17 +67,17 @@ jobs:
             local before_id="$2"
             local label="$3"
             local attempt json run_id status conclusion
-            for attempt in $(seq 1 120); do
+            for attempt in $(seq 1 240); do
               json="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
                 -f branch="$TARGET_REF" \
                 -f head_sha="$TARGET_SHA" \
                 -f event=workflow_dispatch \
                 -f per_page=20)"
-              run_id="$(printf '%s' "$json" | jq -r --arg before "$before_id" '.workflow_runs | map(select((.id|tostring) != $before)) | .[0].id // empty')"
+              run_id="$(printf '%s' "$json" | jq -r --arg before "$before_id" '.workflow_runs | map(select(.id > ($before|tonumber))) | .[0].id // empty')"
               if [ -n "$run_id" ]; then
                 status="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status')"
                 conclusion="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion // ""')"
-                echo "${label}: run=${run_id} status=${status} conclusion=${conclusion:-pending}"
+                echo "${label}: run=${run_id} status=${status} conclusion=${conclusion:-pending}" >&2
                 if [ "$status" = "completed" ]; then
                   if [ "$conclusion" != "success" ]; then
                     echo "DETENIDO: ${label} terminó ${conclusion}." >&2
