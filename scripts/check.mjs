@@ -9,6 +9,7 @@ const steps = [
   [process.execPath, ['scripts/functions-domain-tests.mjs']],
   [process.execPath, ['scripts/security-tests.mjs']],
   [process.execPath, ['scripts/ci-auth-redaction-contract-tests.mjs']],
+  [process.execPath, ['scripts/ci-auth-readiness-tests.mjs']],
   [process.execPath, ['scripts/policy-scan.mjs']],
   [process.execPath, ['scripts/actions-budget-policy-tests.mjs']],
   [process.execPath, ['scripts/local-topi-favorites-tests.mjs']],
