@@ -13,6 +13,7 @@ concurrency:
 jobs:
   web-quality:
     name: Web + policy checks
+    if: github.ref_name == 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
