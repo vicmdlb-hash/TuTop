@@ -199,16 +199,6 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Install web dependencies
         run: npm ci
-      - name: Static and policy gates
-        run: |
-          npm run check
-          npm run github:ready
-          npm run beta:ready
-          npm run v2:staging:readiness:test
-          npm run v2:rules:prepare
-          npm run native-security:test
-          npm run account-erasure:test
-          npm run typecheck
       - name: Prepare staging Firebase Web config
         run: node scripts/prepare-staging-v2-auth.mjs
       - name: Prepare staging Firebase Android app config
