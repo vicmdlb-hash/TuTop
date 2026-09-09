@@ -14,7 +14,7 @@ jobs:
   consolidated-gate:
     name: Static + build + Firestore emulator
     if: github.ref_name == 'feat/tutop-0.8-p0'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, tutop-zero-cost]
     timeout-minutes: 30
     steps:
       - name: Checkout exact ref
