@@ -60,7 +60,8 @@
     "trusted_staging_mutation": {
       "workflow": "v2-trusted-maintenance.yml",
       "manual_only": true,
-      "requires_october_same_sha_green": true
+      "requires_october_same_sha_green": true,
+      "requires_staging_same_sha_green": true
     },
     "quarantined_self_trigger_workflows": [
       "one-shot-085-hardened.yml",
