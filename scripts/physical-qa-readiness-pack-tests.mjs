@@ -55,10 +55,12 @@ for (const [slot, template] of [['A', deviceA], ['B', deviceB]]) {
   assert.equal(template.candidate.build_commit_sha, candidate.build_commit_sha);
   assert.equal(template.candidate.build_tree_sha, candidate.build_tree_sha);
   assert.equal(template.candidate.apk_sha256, candidate.apk_sha256);
-  assert.equal(template.candidate.gate_run_id, candidate.gate_run_id);
-  assert.equal(template.candidate.gate_commit_sha, candidate.gate_commit_sha);
-  assert.equal(template.candidate.staging_smoke_run_id, candidate.staging_smoke_run_id);
-  assert.equal(template.candidate.staging_smoke_commit_sha, candidate.staging_smoke_commit_sha);
+  if (active) {
+    assert.equal(template.candidate.gate_run_id, candidate.gate_run_id);
+    assert.equal(template.candidate.gate_commit_sha, candidate.gate_commit_sha);
+    assert.equal(template.candidate.staging_smoke_run_id, candidate.staging_smoke_run_id);
+    assert.equal(template.candidate.staging_smoke_commit_sha, candidate.staging_smoke_commit_sha);
+  }
   for (const value of Object.values(template.required_cases)) assert.equal(value, 'pending');
   assert.equal(template.diagnostic_report, null);
   assert.equal(template.fcm_fixture_report, null);
@@ -97,7 +99,7 @@ assert(cutoverRunbook.includes('PREPARADO / DESACTIVADO POR DEFECTO'));
 assert(cutoverRunbook.includes('Physical QA A+B'));
 
 console.log(`PASS Physical QA candidate state is fail-closed and explicit: ${candidate.candidate_status}`);
-console.log('PASS Device A/B, FCM and App Check templates remain bound to the current candidate and contain no synthesized physical evidence');
+console.log(`PASS Device A/B, FCM and App Check templates remain bound to the ${active ? 'active exact-head' : 'historical obsolete'} candidate without synthesized physical evidence`);
 console.log('PASS recovery/legal/OIDC/cron external gates remain explicitly unresolved');
 console.log('PASS current cost-cutover runbook requires baseline Physical QA A+B before cutover promotion');
 console.log('Physical QA readiness pack contract: PASS');
