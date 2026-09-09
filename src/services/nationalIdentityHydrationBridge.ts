@@ -27,8 +27,10 @@ if (nationalSchemaEnabled()) {
       identity = cached.identity;
       level = cached.level;
     } else {
-      const profile = await firebase.getDocument<Record<string, unknown>>(`users/${uid}`).catch(() => null);
-      if (!profile) return snapshot;
+      // The base snapshot has already proven this profile exists. A second cold-read
+      // failure must not downgrade V2 into an identity-less, empty marketplace state.
+      const profile = await firebase.getDocument<Record<string, unknown>>(`users/${uid}`);
+      if (!profile) throw new Error('PROFILE_MISSING');
       const data = profile.data;
       identity = identityFor(
         data.institution_id ? String(data.institution_id) : undefined,
