@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { collection, getDocs, query, setDoc, doc, where, Timestamp } from 'firebase/firestore';
+import { collection, getDoc, getDocs, query, setDoc, doc, where, Timestamp } from 'firebase/firestore';
 
 const projectId = process.env.GCLOUD_PROJECT || 'demo-tutop-v2-rules';
 const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
@@ -40,6 +40,29 @@ test('membership IN devuelve exactamente los favoritos propios solicitados', asy
   if (JSON.stringify(ids) !== JSON.stringify(['listing-1', 'listing-2'])) {
     throw new Error(`FAVORITE_MEMBERSHIP_MISMATCH:${JSON.stringify(ids)}`);
   }
+});
+
+test('membership exacto determinista permite al dueño leer su favorito para fallback', async () => {
+  await seedFavorites();
+  const alice = env.authenticatedContext('alice').firestore();
+  const snapshot = await assertSucceeds(getDoc(doc(alice, 'favorites/alice_listing-1')));
+  if (!snapshot.exists()) throw new Error('FAVORITE_EXACT_FALLBACK_MISSING');
+  const data = snapshot.data();
+  if (data.uid !== 'alice' || data.product_id !== 'listing-1') {
+    throw new Error(`FAVORITE_EXACT_FALLBACK_MISMATCH:${JSON.stringify(data)}`);
+  }
+});
+
+test('membership exacto determinista niega a otro usuario el favorito ajeno', async () => {
+  await seedFavorites();
+  const bob = env.authenticatedContext('bob').firestore();
+  await assertFails(getDoc(doc(bob, 'favorites/alice_listing-1')));
+});
+
+test('membership exacto determinista niega lectura sin autenticación', async () => {
+  await seedFavorites();
+  const anonymous = env.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(anonymous, 'favorites/alice_listing-1')));
 });
 
 test('membership IN respeta subsets y no arrastra favoritos fuera del lote visible', async () => {
