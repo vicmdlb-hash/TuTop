@@ -27,6 +27,13 @@ for (const [name, workflow] of [
   ['v2-trusted-maintenance', trusted],
 ]) assertManualOnly(name, workflow);
 
+const countFreezeBranchGuards = (workflow) =>
+  (workflow.match(/if: github\.ref_name == 'feat\/tutop-0\.8-p0'/g) || []).length;
+
+assert.equal(countFreezeBranchGuards(quality), 1, 'quality must be blocked outside the runtime-freeze branch');
+assert.equal(countFreezeBranchGuards(firestore), 1, 'firestore-v2-security must be blocked outside the runtime-freeze branch');
+assert.equal(countFreezeBranchGuards(ciAuth), 3, 'every CI auth diagnostic job must be blocked outside the runtime-freeze branch');
+
 for (const [name, workflow] of [
   ['quality', quality],
   ['firestore-v2-security', firestore],
@@ -86,6 +93,7 @@ assert.match(dossier, /no editar ni ejecutar `one-shot-085-hardened\.yml` ni `pr
 assert.match(dossier, /trusted maintenance sólo puede mutar staging después de October \+ staging green sobre el mismo SHA/i);
 
 console.log('PASS diagnostic secondary workflows are manual-only and non-mutating');
+console.log('PASS diagnostic secondary jobs are blocked outside the exact runtime-freeze branch');
 console.log('PASS trusted maintenance requires October + staging run and SHA evidence before any apply wrapper');
 console.log('PASS trusted workflow cannot call raw apply scripts directly');
 console.log('PASS self-trigger historical workflows remain quarantined without editing them');
