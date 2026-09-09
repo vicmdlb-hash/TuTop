@@ -37,9 +37,10 @@ const freeze = JSON.parse(read('docs/RUNTIME_FREEZE_CANDIDATE_0.9.json'));
 for (const marker of ['npm ci', 'npm run check', 'npm run beta:ready', 'assembleDebug', 'actions/upload-artifact']) {
   if (!android.includes(marker)) errors.push(`Workflow Android no contiene: ${marker}`);
 }
-for (const marker of ['npm ci', 'npm run check', 'npm run typecheck', 'npm run build', 'actions/upload-artifact']) {
+for (const marker of ['npm ci', 'npm run check', 'npm run build', 'actions/upload-artifact']) {
   if (!quality.includes(marker)) errors.push(`Workflow quality no contiene: ${marker}`);
 }
+if (quality.includes('npm run typecheck')) errors.push('Quality no debe repetir typecheck antes del build canónico.');
 if (!firestore.includes('Firestore V2 emulator security')) errors.push('Firestore V2 dejó de tener su gate aislado.');
 for (const marker of ['npm run check', 'npm run build', 'npm run v2:rules:prepare', 'emulators:exec --only firestore']) {
   if (!october.includes(marker)) errors.push(`October gate no contiene: ${marker}`);
