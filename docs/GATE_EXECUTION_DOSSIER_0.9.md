@@ -24,7 +24,10 @@ Confirmar:
 - no candidato Physical QA vigente;
 - reviews/Wallet/favorites cutovers `false` por defecto;
 - no editar ni ejecutar `one-shot-085-hardened.yml` ni `provision-firebase-staging-v2.yml`;
-- no disparar Quality/Firestore/CI-auth por rutina: son diagnósticos opcionales, no prerequisitos de promoción.
+- no disparar Quality/Firestore/CI-auth por rutina: son diagnósticos opcionales, no prerequisitos de promoción;
+- **rotar en el proveedor la credencial OAuth que estuvo embebida en código y no reutilizarla**;
+- configurar GitHub Secrets `FIREBASE_OAUTH_CLIENT_ID` y `FIREBASE_OAUTH_CLIENT_SECRET` con credenciales gestionadas/rotadas antes de staging, Android V2 o trusted maintenance;
+- mantener `FIREBASE_TOKEN` sólo como refresh-token fallback gestionado; por sí solo ya no se considera suficiente.
 
 ## Paso 1 — October consolidated gate
 
@@ -35,10 +38,10 @@ Debe ejecutarse una sola vez sobre el HEAD seleccionado y demostrar en el mismo 
 1. `npm ci`;
 2. `npm run check`;
 3. GitHub/beta/V2 staging readiness;
-4. typecheck;
+4. una sola pasada TypeScript mediante `npm run build` (`npm run typecheck && vite build`);
 5. web build con reviews + Wallet + favorites cutovers compilados en `true`;
 6. `v2:rules:prepare`;
-7. Firestore Emulator completo, incluyendo transaction locks, completion bilateral, unread COUNT, review strike COUNT, favorites membership y contracts de account/governance/notifications.
+7. Firestore Emulator completo, incluyendo transaction locks, completion bilateral, unread COUNT, review strike COUNT, favorites membership/fallback exacto y contracts de account/governance/notifications.
 
 ### Si October falla
 
@@ -51,6 +54,8 @@ Identificar el primer error causal, corregir únicamente el P0/P1/integración/g
 Workflow: `.github/workflows/staging-v2-smoke.yml`.
 
 Sólo puede comenzar si existe `october-01-validation.yml` exitoso sobre **el mismo `GITHUB_SHA`**. El workflow exporta tanto el run ID como `TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA`; los entrypoints remotos verifican esa igualdad antes de tocar staging.
+
+Antes de mutar remoto, staging exige `FIREBASE_TOKEN` + `TUTOP_FIREBASE_OAUTH_CLIENT_ID` + `TUTOP_FIREBASE_OAUTH_CLIENT_SECRET`, alimentados exclusivamente desde GitHub Secrets. Si falta cualquiera, termina fail-closed antes del deploy.
 
 Staging puede entonces desplegar Rules/índices V2, verificar catálogo, preparar Auth/configs, ejecutar smoke real de dos usuarios, borrado de cuenta controlado y mantener App Check `UNENFORCED`.
 
@@ -76,13 +81,13 @@ Entry points protegidos:
 - staging admin helper;
 - App Check staging configuration.
 
-El seed canónico remoto sólo se soporta mediante `scripts/gated-v2-catalog-seed.mjs`, y `npm run v2:catalog:seed` apunta a ese wrapper. No existe un atajo npm soportado hacia `seed-v2-catalog.mjs --apply`.
+El seed canónico remoto sólo se soporta mediante `scripts/gated-v2-catalog-seed.mjs`, y `npm run v2:catalog:seed` apunta a ese wrapper.
+
+Además, `scripts/firebase-ci-auth.mjs` instala `dangerous-script-apply-guard.mjs`: si alguien intenta ejecutar directamente `seed-v2-catalog.mjs`, `reconcile-v2-reservations.mjs`, `v2-trusted-maintenance.mjs` o `v2-observability-snapshot.mjs` con `--apply`, el proceso exige el mismo contexto exact-SHA antes de obtener un access token. El dry-run sigue disponible.
 
 Durante Runtime Freeze, App Check sólo admite `OFF` o `UNENFORCED`; `ENFORCED` está físicamente bloqueado en el configurador.
 
 `npm run firebase:deploy:spark` también está bloqueado explícitamente durante el freeze. Los emuladores locales siguen disponibles porque no mutan remoto.
-
-Los scripts internos grandes de seed/reconciliation/trusted maintenance/observability conservan sus propios `--apply` + allow sentinels, pero **no son autoridad de promoción y no deben invocarse directamente** durante el freeze. Sus rutas soportadas pasan por wrappers exact-SHA y workflows gated.
 
 Google Play/Internal App Sharing permanece bloqueado por `config/project.json`: zero-investment activo, billing no autorizado y production publishing desactivado.
 
@@ -104,7 +109,7 @@ October compila los tres flags en `true` para detectar incompatibilidades, pero 
 
 Workflow: `.github/workflows/android-debug-apk.yml`.
 
-Debe verificar October same-SHA + staging same-SHA, y propaga IDs **y SHAs** validados antes de cualquier setup remoto. Después exige config staging-only, gates/typecheck, APK no vacía, SHA-256, metadata con IDs de gate/staging y los 3 cutovers, generated candidate y verificación checkout ↔ metadata ↔ candidate.
+Debe verificar October same-SHA + staging same-SHA y las credenciales gestionadas antes de cualquier setup remoto. El job V2 **no repite** `npm run check`, readiness ni Rules prepare: reutiliza la evidencia upstream del mismo SHA para ahorrar minutos. Sí ejecuta `npm run build`, que incluye el typecheck canónico una sola vez, prepara config staging-only, genera Android, ejecuta `lintDebug testDebugUnitTest assembleDebug`, valida configuración nativa, calcula SHA-256, escribe metadata con IDs de gate/staging y los 3 cutovers, genera candidate y verifica checkout ↔ metadata ↔ candidate.
 
 ## Paso 5 — Activación del candidato
 
@@ -140,11 +145,11 @@ Usar el mismo APK exacto en dos dispositivos/perfiles físicos independientes y 
 - `firestore-v2-security.yml`
 - `ci-auth-parallel-validation.yml`
 
-No son autoridad de promoción y no deben ejecutarse por rutina si October ya cubre la señal necesaria.
+No son autoridad de promoción y no deben ejecutarse por rutina si October ya cubre la señal necesaria. Quality reutiliza `npm run check` y evita repetir pruebas idénticas/typecheck antes del build.
 
 ### Mutación staging controlada
 
-Trusted maintenance sólo puede mutar staging después de **October + staging green sobre el mismo SHA**. `v2-trusted-maintenance.yml` verifica ambos runs, exporta ambos run IDs y ambos SHA bindings y luego llama exclusivamente `scripts/gated-trusted-staging-apply.mjs` para reconcile/maintenance/observability. No llama los `--apply` internos directamente, no sustituye staging smoke y no autoriza APK.
+Trusted maintenance sólo puede mutar staging después de **October + staging green sobre el mismo SHA**. `v2-trusted-maintenance.yml` verifica ambos runs, exige las credenciales gestionadas, exporta ambos run IDs y ambos SHA bindings y luego llama exclusivamente `scripts/gated-trusted-staging-apply.mjs` para reconcile/maintenance/observability. Los entrypoints raw conservan además el guard independiente previo a CI auth.
 
 ### Cuarentena — no editar / no ejecutar
 
@@ -163,6 +168,7 @@ Ambos conservan triggers históricos sobre cambios a su propio archivo. Durante 
 - No generar APK sólo para ver si compila.
 - No usar comandos locales de deploy para saltarse October/staging.
 - No usar `--apply` interno como sustituto de los wrappers exact-SHA.
+- No ejecutar staging/Android/trusted mientras falten las credenciales OAuth gestionadas: ese fallo es configuración externa conocida, no un bug de runtime.
 
 ## Criterio de salida del freeze
 
