@@ -21,7 +21,22 @@ jobs:
     env:
       TARGET_REF: feat/tutop-0.8-p0
       TARGET_PR: "6"
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
     steps:
+      - name: Require managed Firebase credentials before child runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "DETENIDO: falta credencial gestionada ${name}. No se lanzará October." >&2
+              exit 42
+            fi
+          done
+          echo "✅ Managed Firebase credentials are present (values not printed)." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Capture exact target HEAD
         env:
           GH_TOKEN: ${{ github.token }}
@@ -35,6 +50,15 @@ jobs:
           fi
           echo "TARGET_SHA=${TARGET_SHA}" >> "$GITHUB_ENV"
           echo "Target exacto: ${TARGET_REF}@${TARGET_SHA}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record 60% credentials milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY="## APK readiness — 60%\n\nManaged Firebase credentials are available to the orchestrator. Target captured: \`${TARGET_REF}@${TARGET_SHA}\`. October has not been promoted yet."
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null
 
       - name: Dispatch exact-SHA release chain
         env:
@@ -105,17 +129,28 @@ jobs:
             printf '%s' "$run_id"
           }
 
+          post_progress() {
+            local percent="$1"
+            local message="$2"
+            local body
+            body="## APK readiness — ${percent}%\n\n${message}\n\nTarget: \`${TARGET_REF}@${TARGET_SHA}\`."
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$body" >/dev/null
+          }
+
           OCTOBER_RUN_ID="$(dispatch_and_wait 'october-01-validation.yml' 'October exact-SHA')"
           echo "OCTOBER_RUN_ID=${OCTOBER_RUN_ID}" >> "$GITHUB_ENV"
           echo "✅ October green: ${OCTOBER_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          post_progress 75 "October exact-SHA is green. Run: \`${OCTOBER_RUN_ID}\`."
 
           STAGING_RUN_ID="$(dispatch_and_wait 'staging-v2-smoke.yml' 'Staging same-SHA')"
           echo "STAGING_RUN_ID=${STAGING_RUN_ID}" >> "$GITHUB_ENV"
           echo "✅ Staging green: ${STAGING_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          post_progress 85 "Staging same-SHA is green. October: \`${OCTOBER_RUN_ID}\`; Staging: \`${STAGING_RUN_ID}\`."
 
           ANDROID_RUN_ID="$(dispatch_and_wait 'android-debug-apk.yml' 'Android baseline false/false/false')"
           echo "ANDROID_RUN_ID=${ANDROID_RUN_ID}" >> "$GITHUB_ENV"
           echo "✅ Android green: ${ANDROID_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          post_progress 95 "Android baseline build is green with cutovers required false/false/false. Android run: \`${ANDROID_RUN_ID}\`. APK bytes still require independent verification."
 
       - name: Download and independently verify APK artifact
         env:
