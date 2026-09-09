@@ -28,10 +28,17 @@ const assertCredentialPreflightBeforeSetup = (name, workflow) => {
   assert(preflight < npmCi, `${name} debe fallar por credenciales antes de npm ci`);
 };
 
+const assertSerializedWithoutCancellation = (name, workflow) => {
+  assert.match(workflow, /concurrency:/, `${name} debe conservar serialización explícita`);
+  assert.equal((workflow.match(/cancel-in-progress: false/g) || []).length, 1, `${name} debe serializar sin cancelar un run activo`);
+  assert.doesNotMatch(workflow, /cancel-in-progress: true/, `${name} no debe poder cancelar una mutación/promoción a mitad de ejecución`);
+};
+
 const branchEvidenceFilterCount = (workflow) =>
   (workflow.match(/-f branch="\$GITHUB_REF_NAME"/g) || []).length;
 
 assertManualOnly('Android', android);
+assertSerializedWithoutCancellation('Android', android);
 assert.match(android, /retention-days: 90/);
 assert.match(android, /gh release create/);
 assert.match(android, /Require same-SHA green consolidated gate and real staging smoke/);
@@ -61,6 +68,7 @@ assert.match(androidV2, /generate-physical-qa-candidate\.mjs/);
 assert.match(androidV2, /verify-generated-physical-qa-candidate\.mjs/);
 
 assertManualOnly('staging real', staging);
+assertSerializedWithoutCancellation('staging real', staging);
 assertCredentialPreflightBeforeSetup('staging real', staging);
 assert.equal(branchEvidenceFilterCount(staging), 1, 'Staging debe aceptar October sólo desde la rama exacta del freeze');
 assert.match(stagingDeploy, /assertStagingFreezeContext/);
@@ -90,6 +98,7 @@ for (const duplicate of [
 assertManualOnly('Firestore V2', firestore);
 assert.match(firestore, /Firestore V2 emulator security/);
 assertManualOnly('Trusted maintenance', trusted);
+assertSerializedWithoutCancellation('Trusted maintenance', trusted);
 assertCredentialPreflightBeforeSetup('Trusted maintenance', trusted);
 assert.equal(branchEvidenceFilterCount(trusted), 2, 'Trusted maintenance debe ligar October y staging a la rama exacta además del SHA');
 
@@ -123,6 +132,7 @@ for (const [name, workflow] of [['October', october], ['Firestore V2', firestore
 
 console.log('PASS all costly TuTop gates are manual-only while Actions is exhausted');
 console.log('PASS no PR/push/cron trigger can burn the future 2,000-minute budget');
+console.log('PASS Android, staging and trusted mutation/promotion workflows serialize without mid-run cancellation');
 console.log('PASS October is blocked outside the exact runtime-freeze branch');
 console.log('PASS promotion evidence lookups require same branch + same SHA + success + workflow_dispatch');
 console.log('PASS staging and trusted maintenance reject missing managed auth before setup-node/npm ci');
