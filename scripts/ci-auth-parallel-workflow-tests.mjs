@@ -5,6 +5,10 @@ const workflow = fs.readFileSync('.github/workflows/ci-auth-parallel-validation.
 assert.match(workflow, /workflow_dispatch:/);
 assert.match(workflow, /id-token: write/);
 assert.match(workflow, /FIREBASE_TOKEN: \$\{\{ secrets\.FIREBASE_TOKEN \}\}/);
+assert.match(workflow, /TUTOP_FIREBASE_OAUTH_CLIENT_ID: \$\{\{ secrets\.FIREBASE_OAUTH_CLIENT_ID \}\}/);
+assert.match(workflow, /TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: \$\{\{ secrets\.FIREBASE_OAUTH_CLIENT_SECRET \}\}/);
+assert.match(workflow, /Managed Firebase refresh-token readiness/);
+assert.match(workflow, /Validate managed fallback readiness/);
 assert.match(workflow, /ACTIONS_ID_TOKEN_REQUEST_URL/);
 assert.match(workflow, /audience=tutop-staging-wif/);
 assert.match(workflow, /assertion not persisted or exchanged/);
@@ -14,6 +18,6 @@ assert.match(workflow, /never removes FIREBASE_TOKEN/);
 assert.doesNotMatch(workflow, /firebase deploy|gcloud auth|google-github-actions\/auth/);
 assert.doesNotMatch(workflow, /on:\s*\n\s*push:/);
 console.log('PASS OIDC shadow validation is manual-only');
-console.log('PASS legacy FIREBASE_TOKEN fallback remains present');
+console.log('PASS refresh-token fallback remains present but requires managed OAuth client credentials');
 console.log('PASS GitHub OIDC assertion is minted but not exchanged or persisted');
 console.log('CI auth parallel workflow contract: PASS');
