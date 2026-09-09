@@ -50,7 +50,38 @@ Identificar el primer error causal, corregir únicamente el P0/P1/integración/g
 
 Workflow: `.github/workflows/staging-v2-smoke.yml`.
 
-Sólo puede comenzar si existe `october-01-validation.yml` exitoso sobre **el mismo `GITHUB_SHA`**. Staging puede entonces desplegar Rules/índices V2, verificar catálogo, preparar Auth/configs, ejecutar smoke real de dos usuarios, borrado de cuenta controlado y mantener App Check `UNENFORCED`.
+Sólo puede comenzar si existe `october-01-validation.yml` exitoso sobre **el mismo `GITHUB_SHA`**. El workflow exporta tanto el run ID como `TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA`; los entrypoints remotos verifican esa igualdad antes de tocar staging.
+
+Staging puede entonces desplegar Rules/índices V2, verificar catálogo, preparar Auth/configs, ejecutar smoke real de dos usuarios, borrado de cuenta controlado y mantener App Check `UNENFORCED`.
+
+### Surface remoto durante el freeze
+
+Las mutaciones de staging soportadas pasan por `scripts/staging-freeze-guard.mjs` y requieren simultáneamente:
+
+- proyecto exacto `tutop-beta-vicmdlb-1356585881`;
+- rama exacta `feat/tutop-0.8-p0`;
+- `GITHUB_ACTIONS=true`;
+- `GITHUB_SHA` válido;
+- October run ID validado;
+- `TUTOP_VALIDATED_GATE_SHA === GITHUB_SHA`;
+- allow-sentinel específico cuando corresponda.
+
+Entry points protegidos:
+
+- Firestore Rules/index deploy;
+- Firebase Auth base deploy;
+- Firebase Web App/config setup;
+- Firebase Android App/config setup;
+- staging admin helper;
+- App Check staging configuration.
+
+Durante Runtime Freeze, App Check sólo admite `OFF` o `UNENFORCED`; `ENFORCED` está físicamente bloqueado en el configurador.
+
+`npm run firebase:deploy:spark` también está bloqueado explícitamente durante el freeze. Los emuladores locales siguen disponibles porque no mutan remoto.
+
+Los scripts internos grandes de seed/reconciliation/trusted maintenance conservan sus propios `--apply` + allow sentinels, pero **no deben invocarse directamente** durante el freeze. Sus rutas soportadas de mutación son staging/trusted workflows ya gated same-SHA.
+
+Google Play/Internal App Sharing permanece bloqueado por `config/project.json`: zero-investment activo, billing no autorizado y production publishing desactivado.
 
 ### Si staging falla
 
@@ -70,7 +101,7 @@ October compila los tres flags en `true` para detectar incompatibilidades, pero 
 
 Workflow: `.github/workflows/android-debug-apk.yml`.
 
-Debe verificar October same-SHA + staging same-SHA, config staging-only, gates/typecheck, APK no vacía, SHA-256, metadata con IDs de gate/staging y los 3 cutovers, generated candidate y verificación checkout ↔ metadata ↔ candidate.
+Debe verificar October same-SHA + staging same-SHA, y propaga IDs **y SHAs** validados antes de cualquier setup remoto. Después exige config staging-only, gates/typecheck, APK no vacía, SHA-256, metadata con IDs de gate/staging y los 3 cutovers, generated candidate y verificación checkout ↔ metadata ↔ candidate.
 
 ## Paso 5 — Activación del candidato
 
@@ -110,7 +141,7 @@ No son autoridad de promoción y no deben ejecutarse por rutina si October ya cu
 
 ### Mutación staging controlada
 
-Trusted maintenance sólo puede mutar staging después de **October + staging green sobre el mismo SHA**. `v2-trusted-maintenance.yml` verifica ambos runs antes de cualquier `--apply`. No sustituye staging smoke ni autoriza APK.
+Trusted maintenance sólo puede mutar staging después de **October + staging green sobre el mismo SHA**. `v2-trusted-maintenance.yml` verifica ambos runs y exporta ambos SHA bindings antes de cualquier `--apply`. No sustituye staging smoke ni autoriza APK.
 
 ### Cuarentena — no editar / no ejecutar
 
@@ -127,6 +158,7 @@ Ambos conservan triggers históricos sobre cambios a su propio archivo. Durante 
 - No construir Android si staging no está green same-SHA.
 - No ejecutar trusted maintenance como prueba.
 - No generar APK sólo para ver si compila.
+- No usar comandos locales de deploy para saltarse October/staging.
 
 ## Criterio de salida del freeze
 
