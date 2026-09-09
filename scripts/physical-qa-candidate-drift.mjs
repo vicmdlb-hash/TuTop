@@ -12,6 +12,19 @@ export function loadPhysicalQaCandidateManifest() {
   return candidate;
 }
 
+export function candidateExactHeadIdentityValid(candidate) {
+  const buildSha = String(candidate?.build_commit_sha || '');
+  const gateSha = String(candidate?.gate_commit_sha || '');
+  const stagingSha = String(candidate?.staging_smoke_commit_sha || '');
+  return /^[a-f0-9]{40}$/.test(buildSha)
+    && gateSha === buildSha
+    && stagingSha === buildSha
+    && Number.isSafeInteger(candidate?.gate_run_id) && candidate.gate_run_id > 0
+    && Number.isSafeInteger(candidate?.staging_smoke_run_id) && candidate.staging_smoke_run_id > 0
+    && Number.isSafeInteger(candidate?.build_run_id) && candidate.build_run_id > 0
+    && Number.isSafeInteger(candidate?.artifact_id) && candidate.artifact_id > 0;
+}
+
 export function evaluateCandidateRuntimeDrift(candidate, resolveRef) {
   const mismatches = [];
   for (const [repoPath, expectedSha] of Object.entries(candidate.client_runtime_refs || {})) {
@@ -25,9 +38,13 @@ export function evaluateCandidateRuntimeDrift(candidate, resolveRef) {
       mismatches.push({ path: repoPath, expected_sha: expectedSha, actual_sha: actualSha, reason: 'changed' });
     }
   }
+  const identityValid = candidateExactHeadIdentityValid(candidate);
+  const active = candidate.physical_release_candidate === true;
   return {
-    fresh: mismatches.length === 0,
-    physical_release_candidate: candidate.physical_release_candidate === true,
+    fresh: mismatches.length === 0 && (!active || identityValid),
+    runtime_refs_fresh: mismatches.length === 0,
+    identity_valid: identityValid,
+    physical_release_candidate: active,
     candidate_status: String(candidate.candidate_status || ''),
     replacement_required: candidate.replacement_required === true,
     artifact_id: candidate.artifact_id,
@@ -48,13 +65,18 @@ export function verifyCurrentCandidateRuntime() {
 }
 
 export function evaluatePrebuildCandidateState(candidate, drift) {
-  if (drift.fresh && candidate.physical_release_candidate === true) {
+  const activeExactHead = drift.fresh
+    && drift.identity_valid === true
+    && candidate.physical_release_candidate === true
+    && candidate.candidate_status === 'active_exact_head'
+    && candidate.replacement_required === false;
+  if (activeExactHead) {
     return { pass: true, reason: 'current_candidate_still_fresh' };
   }
   const explicitlyObsolete = candidate.physical_release_candidate === false
     && candidate.candidate_status === 'obsolete_runtime_drift'
     && candidate.replacement_required === true;
-  if (!drift.fresh && explicitlyObsolete) {
+  if (!drift.runtime_refs_fresh && explicitlyObsolete) {
     return { pass: true, reason: 'obsolete_candidate_acknowledged_replacement_required' };
   }
   return { pass: false, reason: 'candidate_state_inconsistent_with_runtime_drift' };
@@ -71,20 +93,26 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
       console.error(`DETENIDO: estado de candidato Physical QA inconsistente (${state.reason}).`);
       process.exit(2);
     }
-    if (result.fresh) {
-      console.log(`PASS prebuild: current Physical QA candidate remains fresh: artifact=${result.artifact_id}`);
+    if (candidate.physical_release_candidate === true) {
+      console.log(`PASS prebuild: current exact-head Physical QA candidate remains fresh: artifact=${result.artifact_id}`);
     } else {
       console.log(`PASS prebuild: historical candidate ${result.artifact_id} is explicitly obsolete; replacement build is required and allowed.`);
     }
     process.exit(0);
   }
 
-  if (!result.fresh || candidate.physical_release_candidate !== true) {
+  const reusable = result.fresh
+    && result.identity_valid === true
+    && candidate.physical_release_candidate === true
+    && candidate.candidate_status === 'active_exact_head'
+    && candidate.replacement_required === false;
+  if (!reusable) {
     console.error(`DETENIDO: APK candidate ${result.artifact_id} no es reutilizable para Physical QA actual.`);
+    if (!result.identity_valid) console.error('DRIFT candidate exact-head identity invalid: gate/staging/build SHA or run identity mismatch.');
     for (const mismatch of result.mismatches) {
       console.error(`DRIFT ${mismatch.path} expected=${mismatch.expected_sha} actual=${mismatch.actual_sha || 'MISSING'}`);
     }
     process.exit(2);
   }
-  console.log(`PASS physical QA candidate runtime unchanged and reusable: artifact=${result.artifact_id} apk_sha256=${result.apk_sha256}`);
+  console.log(`PASS physical QA candidate runtime and exact-head gate identity unchanged: artifact=${result.artifact_id} apk_sha256=${result.apk_sha256}`);
 }
