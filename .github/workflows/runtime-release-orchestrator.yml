@@ -2,6 +2,10 @@ name: TuTop runtime release orchestrator
 
 on:
   workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/runtime-release-orchestrator.yml"
 
 permissions:
   contents: read
@@ -15,7 +19,7 @@ concurrency:
 jobs:
   release-chain:
     name: October → Staging → Android → verified APK
-    if: github.ref_name == 'main'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.event.head_commit.message == 'execute TuTop runtime orchestrator one-shot')
     runs-on: ubuntu-latest
     timeout-minutes: 150
     env:
@@ -165,40 +169,28 @@ jobs:
             echo "DETENIDO: Android terminó green pero no existe artifact APK físico esperado." >&2
             exit 51
           fi
-
           rm -rf apk-verified
           mkdir -p apk-verified
           gh run download "$ANDROID_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$APK_ARTIFACT_NAME" --dir apk-verified
-
           APK_FILE="apk-verified/TuTop-0.9.0-beta.0-physical-qa-staging.apk"
           HASH_FILE="apk-verified/TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256"
           META_FILE="apk-verified/TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt"
           test -s "$APK_FILE"
           test -s "$HASH_FILE"
           test -s "$META_FILE"
-
           EXPECTED_SHA="$(awk '{print $1; exit}' "$HASH_FILE")"
           ACTUAL_SHA="$(sha256sum "$APK_FILE" | awk '{print $1}')"
-          if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
-            echo "DETENIDO: SHA-256 del APK no coincide." >&2
-            exit 52
-          fi
+          test "$EXPECTED_SHA" = "$ACTUAL_SHA"
           grep -q "head_sha=${TARGET_SHA}" "$META_FILE"
           grep -q "gate_run_id=${OCTOBER_RUN_ID}" "$META_FILE"
           grep -q "staging_smoke_run_id=${STAGING_RUN_ID}" "$META_FILE"
           grep -q 'reviews_lazy_cutover=false' "$META_FILE"
           grep -q 'wallet_lazy_cutover=false' "$META_FILE"
           grep -q 'favorites_visible_cutover=false' "$META_FILE"
-
           echo "APK_ARTIFACT_ID=${APK_ARTIFACT_ID}" >> "$GITHUB_ENV"
           echo "APK_ARTIFACT_NAME=${APK_ARTIFACT_NAME}" >> "$GITHUB_ENV"
           echo "APK_SHA256=${ACTUAL_SHA}" >> "$GITHUB_ENV"
           echo "✅ APK descargable verificado independientemente" >> "$GITHUB_STEP_SUMMARY"
-          echo "- artifact_id: ${APK_ARTIFACT_ID}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- artifact_name: ${APK_ARTIFACT_NAME}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- apk_sha256: ${ACTUAL_SHA}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- target_sha: ${TARGET_SHA}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- readiness: 100%" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record 100% APK readiness on PR #6
         env:
@@ -206,23 +198,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BODY=$(cat <<EOF
-          ## APK readiness — 100%
-
-          Real installable APK verified by runtime orchestrator.
-
-          - target: \`${TARGET_REF}@${TARGET_SHA}\`
-          - October run: \`${OCTOBER_RUN_ID}\`
-          - Staging run: \`${STAGING_RUN_ID}\`
-          - Android run: \`${ANDROID_RUN_ID}\`
-          - APK artifact: \`${APK_ARTIFACT_ID}\` / \`${APK_ARTIFACT_NAME}\`
-          - SHA-256: \`${APK_SHA256}\`
-          - cutovers: reviews=false, wallet=false, favorites=false
-          - APK readiness: **100%**
-
-          Physical QA A+B remains the next gate and is not synthesized by this workflow.
-          EOF
-          )
+          BODY="## APK readiness — 100%\n\nReal installable APK verified. Target: \`${TARGET_REF}@${TARGET_SHA}\`. October=\`${OCTOBER_RUN_ID}\`, Staging=\`${STAGING_RUN_ID}\`, Android=\`${ANDROID_RUN_ID}\`, artifact=\`${APK_ARTIFACT_ID}\`, SHA-256=\`${APK_SHA256}\`, cutovers=false/false/false. Physical QA A+B remains next."
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null
 
       - name: Record blocked orchestrator result
