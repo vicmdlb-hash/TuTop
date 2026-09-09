@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: tutop-v2-trusted-maintenance
@@ -12,6 +13,7 @@ concurrency:
 
 jobs:
   maintain-staging:
+    if: github.ref_name == 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -23,6 +25,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Require same-SHA green October gate before trusted mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
+            -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
+            --jq '.workflow_runs[0].id // empty')"
+          if [ -z "$GATE_RUN_ID" ]; then
+            echo "DETENIDO: trusted maintenance requiere october-01-validation exitoso sobre el mismo SHA ${GITHUB_SHA}." >&2
+            exit 43
+          fi
+          echo "TUTOP_VALIDATED_GATE_RUN_ID=$GATE_RUN_ID" >> "$GITHUB_ENV"
+          echo "✅ Trusted maintenance autorizada para ${GITHUB_SHA} por gate=${GATE_RUN_ID}."
 
       - name: Node 22
         uses: actions/setup-node@v7
