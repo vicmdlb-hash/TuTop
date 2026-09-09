@@ -51,6 +51,27 @@
     "firestore_emulator_security_suite"
   ],
   "required_same_sha_chain": true,
+  "staging_mutation_surface": {
+    "exact_project": "tutop-beta-vicmdlb-1356585881",
+    "exact_branch": "feat/tutop-0.8-p0",
+    "requires_github_actions": true,
+    "requires_october_gate_run_id": true,
+    "requires_october_gate_sha_equal_github_sha": true,
+    "direct_spark_deploy": "blocked",
+    "app_check_modes_during_freeze": ["OFF", "UNENFORCED"],
+    "app_check_enforced": false,
+    "google_play_internal_sharing": false,
+    "production_override_envs_supported_by_guarded_entrypoints": false,
+    "guarded_entrypoints": [
+      "deploy-firebase-staging.mjs",
+      "deploy-firebase-auth-staging.mjs",
+      "prepare-staging-v2-auth.mjs",
+      "prepare-staging-android-app.mjs",
+      "staging-v2-admin.mjs",
+      "configure-app-check-staging.mjs"
+    ],
+    "large_apply_scripts_policy": "Do not invoke seed/reconciliation/trusted-maintenance apply scripts directly during freeze. Their supported mutation path is the exact-SHA staging/trusted workflow with explicit apply guards."
+  },
   "secondary_workflow_policy": {
     "diagnostic_manual_only": [
       "quality.yml",
@@ -70,5 +91,5 @@
     "quarantine_rule": "Do not edit, dispatch, or use quarantined self-trigger workflows during the Actions budget outage. Editing either file can trigger a push run. They are not promotion authorities for TuTop 0.9 runtime freeze."
   },
   "current_physical_qa_candidate": null,
-  "notes": "This manifest freezes promotion invariants, not a commit SHA. The exact candidate SHA is resolved at workflow dispatch through GITHUB_SHA and must remain identical across October, staging and Android. runtime_validated remains false until those real gates pass."
+  "notes": "This manifest freezes promotion and mutation invariants, not a commit SHA. The exact candidate SHA is resolved at workflow dispatch through GITHUB_SHA and must remain identical across October, staging and Android. runtime_validated remains false until those real gates pass."
 }
