@@ -30,7 +30,7 @@
     "android:assets": "node scripts/android-assets.mjs",
     "admin:doctor": "node scripts/admin-doctor.mjs",
     "external:doctor": "node scripts/external-readiness.mjs",
-    "firebase:link": "node scripts/link-firebase-project.mjs",
+    "firebase:link": "node scripts/freeze-blocked-command.mjs firebase:link",
     "firebase:deploy:spark": "node scripts/freeze-blocked-command.mjs firebase:deploy:spark",
     "firebase:emulators:spark": "firebase emulators:start --only auth,firestore,hosting",
     "v2:rules:prepare": "node scripts/prepare-firestore-v2-rules.mjs && node scripts/harden-canonical-v2-rules.mjs && node scripts/harden-runtime-v2-rules.mjs && node scripts/optimize-listing-rate-limit-rules.mjs && node scripts/harden-account-operations-rules.mjs && node scripts/harden-notification-receipts-rules.mjs && node scripts/harden-transaction-lock-rules.mjs",
