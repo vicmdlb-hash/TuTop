@@ -167,11 +167,10 @@ export const canonicalTransactionsBackend = {
     const field = actor === transaction.buyer_id ? 'buyer_confirmed_at' : 'seller_confirmed_at';
     const next = { ...transaction, [field]: at, status, updated_at: at } as MarketplaceTransaction;
     const confirmationWrite = patchWrite(client, `transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at });
-    if (status === 'completed' && actor === transaction.seller_id) {
+    if (status === 'completed') {
       await assertReservationLockConsistent(client, transaction);
-      // Client authority ends at the authoritative sale close. Completed reservation locks
-      // are deliberately left for trusted reconciliation/admin cleanup. This avoids granting
-      // delete permission to marketplace clients and matches real Firestore staging behavior.
+      // Completion is symmetric: whichever participant confirms second closes the listing
+      // in the same commit. The reservation lock remains for trusted reconciliation cleanup.
       await client.commit([
         confirmationWrite,
         patchWrite(client, `listings_v2/${transaction.listing_id}`, { status: 'sold_out', updated_at: at }),
