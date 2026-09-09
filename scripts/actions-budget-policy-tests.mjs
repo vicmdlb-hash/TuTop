@@ -9,6 +9,7 @@ const firestore = fs.readFileSync('.github/workflows/firestore-v2-security.yml',
 const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const androidV2 = android.slice(android.indexOf('  android-v2-staging:'));
+const RULES_TESTING_VERSION = '5.0.2';
 
 const assertManualOnly = (name, workflow) => {
   assert.match(workflow, /workflow_dispatch:/, `${name} debe conservar ejecución manual`);
@@ -75,12 +76,28 @@ assert.match(october, /Typecheck once and build web/);
 assert.match(october, /emulators:exec --only firestore/);
 assert.doesNotMatch(october, /upload-artifact/);
 
+// Runtime-freeze validation must not drift because npm resolves a new test harness
+// without a TuTop commit. Keep the emulator harness deterministic on costly gates.
+for (const [name, workflow] of [['October', october], ['Firestore V2', firestore]]) {
+  assert.equal(
+    workflow.includes(`@firebase/rules-unit-testing@${RULES_TESTING_VERSION}`),
+    true,
+    `${name} debe fijar @firebase/rules-unit-testing@${RULES_TESTING_VERSION}`,
+  );
+  assert.equal(
+    workflow.includes('@firebase/rules-unit-testing@latest'),
+    false,
+    `${name} no debe depender de @latest durante runtime freeze`,
+  );
+}
+
 console.log('PASS all costly TuTop gates are manual-only while Actions is exhausted');
 console.log('PASS no PR/push/cron trigger can burn the future 2,000-minute budget');
 console.log('PASS October combines static, typecheck+build and Firestore emulator work in one runner');
 console.log('PASS October and Quality perform TypeScript validation once through the canonical npm build command');
 console.log('PASS Quality does not rerun exact offline/AppCheck/recovery/evidence tests already inside npm run check');
 console.log('PASS October gate avoids redundant app installs and artifact uploads');
+console.log(`PASS October and Firestore pin @firebase/rules-unit-testing@${RULES_TESTING_VERSION} to prevent external dependency drift`);
 console.log('PASS Android V2 reuses same-SHA October evidence instead of repeating static/typecheck gates');
 console.log('PASS Android V2 still performs the real web build, Android lint/tests/assemble and exact candidate verification');
 console.log('PASS V2 APK cannot promote before same-SHA October + real staging smoke and records metadata');
