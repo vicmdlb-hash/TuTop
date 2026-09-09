@@ -65,6 +65,7 @@ assert.match(firestore, /Firestore V2 emulator security/);
 assertManualOnly('Trusted maintenance', trusted);
 
 assertManualOnly('October consolidated gate', october);
+assert.match(october, /if: github\.ref_name == 'feat\/tutop-0\.8-p0'/);
 assert.equal((october.match(/npm ci/g) || []).length, 1, 'October gate debe instalar dependencias de app una sola vez');
 assert.match(october, /Static \+ build \+ Firestore emulator/);
 assert.match(october, /npm run check/);
@@ -93,6 +94,7 @@ for (const [name, workflow] of [['October', october], ['Firestore V2', firestore
 
 console.log('PASS all costly TuTop gates are manual-only while Actions is exhausted');
 console.log('PASS no PR/push/cron trigger can burn the future 2,000-minute budget');
+console.log('PASS October is blocked outside the exact runtime-freeze branch');
 console.log('PASS October combines static, typecheck+build and Firestore emulator work in one runner');
 console.log('PASS October and Quality perform TypeScript validation once through the canonical npm build command');
 console.log('PASS Quality does not rerun exact offline/AppCheck/recovery/evidence tests already inside npm run check');
