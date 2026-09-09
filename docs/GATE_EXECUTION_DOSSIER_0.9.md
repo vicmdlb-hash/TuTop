@@ -38,87 +38,41 @@ Debe ejecutarse una sola vez sobre el HEAD seleccionado y demostrar en el mismo 
 4. typecheck;
 5. web build con reviews + Wallet + favorites cutovers compilados en `true`;
 6. `v2:rules:prepare`;
-7. Firestore Emulator completo, incluyendo:
-   - Rules/atomicidad base;
-   - transaction locks;
-   - seller-second y buyer-second completion;
-   - unread COUNT;
-   - review strike COUNT;
-   - favorites membership;
-   - account/governance/notification contracts.
+7. Firestore Emulator completo, incluyendo transaction locks, completion bilateral, unread COUNT, review strike COUNT, favorites membership y contracts de account/governance/notifications.
 
 ### Si October falla
 
 **STOP. No ejecutar staging, Android ni otro workflow para “ver si pasa”.**
 
-Acción:
-
-1. identificar el primer error causal;
-2. corregir sólo ese P0/P1/integración/gate;
-3. revalidar que el HEAD cambió;
-4. considerar inválida para promoción toda evidencia del SHA anterior;
-5. volver a ejecutar October sobre el nuevo SHA.
-
-No gastar runners paralelos para diagnosticar la misma falla salvo que el log de October no permita aislarla.
+Identificar el primer error causal, corregir únicamente el P0/P1/integración/gate, asumir que el SHA cambió y volver a empezar desde October. No gastar runners paralelos para diagnosticar la misma falla salvo que el log no permita aislarla.
 
 ## Paso 2 — Staging same-SHA
 
 Workflow: `.github/workflows/staging-v2-smoke.yml`.
 
-Sólo puede comenzar si GitHub encuentra `october-01-validation.yml` exitoso sobre **el mismo `GITHUB_SHA`**.
-
-Staging puede entonces:
-
-- desplegar Rules e índices V2 al proyecto staging;
-- verificar/sembrar catálogo canónico sin overwrite;
-- preparar Auth base y configs staging;
-- ejecutar smoke real de dos usuarios;
-- ejecutar borrado de cuenta controlado;
-- mantener App Check `UNENFORCED`.
+Sólo puede comenzar si existe `october-01-validation.yml` exitoso sobre **el mismo `GITHUB_SHA`**. Staging puede entonces desplegar Rules/índices V2, verificar catálogo, preparar Auth/configs, ejecutar smoke real de dos usuarios, borrado de cuenta controlado y mantener App Check `UNENFORCED`.
 
 ### Si staging falla
 
-**STOP. No construir APK.**
-
-Si la reparación cambia código/config versionado, el SHA cambia y la ronda vuelve a October.
-
-Si la causa es exclusivamente configuración externa no versionada, corregir esa configuración sin afirmar que el runtime quedó validado hasta repetir el smoke exitoso sobre el mismo SHA.
+**STOP. No construir APK.** Si la reparación cambia código/config versionado, el SHA cambia y la ronda vuelve a October. Si la causa es configuración externa no versionada, corregirla y repetir staging sobre el mismo SHA antes de continuar.
 
 ## Paso 3 — Selección de cutovers para Android
 
-La primera APK Physical QA debe favorecer aislamiento de riesgo.
+La primera APK Physical QA debe aislar riesgo:
 
-Orden recomendado:
+1. baseline reviews=false, Wallet=false, favorites=false;
+2. después de baseline Android verde, probar cutovers incrementalmente;
+3. no declarar `565→365→265→65` como ahorro activo hasta observarlo realmente.
 
-1. APK baseline con reviews=false, Wallet=false, favorites=false;
-2. sólo después de baseline Android verde, probar cutovers en staging de forma incremental;
-3. no declarar `565→365→265→65` como ahorro activo hasta observar el comportamiento real correspondiente.
-
-October compila los tres flags en `true` para detectar incompatibilidades de código, pero eso **no obliga** a activarlos todos en la primera APK.
+October compila los tres flags en `true` para detectar incompatibilidades, pero eso no obliga a activarlos en la primera APK.
 
 ## Paso 4 — Android exact-SHA
 
-Workflow: `.github/workflows/android-debug-apk.yml` en rama V2.
+Workflow: `.github/workflows/android-debug-apk.yml`.
 
-Debe verificar automáticamente:
-
-- October exitoso same-SHA;
-- staging smoke exitoso same-SHA;
-- staging-only Firebase config;
-- typecheck/gates antes de build;
-- APK existente y no vacía;
-- SHA-256;
-- metadata con SHA, gate run ID, staging run ID y 3 cutovers;
-- `PHYSICAL_QA_CANDIDATE.generated.json`;
-- verificación generated candidate ↔ checkout ↔ metadata.
-
-Ninguna APK de otro SHA puede heredarse como candidata.
+Debe verificar October same-SHA + staging same-SHA, config staging-only, gates/typecheck, APK no vacía, SHA-256, metadata con IDs de gate/staging y los 3 cutovers, generated candidate y verificación checkout ↔ metadata ↔ candidate.
 
 ## Paso 5 — Activación del candidato
-
-El workflow Android **no** activa el manifest canónico automáticamente.
-
-Sobre el checkout exacto del build:
 
 ```bash
 TUTOP_ALLOW_PHYSICAL_QA_CANDIDATE_ACTIVATION=exact-head \
@@ -138,26 +92,11 @@ TUTOP_ALLOW_PHYSICAL_QA_TEMPLATE_REBIND=exact-head \
 node scripts/rebind-physical-qa-templates.mjs
 ```
 
-Esto sólo cambia bindings. Debe dejar toda evidencia en `pending`, `false` o `null`.
+Esto sólo cambia bindings y debe dejar toda evidencia en `pending`, `false` o `null`.
 
 ## Paso 7 — Physical QA A+B
 
-Ejecutar el mismo APK exacto en dos dispositivos/perfiles físicos independientes.
-
-Obligatorio validar:
-
-- install/boot;
-- auth/identity;
-- publicación/feed/favorite/chat;
-- oferta/contraoferta/reserva;
-- seller-second y buyer-second completion;
-- cancel/expire/dispute y rutas aplicables;
-- offline/reconnect;
-- keyboard/back/lifecycle/safe areas/rotation;
-- FCM foreground/background/cold-start/deep-link;
-- App Check observado sin guardar token.
-
-`warn`, `pending` o `not_applicable` mantienen release bloqueada.
+Usar el mismo APK exacto en dos dispositivos/perfiles físicos independientes y validar install/boot, auth/identity, publicación/feed/favorite/chat, oferta/contraoferta/reserva, seller-second y buyer-second completion, terminal states, offline/reconnect, keyboard/back/lifecycle/safe areas/rotation, FCM y App Check observado sin guardar token. `warn`, `pending` o `not_applicable` mantienen release bloqueada.
 
 ## Workflows secundarios durante el freeze
 
@@ -171,7 +110,7 @@ No son autoridad de promoción y no deben ejecutarse por rutina si October ya cu
 
 ### Mutación staging controlada
 
-`v2-trusted-maintenance.yml` sólo puede mutar staging después de October green sobre el mismo SHA. No sustituye staging smoke ni autoriza APK.
+Trusted maintenance sólo puede mutar staging después de **October + staging green sobre el mismo SHA**. `v2-trusted-maintenance.yml` verifica ambos runs antes de cualquier `--apply`. No sustituye staging smoke ni autoriza APK.
 
 ### Cuarentena — no editar / no ejecutar
 
@@ -184,19 +123,13 @@ Ambos conservan triggers históricos sobre cambios a su propio archivo. Durante 
 
 - Un failure causal por runner.
 - Reparar antes de reintentar.
-- No lanzar Quality + Firestore + October en paralelo para obtener la misma señal.
+- No lanzar Quality + Firestore + October en paralelo para la misma señal.
 - No construir Android si staging no está green same-SHA.
-- No ejecutar trusted maintenance como “prueba”.
-- No generar APK sólo para ver si compila: October + staging son prerequisitos.
+- No ejecutar trusted maintenance como prueba.
+- No generar APK sólo para ver si compila.
 
 ## Criterio de salida del freeze
 
-`runtime_validated` puede considerarse listo para cambiar únicamente cuando exista evidencia real del mismo SHA de:
+`runtime_validated` sólo puede cambiar cuando exista evidencia real del mismo SHA de October green, staging green, Android green, APK/candidate exactos y Physical QA A+B green.
 
-- October green;
-- staging green;
-- Android build green;
-- APK/candidate exactos;
-- Physical QA A+B green.
-
-Hasta entonces el estado correcto sigue siendo **RUNTIME FREEZE CANDIDATE / NOT VALIDATED**.
+Hasta entonces: **RUNTIME FREEZE CANDIDATE / NOT VALIDATED**.
