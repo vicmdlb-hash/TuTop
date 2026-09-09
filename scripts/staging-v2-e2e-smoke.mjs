@@ -8,7 +8,7 @@ import { adminGetDocument, adminPatchDocument, adminDeleteDocument, adminDeleteT
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const configPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-staging-web-config.json').trim();
 const REQUIRED = 'tutop-beta-vicmdlb-1356585881';
-if (projectId !== REQUIRED && process.env.TUTOP_ALLOW_ALTERNATE_STAGING !== '1') throw new Error(`Smoke fijado a ${REQUIRED}.`);
+if (projectId !== REQUIRED) throw new Error(`Smoke fijado a ${REQUIRED}.`);
 if (!fs.existsSync(configPath)) throw new Error(`Falta ${configPath}.`);
 const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 if (firebaseConfig.projectId !== projectId) throw new Error('Config Firebase no corresponde al staging objetivo.');
