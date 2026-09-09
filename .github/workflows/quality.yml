@@ -118,11 +118,3 @@ jobs:
 
       - name: Typecheck once and build web app
         run: npm run build
-
-      - name: Upload web build
-        uses: actions/upload-artifact@v7
-        with:
-          name: TuTop-web-${{ github.run_number }}
-          path: dist
-          if-no-files-found: error
-          retention-days: 7
