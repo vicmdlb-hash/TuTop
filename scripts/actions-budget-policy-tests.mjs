@@ -48,6 +48,17 @@ assert.match(androidV2, /verify-generated-physical-qa-candidate\.mjs/);
 assertManualOnly('staging real', staging);
 assertManualOnly('Quality', quality);
 assert.doesNotMatch(quality, /Firestore V2 emulator security/);
+assert.match(quality, /npm run check/);
+assert.match(quality, /npm run build/);
+assert.equal(quality.includes('npm run typecheck'), false, 'Quality no debe repetir typecheck antes del build');
+for (const duplicate of [
+  'npm run offline-reconnect:chaos:test',
+  'npm run app-check:enforcement:test',
+  'npm run account-recovery:local-sim:test',
+  'npm run physical-qa:evidence:test',
+]) {
+  assert.equal(quality.includes(duplicate), false, `Quality no debe repetir ${duplicate}; npm run check ya lo cubre`);
+}
 assertManualOnly('Firestore V2', firestore);
 assert.match(firestore, /Firestore V2 emulator security/);
 assertManualOnly('Trusted maintenance', trusted);
@@ -67,7 +78,8 @@ assert.doesNotMatch(october, /upload-artifact/);
 console.log('PASS all costly TuTop gates are manual-only while Actions is exhausted');
 console.log('PASS no PR/push/cron trigger can burn the future 2,000-minute budget');
 console.log('PASS October combines static, typecheck+build and Firestore emulator work in one runner');
-console.log('PASS October performs TypeScript validation once through the canonical npm build command');
+console.log('PASS October and Quality perform TypeScript validation once through the canonical npm build command');
+console.log('PASS Quality does not rerun exact offline/AppCheck/recovery/evidence tests already inside npm run check');
 console.log('PASS October gate avoids redundant app installs and artifact uploads');
 console.log('PASS Android V2 reuses same-SHA October evidence instead of repeating static/typecheck gates');
 console.log('PASS Android V2 still performs the real web build, Android lint/tests/assemble and exact candidate verification');
