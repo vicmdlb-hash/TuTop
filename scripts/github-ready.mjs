@@ -37,9 +37,10 @@ const freeze = JSON.parse(read('docs/RUNTIME_FREEZE_CANDIDATE_0.9.json'));
 for (const marker of ['npm ci', 'npm run check', 'npm run beta:ready', 'assembleDebug', 'actions/upload-artifact']) {
   if (!android.includes(marker)) errors.push(`Workflow Android no contiene: ${marker}`);
 }
-for (const marker of ['npm ci', 'npm run check', 'npm run build', 'actions/upload-artifact']) {
+for (const marker of ['npm ci', 'npm run check', 'npm run build']) {
   if (!quality.includes(marker)) errors.push(`Workflow quality no contiene: ${marker}`);
 }
+if (quality.includes('actions/upload-artifact')) errors.push('Quality es diagnóstico y no debe publicar artefactos durante Runtime Freeze.');
 if (quality.includes('npm run typecheck')) errors.push('Quality no debe repetir typecheck antes del build canónico.');
 if (!firestore.includes('Firestore V2 emulator security')) errors.push('Firestore V2 dejó de tener su gate aislado.');
 for (const marker of ['npm run check', 'npm run build', 'npm run v2:rules:prepare', 'emulators:exec --only firestore']) {
@@ -62,16 +63,23 @@ for (const [name, workflow] of [
   if (/\n\s+push:|\n\s+pull_request:|\n\s+schedule:/.test(workflow)) errors.push(`${name} debe permanecer manual-only para preservar minutos.`);
 }
 
-if (!staging.includes('october-01-validation.yml/runs') || !staging.includes('head_sha="$GITHUB_SHA"') || !staging.includes('TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA')) {
-  errors.push('Staging no está ligado a October green del mismo SHA.');
+for (const [name, workflow] of [['Android', android], ['Staging real', staging], ['Trusted maintenance', trusted]]) {
+  if (!workflow.includes('cancel-in-progress: false')) errors.push(`${name} no debe cancelar una ejecución activa a mitad de una operación remota.`);
+}
+
+const branchFilterCount = (workflow) => (workflow.match(/-f branch="\$GITHUB_REF_NAME"/g) || []).length;
+if (!staging.includes('october-01-validation.yml/runs') || !staging.includes('head_sha="$GITHUB_SHA"')
+    || !staging.includes('TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA') || branchFilterCount(staging) < 1) {
+  errors.push('Staging no está ligado a October green de la misma rama y SHA.');
 }
 if (!android.includes('october-01-validation.yml/runs') || !android.includes('staging-v2-smoke.yml/runs')
-    || !android.includes('TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA') || !android.includes('TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA')) {
-  errors.push('Android no está ligado a October + staging del mismo SHA.');
+    || !android.includes('TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA') || !android.includes('TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA')
+    || branchFilterCount(android) < 2) {
+  errors.push('Android no está ligado a October + staging de la misma rama y SHA.');
 }
 if (!trusted.includes('october-01-validation.yml/runs') || !trusted.includes('staging-v2-smoke.yml/runs')
-    || !trusted.includes('gated-trusted-staging-apply.mjs')) {
-  errors.push('Trusted maintenance perdió su cadena exact-SHA/wrapper.');
+    || !trusted.includes('gated-trusted-staging-apply.mjs') || branchFilterCount(trusted) < 2) {
+  errors.push('Trusted maintenance perdió su cadena same-branch/same-SHA/wrapper.');
 }
 
 if (freeze.status !== 'runtime_freeze_candidate' || freeze.runtime_validated !== false || freeze.feature_freeze !== true) {
