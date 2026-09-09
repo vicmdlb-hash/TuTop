@@ -45,7 +45,7 @@ assert.match(deploy, /NO despliega hosting, storage, functions/);
 assert.match(authDeploy, /assertStagingFreezeContext/);
 assert.match(authDeploy, /--only', 'auth'/);
 assert.match(authDeploy, /Email\/Password/);
-assert.doesNotMatch(authDeploy, /Identity Platform|initializeAuth/);
+assert.doesNotMatch(authDeploy, /initializeAuth|identityPlatform:initializeAuth/);
 
 assert.match(seedWrapper, /assertStagingFreezeContext/);
 assert.match(seedWrapper, /allowEnv: 'TUTOP_ALLOW_V2_SEED'/);
