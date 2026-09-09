@@ -39,8 +39,16 @@ assert.match(bridge, /backend\.deriveNotifications\(chats, \[\], \[\], session\.
 assert.match(bridge, /products: \[\]/);
 
 assert.match(favoritesBackend, /MAX_VISIBLE_FAVORITES = 120/);
-assert.match(favoritesBackend, /favorites\/\$\{key\}/);
-assert.match(favoritesHydrator, /changedDuringLoad = before\.has\(productId\) !== current\.has\(productId\)/);
+assert.match(favoritesBackend, /MAX_IN_VALUES = 30/);
+assert.match(favoritesBackend, /async function exactGroup/);
+assert.match(favoritesBackend, /favorites\/\$\{key\(uid, productId\)\}/);
+assert.match(favoritesBackend, /groupFound = await queryGroup/);
+assert.match(favoritesBackend, /groupFound = await exactGroup/);
+assert.match(favoritesBackend, /mutationVersion/);
+assert.match(favoritesBackend, /startVersions/);
+assert.match(favoritesHydrator, /startVersions/);
+assert.match(favoritesHydrator, /visibleFavoritesBackend\.currentVersion\(productId\)/);
+assert.match(favoritesHydrator, /changedDuringLoad/);
 assert.match(favoritesHydrator, /changedDuringLoad \? current\.has\(productId\) : server\.has\(productId\)/);
 
 assert.match(october, /on:\s*\n\s*workflow_dispatch:/);
@@ -49,11 +57,14 @@ assert.match(october, /VITE_TUTOP_SCHEMA_V2: "true"/);
 assert.match(october, /VITE_TUTOP_ENVIRONMENT: staging/);
 assert.match(october, /VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: "true"/);
 assert.match(october, /VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: "true"/);
+assert.match(october, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: "true"/);
 
 assert.match(android, /enable_reviews_lazy_cutover:[\s\S]*?default: false[\s\S]*?type: boolean/);
 assert.match(android, /enable_wallet_lazy_cutover:[\s\S]*?default: false[\s\S]*?type: boolean/);
+assert.match(android, /enable_favorites_visible_cutover:[\s\S]*?default: false[\s\S]*?type: boolean/);
 assert.match(android, /VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: \$\{\{ inputs\.enable_reviews_lazy_cutover \}\}/);
 assert.match(android, /VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: \$\{\{ inputs\.enable_wallet_lazy_cutover \}\}/);
+assert.match(android, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: \$\{\{ inputs\.enable_favorites_visible_cutover \}\}/);
 assert.match(android, /actions: read/);
 assert.match(android, /Require same-SHA green consolidated gate and real staging smoke/);
 assert.match(android, /actions\/workflows\/october-01-validation\.yml\/runs/);
@@ -68,6 +79,7 @@ assert.match(android, /TUTOP_VALIDATED_STAGING_RUN_ID/);
 assert.match(android, /physical-qa-staging\.metadata\.txt/);
 assert.match(android, /reviews_lazy_cutover=\$\{VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER\}/);
 assert.match(android, /wallet_lazy_cutover=\$\{VITE_TUTOP_V2_WALLET_LAZY_CUTOVER\}/);
+assert.match(android, /favorites_visible_cutover=\$\{VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER\}/);
 assert.doesNotMatch(android, /\n\s+push:/);
 assert.doesNotMatch(android, /\n\s+pull_request:/);
 assert.doesNotMatch(android, /\n\s+schedule:/);
@@ -85,7 +97,8 @@ console.log('PASS bridge order preserves lean chat behavior before canonical ide
 console.log('PASS reviews cutover removes both 100-doc review queries and fails closed through strike COUNT');
 console.log('PASS wallet cutover removes the 100-doc wallet history query while Wallet owns lazy history');
 console.log('PASS favorites cutover removes the broad 200-doc query and hydrates exact membership for up to 120 visible V2 listings');
+console.log('PASS favorites IN-query failure falls back to deterministic exact membership without broad snapshot reads');
 console.log('PASS late visible-favorites hydration preserves concurrent optimistic toggles');
-console.log('PASS consolidated manual gate compiles reviews+wallet cutovers; favorites remains default-off pending real validation');
+console.log('PASS consolidated manual gate compiles all three cutovers; Android keeps each manual input default-off');
 console.log('PASS target root ceilings are 365 reviews-only, 265 reviews+wallet, and 65 before visible favorites membership reads');
 console.log('V2 cost cutover flags contract: PASS');
