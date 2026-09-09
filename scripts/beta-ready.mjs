@@ -39,6 +39,9 @@ const expectedBeta = '0.9.0-beta.0';
 if (pkg.version !== expectedBeta) errors.push(`Versión core npm inesperada: ${pkg.version || 'vacía'}`);
 if (lock.version !== expectedBeta || lock.packages?.['']?.version !== expectedBeta) errors.push('package-lock.json no está sincronizado con la versión beta raíz');
 if (pkg.type !== 'module') errors.push('package.json debe declarar type=module para evitar carga CommonJS ambigua');
+if (pkg.scripts?.typecheck !== 'tsc --noEmit' || pkg.scripts?.build !== 'npm run typecheck && vite build') {
+  errors.push('Build web debe ejecutar el typecheck canónico exactamente una vez antes de Vite.');
+}
 if (project.currentBetaVersion !== expectedBeta) errors.push(`Versión beta Android inesperada: ${project.currentBetaVersion || 'vacía'}`);
 if (pkg.version !== project.currentBetaVersion) errors.push(`Versiones raíz/Android divergentes: ${pkg.version || 'vacía'} vs ${project.currentBetaVersion || 'vacía'}`);
 if (cap.appId !== 'mx.tutop.app') errors.push('Capacitor appId no es mx.tutop.app');
@@ -70,17 +73,29 @@ if (!workflow.includes('TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA') || !workflow.incl
   errors.push('Workflow Android no conserva binding exact-SHA de gate + staging.');
 }
 if (!stagingWorkflow.includes('TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA')) errors.push('Staging no propaga el SHA validado de October.');
-if (!octoberWorkflow.includes('npm run check') || !octoberWorkflow.includes('npm run typecheck') || !octoberWorkflow.includes('npm run build')) {
+if (!octoberWorkflow.includes('npm run check') || !octoberWorkflow.includes('npm run build') || !octoberWorkflow.includes('npm run v2:rules:prepare')) {
   errors.push('October consolidated gate está incompleto.');
+}
+if (octoberWorkflow.includes('npm run typecheck')) errors.push('October no debe repetir typecheck antes del build canónico.');
+if (!octoberWorkflow.includes('tests/firestore.v2.account-operations.test.mjs')) {
+  errors.push('October debe conservar el fixture Emulator de operaciones de cuenta.');
 }
 if (!mobileDeps.includes("'--no-save'") || !mobileDeps.includes("'--package-lock=false'")) errors.push('Instalación móvil debe ser efímera y no modificar package manifests');
 const sdkPackages = "packages: 'platform-tools platforms;android-36 build-tools;36.0.0'";
 if (!workflow.includes(sdkPackages) || !hardenedWorkflow.includes(sdkPackages)) errors.push('Workflows Android no fijan SDK 36 mediante setup-android');
 if (workflow.includes('yes | sdkmanager --licenses') || hardenedWorkflow.includes('yes | sdkmanager --licenses')) errors.push('Workflow Android conserva aceptación SDK redundante y ruidosa');
 if (!androidBootstrap.includes('libdatastore_shared_counter.so') || !androidBootstrap.includes('keepDebugSymbols')) errors.push('Bootstrap Android no declara la librería JNI no-strippable');
-if (!qualityWorkflow.includes('npm run typecheck') || !qualityWorkflow.includes('npm run build')) errors.push('Quality workflow no cubre typecheck/build');
+if (!qualityWorkflow.includes('npm run build')) errors.push('Quality workflow no cubre typecheck+build canónico');
+if (qualityWorkflow.includes('npm run typecheck')) errors.push('Quality no debe repetir typecheck antes de npm run build');
 if (!qualityWorkflow.includes('npm run native-security:test')) errors.push('Quality workflow no valida seguridad Firebase nativa');
-if (!qualityWorkflow.includes('firestore.v2.account-operations.test.mjs')) errors.push('Quality workflow no cubre reglas de operaciones de cuenta');
+for (const duplicate of [
+  'npm run offline-reconnect:chaos:test',
+  'npm run app-check:enforcement:test',
+  'npm run account-recovery:local-sim:test',
+  'npm run physical-qa:evidence:test',
+]) {
+  if (qualityWorkflow.includes(duplicate)) errors.push(`Quality repite una prueba ya cubierta por npm run check: ${duplicate}`);
+}
 if (!dependabot.includes('package-ecosystem: "npm"') || !dependabot.includes('package-ecosystem: "github-actions"')) errors.push('Dependabot no cubre npm + GitHub Actions');
 if (!privacy.includes('no se verifica por SMS') || !privacy.includes('no se usan Cloud Storage, Cloud Functions')) errors.push('Aviso de privacidad no refleja correctamente las limitaciones Spark/SMS de la beta');
 if (!terms.includes('alcohol') || !terms.includes('vapeadores') || !terms.includes('medicamentos sujetos a receta')) errors.push('Reglas públicas no enumeran categorías sensibles bloqueadas en la beta');
