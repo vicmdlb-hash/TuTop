@@ -53,6 +53,17 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "✅ October gate same-SHA validado: ${GATE_RUN_ID} / ${GITHUB_SHA}."
 
+      - name: Require managed staging credentials before dependency setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "DETENIDO: falta credencial gestionada ${name} en GitHub Actions." >&2
+              exit 42
+            fi
+          done
+
       - name: Node 22
         uses: actions/setup-node@v7
         with:
@@ -67,17 +78,6 @@ jobs:
 
       - name: Verify dependency manifests stayed immutable
         run: git diff --exit-code -- package.json package-lock.json
-
-      - name: Require managed staging credentials
-        shell: bash
-        run: |
-          set -euo pipefail
-          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
-            if [ -z "${!name:-}" ]; then
-              echo "DETENIDO: falta credencial gestionada ${name} en GitHub Actions." >&2
-              exit 42
-            fi
-          done
 
       - name: Deploy current strict V2 rules and indexes
         run: npm run firebase:deploy:staging
