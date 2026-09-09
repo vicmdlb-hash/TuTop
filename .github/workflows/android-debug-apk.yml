@@ -2,12 +2,6 @@ name: Build TuTop Android APK (zero cost)
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "play/**"
 
 permissions:
   contents: read
