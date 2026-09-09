@@ -21,21 +21,37 @@ Antes de tocar un dispositivo físico debe existir un nuevo candidato generado p
 
 No inventar artifact ID, run ID, SHA, tamaño, timestamp ni evidencia.
 
+## Identidad exacta obligatoria
+
+Antes de Physical QA deben coincidir simultáneamente:
+
+- `gate_run_id` real de October;
+- `gate_commit_sha`;
+- `staging_smoke_run_id` real;
+- `staging_smoke_commit_sha`;
+- `build_run_id` Android;
+- `build_commit_sha`;
+- upload `artifact_id`;
+- tree SHA del build;
+- APK SHA-256 y tamaño.
+
+Regla: **`gate_commit_sha === staging_smoke_commit_sha === build_commit_sha`**. Un run ID válido de otro SHA no autoriza candidato, aunque el APK exista.
+
 ## Generación exacta y activación
 
 El workflow Android genera automáticamente `PHYSICAL_QA_CANDIDATE.generated.json` después de subir la APK. El archivo debe incluir datos reales del mismo build:
 
 - upload `artifact_id` devuelto por GitHub;
 - `build_run_id` y run number;
-- `gate_run_id`;
-- `staging_smoke_run_id`;
+- `gate_run_id` + `gate_commit_sha`;
+- `staging_smoke_run_id` + `staging_smoke_commit_sha`;
 - `build_commit_sha`;
 - tree SHA;
 - SHA-256 y tamaño de APK;
 - refs Git de todos los inputs empaquetados relevantes;
-- estado de cutover reviews/Wallet.
+- estado de cutover reviews/Wallet/favorites.
 
-`verify-generated-physical-qa-candidate.mjs` valida además que la metadata Android coincida campo por campo con el generated candidate antes de publicarlo.
+`verify-generated-physical-qa-candidate.mjs` valida además que la metadata Android coincida campo por campo con el generated candidate y que los SHA de October, staging y build sean idénticos antes de publicarlo.
 
 El generated manifest no cambia automáticamente `docs/PHYSICAL_QA_CANDIDATE_0.9.json`. La activación debe realizarse sobre el mismo checkout exacto:
 
@@ -48,25 +64,25 @@ node scripts/activate-generated-physical-qa-candidate.mjs \
 node scripts/physical-qa-candidate-drift.mjs
 ```
 
-El activador vuelve a ejecutar `verify-generated-physical-qa-candidate.mjs`; si SHA, tree, metadata o refs no coinciden con HEAD, falla cerrado. No ejecutar este activador automáticamente desde el workflow Android.
+El activador vuelve a ejecutar `verify-generated-physical-qa-candidate.mjs`; si gate SHA, staging SHA, build SHA, tree, metadata o refs no coinciden, falla cerrado. No ejecutar este activador automáticamente desde el workflow Android.
 
 ## Regeneración segura de templates
 
-Los templates actualmente ligados a APK20 son históricos y no deben ejecutarse. Después de activar un nuevo candidato exact-head y confirmar drift estricto verde:
+Los templates actualmente ligados al candidato histórico son sólo trazabilidad y no deben ejecutarse. Después de activar un nuevo candidato exact-head y confirmar drift estricto verde:
 
 ```bash
 TUTOP_ALLOW_PHYSICAL_QA_TEMPLATE_REBIND=exact-head \
 node scripts/rebind-physical-qa-templates.mjs
 ```
 
-El rebinder toma únicamente el manifest canónico `active_exact_head` y actualiza bindings de:
+El rebinder toma únicamente el manifest canónico `active_exact_head`, exige identidad gate/staging/build válida y actualiza bindings de:
 
 - `PHYSICAL_QA_DEVICE_A_0.9.json`;
 - `PHYSICAL_QA_DEVICE_B_0.9.json`;
 - `FCM_PHYSICAL_FIXTURE_TEMPLATE_0.9.json`;
 - `APP_CHECK_PHYSICAL_EVIDENCE_TEMPLATE.json`.
 
-Al hacerlo debe resetear toda evidencia: `physical=false`, casos `pending`, reportes `null`, eventos FCM vacíos, App Check no observado y `device_count=0`. Esto cambia bindings del candidato, no crea evidencia física.
+Los bundles A/B quedan ligados también a `gate_run_id`, `gate_commit_sha`, `staging_smoke_run_id` y `staging_smoke_commit_sha`. Al rebind debe resetear toda evidencia: `physical=false`, casos `pending`, reportes `null`, eventos FCM vacíos, App Check no observado y `device_count=0`. Esto cambia bindings del candidato, no crea evidencia física.
 
 ## Guardrails
 
@@ -136,7 +152,7 @@ node scripts/fcm-physical-fixture-validator.mjs <fcm-b.json>
 node --experimental-strip-types scripts/physical-qa-two-device-gate.mjs <device-a.json> <device-b.json> --json
 ```
 
-Release permanece bloqueada salvo `pass=true` sin errores.
+Release permanece bloqueada salvo `pass=true` sin errores y candidato `active_exact_head` con identidad triple-SHA válida.
 
 ## Rollback / candidato obsoleto
 
@@ -146,7 +162,7 @@ El manifest histórico puede permanecer en el repositorio con:
 - `candidate_status=obsolete_runtime_drift`;
 - `replacement_required=true`.
 
-Ese estado permite que el gate **prebuild** genere un reemplazo, pero el drift checker estricto y los validadores de evidencia deben seguir rechazándolo como candidato actual.
+Ese estado permite que el gate **prebuild** genere un reemplazo cuando existe runtime drift reconocido, pero el drift checker estricto y los validadores de evidencia deben seguir rechazándolo como candidato actual.
 
 ## Lo que Physical QA no autoriza
 
