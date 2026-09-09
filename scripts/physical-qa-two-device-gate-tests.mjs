@@ -2,7 +2,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { validateTwoDeviceEvidence } from './physical-qa-two-device-gate.mjs';
 
-const candidate = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
+const historical = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
+const exactSha = String(historical.build_commit_sha || '1'.repeat(40));
+const candidate = {
+  ...historical,
+  physical_release_candidate: true,
+  candidate_status: 'active_exact_head',
+  replacement_required: false,
+  build_commit_sha: exactSha,
+  gate_commit_sha: exactSha,
+  staging_smoke_commit_sha: exactSha,
+  artifact_id: 10002986519,
+  build_run_id: 34088114928,
+  gate_run_id: 34088114001,
+  staging_smoke_run_id: 34088114501,
+};
 const expected = {
   artifact_name: candidate.artifact_name,
   artifact_id: candidate.artifact_id,
@@ -10,6 +24,10 @@ const expected = {
   build_commit_sha: candidate.build_commit_sha,
   build_tree_sha: candidate.build_tree_sha,
   apk_sha256: candidate.apk_sha256,
+  gate_run_id: candidate.gate_run_id,
+  gate_commit_sha: candidate.gate_commit_sha,
+  staging_smoke_run_id: candidate.staging_smoke_run_id,
+  staging_smoke_commit_sha: candidate.staging_smoke_commit_sha,
 };
 const now = Date.parse('2026-09-07T04:30:00.000Z');
 const allPass = Object.fromEntries([
@@ -140,12 +158,20 @@ const appCheckWrongSession = structuredClone(b);
 appCheckWrongSession.app_check_evidence.evidence_session_id = 'another-session';
 assert.equal(validateTwoDeviceEvidence([a, appCheckWrongSession], now, candidate).pass, false);
 
+const wrongGateBinding = structuredClone(b);
+wrongGateBinding.candidate.gate_commit_sha = '0'.repeat(40);
+assert.equal(validateTwoDeviceEvidence([a, wrongGateBinding], now, candidate).pass, false);
+
+const invalidCandidate = { ...candidate, staging_smoke_commit_sha: '0'.repeat(40) };
+assert.equal(validateTwoDeviceEvidence([a, b], now, invalidCandidate).pass, false);
+
 const templateA = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_DEVICE_A_0.9.json', 'utf8'));
 const templateB = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_DEVICE_B_0.9.json', 'utf8'));
 assert.equal(validateTwoDeviceEvidence([templateA, templateB], now, candidate).pass, false);
 console.log('PASS two distinct fresh physical sessions can satisfy the combined gate');
 console.log('PASS duplicate device/session, screenshot and cross-device FCM replay evidence fail closed');
 console.log('PASS visual evidence, FCM session/window and per-device App Check binding are required');
+console.log('PASS evidence is bound to exact gate/staging/build candidate identity');
 console.log('PASS reversed, stale and out-of-order evidence sessions fail closed');
 console.log('PASS Device A/B templates remain blocked until real evidence exists');
 console.log('Two-device Physical QA contract: PASS');
