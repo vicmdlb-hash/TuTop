@@ -36,7 +36,7 @@ for (const duplicate of [
   'npm run account-erasure:test',
   'npm run typecheck',
 ]) {
-  assert.doesNotMatch(androidV2, new RegExp(duplicate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Android V2 no debe repetir ${duplicate}`);
+  assert.equal(androidV2.includes(duplicate), false, `Android V2 no debe repetir ${duplicate}`);
 }
 assert.match(androidV2, /npm ci/);
 assert.match(androidV2, /npm run build/);
