@@ -67,6 +67,8 @@ for (const duplicate of [
   'npm run app-check:enforcement:test',
   'npm run account-recovery:local-sim:test',
   'npm run physical-qa:evidence:test',
+  'npm run ci-auth:readiness:test',
+  'npm run ci-auth:parallel-workflow:test',
 ]) {
   assert.equal(quality.includes(duplicate), false, `Quality no debe repetir ${duplicate}; npm run check ya lo cubre`);
 }
@@ -109,7 +111,7 @@ console.log('PASS October is blocked outside the exact runtime-freeze branch');
 console.log('PASS staging and trusted maintenance reject missing managed auth before setup-node/npm ci');
 console.log('PASS October combines static, typecheck+build and Firestore emulator work in one runner');
 console.log('PASS October and Quality perform TypeScript validation once through the canonical npm build command');
-console.log('PASS Quality does not rerun exact offline/AppCheck/recovery/evidence tests already inside npm run check');
+console.log('PASS Quality does not rerun exact offline/AppCheck/recovery/evidence/CI-auth tests already inside npm run check');
 console.log('PASS October gate avoids redundant app installs and artifact uploads');
 console.log(`PASS October, Firestore and Android pin @firebase/rules-unit-testing@${RULES_TESTING_VERSION} to prevent external dependency drift`);
 console.log('PASS Android V2 reuses same-SHA October evidence instead of repeating static/typecheck gates');
