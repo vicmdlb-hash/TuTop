@@ -35,7 +35,7 @@ jobs:
         run: npm ci
 
       - name: Install emulator harness without mutating manifests
-        run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@latest firebase@12.18.0
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
 
       - name: Verify dependency manifests stayed immutable
         run: git diff --exit-code -- package.json package-lock.json
