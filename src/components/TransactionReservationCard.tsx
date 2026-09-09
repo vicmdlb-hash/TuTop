@@ -55,7 +55,6 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [listingFinalized, setListingFinalized] = useState(false);
   const [selectedPointId, setSelectedPointId] = useState('');
   const [meetupAt, setMeetupAt] = useState(defaultMeetupInput);
   const identity = useMemo(readIdentity, []);
@@ -147,21 +146,9 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
       setBusy(true); setMessage(null);
       const next = await nationalBackend.confirmDelivery(transaction);
       setTransaction(next);
-      if (next.status === 'completed' && isSeller) setListingFinalized(true);
-      setMessage(next.status === 'completed' ? 'Entrega confirmada por ambas partes. Operación completada.' : 'Tu confirmación quedó registrada. Falta la confirmación de la otra persona.');
+      if (next.status === 'completed') onReleased?.();
+      setMessage(next.status === 'completed' ? 'Entrega confirmada por ambas partes. Operación completada y publicación cerrada como Vendido.' : 'Tu confirmación quedó registrada. Falta la confirmación de la otra persona.');
     } catch { setMessage('No pudimos registrar tu confirmación. Actualiza e inténtalo otra vez.'); }
-    finally { setBusy(false); }
-  };
-
-  const finalizeListing = async () => {
-    if (busy || !isSeller || transaction.status !== 'completed') return;
-    try {
-      setBusy(true); setMessage(null);
-      await nationalBackend.finalizeCompletedListing(transaction);
-      setListingFinalized(true);
-      setMessage('Publicación sincronizada como Vendido.');
-      onReleased?.();
-    } catch { setMessage('La operación está completada, pero no pudimos sincronizar la publicación. Inténtalo otra vez.'); }
     finally { setBusy(false); }
   };
 
@@ -198,7 +185,7 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
 
       {transaction.status === 'meetup_scheduled' && <div className="mt-3 rounded-xl border border-sky-400/10 bg-sky-500/[0.04] p-2.5"><strong className="text-[9px] text-sky-200">Confirmación de entrega</strong><p className="mt-1 text-[8px] leading-4 text-slate-600">Confirma sólo después de revisar y recibir/entregar el artículo. TuTop completa la operación únicamente cuando ambas partes confirman.</p><div className="mt-2 flex items-center gap-2"><button disabled={busy || currentUserConfirmed} onClick={() => void confirmDelivery()} className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-sky-400/10 text-[8px] font-black text-sky-200 disabled:opacity-45">{currentUserConfirmed ? <CheckCircle2 className="h-3 w-3" /> : busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}{currentUserConfirmed ? 'Ya confirmaste' : 'Confirmar entrega'}</button><span className="text-[7px] text-slate-600">Otra parte: {otherConfirmed ? 'confirmó' : 'pendiente'}</span></div></div>}
 
-      {transaction.status === 'completed' && <div className="mt-3 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.045] p-2.5"><div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-300" /><div><strong className="block text-[9px] text-emerald-200">Entrega confirmada por ambas partes</strong><span className="text-[8px] text-slate-600">Esta operación ya puede alimentar historial y reputación verificable.</span></div></div>{isSeller && !listingFinalized && <button disabled={busy} onClick={() => void finalizeListing()} className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-400/10 text-[8px] font-black text-emerald-200 disabled:opacity-45">{busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <PackageCheck className="h-3 w-3" />}Sincronizar publicación como Vendido</button>}{isSeller && listingFinalized && <p className="mt-2 text-[8px] text-emerald-100/70">Publicación sincronizada como Vendido.</p>}</div>}
+      {transaction.status === 'completed' && <div className="mt-3 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.045] p-2.5"><div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-300" /><div><strong className="block text-[9px] text-emerald-200">Entrega confirmada por ambas partes</strong><span className="text-[8px] text-slate-600">La publicación se cierra atómicamente como Vendido y esta operación puede alimentar historial y reputación verificable.</span></div></div></div>}
 
       {['reserved', 'meetup_scheduled'].includes(transaction.status) && <button disabled={busy} onClick={() => void dispute()} className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-xl bg-white/[0.035] text-[8px] font-bold text-slate-400 disabled:opacity-40"><AlertTriangle className="h-3 w-3" />Reportar problema con esta operación</button>}
       {expired && isSeller && <button disabled={busy} onClick={() => void release()} className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-rose-500/10 text-[9px] font-black text-rose-200 disabled:opacity-50">{busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}Liberar producto</button>}
