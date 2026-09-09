@@ -45,8 +45,11 @@ jobs:
             echo "DETENIDO: staging requiere october-01-validation exitoso sobre el mismo SHA ${GITHUB_SHA}." >&2
             exit 43
           fi
-          echo "TUTOP_VALIDATED_GATE_RUN_ID=$GATE_RUN_ID" >> "$GITHUB_ENV"
-          echo "✅ October gate same-SHA validado: ${GATE_RUN_ID}."
+          {
+            echo "TUTOP_VALIDATED_GATE_RUN_ID=$GATE_RUN_ID"
+            echo "TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA"
+          } >> "$GITHUB_ENV"
+          echo "✅ October gate same-SHA validado: ${GATE_RUN_ID} / ${GITHUB_SHA}."
 
       - name: Node 22
         uses: actions/setup-node@v7
