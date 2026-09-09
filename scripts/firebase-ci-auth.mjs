@@ -1,5 +1,5 @@
-const FIREBASE_OAUTH_CLIENT_ID = '563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com';
-const FIREBASE_OAUTH_CLIENT_SECRET = 'j9iVZfS8kkCEFUPaAeJV0sAi';
+import './dangerous-script-apply-guard.mjs';
+
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
 function redactOAuthDetail(input = '') {
@@ -18,9 +18,15 @@ export async function firebaseCiAccessToken() {
     throw new Error('Falta FIREBASE_TOKEN o TUTOP_FIREBASE_ACCESS_TOKEN para obtener un access token de Google.');
   }
 
+  const clientId = String(process.env.TUTOP_FIREBASE_OAUTH_CLIENT_ID || '').trim();
+  const clientSecret = String(process.env.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET || '').trim();
+  if (!clientId || !clientSecret) {
+    throw new Error('FIREBASE_CI_OAUTH_CLIENT_CREDENTIALS_MISSING');
+  }
+
   const body = new URLSearchParams({
-    client_id: FIREBASE_OAUTH_CLIENT_ID,
-    client_secret: FIREBASE_OAUTH_CLIENT_SECRET,
+    client_id: clientId,
+    client_secret: clientSecret,
     refresh_token: refreshToken,
     grant_type: 'refresh_token',
   });
