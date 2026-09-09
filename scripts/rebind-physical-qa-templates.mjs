@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { candidateExactHeadIdentityValid } from './physical-qa-candidate-drift.mjs';
 
 const candidatePath = path.resolve(process.argv[2] || 'docs/PHYSICAL_QA_CANDIDATE_0.9.json');
 
@@ -18,6 +19,7 @@ if (candidate?.schema !== 'tutop.physical-qa-candidate.v1') stop('candidate sche
 if (candidate?.physical_release_candidate !== true) stop('candidate no está activo');
 if (candidate?.candidate_status !== 'active_exact_head') stop('candidate debe estar active_exact_head');
 if (candidate?.replacement_required !== false) stop('candidate activo no puede requerir reemplazo');
+if (!candidateExactHeadIdentityValid(candidate)) stop('candidate activo carece de identidad exact-head gate/staging/build válida');
 
 const drift = spawnSync(process.execPath, ['scripts/physical-qa-candidate-drift.mjs'], { encoding: 'utf8', shell: false });
 if (drift.status !== 0) stop(String(drift.stderr || drift.stdout || 'strict drift failed').trim());
@@ -29,6 +31,10 @@ const binding = {
   build_commit_sha: candidate.build_commit_sha,
   build_tree_sha: candidate.build_tree_sha,
   apk_sha256: candidate.apk_sha256,
+  gate_run_id: candidate.gate_run_id,
+  gate_commit_sha: candidate.gate_commit_sha,
+  staging_smoke_run_id: candidate.staging_smoke_run_id,
+  staging_smoke_commit_sha: candidate.staging_smoke_commit_sha,
 };
 const cases = Object.fromEntries([
   'install_boot','auth_identity','reinstall_identity','keyboard','android_back','lifecycle','safe_areas','rotation',
