@@ -24,7 +24,7 @@ permissions:
 
 concurrency:
   group: tutop-android-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   firestore-rules:
