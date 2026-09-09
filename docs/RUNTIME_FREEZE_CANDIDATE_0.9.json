@@ -55,22 +55,34 @@
     "exact_project": "tutop-beta-vicmdlb-1356585881",
     "exact_branch": "feat/tutop-0.8-p0",
     "requires_github_actions": true,
+    "requires_github_sha": true,
     "requires_october_gate_run_id": true,
     "requires_october_gate_sha_equal_github_sha": true,
+    "trusted_apply_requires_staging_run_id": true,
+    "trusted_apply_requires_staging_sha_equal_github_sha": true,
     "direct_spark_deploy": "blocked",
-    "app_check_modes_during_freeze": ["OFF", "UNENFORCED"],
+    "app_check_modes_during_freeze": [
+      "OFF",
+      "UNENFORCED"
+    ],
     "app_check_enforced": false,
     "google_play_internal_sharing": false,
     "production_override_envs_supported_by_guarded_entrypoints": false,
+    "central_guard": "scripts/staging-freeze-guard.mjs",
     "guarded_entrypoints": [
       "deploy-firebase-staging.mjs",
       "deploy-firebase-auth-staging.mjs",
+      "enable-firestore-api.mjs",
       "prepare-staging-v2-auth.mjs",
       "prepare-staging-android-app.mjs",
       "staging-v2-admin.mjs",
       "configure-app-check-staging.mjs"
     ],
-    "large_apply_scripts_policy": "Do not invoke seed/reconciliation/trusted-maintenance apply scripts directly during freeze. Their supported mutation path is the exact-SHA staging/trusted workflow with explicit apply guards."
+    "supported_apply_wrappers": {
+      "catalog_seed": "scripts/gated-v2-catalog-seed.mjs",
+      "trusted_tasks": "scripts/gated-trusted-staging-apply.mjs"
+    },
+    "large_apply_scripts_policy": "Internal seed/reconciliation/trusted-maintenance/observability implementations are not promotion authorities. Supported mutation paths must enter through exact-SHA wrappers/workflows; direct raw --apply invocation is unsupported during runtime freeze."
   },
   "secondary_workflow_policy": {
     "diagnostic_manual_only": [
@@ -82,7 +94,8 @@
       "workflow": "v2-trusted-maintenance.yml",
       "manual_only": true,
       "requires_october_same_sha_green": true,
-      "requires_staging_same_sha_green": true
+      "requires_staging_same_sha_green": true,
+      "requires_exact_sha_wrapper": true
     },
     "quarantined_self_trigger_workflows": [
       "one-shot-085-hardened.yml",
