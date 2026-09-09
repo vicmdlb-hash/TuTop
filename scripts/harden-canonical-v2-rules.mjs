@@ -15,10 +15,20 @@ function replaceOnce(from, to, label) {
 replaceOnce(
   "    function productDoc(productId) { return get(/databases/$(database)/documents/products/$(productId)); }",
   `    function listingDoc(listingId) { return get(/databases/$(database)/documents/listings_v2/$(listingId)); }
-    function reservationLockAfter(listingId) { return getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)); }
-    function completionTxAfter(listingId) {
-      let txId = reservationLockAfter(listingId).data.transaction_id;
-      return getAfter(/databases/$(database)/documents/transactions_v2/$(txId));
+    function buyerCompletionClosesListing(listingId) {
+      let lock = getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId));
+      let tx = getAfter(/databases/$(database)/documents/transactions_v2/$(lock.data.transaction_id));
+      return lock.data.listing_id == listingId
+        && lock.data.buyer_id == request.auth.uid
+        && lock.data.seller_id == resource.data.seller_id
+        && tx.data.listing_id == listingId
+        && tx.data.buyer_id == request.auth.uid
+        && tx.data.seller_id == resource.data.seller_id
+        && tx.data.status == 'completed'
+        && tx.data.buyer_confirmed_at is timestamp
+        && tx.data.seller_confirmed_at is timestamp
+        && tx.data.buyer_confirmed_at == request.resource.data.updated_at
+        && tx.data.updated_at == request.resource.data.updated_at;
     }`,
   'replace legacy productDoc with canonical listing helpers',
 );
@@ -42,18 +52,7 @@ const buyerCompletionListingRule = `        ||
           && request.resource.data.seller_id == resource.data.seller_id
           && request.resource.data.created_at == resource.data.created_at
           && request.resource.data.moderation_status == resource.data.moderation_status
-          && existsAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId))
-          && reservationLockAfter(listingId).data.listing_id == listingId
-          && reservationLockAfter(listingId).data.buyer_id == request.auth.uid
-          && reservationLockAfter(listingId).data.seller_id == resource.data.seller_id
-          && completionTxAfter(listingId).data.listing_id == listingId
-          && completionTxAfter(listingId).data.buyer_id == request.auth.uid
-          && completionTxAfter(listingId).data.seller_id == resource.data.seller_id
-          && completionTxAfter(listingId).data.status == 'completed'
-          && completionTxAfter(listingId).data.buyer_confirmed_at is timestamp
-          && completionTxAfter(listingId).data.seller_confirmed_at is timestamp
-          && completionTxAfter(listingId).data.buyer_confirmed_at == request.resource.data.updated_at
-          && completionTxAfter(listingId).data.updated_at == request.resource.data.updated_at
+          && buyerCompletionClosesListing(listingId)
           && fresh(request.resource.data.updated_at)
         )
 ${moderatorListingNeedle}`;
@@ -121,4 +120,4 @@ if (rules.includes('productDoc(')) {
 }
 
 fs.writeFileSync(path, rules);
-console.log('✅ Rules V2 endurecidas: listing canónico para edición/re-moderación, favoritos, chat, ofertas, boosts, meetup, completion bilateral atómico y reseñas; sin helper legacy productDoc.');
+console.log('✅ Rules V2 endurecidas: listing canónico para edición/re-moderación, favoritos, chat, ofertas, boosts, meetup, completion bilateral atómico y reseñas; buyer-second usa 2 lecturas auxiliares explícitas; sin helper legacy productDoc.');
