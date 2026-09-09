@@ -15,14 +15,35 @@ const oidc = readText('docs/CI_OIDC_WIF_PARITY_CHECKLIST_0.9.md');
 const cron = readText('docs/TRUSTED_CRON_DEFAULT_BRANCH_PATCH_0.9.md');
 const cutoverRunbook = readText('docs/V2_COST_CUTOVER_RUNBOOK_0.9.md');
 
-assert.equal(candidate.physical_release_candidate, false);
-assert.equal(candidate.candidate_status, 'obsolete_runtime_drift');
-assert.equal(candidate.replacement_required, true);
+assert.equal(candidate.schema, 'tutop.physical-qa-candidate.v1');
 assert.equal(candidate.environment, 'staging');
-assert.equal(candidate.artifact_id, 10002986519);
-assert.equal(candidate.apk_sha256, '57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493');
-assert.match(candidate.notes, /historical/i);
-assert.match(candidate.notes, /cannot satisfy a current Physical QA gate/i);
+assert.equal(candidate.app_version, '0.9.0-beta.0');
+assert.match(String(candidate.apk_sha256 || ''), /^[a-f0-9]{64}$/);
+assert(Number.isSafeInteger(candidate.artifact_id) && candidate.artifact_id > 0);
+assert(Number.isSafeInteger(candidate.build_run_id) && candidate.build_run_id > 0);
+
+const obsolete = candidate.physical_release_candidate === false
+  && candidate.candidate_status === 'obsolete_runtime_drift'
+  && candidate.replacement_required === true;
+const active = candidate.physical_release_candidate === true
+  && candidate.candidate_status === 'active_exact_head'
+  && candidate.replacement_required === false;
+assert.equal(obsolete || active, true, 'candidate must be explicitly obsolete or active_exact_head');
+assert.notEqual(obsolete, active, 'candidate state must be unambiguous');
+
+if (obsolete) {
+  assert.equal(candidate.artifact_id, 10002986519);
+  assert.equal(candidate.apk_sha256, '57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493');
+  assert.match(candidate.notes, /historical/i);
+  assert.match(candidate.notes, /cannot satisfy a current Physical QA gate/i);
+} else {
+  assert.match(String(candidate.build_commit_sha || ''), /^[a-f0-9]{40}$/);
+  assert.equal(candidate.gate_commit_sha, candidate.build_commit_sha);
+  assert.equal(candidate.staging_smoke_commit_sha, candidate.build_commit_sha);
+  assert(Number.isSafeInteger(candidate.gate_run_id) && candidate.gate_run_id > 0);
+  assert(Number.isSafeInteger(candidate.staging_smoke_run_id) && candidate.staging_smoke_run_id > 0);
+  assert.match(String(candidate.build_tree_sha || ''), /^[a-f0-9]{40}$/);
+}
 
 for (const [slot, template] of [['A', deviceA], ['B', deviceB]]) {
   assert.equal(template.environment, 'staging');
@@ -34,6 +55,10 @@ for (const [slot, template] of [['A', deviceA], ['B', deviceB]]) {
   assert.equal(template.candidate.build_commit_sha, candidate.build_commit_sha);
   assert.equal(template.candidate.build_tree_sha, candidate.build_tree_sha);
   assert.equal(template.candidate.apk_sha256, candidate.apk_sha256);
+  assert.equal(template.candidate.gate_run_id, candidate.gate_run_id);
+  assert.equal(template.candidate.gate_commit_sha, candidate.gate_commit_sha);
+  assert.equal(template.candidate.staging_smoke_run_id, candidate.staging_smoke_run_id);
+  assert.equal(template.candidate.staging_smoke_commit_sha, candidate.staging_smoke_commit_sha);
   for (const value of Object.values(template.required_cases)) assert.equal(value, 'pending');
   assert.equal(template.diagnostic_report, null);
   assert.equal(template.fcm_fixture_report, null);
@@ -55,6 +80,8 @@ assert.equal(appCheck.app_check_token_observed, false);
 assert.equal(appCheck.contains_raw_token, false);
 assert.equal(appCheck.candidate_artifact_id, candidate.artifact_id);
 assert.equal(appCheck.candidate_apk_sha256, candidate.apk_sha256);
+assert.equal(appCheck.candidate_build_run_id, candidate.build_run_id);
+assert.equal(appCheck.candidate_build_tree_sha, candidate.build_tree_sha);
 assert.deepEqual(appCheck.devices.map((x) => x.slot), ['A', 'B']);
 assert(appCheck.devices.every((x) => x.physical === false && x.app_check_token_observed === false));
 
@@ -69,8 +96,8 @@ assert(cron.includes('el cron NO está activo automáticamente'));
 assert(cutoverRunbook.includes('PREPARADO / DESACTIVADO POR DEFECTO'));
 assert(cutoverRunbook.includes('Physical QA A+B'));
 
-console.log('PASS historical APK20 is explicitly obsolete and retained only for traceability');
-console.log('PASS Device A/B, FCM and App Check templates remain fail-closed historical placeholders');
+console.log(`PASS Physical QA candidate state is fail-closed and explicit: ${candidate.candidate_status}`);
+console.log('PASS Device A/B, FCM and App Check templates remain bound to the current candidate and contain no synthesized physical evidence');
 console.log('PASS recovery/legal/OIDC/cron external gates remain explicitly unresolved');
-console.log('PASS current cost-cutover runbook requires a new exact-HEAD Physical QA candidate');
+console.log('PASS current cost-cutover runbook requires baseline Physical QA A+B before cutover promotion');
 console.log('Physical QA readiness pack contract: PASS');
