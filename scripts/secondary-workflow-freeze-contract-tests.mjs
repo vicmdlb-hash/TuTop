@@ -32,7 +32,8 @@ const countFreezeBranchGuards = (workflow) =>
 
 assert.equal(countFreezeBranchGuards(quality), 1, 'quality must be blocked outside the runtime-freeze branch');
 assert.equal(countFreezeBranchGuards(firestore), 1, 'firestore-v2-security must be blocked outside the runtime-freeze branch');
-assert.equal(countFreezeBranchGuards(ciAuth), 3, 'every CI auth diagnostic job must be blocked outside the runtime-freeze branch');
+assert.equal(countFreezeBranchGuards(ciAuth), 1, 'single CI auth diagnostic job must be blocked outside the runtime-freeze branch');
+assert.equal((ciAuth.match(/runs-on: ubuntu-latest/g) || []).length, 1, 'CI auth diagnostics must stay on one runner');
 
 for (const [name, workflow] of [
   ['quality', quality],
@@ -40,6 +41,7 @@ for (const [name, workflow] of [
   ['ci-auth-parallel-validation', ciAuth],
 ]) {
   assert.doesNotMatch(workflow, /firebase:deploy:staging|--apply|projects:create|firestore:databases:create|v2:catalog:seed|gh release create/, `${name} must remain diagnostic-only`);
+  assert.doesNotMatch(workflow, /upload-artifact/, `${name} must not publish diagnostic artifacts during runtime freeze`);
 }
 
 assert.equal(manifest.secondary_workflow_policy.trusted_staging_mutation.requires_october_same_sha_green, true);
@@ -94,6 +96,8 @@ assert.match(dossier, /trusted maintenance sólo puede mutar staging después de
 
 console.log('PASS diagnostic secondary workflows are manual-only and non-mutating');
 console.log('PASS diagnostic secondary jobs are blocked outside the exact runtime-freeze branch');
+console.log('PASS CI auth diagnostics stay consolidated on one runner');
+console.log('PASS diagnostic secondary workflows do not publish artifacts or releases');
 console.log('PASS trusted maintenance requires October + staging run and SHA evidence before any apply wrapper');
 console.log('PASS trusted workflow cannot call raw apply scripts directly');
 console.log('PASS self-trigger historical workflows remain quarantined without editing them');
