@@ -16,7 +16,7 @@ jobs:
   release-chain:
     name: October → Staging → Android → verified APK
     if: github.ref_name == 'main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, tutop-zero-cost]
     timeout-minutes: 150
     env:
       TARGET_REF: feat/tutop-0.8-p0
