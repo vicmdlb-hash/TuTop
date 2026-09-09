@@ -11,6 +11,7 @@ const enableFirestore = read('scripts/enable-firestore-api.mjs');
 const prepareWeb = read('scripts/prepare-staging-v2-auth.mjs');
 const prepareAndroid = read('scripts/prepare-staging-android-app.mjs');
 const admin = read('scripts/staging-v2-admin.mjs');
+const indexSmoke = read('scripts/staging-index-readiness-smoke.mjs');
 const appCheck = read('scripts/configure-app-check-staging.mjs');
 const accountErasure = read('scripts/process-account-erasure.mjs');
 const seed = read('scripts/seed-v2-catalog.mjs');
@@ -56,6 +57,25 @@ for (const [name, source] of [
   assert.doesNotMatch(source, /TUTOP_ALLOW_ALTERNATE_STAGING/, `${name} must not expose alternate staging override`);
   assert.doesNotMatch(source, /TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID/, `${name} must not expose nondescription override`);
 }
+
+assert.match(indexSmoke, /staging-freeze-guard\.mjs/);
+assert.match(indexSmoke, /firebase-ci-auth\.mjs/);
+assert.match(indexSmoke, /documents:runQuery/);
+for (const criticalField of ['evaluado_id', 'calificacion', 'fecha', 'uid', 'product_id', 'campus_id', 'institution_id', 'city_id', 'visibility_scope']) {
+  assert.match(indexSmoke, new RegExp(criticalField), `index smoke must cover ${criticalField}`);
+}
+assert.doesNotMatch(indexSmoke, /method:\s*['"]PATCH['"]/);
+assert.doesNotMatch(indexSmoke, /method:\s*['"]DELETE['"]/);
+assert.doesNotMatch(indexSmoke, /adminPatchDocument|adminDeleteDocument/);
+
+const deployStep = stagingWorkflow.indexOf('Deploy current strict V2 rules and indexes');
+const indexStep = stagingWorkflow.indexOf('Wait for and verify deployed composite indexes');
+const catalogStep = stagingWorkflow.indexOf('Verify canonical catalog without overwriting');
+const e2eStep = stagingWorkflow.indexOf('Real two-user marketplace smoke');
+assert(deployStep >= 0 && indexStep > deployStep, 'staging index readiness must run after index deployment');
+assert(catalogStep > indexStep, 'catalog verification must wait for composite-index readiness');
+assert(e2eStep > indexStep, 'real E2E must wait for composite-index readiness');
+assert.match(stagingWorkflow, /node scripts\/staging-index-readiness-smoke\.mjs/);
 
 assert.match(appCheck, /assertAppCheckFreezeMode/);
 assert.doesNotMatch(appCheck, /staging-v2-client-ready/);
@@ -149,6 +169,8 @@ assert.doesNotMatch(firebaseAuth, /const FIREBASE_OAUTH_CLIENT_SECRET\s*=\s*['"]
 
 console.log('PASS remote staging entrypoints require exact project, branch, GitHub Actions and October SHA binding');
 console.log('PASS Firestore service enablement is covered by the same central freeze guard');
+console.log('PASS staging deploy must prove real read-only composite-index readiness before catalog/E2E');
+console.log('PASS review/favorites/geography index probes cannot mutate staging data');
 console.log('PASS App Check ENFORCED is physically unavailable during Runtime Freeze Candidate');
 console.log('PASS Google Play/Internal App Sharing remains blocked by zero-investment project policy');
 console.log('PASS direct Spark deploy is blocked while local emulators remain available');
