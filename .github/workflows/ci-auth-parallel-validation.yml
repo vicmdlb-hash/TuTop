@@ -9,10 +9,12 @@ permissions:
 
 jobs:
   legacy-readiness:
-    name: Legacy Firebase token readiness
+    name: Managed Firebase refresh-token readiness
     runs-on: ubuntu-latest
     env:
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
       TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
     steps:
       - uses: actions/checkout@v7
@@ -21,7 +23,7 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
-      - name: Validate current fallback remains usable
+      - name: Validate managed fallback readiness
         run: node scripts/ci-auth-readiness.mjs
 
   github-oidc-producer:
