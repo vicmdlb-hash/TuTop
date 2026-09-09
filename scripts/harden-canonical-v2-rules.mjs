@@ -14,8 +14,13 @@ function replaceOnce(from, to, label) {
 
 replaceOnce(
   "    function productDoc(productId) { return get(/databases/$(database)/documents/products/$(productId)); }",
-  "    function listingDoc(listingId) { return get(/databases/$(database)/documents/listings_v2/$(listingId)); }",
-  'replace legacy productDoc with canonical listingDoc',
+  `    function listingDoc(listingId) { return get(/databases/$(database)/documents/listings_v2/$(listingId)); }
+    function reservationLockAfter(listingId) { return getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)); }
+    function completionTxAfter(listingId) {
+      let txId = reservationLockAfter(listingId).data.transaction_id;
+      return getAfter(/databases/$(database)/documents/transactions_v2/$(txId));
+    }`,
+  'replace legacy productDoc with canonical listing helpers',
 );
 
 replaceOnce(
@@ -38,18 +43,17 @@ const buyerCompletionListingRule = `        ||
           && request.resource.data.created_at == resource.data.created_at
           && request.resource.data.moderation_status == resource.data.moderation_status
           && existsAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId))
-          && getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.listing_id == listingId
-          && getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.buyer_id == request.auth.uid
-          && getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.seller_id == resource.data.seller_id
-          && existsAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id))
-          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.listing_id == listingId
-          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.buyer_id == request.auth.uid
-          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.seller_id == resource.data.seller_id
-          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.status == 'completed'
-          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.buyer_confirmed_at is timestamp
-          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.seller_confirmed_at is timestamp
-          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.buyer_confirmed_at == request.resource.data.updated_at
-          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.updated_at == request.resource.data.updated_at
+          && reservationLockAfter(listingId).data.listing_id == listingId
+          && reservationLockAfter(listingId).data.buyer_id == request.auth.uid
+          && reservationLockAfter(listingId).data.seller_id == resource.data.seller_id
+          && completionTxAfter(listingId).data.listing_id == listingId
+          && completionTxAfter(listingId).data.buyer_id == request.auth.uid
+          && completionTxAfter(listingId).data.seller_id == resource.data.seller_id
+          && completionTxAfter(listingId).data.status == 'completed'
+          && completionTxAfter(listingId).data.buyer_confirmed_at is timestamp
+          && completionTxAfter(listingId).data.seller_confirmed_at is timestamp
+          && completionTxAfter(listingId).data.buyer_confirmed_at == request.resource.data.updated_at
+          && completionTxAfter(listingId).data.updated_at == request.resource.data.updated_at
           && fresh(request.resource.data.updated_at)
         )
 ${moderatorListingNeedle}`;
