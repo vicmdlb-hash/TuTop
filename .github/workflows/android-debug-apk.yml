@@ -155,17 +155,17 @@ jobs:
         run: |
           set -euo pipefail
           GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
-            -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
+            -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
             --jq '.workflow_runs[0].id // empty')"
           if [ -z "$GATE_RUN_ID" ]; then
-            echo "DETENIDO: falta october-01-validation exitoso sobre el mismo SHA ${GITHUB_SHA}." >&2
+            echo "DETENIDO: falta october-01-validation exitoso sobre la misma rama y SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
             exit 43
           fi
           STAGING_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/staging-v2-smoke.yml/runs" \
-            -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
+            -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
             --jq '.workflow_runs[0].id // empty')"
           if [ -z "$STAGING_RUN_ID" ]; then
-            echo "DETENIDO: falta staging-v2-smoke exitoso sobre el mismo SHA ${GITHUB_SHA}." >&2
+            echo "DETENIDO: falta staging-v2-smoke exitoso sobre la misma rama y SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
             exit 44
           fi
           {
@@ -174,7 +174,7 @@ jobs:
             echo "TUTOP_VALIDATED_STAGING_RUN_ID=$STAGING_RUN_ID"
             echo "TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA"
           } >> "$GITHUB_ENV"
-          echo "✅ Cadena validada para ${GITHUB_SHA}: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
+          echo "✅ Cadena same-branch/same-SHA validada para ${GITHUB_REF_NAME}@${GITHUB_SHA}: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
       - name: Require managed staging credentials
         shell: bash
         run: |
