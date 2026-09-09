@@ -48,7 +48,7 @@ jobs:
       - name: Install web dependencies
         run: npm ci
       - name: Install emulator test dependencies (ephemeral)
-        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@latest
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2
       - name: Verify dependency manifests stayed immutable
         run: git diff --exit-code -- package.json package-lock.json
       - name: Execute Firestore rules tests
