@@ -2,6 +2,8 @@
 
 Release freeze: no new product features until Physical QA closes P0/P1 issues.
 
+**Runtime freeze candidate:** the current branch has completed the static canonical-ID, terminal-state, Rules-composition, Rules-access-budget and canonical-bridge audits. This is a code-freeze classification only; it is **not** a claim that `npm run check`, typecheck, Rules compile, Emulator, staging, Android or Physical QA have passed on the current HEAD.
+
 ## Domains
 
 | Domain | Critical paths | Integration risk | Exit condition |
@@ -49,6 +51,7 @@ Schema V2 treats `listings_v2/{listingId}` as the authoritative listing identity
 - **Whichever participant confirms second must atomically write both `transactions_v2.status=completed` and `listings_v2.status=sold_out` in the same commit.**
 - Seller-second completion uses normal seller listing authority.
 - Buyer-second completion receives only a narrow generated-Rule exception: `active→sold_out`, exact current reservation lock, exact buyer/seller pair, completed transaction, both timestamps, and `buyer_confirmed_at == transaction.updated_at == listing.updated_at`. It does not grant generic listing edit authority.
+- The buyer-second authorization is factored through `buyerCompletionClosesListing(listingId)`, which has a frozen static budget of exactly **2 auxiliary `getAfter()` reads**: the reservation lock and the transaction referenced by that lock. The listing update branch performs no additional document access of its own.
 - The completed reservation lock intentionally survives client completion and is cleaned by trusted reconciliation.
 - `TransactionReservationCard` no longer exposes a manual “Sincronizar publicación como Vendido” step; successful completion already guarantees the canonical close.
 - `ChatConversation` receives the canonical transaction state and projects it into `entrega_confirmada`, `entrega_estado` and `confirmaciones_entrega` **in local Zustand state only** for UI/review compatibility.
@@ -83,13 +86,15 @@ Rules/contract implications:
 
 `canonicalTransactionsBackend` and `nationalBackendCanonicalBridge` already expose `cancelTransaction`, `requestMutualCancellation` and `claimNoShow`. `TransactionReservationCard` does not yet expose dedicated controls for every one of these paths. This is an explicit **integration/UI debt**, not permission to fall back to legacy methods. During the current freeze, any future controls must call the canonical bridge and pass exact-HEAD typecheck/Emulator/staging gates before promotion.
 
-## Legacy `onlineBackend` reachability classification
+## Legacy backend reachability classification
 
-The monolithic backend remains for V1 compatibility. It must not be deleted merely because V2 bridges override selected methods.
+The monolithic backends remain for V1 compatibility/type surface. They must not be deleted merely because V2 bridges override selected methods.
 
 ### `LEGACY_ONLY_SAFE`
 
 - `Chatbot` + store `publishProduct` → `onlineBackend.createProduct`: App renders `NationalPublishScreen` instead when schema V2 is enabled.
+- `nationalBackend.enrichListing(...)` still writes `products`, but its only source consumer is `Chatbot`; because App excludes Chatbot when V2 is active, this path is V1-only/dead under V2.
+- `nationalBackend.loadListingMetadata(...)` has no source consumer outside its own definition.
 - legacy `onlineBackend.updateProduct`: V2 store mutation is replaced by `canonicalStoreBridge`.
 - legacy `onlineBackend.createChat`, `sendMessage`, `submitReport`: V2 behavior is replaced by `rateLimitedOnlineBridge`.
 - legacy chat `confirmDelivery` subcollection flow: V2 ChatConversation no longer invokes it.
@@ -101,8 +106,9 @@ The monolithic backend remains for V1 compatibility. It must not be deleted mere
 - `onlineBackend.submitReview`: called by `v2StoreReviewMutationBridge`; review creation is guarded by completed canonical transaction Rules.
 - `onlineBackend.markChatRead`: shared read-marker behavior; does not determine transaction completion.
 - shared auth/profile/wallet primitives remain reachable where their collection semantics are not listing-legacy dependent.
+- `nationalBackend.updateUniversityIdentity`, `createDemandRequest` and `saveSearch` remain directly reachable in V2 because they write canonical/shared collections and do not mutate legacy listing state.
 
-`nationalBackend.ts` also still contains older products-based transaction implementations for compatibility/type surface. In schema V2, `nationalBackendCanonicalBridge` must override every sensitive transaction/terminal method to `canonicalTransactionsBackend`; those legacy methods are not V2 authority.
+`nationalBackend.ts` also still contains older products-based offer/transaction implementations for compatibility/type surface. In schema V2, `nationalBackendCanonicalBridge` must override every sensitive offer/transaction/terminal method. `v2-canonical-bridge-coverage-tests.mjs` freezes all current sensitive mappings and App's bridge installation.
 
 Any future V2 call into an unclassified legacy method is a release-blocking integration regression until classified or bridged.
 
@@ -112,9 +118,10 @@ Any future V2 call into an unclassified legacy method is a release-blocking inte
 
 The hardener must:
 
-- replace `productDoc()` with `listingDoc()` and add atomic completion helpers;
+- replace `productDoc()` with `listingDoc()` and add bounded atomic completion helpers;
 - migrate favorites, chat, offers, meetup and boosts to canonical listing checks;
 - require `sold_out` for both buyer-second and seller-second completion;
+- keep buyer-second helper access bounded to lock + transaction;
 - fail if any `productDoc(` survives.
 
 There must be **one** canonical hardening path. A second favorites-specific hardener was removed because it conflicted with the canonical hardener order.
@@ -133,6 +140,8 @@ There must be **one** canonical hardening path. A second favorites-specific hard
 
 Later hardeners consume markers created by earlier steps. Marker drift must stop the preparation rather than silently skipping a transformation.
 
+`v2-rules-access-budget-tests.mjs` separately freezes the buyer-second completion helper at exactly two explicit `getAfter()` calls and requires the listing branch to call that helper once without extra document access. This is a static budget, not a substitute for real Rules compilation/Emulator evidence.
+
 ## Chat mutation integrity
 
 V2 text/image send failures remove only the exact optimistic `msg-local-*` that failed. They must never restore a captured whole-chat object, because that can erase messages, unread state or other mutations received while the request was in flight.
@@ -140,8 +149,8 @@ V2 text/image send failures remove only the exact optimistic `msg-local-*` that 
 ## Merge strategy
 
 1. Do not merge PR #6 during Physical QA.
-2. Treat the branch as frozen release candidate development.
-3. New fixes must be P0/P1, security, QA, cost, or release hardening only.
+2. Treat the branch as a **runtime freeze candidate** until exact-HEAD gates run.
+3. New runtime fixes must be P0/P1, security, QA, cost, or release hardening only.
 4. Every runtime fix requires regression + exact-HEAD CI + new APK.
 5. Infrastructure activation (`main` cron, WIF replacement, App Check enforcement, Play) must be separate reversible PRs after authorization.
 
@@ -153,4 +162,5 @@ V2 text/image send failures remove only the exact optimistic `msg-local-*` that 
 - `no_show` is trusted-only after an upheld claim; clients cannot self-declare it.
 - In schema V2, any UI field called `product_id` that points at a marketplace listing carries a `listings_v2` ID unless an explicitly legacy-only path states otherwise.
 - In schema V2, `transactions_v2` is the sole delivery/terminal-state authority; legacy chat confirmations and legacy `products` transaction writes are compatibility-only.
+- Every sensitive offer/transaction method reachable through `nationalBackend` in V2 must remain explicitly overridden by `nationalBackendCanonicalBridge`.
 - No cost cutover becomes active before exact-HEAD static/typecheck/build/Emulator/staging gates are green.
