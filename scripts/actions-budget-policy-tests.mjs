@@ -18,6 +18,15 @@ const assertManualOnly = (name, workflow) => {
   assert.doesNotMatch(workflow, /\n\s+schedule:/, `${name} no debe consumir minutos por cron`);
 };
 
+const assertCredentialPreflightBeforeSetup = (name, workflow) => {
+  const preflight = workflow.indexOf('Require managed staging credentials before dependency setup');
+  const setupNode = workflow.indexOf('uses: actions/setup-node@v7');
+  const npmCi = workflow.indexOf('run: npm ci');
+  assert.notEqual(preflight, -1, `${name} debe validar credenciales gestionadas antes de preparar dependencias`);
+  assert(preflight < setupNode, `${name} debe fallar por credenciales antes de setup-node`);
+  assert(preflight < npmCi, `${name} debe fallar por credenciales antes de npm ci`);
+};
+
 assertManualOnly('Android', android);
 assert.match(android, /retention-days: 90/);
 assert.match(android, /gh release create/);
@@ -47,6 +56,7 @@ assert.match(androidV2, /generate-physical-qa-candidate\.mjs/);
 assert.match(androidV2, /verify-generated-physical-qa-candidate\.mjs/);
 
 assertManualOnly('staging real', staging);
+assertCredentialPreflightBeforeSetup('staging real', staging);
 assertManualOnly('Quality', quality);
 assert.doesNotMatch(quality, /Firestore V2 emulator security/);
 assert.match(quality, /npm run check/);
@@ -63,6 +73,7 @@ for (const duplicate of [
 assertManualOnly('Firestore V2', firestore);
 assert.match(firestore, /Firestore V2 emulator security/);
 assertManualOnly('Trusted maintenance', trusted);
+assertCredentialPreflightBeforeSetup('Trusted maintenance', trusted);
 
 assertManualOnly('October consolidated gate', october);
 assert.match(october, /if: github\.ref_name == 'feat\/tutop-0\.8-p0'/);
@@ -95,6 +106,7 @@ for (const [name, workflow] of [['October', october], ['Firestore V2', firestore
 console.log('PASS all costly TuTop gates are manual-only while Actions is exhausted');
 console.log('PASS no PR/push/cron trigger can burn the future 2,000-minute budget');
 console.log('PASS October is blocked outside the exact runtime-freeze branch');
+console.log('PASS staging and trusted maintenance reject missing managed auth before setup-node/npm ci');
 console.log('PASS October combines static, typecheck+build and Firestore emulator work in one runner');
 console.log('PASS October and Quality perform TypeScript validation once through the canonical npm build command');
 console.log('PASS Quality does not rerun exact offline/AppCheck/recovery/evidence tests already inside npm run check');
