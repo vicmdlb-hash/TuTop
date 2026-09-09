@@ -15,7 +15,7 @@ jobs:
   smoke:
     if: github.ref_name == 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
       TUTOP_ALLOW_FIREBASE_DEPLOY: staging-v2
@@ -81,6 +81,9 @@ jobs:
 
       - name: Deploy current strict V2 rules and indexes
         run: npm run firebase:deploy:staging
+
+      - name: Wait for and verify deployed composite indexes
+        run: node scripts/staging-index-readiness-smoke.mjs
 
       - name: Verify canonical catalog without overwriting
         run: npm run v2:catalog:seed
