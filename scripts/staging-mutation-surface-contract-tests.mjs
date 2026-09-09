@@ -11,6 +11,7 @@ const enableFirestore = read('scripts/enable-firestore-api.mjs');
 const prepareWeb = read('scripts/prepare-staging-v2-auth.mjs');
 const prepareAndroid = read('scripts/prepare-staging-android-app.mjs');
 const admin = read('scripts/staging-v2-admin.mjs');
+const stagingE2E = read('scripts/staging-v2-e2e-smoke.mjs');
 const indexSmoke = read('scripts/staging-index-readiness-smoke.mjs');
 const appCheck = read('scripts/configure-app-check-staging.mjs');
 const accountErasure = read('scripts/process-account-erasure.mjs');
@@ -57,6 +58,11 @@ for (const [name, source] of [
   assert.doesNotMatch(source, /TUTOP_ALLOW_ALTERNATE_STAGING/, `${name} must not expose alternate staging override`);
   assert.doesNotMatch(source, /TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID/, `${name} must not expose nondescription override`);
 }
+
+assert.match(stagingE2E, /staging-v2-admin\.mjs/);
+assert.match(stagingE2E, /const REQUIRED = 'tutop-beta-vicmdlb-1356585881'/);
+assert.match(stagingE2E, /if \(projectId !== REQUIRED\) throw new Error/);
+assert.doesNotMatch(stagingE2E, /TUTOP_ALLOW_ALTERNATE_STAGING/);
 
 assert.match(indexSmoke, /staging-freeze-guard\.mjs/);
 assert.match(indexSmoke, /firebase-ci-auth\.mjs/);
@@ -168,6 +174,7 @@ assert.doesNotMatch(firebaseAuth, /const FIREBASE_OAUTH_CLIENT_ID\s*=\s*['"][^'"
 assert.doesNotMatch(firebaseAuth, /const FIREBASE_OAUTH_CLIENT_SECRET\s*=\s*['"][^'"]+['"]/);
 
 console.log('PASS remote staging entrypoints require exact project, branch, GitHub Actions and October SHA binding');
+console.log('PASS real two-user E2E is independently pinned to the exact staging project with no alternate-project escape hatch');
 console.log('PASS Firestore service enablement is covered by the same central freeze guard');
 console.log('PASS staging deploy must prove real read-only composite-index readiness before catalog/E2E');
 console.log('PASS review/favorites/geography index probes cannot mutate staging data');
