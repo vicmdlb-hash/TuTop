@@ -19,11 +19,12 @@ console.log(`October gate run: ${process.env.TUTOP_VALIDATED_GATE_RUN_ID}`);
 console.log('Config: firebase.v2.json');
 console.log('Rules: firebase/firestore.v2.generated.rules (generadas antes de deploy)');
 console.log('Scope: firestore:rules,firestore:indexes únicamente');
+console.log('Static/typecheck/catalog-plan evidence is reused from the required same-SHA October gate.');
 
-run('npm', ['run', 'check']);
-run('npm', ['run', 'typecheck']);
+// The central freeze guard above requires a real same-SHA October gate. Do not
+// repeat static/typecheck/catalog-plan work in this staging runner. Rules must
+// still be generated in this job because the generated file is job-local.
 run('npm', ['run', 'v2:rules:prepare']);
-run('npm', ['run', 'v2:catalog:plan']);
 run('npx', [
   '--yes', firebaseTools,
   'deploy',
