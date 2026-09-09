@@ -51,7 +51,7 @@ if (nationalSchemaEnabled()) {
       });
     } catch (error) {
       console.warn('[TuTop V2 canonical listings hydration]', error);
-      throw new Error('V2_LISTINGS_SYNC_UNAVAILABLE');
+      throw new Error('NETWORK_V2_LISTINGS_SYNC_UNAVAILABLE');
     }
 
     return {
