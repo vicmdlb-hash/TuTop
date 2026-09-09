@@ -7,6 +7,7 @@ const trusted = fs.readFileSync('.github/workflows/v2-trusted-maintenance.yml', 
 const quality = fs.readFileSync('.github/workflows/quality.yml', 'utf8');
 const firestore = fs.readFileSync('.github/workflows/firestore-v2-security.yml', 'utf8');
 const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const androidV2 = android.slice(android.indexOf('  android-v2-staging:'));
 
 const assertManualOnly = (name, workflow) => {
@@ -55,14 +56,18 @@ assertManualOnly('October consolidated gate', october);
 assert.equal((october.match(/npm ci/g) || []).length, 1, 'October gate debe instalar dependencias de app una sola vez');
 assert.match(october, /Static \+ build \+ Firestore emulator/);
 assert.match(october, /npm run check/);
-assert.match(october, /npm run typecheck/);
 assert.match(october, /npm run build/);
+assert.equal(october.includes('npm run typecheck'), false, 'October no debe ejecutar typecheck dos veces');
+assert.equal(pkg.scripts.typecheck, 'tsc --noEmit');
+assert.equal(pkg.scripts.build, 'npm run typecheck && vite build');
+assert.match(october, /Typecheck once and build web/);
 assert.match(october, /emulators:exec --only firestore/);
 assert.doesNotMatch(october, /upload-artifact/);
 
 console.log('PASS all costly TuTop gates are manual-only while Actions is exhausted');
 console.log('PASS no PR/push/cron trigger can burn the future 2,000-minute budget');
-console.log('PASS October combines static, build and Firestore emulator work in one runner');
+console.log('PASS October combines static, typecheck+build and Firestore emulator work in one runner');
+console.log('PASS October performs TypeScript validation once through the canonical npm build command');
 console.log('PASS October gate avoids redundant app installs and artifact uploads');
 console.log('PASS Android V2 reuses same-SHA October evidence instead of repeating static/typecheck gates');
 console.log('PASS Android V2 still performs the real web build, Android lint/tests/assemble and exact candidate verification');
