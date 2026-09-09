@@ -46,13 +46,42 @@ Schema V2 treats `listings_v2/{listingId}` as the authoritative listing identity
 
 - `TransactionReservationCard` performs V2 confirmation through `nationalBackend.confirmDelivery(transaction)`.
 - `buyer_confirmed_at`, `seller_confirmed_at` and `status=completed` are authoritative.
+- **Whichever participant confirms second must atomically write both `transactions_v2.status=completed` and `listings_v2.status=sold_out` in the same commit.**
+- Seller-second completion uses normal seller listing authority.
+- Buyer-second completion receives only a narrow generated-Rule exception: `active→sold_out`, exact current reservation lock, exact buyer/seller pair, completed transaction, both timestamps, and `buyer_confirmed_at == transaction.updated_at == listing.updated_at`. It does not grant generic listing edit authority.
+- The completed reservation lock intentionally survives client completion and is cleaned by trusted reconciliation.
+- `TransactionReservationCard` no longer exposes a manual “Sincronizar publicación como Vendido” step; successful completion already guarantees the canonical close.
 - `ChatConversation` receives the canonical transaction state and projects it into `entrega_confirmada`, `entrega_estado` and `confirmaciones_entrega` **in local Zustand state only** for UI/review compatibility.
 - V2 must never write `chats/{chatId}/confirmations/{uid}` as completion authority.
 - The old store `confirmDelivery(chatId)` / chat-confirmation subcollection remains V1-only compatibility behavior.
 - A transaction created while the chat is already open is passed to `TransactionReservationCard` through `transactionHint`; no polling or duplicate transaction read is needed to display it.
 - Review UI is unlocked only after the canonical transaction becomes `completed`. Generated Rules independently require the linked `transactions_v2` document to be completed and contain both confirmation timestamps.
+- `reservationReconciliationPlan(...repair_completed_listing...)` remains only a historical/drift safety net; it is not normal completion flow.
 
-This prevents a legacy chat confirmation from making the UI look completed while the authoritative transaction is still incomplete.
+This prevents either a legacy chat confirmation or confirmer ordering from leaving UI, transaction and listing state inconsistent.
+
+## Terminal state authority matrix
+
+| Canonical transaction state | Who materializes it | Reservation lock | Listing state | Reputation meaning |
+|---|---|---|---|---|
+| `completed` | second delivery confirmer, client atomic commit | retained until trusted cleanup | `sold_out` atomically | completed transaction |
+| `cancelled` unilateral | participant via canonical backend | deleted atomically | remains `active` | penalizes `outcome_actor_id` |
+| `cancelled` mutual | trusted maintenance after both requests | deleted atomically | remains `active` | explicitly excluded from cancellation penalty |
+| `expired` | seller after deadline or trusted reconciliation | deleted atomically | remains `active` | no completed credit; no cancellation actor penalty |
+| `disputed` | either participant | deliberately retained | remains `active` but reservation stays locked | not counted as completed/terminal reputation outcome yet |
+| `no_show` | trusted maintenance only after an upheld outcome claim | deleted by trusted commit | remains `active` | penalizes accused `outcome_actor_id` |
+
+Rules/contract implications:
+
+- clients may create a **no-show claim**, but cannot self-declare `transactions_v2.status=no_show`;
+- dispute intentionally freezes the reservation instead of releasing it;
+- cancellation/expiration are invalid if their lock is not removed in the same authorized transition;
+- reputation snapshots consume canonical `transactions_v2` terminal evidence, not chat/store presentation state;
+- `v2-terminal-state-authority-tests.mjs` freezes these semantics.
+
+### Deferred UI exposure during feature freeze
+
+`canonicalTransactionsBackend` and `nationalBackendCanonicalBridge` already expose `cancelTransaction`, `requestMutualCancellation` and `claimNoShow`. `TransactionReservationCard` does not yet expose dedicated controls for every one of these paths. This is an explicit **integration/UI debt**, not permission to fall back to legacy methods. During the current freeze, any future controls must call the canonical bridge and pass exact-HEAD typecheck/Emulator/staging gates before promotion.
 
 ## Legacy `onlineBackend` reachability classification
 
@@ -73,6 +102,8 @@ The monolithic backend remains for V1 compatibility. It must not be deleted mere
 - `onlineBackend.markChatRead`: shared read-marker behavior; does not determine transaction completion.
 - shared auth/profile/wallet primitives remain reachable where their collection semantics are not listing-legacy dependent.
 
+`nationalBackend.ts` also still contains older products-based transaction implementations for compatibility/type surface. In schema V2, `nationalBackendCanonicalBridge` must override every sensitive transaction/terminal method to `canonicalTransactionsBackend`; those legacy methods are not V2 authority.
+
 Any future V2 call into an unclassified legacy method is a release-blocking integration regression until classified or bridged.
 
 ### Rules source vs generated Rules
@@ -81,8 +112,9 @@ Any future V2 call into an unclassified legacy method is a release-blocking inte
 
 The hardener must:
 
-- replace `productDoc()` with `listingDoc()`;
+- replace `productDoc()` with `listingDoc()` and add atomic completion helpers;
 - migrate favorites, chat, offers, meetup and boosts to canonical listing checks;
+- require `sold_out` for both buyer-second and seller-second completion;
 - fail if any `productDoc(` survives.
 
 There must be **one** canonical hardening path. A second favorites-specific hardener was removed because it conflicted with the canonical hardener order.
@@ -115,7 +147,10 @@ V2 text/image send failures remove only the exact optimistic `msg-local-*` that 
 
 ## Current critical invariants
 
-- A listing may remain `active` while reserved so browsing behavior does not change, but exactly one `listing_reservation_locks/{listingId}` document may exist. Transaction creation and lock creation are atomic. Cancellation/expiration must remove the lock atomically; completion makes the listing `sold_out`.
+- A listing may remain `active` while reserved so browsing behavior does not change, but exactly one `listing_reservation_locks/{listingId}` document may exist.
+- Transaction creation and lock creation are atomic.
+- Cancellation/expiration must remove the lock atomically; dispute retains it deliberately; completion makes the listing `sold_out` atomically no matter who confirms second.
+- `no_show` is trusted-only after an upheld claim; clients cannot self-declare it.
 - In schema V2, any UI field called `product_id` that points at a marketplace listing carries a `listings_v2` ID unless an explicitly legacy-only path states otherwise.
-- In schema V2, `transactions_v2` is the sole delivery-completion authority; legacy chat confirmations are V1-only.
+- In schema V2, `transactions_v2` is the sole delivery/terminal-state authority; legacy chat confirmations and legacy `products` transaction writes are compatibility-only.
 - No cost cutover becomes active before exact-HEAD static/typecheck/build/Emulator/staging gates are green.
