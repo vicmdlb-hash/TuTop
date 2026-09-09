@@ -257,7 +257,9 @@ jobs:
           cat > TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt <<EOF
           head_sha=${GITHUB_SHA}
           gate_run_id=${TUTOP_VALIDATED_GATE_RUN_ID}
+          gate_head_sha=${TUTOP_VALIDATED_GATE_SHA}
           staging_smoke_run_id=${TUTOP_VALIDATED_STAGING_RUN_ID}
+          staging_smoke_head_sha=${TUTOP_VALIDATED_STAGING_SHA}
           firebase_project=${TUTOP_FIREBASE_PROJECT_ID}
           version=${TUTOP_BETA_VERSION}
           version_code=${TUTOP_ANDROID_VERSION_CODE}
