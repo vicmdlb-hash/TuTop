@@ -10,6 +10,7 @@ permissions:
 jobs:
   legacy-readiness:
     name: Managed Firebase refresh-token readiness
+    if: github.ref_name == 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
     env:
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
@@ -28,6 +29,7 @@ jobs:
 
   github-oidc-producer:
     name: GitHub OIDC producer readiness
+    if: github.ref_name == 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
     steps:
       - name: Mint short-lived GitHub OIDC assertion only
@@ -45,6 +47,7 @@ jobs:
 
   wif-config-readiness:
     name: Google WIF config readiness
+    if: github.ref_name == 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
     env:
       WIF_PROVIDER: ${{ vars.TUTOP_WIF_PROVIDER }}
