@@ -1,14 +1,17 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const manifest = JSON.parse(fs.readFileSync('docs/RUNTIME_FREEZE_CANDIDATE_0.9.json', 'utf8'));
-const dossier = fs.readFileSync('docs/GATE_EXECUTION_DOSSIER_0.9.md', 'utf8');
-const trusted = fs.readFileSync('.github/workflows/v2-trusted-maintenance.yml', 'utf8');
-const quality = fs.readFileSync('.github/workflows/quality.yml', 'utf8');
-const firestore = fs.readFileSync('.github/workflows/firestore-v2-security.yml', 'utf8');
-const ciAuth = fs.readFileSync('.github/workflows/ci-auth-parallel-validation.yml', 'utf8');
-const oneShot = fs.readFileSync('.github/workflows/one-shot-085-hardened.yml', 'utf8');
-const provision = fs.readFileSync('.github/workflows/provision-firebase-staging-v2.yml', 'utf8');
+const read = (file) => fs.readFileSync(file, 'utf8');
+const manifest = JSON.parse(read('docs/RUNTIME_FREEZE_CANDIDATE_0.9.json'));
+const dossier = read('docs/GATE_EXECUTION_DOSSIER_0.9.md');
+const trusted = read('.github/workflows/v2-trusted-maintenance.yml');
+const quality = read('.github/workflows/quality.yml');
+const firestore = read('.github/workflows/firestore-v2-security.yml');
+const ciAuth = read('.github/workflows/ci-auth-parallel-validation.yml');
+const oneShot = read('.github/workflows/one-shot-085-hardened.yml');
+const provision = read('.github/workflows/provision-firebase-staging-v2.yml');
+const trustedWrapper = read('scripts/gated-trusted-staging-apply.mjs');
+const guard = read('scripts/staging-freeze-guard.mjs');
 
 function assertManualOnly(name, workflow) {
   assert.match(workflow, /^on:\s*\n\s+workflow_dispatch:/m, `${name} must keep workflow_dispatch`);
@@ -39,8 +42,25 @@ assert.match(trusted, /if: github\.ref_name == 'feat\/tutop-0\.8-p0'/);
 assert.match(trusted, /october-01-validation\.yml\/runs/);
 assert.match(trusted, /staging-v2-smoke\.yml\/runs/);
 assert.equal((trusted.match(/head_sha="\$GITHUB_SHA"/g) || []).length >= 2, true);
-assert.match(trusted, /DETENIDO: trusted maintenance requiere october-01-validation exitoso sobre el mismo SHA/);
-assert.match(trusted, /DETENIDO: trusted maintenance requiere staging-v2-smoke exitoso sobre el mismo SHA/);
+assert.match(trusted, /TUTOP_VALIDATED_GATE_RUN_ID=\$GATE_RUN_ID/);
+assert.match(trusted, /TUTOP_VALIDATED_GATE_SHA=\$GITHUB_SHA/);
+assert.match(trusted, /TUTOP_VALIDATED_STAGING_RUN_ID=\$STAGING_RUN_ID/);
+assert.match(trusted, /TUTOP_VALIDATED_STAGING_SHA=\$GITHUB_SHA/);
+assert.match(trusted, /node scripts\/gated-trusted-staging-apply\.mjs reconcile/);
+assert.match(trusted, /node scripts\/gated-trusted-staging-apply\.mjs maintenance/);
+assert.match(trusted, /node scripts\/gated-trusted-staging-apply\.mjs observability/);
+assert.doesNotMatch(trusted, /node scripts\/reconcile-v2-reservations\.mjs --apply/);
+assert.doesNotMatch(trusted, /node scripts\/v2-trusted-maintenance-guarded\.mjs --apply/);
+assert.doesNotMatch(trusted, /node scripts\/v2-observability-snapshot\.mjs --apply/);
+
+assert.match(trustedWrapper, /assertStagingFreezeContext\(\{ requireStagingGate: true \}\)/);
+assert.match(trustedWrapper, /reconcile-v2-reservations\.mjs', '--apply'/);
+assert.match(trustedWrapper, /v2-trusted-maintenance-guarded\.mjs', '--apply'/);
+assert.match(trustedWrapper, /v2-observability-snapshot\.mjs', '--apply'/);
+assert.match(guard, /TUTOP_VALIDATED_GATE_SHA/);
+assert.match(guard, /TUTOP_VALIDATED_STAGING_SHA/);
+assert.match(guard, /stagingSha !== githubSha/);
+
 const trustedGate = trusted.indexOf('Require same-SHA green October and staging before trusted mutation');
 const firstTrustedMutation = trusted.indexOf('Expire reservations and repair completed listings');
 assert(trustedGate >= 0 && firstTrustedMutation > trustedGate, 'October + staging gate must precede any trusted staging mutation');
@@ -66,6 +86,7 @@ assert.match(dossier, /no editar ni ejecutar `one-shot-085-hardened\.yml` ni `pr
 assert.match(dossier, /trusted maintenance sólo puede mutar staging después de October \+ staging green sobre el mismo SHA/i);
 
 console.log('PASS diagnostic secondary workflows are manual-only and non-mutating');
-console.log('PASS trusted maintenance requires green October + deployed staging on the exact same SHA before mutation');
-console.log('PASS self-trigger historical workflows are explicitly quarantined without editing them');
+console.log('PASS trusted maintenance requires October + staging run and SHA evidence before any apply wrapper');
+console.log('PASS trusted workflow cannot call raw apply scripts directly');
+console.log('PASS self-trigger historical workflows remain quarantined without editing them');
 console.log('Secondary workflow runtime-freeze contract: PASS');
