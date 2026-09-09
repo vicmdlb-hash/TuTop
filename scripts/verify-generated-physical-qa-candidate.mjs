@@ -28,11 +28,17 @@ if (candidate?.staging_project !== 'tutop-beta-vicmdlb-1356585881') stop('candid
 const head = git('rev-parse', 'HEAD');
 const tree = git('rev-parse', 'HEAD^{tree}');
 if (candidate.build_commit_sha !== head) stop(`candidate SHA ${candidate.build_commit_sha} != HEAD ${head}`);
+if (candidate.gate_commit_sha !== head) stop(`candidate gate SHA ${candidate.gate_commit_sha} != HEAD ${head}`);
+if (candidate.staging_smoke_commit_sha !== head) stop(`candidate staging SHA ${candidate.staging_smoke_commit_sha} != HEAD ${head}`);
+if (candidate.gate_commit_sha !== candidate.build_commit_sha) stop('gate SHA no coincide con build SHA');
+if (candidate.staging_smoke_commit_sha !== candidate.build_commit_sha) stop('staging SHA no coincide con build SHA');
 if (candidate.build_tree_sha !== tree) stop('candidate tree SHA no coincide con HEAD');
 if (!Number.isSafeInteger(candidate.artifact_id) || candidate.artifact_id <= 0) stop('artifact_id inválido');
 if (!Number.isSafeInteger(candidate.build_run_id) || candidate.build_run_id <= 0) stop('build_run_id inválido');
 if (!Number.isSafeInteger(candidate.gate_run_id) || candidate.gate_run_id <= 0) stop('gate_run_id inválido');
 if (!Number.isSafeInteger(candidate.staging_smoke_run_id) || candidate.staging_smoke_run_id <= 0) stop('staging_smoke_run_id inválido');
+if (!/^[a-f0-9]{40}$/.test(String(candidate.gate_commit_sha || ''))) stop('gate_commit_sha inválido');
+if (!/^[a-f0-9]{40}$/.test(String(candidate.staging_smoke_commit_sha || ''))) stop('staging_smoke_commit_sha inválido');
 if (!/^[a-f0-9]{64}$/.test(String(candidate.apk_sha256 || ''))) stop('apk_sha256 inválido');
 if (!Number.isSafeInteger(candidate.apk_size_bytes) || candidate.apk_size_bytes <= 0) stop('apk_size_bytes inválido');
 
@@ -55,5 +61,5 @@ const metadataCheck = spawnSync(process.execPath, [
 ], { encoding: 'utf8', shell: false });
 if (metadataCheck.status !== 0) stop(String(metadataCheck.stderr || metadataCheck.stdout || 'metadata mismatch').trim());
 
-console.log(`PASS generated Physical QA candidate matches exact checkout and Android metadata: ${head}`);
+console.log(`PASS generated Physical QA candidate matches exact checkout, gate/staging SHAs and Android metadata: ${head}`);
 console.log(`artifact=${candidate.artifact_id} run=${candidate.build_run_id} apk_sha256=${candidate.apk_sha256}`);
