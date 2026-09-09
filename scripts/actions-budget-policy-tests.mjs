@@ -7,6 +7,7 @@ const trusted = fs.readFileSync('.github/workflows/v2-trusted-maintenance.yml', 
 const quality = fs.readFileSync('.github/workflows/quality.yml', 'utf8');
 const firestore = fs.readFileSync('.github/workflows/firestore-v2-security.yml', 'utf8');
 const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
+const androidV2 = android.slice(android.indexOf('  android-v2-staging:'));
 
 const assertManualOnly = (name, workflow) => {
   assert.match(workflow, /workflow_dispatch:/, `${name} debe conservar ejecución manual`);
@@ -22,6 +23,26 @@ assert.match(android, /Require same-SHA green consolidated gate and real staging
 assert.match(android, /october-01-validation\.yml\/runs/);
 assert.match(android, /staging-v2-smoke\.yml\/runs/);
 assert.match(android, /physical-qa-staging\.metadata\.txt/);
+
+// The V2 Android job is downstream of the exact same SHA October + staging gates.
+// Do not burn a second runner pass on static checks already proven by October.
+for (const duplicate of [
+  'npm run check',
+  'npm run github:ready',
+  'npm run beta:ready',
+  'npm run v2:staging:readiness:test',
+  'npm run v2:rules:prepare',
+  'npm run native-security:test',
+  'npm run account-erasure:test',
+  'npm run typecheck',
+]) {
+  assert.doesNotMatch(androidV2, new RegExp(duplicate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Android V2 no debe repetir ${duplicate}`);
+}
+assert.match(androidV2, /npm ci/);
+assert.match(androidV2, /npm run build/);
+assert.match(androidV2, /lintDebug testDebugUnitTest assembleDebug/);
+assert.match(androidV2, /generate-physical-qa-candidate\.mjs/);
+assert.match(androidV2, /verify-generated-physical-qa-candidate\.mjs/);
 
 assertManualOnly('staging real', staging);
 assertManualOnly('Quality', quality);
@@ -43,5 +64,7 @@ console.log('PASS all costly TuTop gates are manual-only while Actions is exhaus
 console.log('PASS no PR/push/cron trigger can burn the future 2,000-minute budget');
 console.log('PASS October combines static, build and Firestore emulator work in one runner');
 console.log('PASS October gate avoids redundant app installs and artifact uploads');
+console.log('PASS Android V2 reuses same-SHA October evidence instead of repeating static/typecheck gates');
+console.log('PASS Android V2 still performs the real web build, Android lint/tests/assemble and exact candidate verification');
 console.log('PASS V2 APK cannot promote before same-SHA October + real staging smoke and records metadata');
 console.log('GitHub Actions budget policy: PASS');
