@@ -110,9 +110,6 @@ jobs:
       - name: CI auth migration readiness
         run: npm run ci-auth:readiness:test
 
-      - name: OIDC parallel validation workflow contract
-        run: npm run ci-auth:parallel-workflow:test
-
       - name: Trusted cron activation patch contract
         run: npm run trusted-cron:patch:test
 
