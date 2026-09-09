@@ -38,8 +38,11 @@ assert.doesNotMatch(transactionBackend, /status === 'completed' && actor === tra
 
 assert.match(rules, /buyer-second completion atomically sells canonical listing/);
 assert.match(rules, /seller-second completion atomically sells canonical listing/);
-assert.match(rules, /completionTxAfter\(listingId\)/);
-assert.match(rules, /reservationLockAfter\(listingId\)/);
+assert.match(rules, /function buyerCompletionClosesListing\(listingId\)/);
+assert.match(rules, /let lock = getAfter\(\/databases\/\$\(database\)\/documents\/listing_reservation_locks\/\$\(listingId\)\)/);
+assert.match(rules, /let tx = getAfter\(\/databases\/\$\(database\)\/documents\/transactions_v2\/\$\(lock\.data\.transaction_id\)\)/);
+assert.match(rules, /buyerCompletionClosesListing\(listingId\)/);
+assert.doesNotMatch(rules, /completionTxAfter\(listingId\)|reservationLockAfter\(listingId\)/);
 assert.match(rules, /data\.status == 'sold_out'/);
 assert.match(rules, /buyer_confirmed_at == request\.resource\.data\.updated_at/);
 
@@ -61,6 +64,7 @@ assert.match(conversation, /!v2 && !deliveryCompleted/);
 console.log('PASS transactions_v2 is the sole V2 delivery-completion authority');
 console.log('PASS either participant confirming second atomically completes the transaction and closes listings_v2 as sold_out');
 console.log('PASS buyer sold-out authority is narrowly bound to its exact lock and second-confirmation timestamp');
+console.log('PASS buyer-second authorization uses one helper with lock+transaction getAfter access only');
 console.log('PASS canonical transaction state projects locally into chat compatibility fields without legacy confirmation writes');
 console.log('PASS newly created transactions surface through transactionHint without polling or duplicate reads');
 console.log('PASS review UI/bridge is unlocked only after canonical completed transaction projection');
