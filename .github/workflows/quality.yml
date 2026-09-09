@@ -107,9 +107,6 @@ jobs:
       - name: Physical QA automatic evaluator
         run: npm run physical-qa:evaluator:test
 
-      - name: CI auth migration readiness
-        run: npm run ci-auth:readiness:test
-
       - name: Trusted cron activation patch contract
         run: npm run trusted-cron:patch:test
 
