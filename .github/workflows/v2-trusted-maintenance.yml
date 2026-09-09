@@ -48,7 +48,9 @@ jobs:
           fi
           {
             echo "TUTOP_VALIDATED_GATE_RUN_ID=$GATE_RUN_ID"
+            echo "TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA"
             echo "TUTOP_VALIDATED_STAGING_RUN_ID=$STAGING_RUN_ID"
+            echo "TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA"
           } >> "$GITHUB_ENV"
           echo "✅ Trusted maintenance autorizada para ${GITHUB_SHA}: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
 
