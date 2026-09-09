@@ -7,6 +7,7 @@ const trusted = fs.readFileSync('.github/workflows/v2-trusted-maintenance.yml', 
 const quality = fs.readFileSync('.github/workflows/quality.yml', 'utf8');
 const firestore = fs.readFileSync('.github/workflows/firestore-v2-security.yml', 'utf8');
 const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
+const stagingDeploy = fs.readFileSync('scripts/deploy-firebase-staging.mjs', 'utf8');
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const androidV2 = android.slice(android.indexOf('  android-v2-staging:'));
 const RULES_TESTING_VERSION = '5.0.2';
@@ -57,6 +58,15 @@ assert.match(androidV2, /verify-generated-physical-qa-candidate\.mjs/);
 
 assertManualOnly('staging real', staging);
 assertCredentialPreflightBeforeSetup('staging real', staging);
+assert.match(stagingDeploy, /assertStagingFreezeContext/);
+assert.match(stagingDeploy, /run\('npm', \['run', 'v2:rules:prepare'\]\)/);
+for (const duplicate of [
+  "run('npm', ['run', 'check'])",
+  "run('npm', ['run', 'typecheck'])",
+  "run('npm', ['run', 'v2:catalog:plan'])",
+]) {
+  assert.equal(stagingDeploy.includes(duplicate), false, `Staging deploy no debe repetir ${duplicate}; October same-SHA ya lo cubre`);
+}
 assertManualOnly('Quality', quality);
 assert.doesNotMatch(quality, /Firestore V2 emulator security/);
 assert.match(quality, /npm run check/);
@@ -109,6 +119,7 @@ console.log('PASS all costly TuTop gates are manual-only while Actions is exhaus
 console.log('PASS no PR/push/cron trigger can burn the future 2,000-minute budget');
 console.log('PASS October is blocked outside the exact runtime-freeze branch');
 console.log('PASS staging and trusted maintenance reject missing managed auth before setup-node/npm ci');
+console.log('PASS staging deploy reuses same-SHA October static/typecheck/catalog evidence and only regenerates job-local Rules');
 console.log('PASS October combines static, typecheck+build and Firestore emulator work in one runner');
 console.log('PASS October and Quality perform TypeScript validation once through the canonical npm build command');
 console.log('PASS Quality does not rerun exact offline/AppCheck/recovery/evidence/CI-auth tests already inside npm run check');
