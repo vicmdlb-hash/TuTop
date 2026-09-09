@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { evaluatePhysicalQaReport } from '../src/lib/physicalQaEvaluator.ts';
+import { candidateExactHeadIdentityValid } from './physical-qa-candidate-drift.mjs';
 
 const requiredCases = [
   'install_boot','auth_identity','reinstall_identity','keyboard','android_back','lifecycle','safe_areas','rotation',
@@ -10,7 +11,10 @@ const requiredCases = [
 const allowedCase = new Set(['pass','warn','fail','pending','not_applicable']);
 const forbiddenKeys = new Set(['refreshToken','idToken','password','FIREBASE_TOKEN']);
 const requiredDeviceFields = ['label','manufacturer','model','android_version','viewport','installation'];
-const requiredCandidateFields = ['artifact_name','artifact_id','build_run_id','build_commit_sha','build_tree_sha','apk_sha256'];
+const requiredCandidateFields = [
+  'artifact_name','artifact_id','build_run_id','build_commit_sha','build_tree_sha','apk_sha256',
+  'gate_run_id','gate_commit_sha','staging_smoke_run_id','staging_smoke_commit_sha',
+];
 const MAX_DIAGNOSTIC_AGE_MS = 24 * 60 * 60_000;
 const CANDIDATE_MANIFEST_PATH = path.resolve('docs/PHYSICAL_QA_CANDIDATE_0.9.json');
 
@@ -21,6 +25,9 @@ export function loadPhysicalQaCandidate() {
   if (candidate?.app_version !== '0.9.0-beta.0') throw new Error('PHYSICAL_QA_CANDIDATE_VERSION_INVALID');
   if (candidate?.environment !== 'staging') throw new Error('PHYSICAL_QA_CANDIDATE_ENVIRONMENT_INVALID');
   if (candidate?.physical_release_candidate !== true) throw new Error('PHYSICAL_QA_CANDIDATE_NOT_ACTIVE');
+  if (candidate?.candidate_status !== 'active_exact_head') throw new Error('PHYSICAL_QA_CANDIDATE_STATUS_INVALID');
+  if (candidate?.replacement_required !== false) throw new Error('PHYSICAL_QA_CANDIDATE_REPLACEMENT_REQUIRED');
+  if (!candidateExactHeadIdentityValid(candidate)) throw new Error('PHYSICAL_QA_CANDIDATE_EXACT_HEAD_IDENTITY_INVALID');
   return candidate;
 }
 
@@ -37,9 +44,6 @@ function scanSensitive(value, errors, pathParts = []) {
     return;
   }
   if (typeof value !== 'string') return;
-  // Human notes may name forbidden concepts (e.g. "no incluir password") without
-  // containing the secret itself. Values are inspected for token/phone-like payloads,
-  // while exact forbidden field names are rejected structurally above.
   if (/\b\d{10,13}\b/.test(value)) errors.push(`posible número telefónico/identificador sensible sin redactar en ${pathParts.join('.') || 'root'}`);
   if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push(`posible token/identificador largo sin redactar en ${pathParts.join('.') || 'root'}`);
 }
@@ -62,6 +66,12 @@ function validateCandidateBinding(bundle, expectedCandidate, errors) {
   if (bundle.candidate.apk_sha256 && !/^[a-f0-9]{64}$/.test(String(bundle.candidate.apk_sha256))) {
     errors.push('candidate.apk_sha256 inválido');
   }
+  if (bundle.candidate.gate_commit_sha !== bundle.candidate.build_commit_sha) {
+    errors.push('candidate.gate_commit_sha debe coincidir con build_commit_sha');
+  }
+  if (bundle.candidate.staging_smoke_commit_sha !== bundle.candidate.build_commit_sha) {
+    errors.push('candidate.staging_smoke_commit_sha debe coincidir con build_commit_sha');
+  }
 }
 
 function validateFreshNativeDiagnostic(bundle, errors, now = Date.now()) {
@@ -81,6 +91,12 @@ export function validatePhysicalQaEvidence(bundle, now = Date.now(), expectedCan
   if (bundle?.schema !== 'tutop.physical-qa-evidence.v1') errors.push('schema inválido');
   if (bundle?.app_version !== '0.9.0-beta.0') errors.push('app_version debe ser 0.9.0-beta.0');
   if (bundle?.environment !== 'staging') errors.push('environment debe ser staging');
+  if (!candidateExactHeadIdentityValid(expectedCandidate)
+      || expectedCandidate?.candidate_status !== 'active_exact_head'
+      || expectedCandidate?.replacement_required !== false
+      || expectedCandidate?.physical_release_candidate !== true) {
+    errors.push('candidato físico vigente carece de identidad exact-head válida');
+  }
   validateCandidateBinding(bundle, expectedCandidate, errors);
   if (!bundle?.device || typeof bundle.device !== 'object') errors.push('device requerido');
   if (bundle?.device?.physical !== true) warnings.push('evidencia todavía no proviene de dispositivo físico real');
