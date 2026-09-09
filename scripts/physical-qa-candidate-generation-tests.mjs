@@ -14,11 +14,19 @@ assert.equal(canonical.physical_release_candidate, false);
 assert.equal(canonical.candidate_status, 'obsolete_runtime_drift');
 assert.equal(canonical.replacement_required, true);
 
-assert.match(generator, /required\('GITHUB_SHA'\)/);
-assert.match(generator, /required\('TUTOP_UPLOAD_ARTIFACT_ID'\)/);
-assert.match(generator, /required\('GITHUB_RUN_ID'\)/);
-assert.match(generator, /required\('TUTOP_VALIDATED_GATE_RUN_ID'\)/);
-assert.match(generator, /required\('TUTOP_VALIDATED_STAGING_RUN_ID'\)/);
+for (const envName of [
+  'GITHUB_SHA',
+  'TUTOP_UPLOAD_ARTIFACT_ID',
+  'GITHUB_RUN_ID',
+  'TUTOP_VALIDATED_GATE_RUN_ID',
+  'TUTOP_VALIDATED_GATE_SHA',
+  'TUTOP_VALIDATED_STAGING_RUN_ID',
+  'TUTOP_VALIDATED_STAGING_SHA',
+]) assert.match(generator, new RegExp(`required\\('${envName}'\\)`));
+assert.match(generator, /gateCommitSha !== headSha/);
+assert.match(generator, /stagingSmokeCommitSha !== headSha/);
+assert.match(generator, /gate_commit_sha: gateCommitSha/);
+assert.match(generator, /staging_smoke_commit_sha: stagingSmokeCommitSha/);
 assert.match(generator, /git\('rev-parse', 'HEAD'\)/);
 assert.match(generator, /git\('rev-parse', 'HEAD\^\{tree\}'\)/);
 assert.match(generator, /client_runtime_refs: clientRuntimeRefs/);
@@ -30,6 +38,10 @@ assert.match(generator, /wallet_lazy: walletCutover/);
 assert.match(generator, /favorites_visible: favoritesCutover/);
 
 assert.match(verifier, /candidate\.build_commit_sha !== head/);
+assert.match(verifier, /candidate\.gate_commit_sha !== head/);
+assert.match(verifier, /candidate\.staging_smoke_commit_sha !== head/);
+assert.match(verifier, /candidate\.gate_commit_sha !== candidate\.build_commit_sha/);
+assert.match(verifier, /candidate\.staging_smoke_commit_sha !== candidate\.build_commit_sha/);
 assert.match(verifier, /candidate\.build_tree_sha !== tree/);
 assert.match(verifier, /git\('rev-parse', `HEAD:\$\{repoPath\}`\)/);
 assert.match(verifier, /candidate\.candidate_status !== 'generated_exact_head_pending_repo_activation'/);
@@ -38,9 +50,11 @@ assert.match(verifier, /favorites_visible flag inválido/);
 assert.match(verifier, /verify-physical-qa-candidate-metadata\.mjs/);
 
 for (const key of [
-  'head_sha','gate_run_id','staging_smoke_run_id','firebase_project','version','artifact_id','build_run_id',
+  'head_sha','gate_run_id','gate_head_sha','staging_smoke_run_id','staging_smoke_head_sha','firebase_project','version','artifact_id','build_run_id',
   'build_run_number','build_tree_sha','apk_sha256','apk_size_bytes','reviews_lazy_cutover','wallet_lazy_cutover','favorites_visible_cutover',
 ]) assert.match(metadataVerifier, new RegExp(`['\"]${key}['\"]`));
+assert.match(metadataVerifier, /metadata\.gate_head_sha !== metadata\.head_sha/);
+assert.match(metadataVerifier, /metadata\.staging_smoke_head_sha !== metadata\.head_sha/);
 assert.match(metadataVerifier, /metadata\.\$\{field\}=\$\{metadata\[field\]\} != candidate=\$\{expected\}/);
 
 assert.match(activator, /TUTOP_ALLOW_PHYSICAL_QA_CANDIDATE_ACTIVATION !== 'exact-head'/);
@@ -74,7 +88,9 @@ assert.match(android, /node scripts\/verify-generated-physical-qa-candidate\.mjs
 assert.match(android, /PHYSICAL_QA_CANDIDATE\.generated\.json/);
 assert.match(android, /physical-qa-candidate-\$\{\{ github\.run_number \}\}/);
 assert.match(android, /gate_run_id=\$\{TUTOP_VALIDATED_GATE_RUN_ID\}/);
+assert.match(android, /gate_head_sha=\$\{TUTOP_VALIDATED_GATE_SHA\}/);
 assert.match(android, /staging_smoke_run_id=\$\{TUTOP_VALIDATED_STAGING_RUN_ID\}/);
+assert.match(android, /staging_smoke_head_sha=\$\{TUTOP_VALIDATED_STAGING_SHA\}/);
 assert.match(android, /apk_sha256=\$\{APK_SHA256\}/);
 assert.match(android, /apk_size_bytes=\$\{APK_SIZE\}/);
 
@@ -84,9 +100,9 @@ assert.match(runbook, /rebind-physical-qa-templates\.mjs/);
 assert.match(runbook, /No inventar artifact ID, run ID, SHA, tamaño, timestamp ni evidencia/);
 
 console.log('PASS canonical repository candidate remains explicitly obsolete until guarded real activation');
-console.log('PASS Android metadata and generated candidate must match all three cost cutovers field by field');
+console.log('PASS candidate requires October SHA = staging SHA = Android build SHA');
+console.log('PASS Android metadata and generated candidate bind gate/staging SHAs and all three cost cutovers field by field');
 console.log('PASS Android build derives candidate identity from exact SHA/tree/runtime refs and real upload artifact ID');
 console.log('PASS activation is exact-head guarded and intentionally absent from automatic Android workflow');
 console.log('PASS future template rebinding requires active exact-head candidate and resets all evidence to pending');
-console.log('PASS reviews, wallet and favorites cutover states are bound into exact APK identity');
 console.log('Physical QA exact candidate generation/activation/template contract: PASS');
