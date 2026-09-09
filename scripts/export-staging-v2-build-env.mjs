@@ -8,6 +8,18 @@ const version = String(process.env.TUTOP_BETA_VERSION || '0.9.0-beta.0').trim();
 
 function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
 if (!githubEnv) stop('GITHUB_ENV no está disponible; este export sólo debe correr dentro del build CI.');
+
+const cutoverFlags = [
+  'VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER',
+  'VITE_TUTOP_V2_WALLET_LAZY_CUTOVER',
+  'VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER',
+];
+for (const name of cutoverFlags) {
+  if (String(process.env[name] || 'false').trim().toLowerCase() === 'true') {
+    stop(`${name}=true no está autorizado para el APK baseline del Runtime Freeze; completar primero Physical QA A+B con los tres cutovers en false.`);
+  }
+}
+
 if (!fs.existsSync(configPath)) stop(`falta config web staging: ${configPath}`);
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 if (!config.apiKey || !config.projectId || !config.appId) stop('config web Firebase incompleta.');
@@ -33,4 +45,5 @@ const lines = [
 ];
 fs.appendFileSync(githubEnv, `${lines.join('\n')}\n`);
 console.log(`✅ Ambiente V2 staging exportado para ${expectedProject} · ${version}.`);
+console.log('Baseline Physical QA: reviews/wallet/favorites cutovers permanecen false hasta completar Device A+B.');
 console.log('Configuración cliente sensible a copia queda enmascarada en GitHub Actions.');
