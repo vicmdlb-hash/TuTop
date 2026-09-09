@@ -70,16 +70,19 @@ Entry points protegidos:
 
 - Firestore Rules/index deploy;
 - Firebase Auth base deploy;
+- habilitación de Cloud Firestore API;
 - Firebase Web App/config setup;
 - Firebase Android App/config setup;
 - staging admin helper;
 - App Check staging configuration.
 
+El seed canónico remoto sólo se soporta mediante `scripts/gated-v2-catalog-seed.mjs`, y `npm run v2:catalog:seed` apunta a ese wrapper. No existe un atajo npm soportado hacia `seed-v2-catalog.mjs --apply`.
+
 Durante Runtime Freeze, App Check sólo admite `OFF` o `UNENFORCED`; `ENFORCED` está físicamente bloqueado en el configurador.
 
 `npm run firebase:deploy:spark` también está bloqueado explícitamente durante el freeze. Los emuladores locales siguen disponibles porque no mutan remoto.
 
-Los scripts internos grandes de seed/reconciliation/trusted maintenance conservan sus propios `--apply` + allow sentinels, pero **no deben invocarse directamente** durante el freeze. Sus rutas soportadas de mutación son staging/trusted workflows ya gated same-SHA.
+Los scripts internos grandes de seed/reconciliation/trusted maintenance/observability conservan sus propios `--apply` + allow sentinels, pero **no son autoridad de promoción y no deben invocarse directamente** durante el freeze. Sus rutas soportadas pasan por wrappers exact-SHA y workflows gated.
 
 Google Play/Internal App Sharing permanece bloqueado por `config/project.json`: zero-investment activo, billing no autorizado y production publishing desactivado.
 
@@ -141,7 +144,7 @@ No son autoridad de promoción y no deben ejecutarse por rutina si October ya cu
 
 ### Mutación staging controlada
 
-Trusted maintenance sólo puede mutar staging después de **October + staging green sobre el mismo SHA**. `v2-trusted-maintenance.yml` verifica ambos runs y exporta ambos SHA bindings antes de cualquier `--apply`. No sustituye staging smoke ni autoriza APK.
+Trusted maintenance sólo puede mutar staging después de **October + staging green sobre el mismo SHA**. `v2-trusted-maintenance.yml` verifica ambos runs, exporta ambos run IDs y ambos SHA bindings y luego llama exclusivamente `scripts/gated-trusted-staging-apply.mjs` para reconcile/maintenance/observability. No llama los `--apply` internos directamente, no sustituye staging smoke y no autoriza APK.
 
 ### Cuarentena — no editar / no ejecutar
 
@@ -159,6 +162,7 @@ Ambos conservan triggers históricos sobre cambios a su propio archivo. Durante 
 - No ejecutar trusted maintenance como prueba.
 - No generar APK sólo para ver si compila.
 - No usar comandos locales de deploy para saltarse October/staging.
+- No usar `--apply` interno como sustituto de los wrappers exact-SHA.
 
 ## Criterio de salida del freeze
 
