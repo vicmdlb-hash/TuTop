@@ -1,0 +1,236 @@
+name: TuTop runtime release orchestrator
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+concurrency:
+  group: tutop-runtime-release-orchestrator
+  cancel-in-progress: false
+
+jobs:
+  release-chain:
+    name: October → Staging → Android → verified APK
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      TARGET_REF: feat/tutop-0.8-p0
+      TARGET_PR: "6"
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - name: Require managed Firebase credentials before child runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "DETENIDO: falta credencial gestionada ${name}. No se lanzará October." >&2
+              exit 42
+            fi
+          done
+          echo "✅ Managed Firebase credentials are present (values not printed)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture exact target HEAD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_SHA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_REF}" --jq '.sha')"
+          if ! [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "DETENIDO: no se pudo resolver SHA exacto de ${TARGET_REF}." >&2
+            exit 41
+          fi
+          echo "TARGET_SHA=${TARGET_SHA}" >> "$GITHUB_ENV"
+          echo "Target exacto: ${TARGET_REF}@${TARGET_SHA}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record 60% credentials milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY="## APK readiness — 60%\n\nManaged Firebase credentials are available to the orchestrator. Target captured: \`${TARGET_REF}@${TARGET_SHA}\`. October has not been promoted yet."
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null
+
+      - name: Dispatch exact-SHA release chain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          assert_target_unchanged() {
+            local current
+            current="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_REF}" --jq '.sha')"
+            if [ "$current" != "$TARGET_SHA" ]; then
+              echo "DETENIDO: drift detectado en ${TARGET_REF}. esperado=${TARGET_SHA} actual=${current}." >&2
+              exit 48
+            fi
+          }
+
+          latest_matching_run_id() {
+            local workflow="$1"
+            gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
+              -f branch="$TARGET_REF" \
+              -f head_sha="$TARGET_SHA" \
+              -f event=workflow_dispatch \
+              -f per_page=20 \
+              --jq '.workflow_runs[0].id // 0'
+          }
+
+          wait_for_new_success() {
+            local workflow="$1"
+            local before_id="$2"
+            local label="$3"
+            local attempt json run_id status conclusion
+            for attempt in $(seq 1 240); do
+              json="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
+                -f branch="$TARGET_REF" \
+                -f head_sha="$TARGET_SHA" \
+                -f event=workflow_dispatch \
+                -f per_page=20)"
+              run_id="$(printf '%s' "$json" | jq -r --arg before "$before_id" '.workflow_runs | map(select(.id > ($before|tonumber))) | .[0].id // empty')"
+              if [ -n "$run_id" ]; then
+                status="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status')"
+                conclusion="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion // ""')"
+                echo "${label}: run=${run_id} status=${status} conclusion=${conclusion:-pending}" >&2
+                if [ "$status" = "completed" ]; then
+                  if [ "$conclusion" != "success" ]; then
+                    echo "DETENIDO: ${label} terminó ${conclusion}." >&2
+                    exit 49
+                  fi
+                  printf '%s' "$run_id"
+                  return 0
+                fi
+              fi
+              sleep 15
+            done
+            echo "DETENIDO: timeout esperando ${label}." >&2
+            exit 50
+          }
+
+          dispatch_and_wait() {
+            local workflow="$1"
+            local label="$2"
+            local before run_id
+            assert_target_unchanged
+            before="$(latest_matching_run_id "$workflow")"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" -f ref="$TARGET_REF" >/dev/null
+            run_id="$(wait_for_new_success "$workflow" "$before" "$label")"
+            assert_target_unchanged
+            printf '%s' "$run_id"
+          }
+
+          post_progress() {
+            local percent="$1"
+            local message="$2"
+            local body
+            body="## APK readiness — ${percent}%\n\n${message}\n\nTarget: \`${TARGET_REF}@${TARGET_SHA}\`."
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$body" >/dev/null
+          }
+
+          OCTOBER_RUN_ID="$(dispatch_and_wait 'october-01-validation.yml' 'October exact-SHA')"
+          echo "OCTOBER_RUN_ID=${OCTOBER_RUN_ID}" >> "$GITHUB_ENV"
+          echo "✅ October green: ${OCTOBER_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          post_progress 75 "October exact-SHA is green. Run: \`${OCTOBER_RUN_ID}\`."
+
+          STAGING_RUN_ID="$(dispatch_and_wait 'staging-v2-smoke.yml' 'Staging same-SHA')"
+          echo "STAGING_RUN_ID=${STAGING_RUN_ID}" >> "$GITHUB_ENV"
+          echo "✅ Staging green: ${STAGING_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          post_progress 85 "Staging same-SHA is green. October: \`${OCTOBER_RUN_ID}\`; Staging: \`${STAGING_RUN_ID}\`."
+
+          ANDROID_RUN_ID="$(dispatch_and_wait 'android-debug-apk.yml' 'Android baseline false/false/false')"
+          echo "ANDROID_RUN_ID=${ANDROID_RUN_ID}" >> "$GITHUB_ENV"
+          echo "✅ Android green: ${ANDROID_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          post_progress 95 "Android baseline build is green with cutovers required false/false/false. Android run: \`${ANDROID_RUN_ID}\`. APK bytes still require independent verification."
+
+      - name: Download and independently verify APK artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT_JSON="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${ANDROID_RUN_ID}/artifacts" -f per_page=100)"
+          APK_ARTIFACT_ID="$(printf '%s' "$ARTIFACT_JSON" | jq -r '.artifacts | map(select(.expired == false and (.name | startswith("TuTop-0.9.0-beta.0-physical-qa-staging-")))) | .[0].id // empty')"
+          APK_ARTIFACT_NAME="$(printf '%s' "$ARTIFACT_JSON" | jq -r '.artifacts | map(select(.expired == false and (.name | startswith("TuTop-0.9.0-beta.0-physical-qa-staging-")))) | .[0].name // empty')"
+          if [ -z "$APK_ARTIFACT_ID" ] || [ -z "$APK_ARTIFACT_NAME" ]; then
+            echo "DETENIDO: Android terminó green pero no existe artifact APK físico esperado." >&2
+            exit 51
+          fi
+
+          rm -rf apk-verified
+          mkdir -p apk-verified
+          gh run download "$ANDROID_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$APK_ARTIFACT_NAME" --dir apk-verified
+
+          APK_FILE="apk-verified/TuTop-0.9.0-beta.0-physical-qa-staging.apk"
+          HASH_FILE="apk-verified/TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256"
+          META_FILE="apk-verified/TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt"
+          test -s "$APK_FILE"
+          test -s "$HASH_FILE"
+          test -s "$META_FILE"
+
+          EXPECTED_SHA="$(awk '{print $1; exit}' "$HASH_FILE")"
+          ACTUAL_SHA="$(sha256sum "$APK_FILE" | awk '{print $1}')"
+          if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+            echo "DETENIDO: SHA-256 del APK no coincide." >&2
+            exit 52
+          fi
+          grep -q "head_sha=${TARGET_SHA}" "$META_FILE"
+          grep -q "gate_run_id=${OCTOBER_RUN_ID}" "$META_FILE"
+          grep -q "staging_smoke_run_id=${STAGING_RUN_ID}" "$META_FILE"
+          grep -q 'reviews_lazy_cutover=false' "$META_FILE"
+          grep -q 'wallet_lazy_cutover=false' "$META_FILE"
+          grep -q 'favorites_visible_cutover=false' "$META_FILE"
+
+          echo "APK_ARTIFACT_ID=${APK_ARTIFACT_ID}" >> "$GITHUB_ENV"
+          echo "APK_ARTIFACT_NAME=${APK_ARTIFACT_NAME}" >> "$GITHUB_ENV"
+          echo "APK_SHA256=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "✅ APK descargable verificado independientemente" >> "$GITHUB_STEP_SUMMARY"
+          echo "- artifact_id: ${APK_ARTIFACT_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- artifact_name: ${APK_ARTIFACT_NAME}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- apk_sha256: ${ACTUAL_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- target_sha: ${TARGET_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- readiness: 100%" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record 100% APK readiness on PR #6
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY=$(cat <<EOF
+          ## APK readiness — 100%
+
+          Real installable APK verified by runtime orchestrator.
+
+          - target: \`${TARGET_REF}@${TARGET_SHA}\`
+          - October run: \`${OCTOBER_RUN_ID}\`
+          - Staging run: \`${STAGING_RUN_ID}\`
+          - Android run: \`${ANDROID_RUN_ID}\`
+          - APK artifact: \`${APK_ARTIFACT_ID}\` / \`${APK_ARTIFACT_NAME}\`
+          - SHA-256: \`${APK_SHA256}\`
+          - cutovers: reviews=false, wallet=false, favorites=false
+          - APK readiness: **100%**
+
+          Physical QA A+B remains the next gate and is not synthesized by this workflow.
+          EOF
+          )
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null
+
+      - name: Record blocked orchestrator result
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY="Runtime release orchestrator stopped fail-closed for ${TARGET_REF}@${TARGET_SHA:-UNKNOWN}. APK readiness remains below 100%. Inspect orchestrator run ${GITHUB_RUN_ID}; no later gate should be promoted after a failed predecessor."
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null || true
