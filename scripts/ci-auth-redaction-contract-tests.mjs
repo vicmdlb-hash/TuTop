@@ -10,7 +10,15 @@ for (const field of ['access_token', 'refresh_token', 'id_token', 'assertion', '
 assert.match(source, /\[REDACTED\]/);
 assert.match(source, /redactOAuthDetail\(await response\.text\(\)\)/);
 assert.doesNotMatch(source, /throw new Error\(`No se pudo intercambiar FIREBASE_TOKEN[^`]*\$\{await response\.text\(\)\}/);
-assert.doesNotMatch(source, /console\.(?:log|error|warn)\([^\n]*(?:refreshToken|explicit|access_token)/);
+assert.doesNotMatch(source, /console\.(?:log|error|warn)\([^\n]*(?:refreshToken|explicit|access_token|clientSecret)/);
+
+assert.match(source, /process\.env\.TUTOP_FIREBASE_OAUTH_CLIENT_ID/);
+assert.match(source, /process\.env\.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET/);
+assert.match(source, /FIREBASE_CI_OAUTH_CLIENT_CREDENTIALS_MISSING/);
+assert.doesNotMatch(source, /const FIREBASE_OAUTH_CLIENT_ID\s*=\s*['"][^'"]+['"]/);
+assert.doesNotMatch(source, /const FIREBASE_OAUTH_CLIENT_SECRET\s*=\s*['"][^'"]+['"]/);
+assert.doesNotMatch(source, /client_secret:\s*['"][^'"]+['"]/);
 
 console.log('PASS Firebase CI OAuth failures redact token-like material before logging');
+console.log('PASS Firebase OAuth client credentials are externally managed and no longer embedded in repository source');
 console.log('CI auth redaction contract: PASS');
