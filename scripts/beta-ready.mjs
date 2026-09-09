@@ -15,6 +15,8 @@ const pkg = JSON.parse(read('package.json') || '{}');
 const lock = JSON.parse(read('package-lock.json') || '{}');
 const cap = JSON.parse(read('capacitor.config.json') || '{}');
 const project = JSON.parse(read('config/project.json') || '{}');
+const freeze = JSON.parse(read('docs/RUNTIME_FREEZE_CANDIDATE_0.9.json') || '{}');
+const physicalCandidate = JSON.parse(read('docs/PHYSICAL_QA_CANDIDATE_0.9.json') || '{}');
 const app = read('src/App.tsx');
 const gate = read('src/components/BackendGate.tsx');
 const runtime = read('src/services/runtimeConfig.ts');
@@ -24,6 +26,8 @@ const rules = read('firebase/firestore.rules');
 const workflow = read('.github/workflows/android-debug-apk.yml');
 const hardenedWorkflow = read('.github/workflows/one-shot-085-hardened.yml');
 const qualityWorkflow = read('.github/workflows/quality.yml');
+const octoberWorkflow = read('.github/workflows/october-01-validation.yml');
+const stagingWorkflow = read('.github/workflows/staging-v2-smoke.yml');
 const dependabot = read('.github/dependabot.yml');
 const mobileDeps = read('scripts/install-mobile-deps.mjs');
 const androidBootstrap = read('scripts/android-bootstrap.mjs');
@@ -39,6 +43,16 @@ if (project.currentBetaVersion !== expectedBeta) errors.push(`Versión beta Andr
 if (pkg.version !== project.currentBetaVersion) errors.push(`Versiones raíz/Android divergentes: ${pkg.version || 'vacía'} vs ${project.currentBetaVersion || 'vacía'}`);
 if (cap.appId !== 'mx.tutop.app') errors.push('Capacitor appId no es mx.tutop.app');
 if (project.applicationId !== 'mx.tutop.app' || project.applicationIdConfirmed !== true) errors.push('config/project.json no confirma mx.tutop.app');
+if (project.zeroInvestmentMode !== true || project.billingAllowed !== false || project.productionPublishingAllowed !== false) {
+  errors.push('TuTop 0.9 debe permanecer zero-investment, sin billing y sin publicación productiva.');
+}
+if (freeze.status !== 'runtime_freeze_candidate' || freeze.runtime_validated !== false || freeze.feature_freeze !== true) {
+  errors.push('Runtime Freeze Candidate no está en estado fail-closed esperado.');
+}
+if (freeze.current_physical_qa_candidate !== null) errors.push('Freeze manifest no debe declarar Physical QA candidate antes del build exact-head real.');
+if (physicalCandidate.physical_release_candidate !== false || physicalCandidate.replacement_required !== true) {
+  errors.push('El candidato Physical QA histórico debe permanecer obsoleto hasta activación exact-head real.');
+}
 if (!app.includes('<BackendGate>')) errors.push('App no está protegida por BackendGate');
 if (!runtime.includes('BUILT_IN_CONFIG') || !runtime.includes("const HISTORICAL_PROJECT_ID = 'tutop-3a4f7'")) errors.push('Falta configuración online V1 integrada para instalaciones estables');
 if (!runtime.includes('V2_LEGACY_FIREBASE_BLOCKED') || !runtime.includes('V2_STAGING_PROJECT_MISMATCH')) errors.push('Runtime V2 no bloquea proyecto histórico / mismatch staging');
@@ -49,9 +63,16 @@ if (/Firebase|Firestore|projectId/i.test(gate)) {
 if (!online.includes('FirebaseRestClient')) errors.push('Backend online no usa FirebaseRestClient');
 if (!rules.includes('match /wallets/{uid}')) errors.push('Rules no protegen Wallet');
 if (!rules.includes('match /admins/{uid}')) errors.push('Rules no protegen administradores');
-if (!workflow.includes('assembleDebug')) errors.push('Workflow estable no genera APK debug');
+if (!workflow.includes('assembleDebug')) errors.push('Workflow Android no genera APK debug');
 if (!workflow.includes('test:rules') && !workflow.includes('firestore.rules.test')) errors.push('Workflow estable no ejecuta pruebas de Firestore Rules');
 if (!workflow.includes('git diff --exit-code -- package.json package-lock.json')) errors.push('Workflow Android no prueba inmutabilidad de manifests npm');
+if (!workflow.includes('TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA') || !workflow.includes('TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA')) {
+  errors.push('Workflow Android no conserva binding exact-SHA de gate + staging.');
+}
+if (!stagingWorkflow.includes('TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA')) errors.push('Staging no propaga el SHA validado de October.');
+if (!octoberWorkflow.includes('npm run check') || !octoberWorkflow.includes('npm run typecheck') || !octoberWorkflow.includes('npm run build')) {
+  errors.push('October consolidated gate está incompleto.');
+}
 if (!mobileDeps.includes("'--no-save'") || !mobileDeps.includes("'--package-lock=false'")) errors.push('Instalación móvil debe ser efímera y no modificar package manifests');
 const sdkPackages = "packages: 'platform-tools platforms;android-36 build-tools;36.0.0'";
 if (!workflow.includes(sdkPackages) || !hardenedWorkflow.includes(sdkPackages)) errors.push('Workflows Android no fijan SDK 36 mediante setup-android');
@@ -82,13 +103,14 @@ for (const file of activeUiFiles) {
   if (/modo demo|datos demo|demo local/i.test(text)) errors.push(`Texto de demo visible en ${file}`);
 }
 
-notes.push(`Core npm/base ${pkg.version || 'desconocida'} · release Android beta ${project.currentBetaVersion || 'desconocida'}`);
+notes.push(`Core npm/base ${pkg.version || 'desconocida'} · Android beta ${project.currentBetaVersion || 'desconocida'}`);
 notes.push(`Versionado raíz/lock/Android sincronizado en ${expectedBeta}`);
 notes.push(`Application ID ${cap.appId || 'desconocido'}`);
 notes.push('Backend beta: Firebase REST + Firestore Security Rules');
-notes.push('Distribución inmediata: APK debug por GitHub Actions, sin Play Console');
+notes.push('Estado release: Runtime Freeze Candidate / NOT VALIDATED; no existe APK Physical QA vigente.');
+notes.push('Próxima promoción permitida: October same-SHA → staging same-SHA → Android same-SHA → Physical QA A+B.');
 
 for (const note of notes) console.log(`OK   ${note}`);
 for (const error of errors) console.error(`FAIL ${error}`);
-console.log(errors.length ? `\nBeta readiness FAIL · ${errors.length} problema(s).` : '\n✅ TuTop beta readiness PASS.');
+console.log(errors.length ? `\nBeta readiness FAIL · ${errors.length} problema(s).` : '\n✅ TuTop beta readiness PASS · freeze prepared, distribution still blocked pending real gates.');
 process.exit(errors.length ? 1 : 0);
