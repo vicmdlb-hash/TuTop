@@ -27,6 +27,8 @@ jobs:
       TUTOP_APP_CHECK_MODE: UNENFORCED
       TUTOP_STAGING_WEB_CONFIG_PATH: .tutop-staging-web-config.json
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
     steps:
       - name: Checkout exact feature ref
         uses: actions/checkout@v7
@@ -66,13 +68,16 @@ jobs:
       - name: Verify dependency manifests stayed immutable
         run: git diff --exit-code -- package.json package-lock.json
 
-      - name: Require staging credential
+      - name: Require managed staging credentials
         shell: bash
         run: |
-          if [ -z "$FIREBASE_TOKEN" ]; then
-            echo "FIREBASE_TOKEN no está configurado en GitHub Actions." >&2
-            exit 42
-          fi
+          set -euo pipefail
+          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "DETENIDO: falta credencial gestionada ${name} en GitHub Actions." >&2
+              exit 42
+            fi
+          done
 
       - name: Deploy current strict V2 rules and indexes
         run: npm run firebase:deploy:staging
