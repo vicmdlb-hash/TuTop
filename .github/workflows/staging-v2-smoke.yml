@@ -41,17 +41,17 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
           GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
-            -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
+            -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
             --jq '.workflow_runs[0].id // empty')"
           if [ -z "$GATE_RUN_ID" ]; then
-            echo "DETENIDO: staging requiere october-01-validation exitoso sobre el mismo SHA ${GITHUB_SHA}." >&2
+            echo "DETENIDO: staging requiere october-01-validation exitoso sobre la misma rama y SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
             exit 43
           fi
           {
             echo "TUTOP_VALIDATED_GATE_RUN_ID=$GATE_RUN_ID"
             echo "TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA"
           } >> "$GITHUB_ENV"
-          echo "✅ October gate same-SHA validado: ${GATE_RUN_ID} / ${GITHUB_SHA}."
+          echo "✅ October gate same-branch/same-SHA validado: ${GATE_RUN_ID} / ${GITHUB_REF_NAME}@${GITHUB_SHA}."
 
       - name: Require managed staging credentials before dependency setup
         shell: bash
