@@ -31,9 +31,10 @@ assert.deepEqual(manifest.required_promotion_sequence, [
 ]);
 
 for (const workflow of [october, staging, android]) {
-  assert.match(workflow, /workflow_dispatch:/);
-  assert.doesNotMatch(workflow, /\nschedule:/);
-  assert.doesNotMatch(workflow, /\npush:/);
+  assert.match(workflow, /^on:\s*\n\s+workflow_dispatch:/m);
+  assert.doesNotMatch(workflow, /^\s*schedule:/m);
+  assert.doesNotMatch(workflow, /^\s*push:/m);
+  assert.doesNotMatch(workflow, /^\s*pull_request:/m);
 }
 
 assert.match(october, /npm run check/);
@@ -50,14 +51,25 @@ assert.match(october, /tests\/firestore\.v2\.review-strike-aggregation\.test\.mj
 
 assert.match(staging, /actions: read/);
 assert.match(staging, /if: github\.ref_name == 'feat\/tutop-0\.8-p0'/);
+assert.match(staging, /test "\$GITHUB_REF_NAME" = "feat\/tutop-0\.8-p0"/);
 assert.match(staging, /head_sha="\$GITHUB_SHA"/);
 assert.match(staging, /october-01-validation\.yml\/runs/);
 assert.match(staging, /status=success/);
 assert.match(staging, /event=workflow_dispatch/);
 assert.match(staging, /DETENIDO: staging requiere october-01-validation exitoso sobre el mismo SHA/);
 const stagingGateIndex = staging.indexOf('Require same-SHA green October gate before any staging mutation');
-const stagingDeployIndex = staging.indexOf('Deploy current strict V2 rules and indexes');
-assert(stagingGateIndex >= 0 && stagingDeployIndex > stagingGateIndex, 'staging gate must run before any deploy');
+for (const remoteMutation of [
+  'Deploy current strict V2 rules and indexes',
+  'Verify canonical catalog without overwriting',
+  'Enable base Firebase Authentication without Identity Platform upgrade',
+  'Provision and validate staging Android Firebase app',
+  'Real two-user marketplace smoke',
+  'Real controlled account erasure smoke',
+  'Enable App Check monitoring only',
+]) {
+  const mutationIndex = staging.indexOf(remoteMutation);
+  assert(stagingGateIndex >= 0 && mutationIndex > stagingGateIndex, `${remoteMutation} must occur after same-SHA October gate`);
+}
 
 assert.match(android, /october-01-validation\.yml\/runs/);
 assert.match(android, /staging-v2-smoke\.yml\/runs/);
@@ -83,11 +95,12 @@ for (const contract of [
   'v2-terminal-state-authority-tests.mjs',
   'visible-favorites-cutover-tests.mjs',
   'physical-qa-candidate-generation-tests.mjs',
+  'runtime-freeze-promotion-contract-tests.mjs',
 ]) assert.match(check, new RegExp(contract.replaceAll('.', '\\.')));
 
 console.log('PASS runtime freeze manifest is fail-closed and keeps all cutovers default-off');
-console.log('PASS October, staging and Android remain manual-only');
-console.log('PASS staging cannot mutate staging before a green October run on the exact same SHA');
+console.log('PASS October, staging and Android have workflow_dispatch as their only trigger');
+console.log('PASS every staging mutation is ordered after a green October run on the exact same SHA');
 console.log('PASS Android cannot build V2 candidate before green October + staging runs on the exact same SHA');
 console.log('PASS exact APK metadata and generated candidate identity stay chained to the validated SHA');
 console.log('Runtime freeze promotion contract: PASS');
