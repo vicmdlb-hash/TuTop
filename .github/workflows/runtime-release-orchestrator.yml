@@ -2,10 +2,6 @@ name: TuTop runtime release orchestrator
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/runtime-release-orchestrator.yml"
 
 permissions:
   contents: read
@@ -19,7 +15,7 @@ concurrency:
 jobs:
   release-chain:
     name: October → Staging → Android → verified APK
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.event.head_commit.message == 'ci: execute TuTop runtime orchestrator one-shot')
+    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 150
     env:
