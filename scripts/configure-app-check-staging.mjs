@@ -1,28 +1,11 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { requireAppCheckPhysicalEvidence } from './app-check-enforcement-readiness.mjs';
+import { assertAppCheckFreezeMode, assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
-const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
-const allow = String(process.env.TUTOP_ALLOW_APP_CHECK || '').trim();
-const mode = String(process.env.TUTOP_APP_CHECK_MODE || 'UNENFORCED').trim().toUpperCase();
-const historicalProject = 'tutop-3a4f7';
-
-function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
-if (!projectId) stop('falta TUTOP_FIREBASE_PROJECT_ID.');
-if (allow !== 'staging-v2') stop('define TUTOP_ALLOW_APP_CHECK=staging-v2.');
-if (projectId === historicalProject) stop(`${historicalProject} está bloqueado.`);
-if (/prod(uction)?/i.test(projectId) && process.env.TUTOP_ALLOW_PRODUCTION_FIREBASE !== '1') stop('el project ID parece producción.');
-if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID !== '1') stop('el project ID no parece staging/beta/dev/test.');
-if (!['OFF', 'UNENFORCED', 'ENFORCED'].includes(mode)) stop(`modo App Check inválido: ${mode}`);
-if (mode === 'ENFORCED') {
-  if (process.env.TUTOP_ALLOW_APP_CHECK_ENFORCEMENT !== 'staging-v2-client-ready') {
-    stop('ENFORCED requiere TUTOP_ALLOW_APP_CHECK_ENFORCEMENT=staging-v2-client-ready después de validar un APK que envíe tokens App Check.');
-  }
-  try {
-    requireAppCheckPhysicalEvidence(process.env.TUTOP_APP_CHECK_PHYSICAL_EVIDENCE_PATH);
-  } catch (error) {
-    stop(`ENFORCED bloqueado por falta de evidencia física válida: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
+const projectId = assertStagingFreezeContext({
+  allowEnv: 'TUTOP_ALLOW_APP_CHECK',
+  allowValue: 'staging-v2',
+});
+const mode = assertAppCheckFreezeMode(process.env.TUTOP_APP_CHECK_MODE || 'UNENFORCED');
 
 const token = await firebaseCiAccessToken();
 const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Goog-User-Project': projectId };
@@ -70,4 +53,5 @@ for (const serviceId of ['firestore.googleapis.com', 'identitytoolkit.googleapis
 }
 
 console.log(`✅ App Check staging configurado en ${mode}.`);
-if (mode === 'UNENFORCED') console.log('Se recopilan métricas sin bloquear al APK anterior. Enforcement queda deliberadamente bloqueado hasta validar el cliente App Check.');
+console.log(`October gate run: ${process.env.TUTOP_VALIDATED_GATE_RUN_ID}`);
+if (mode === 'UNENFORCED') console.log('Se recopilan métricas sin bloquear clientes; ENFORCED permanece bloqueado durante Runtime Freeze Candidate.');
