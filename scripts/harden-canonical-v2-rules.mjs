@@ -24,6 +24,37 @@ replaceOnce(
   'seller edit returns canonical listing to moderation without self-approval',
 );
 
+const moderatorListingNeedle = `        ||
+        (
+          canModerateInstitution(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['moderation_status','updated_at'])`;
+const buyerCompletionListingRule = `        ||
+        (
+          request.auth.uid != resource.data.seller_id
+          && resource.data.status == 'active'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+          && request.resource.data.status == 'sold_out'
+          && request.resource.data.seller_id == resource.data.seller_id
+          && request.resource.data.created_at == resource.data.created_at
+          && request.resource.data.moderation_status == resource.data.moderation_status
+          && existsAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId))
+          && getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.listing_id == listingId
+          && getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.buyer_id == request.auth.uid
+          && getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.seller_id == resource.data.seller_id
+          && existsAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id))
+          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.listing_id == listingId
+          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.buyer_id == request.auth.uid
+          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.seller_id == resource.data.seller_id
+          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.status == 'completed'
+          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.buyer_confirmed_at is timestamp
+          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.seller_confirmed_at is timestamp
+          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.buyer_confirmed_at == request.resource.data.updated_at
+          && getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.updated_at == request.resource.data.updated_at
+          && fresh(request.resource.data.updated_at)
+        )
+${moderatorListingNeedle}`;
+replaceOnce(moderatorListingNeedle, buyerCompletionListingRule, 'buyer-second completion may only close its exact canonical listing atomically');
+
 replaceOnce(
   "        && getAfter(/databases/$(database)/documents/products/$(offerData.listing_id)).data.estado == 'Reservado';",
   "        && getAfter(/databases/$(database)/documents/listings_v2/$(offerData.listing_id)).data.status == 'active'\n        && getAfter(/databases/$(database)/documents/listings_v2/$(offerData.listing_id)).data.moderation_status == 'approved';",
@@ -66,6 +97,13 @@ replaceOnce(
   'reviews require completed V2 transaction',
 );
 
+const buyerCompletionNeedle = "              (('seller_confirmed_at' in resource.data) && request.resource.data.status == 'completed')";
+replaceOnce(
+  buyerCompletionNeedle,
+  "              (('seller_confirmed_at' in resource.data)\n                && request.resource.data.status == 'completed'\n                && getAfter(/databases/$(database)/documents/listings_v2/$(resource.data.listing_id)).data.status == 'sold_out')",
+  'buyer-second completion atomically sells canonical listing',
+);
+
 const sellerCompletionNeedle = "              (('buyer_confirmed_at' in resource.data) && request.resource.data.status == 'completed')";
 replaceOnce(
   sellerCompletionNeedle,
@@ -79,4 +117,4 @@ if (rules.includes('productDoc(')) {
 }
 
 fs.writeFileSync(path, rules);
-console.log('✅ Rules V2 endurecidas: listing canónico para edición/re-moderación, favoritos, chat, ofertas, boosts, meetup y reseñas; sin helper legacy productDoc.');
+console.log('✅ Rules V2 endurecidas: listing canónico para edición/re-moderación, favoritos, chat, ofertas, boosts, meetup, completion bilateral atómico y reseñas; sin helper legacy productDoc.');
