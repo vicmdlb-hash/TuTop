@@ -41,12 +41,18 @@ if (nationalSchemaEnabled()) {
       identityCache.set(uid, { identity, level, expiresAt: Date.now() + IDENTITY_CACHE_TTL_MS });
     }
 
-    const products = await canonicalListingsBackend.loadMarketplaceProducts({
-      campusId: identity.campus_id,
-      institutionId: identity.institution_id,
-      cityId: identity.city_id,
-      limitPerScope: 30,
-    }).catch(() => snapshot.products.filter((product) => product.listing_kind === 'offer' && product.institution_id));
+    let products;
+    try {
+      products = await canonicalListingsBackend.loadMarketplaceProducts({
+        campusId: identity.campus_id,
+        institutionId: identity.institution_id,
+        cityId: identity.city_id,
+        limitPerScope: 30,
+      });
+    } catch (error) {
+      console.warn('[TuTop V2 canonical listings hydration]', error);
+      throw new Error('V2_LISTINGS_SYNC_UNAVAILABLE');
+    }
 
     return {
       ...snapshot,
