@@ -1,15 +1,9 @@
 import fs from 'node:fs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
-const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
+const projectId = assertStagingFreezeContext();
 const outputPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-staging-web-config.json').trim();
-const historicalProject = 'tutop-3a4f7';
-
-function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
-if (!projectId) stop('falta TUTOP_FIREBASE_PROJECT_ID.');
-if (projectId === historicalProject) stop(`${historicalProject} está bloqueado para staging V2.`);
-if (/prod(uction)?/i.test(projectId) && process.env.TUTOP_ALLOW_PRODUCTION_FIREBASE !== '1') stop('el project ID parece producción.');
-if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID !== '1') stop('el project ID no parece staging/beta/dev/test.');
 
 const token = await firebaseCiAccessToken();
 const authHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Goog-User-Project': projectId };
@@ -70,6 +64,7 @@ if (!app?.name) throw new Error('No se encontró/creó Firebase Web App de stagi
 const appConfig = await jsonRequest(`https://firebase.googleapis.com/v1beta1/${app.name}/config`);
 const config = appConfig.data || {};
 if (!config.apiKey || !config.projectId || !config.appId) throw new Error('Firebase Web App no devolvió configuración completa.');
+if (config.projectId !== projectId) throw new Error(`Firebase Web App project mismatch: ${config.projectId}`);
 
 fs.writeFileSync(outputPath, JSON.stringify({
   apiKey: config.apiKey,
