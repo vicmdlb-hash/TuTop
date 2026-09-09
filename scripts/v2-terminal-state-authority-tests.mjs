@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const backend = fs.readFileSync('src/services/canonicalTransactionsBackend.ts', 'utf8');
+const bridge = fs.readFileSync('src/services/nationalBackendCanonicalBridge.ts', 'utf8');
+const national = fs.readFileSync('src/services/nationalBackend.ts', 'utf8');
 const maintenance = fs.readFileSync('scripts/v2-trusted-maintenance.mjs', 'utf8');
 const reconciliation = fs.readFileSync('src/lib/reservationReconciliation.ts', 'utf8');
 const lockRules = fs.readFileSync('scripts/harden-transaction-lock-rules.mjs', 'utf8');
@@ -24,6 +26,20 @@ assert.match(completion, /if \(status === 'completed'\)/);
 assert.match(completion, /listings_v2\/\$\{transaction\.listing_id\}/);
 assert.match(completion, /status: 'sold_out'/);
 assert.doesNotMatch(completion, /actor === transaction\.seller_id/);
+
+for (const method of [
+  'confirmDelivery',
+  'finalizeCompletedListing',
+  'disputeTransaction',
+  'cancelTransaction',
+  'requestMutualCancellation',
+  'claimNoShow',
+  'releaseExpiredReservation',
+]) {
+  assert.match(bridge, new RegExp(`${method}: canonicalTransactionsBackend\\.${method}`));
+}
+assert.match(national, /patchWrite\(client, `products\/\$\{transaction\.listing_id\}`/);
+assert.match(bridge, /if \(nationalSchemaEnabled\(\)\)/);
 
 assert.match(cancel, /status: 'cancelled'/);
 assert.match(cancel, /outcome_actor_id: actor/);
@@ -56,6 +72,8 @@ assert.match(reconciliation, /expired_transaction_listing_unchanged/);
 assert.match(reconciliation, /status_not_auto_expirable/);
 
 console.log('PASS completed is authoritative and atomically closes listings_v2 regardless of second confirmer');
+console.log('PASS every V2 terminal action is explicitly overridden to canonicalTransactionsBackend by the schema-gated bridge');
+console.log('PASS legacy products-based nationalBackend transaction methods remain compatibility code, not V2 authority');
 console.log('PASS cancelled/expired are canonical terminal states and release reservation locks atomically');
 console.log('PASS disputed freezes the canonical transaction and deliberately retains its reservation lock');
 console.log('PASS no_show is not self-declared by clients; only an upheld trusted outcome materializes it and releases the lock');
