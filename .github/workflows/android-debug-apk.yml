@@ -143,6 +143,8 @@ jobs:
       VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: ${{ inputs.enable_wallet_lazy_cutover }}
       VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: ${{ inputs.enable_favorites_visible_cutover }}
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
     steps:
       - name: Checkout feature ref
         uses: actions/checkout@v7
@@ -173,15 +175,17 @@ jobs:
             echo "TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA"
           } >> "$GITHUB_ENV"
           echo "✅ Cadena validada para ${GITHUB_SHA}: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
-      - name: Guard staging credential
+      - name: Require managed staging credentials
         shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
-          if [ -z "$FIREBASE_TOKEN" ]; then
-            echo "DETENIDO: falta FIREBASE_TOKEN en GitHub Actions." >&2
-            exit 42
-          fi
+          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "DETENIDO: falta credencial gestionada ${name} en GitHub Actions." >&2
+              exit 42
+            fi
+          done
       - name: Node 22
         uses: actions/setup-node@v7
         with:
