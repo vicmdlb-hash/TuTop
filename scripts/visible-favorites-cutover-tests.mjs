@@ -72,6 +72,12 @@ assert.match(emulatorFixture, /membership IN devuelve exactamente los favoritos 
 assert.match(emulatorFixture, /membership IN respeta subsets/);
 assert.match(emulatorFixture, /otro usuario no puede consultar membership de alice/);
 assert.match(emulatorFixture, /consulta sin filtro uid no puede demostrar ownership y falla cerrada/);
+assert.match(emulatorFixture, /membership exacto determinista permite al dueño leer su favorito para fallback/);
+assert.match(emulatorFixture, /membership exacto determinista niega a otro usuario el favorito ajeno/);
+assert.match(emulatorFixture, /membership exacto determinista niega lectura sin autenticación/);
+assert.match(emulatorFixture, /getDoc\(doc\(alice, 'favorites\/alice_listing-1'\)\)/);
+assert.match(emulatorFixture, /assertFails\(getDoc\(doc\(bob, 'favorites\/alice_listing-1'\)\)\)/);
+assert.match(emulatorFixture, /assertFails\(getDoc\(doc\(anonymous, 'favorites\/alice_listing-1'\)\)\)/);
 assert.match(emulatorFixture, /crear favorito acepta un listing canónico V2 activo y aprobado/);
 assert.match(emulatorFixture, /crear favorito V2 rechaza target que existe sólo en products legacy/);
 assert.match(emulatorFixture, /listings no aprobados/);
@@ -95,6 +101,7 @@ console.log('PASS broad up-to-200 snapshot query is skipped only when explicit f
 console.log('PASS visible favorite membership uses batched Firestore IN queries of at most 30 IDs with App Check forwarding');
 console.log('PASS failed IN/index queries fall back to deterministic exact favorite documents instead of false negatives');
 console.log('PASS exact fallback remains scoped to visible IDs and never restores the broad 200-doc snapshot');
+console.log('PASS Emulator fixture proves exact fallback owner access and foreign/anonymous denial');
 console.log('PASS explicit favorites uid+product_id index is declared before staging activation');
 console.log('PASS V2 favorite creation is canonical-only: active+approved listings_v2, never legacy-only products');
 console.log('PASS real Emulator fixture covers canonical create, exact own subset and foreign/underconstrained denial');
