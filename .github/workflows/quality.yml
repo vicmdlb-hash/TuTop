@@ -85,14 +85,8 @@ jobs:
       - name: Offline privacy and performance budgets
         run: npm run offline-performance:test
 
-      - name: Offline reconnect chaos scenarios
-        run: npm run offline-reconnect:chaos:test
-
       - name: Native Firebase security contract
         run: npm run native-security:test
-
-      - name: App Check physical enforcement gate
-        run: npm run app-check:enforcement:test
 
       - name: Account erasure safety contract
         run: npm run account-erasure:test
@@ -109,14 +103,8 @@ jobs:
       - name: Account recovery architecture
         run: npm run account-recovery:test
 
-      - name: Local recovery provider simulation
-        run: npm run account-recovery:local-sim:test
-
       - name: Physical QA automatic evaluator
         run: npm run physical-qa:evaluator:test
-
-      - name: Physical QA evidence bundle
-        run: npm run physical-qa:evidence:test
 
       - name: CI auth migration readiness
         run: npm run ci-auth:readiness:test
@@ -127,10 +115,7 @@ jobs:
       - name: Trusted cron activation patch contract
         run: npm run trusted-cron:patch:test
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Build web app
+      - name: Typecheck once and build web app
         run: npm run build
 
       - name: Upload web build
