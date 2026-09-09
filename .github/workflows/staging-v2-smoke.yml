@@ -1,0 +1,113 @@
+name: TuTop V2 real staging smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: tutop-v2-real-staging-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    if: github.ref_name == 'feat/tutop-0.8-p0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_ALLOW_FIREBASE_DEPLOY: staging-v2
+      TUTOP_ALLOW_V2_SEED: staging-v2
+      TUTOP_ALLOW_ANDROID_APP_SETUP: staging-v2
+      TUTOP_ANDROID_PACKAGE_NAME: mx.tutop.app
+      TUTOP_ANDROID_GOOGLE_SERVICES_PATH: .tutop-staging-google-services.json
+      TUTOP_ALLOW_APP_CHECK: staging-v2
+      TUTOP_APP_CHECK_MODE: UNENFORCED
+      TUTOP_STAGING_WEB_CONFIG_PATH: .tutop-staging-web-config.json
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - name: Checkout exact feature ref
+        uses: actions/checkout@v7
+
+      - name: Require same-SHA green October gate before any staging mutation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
+          GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
+            -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
+            --jq '.workflow_runs[0].id // empty')"
+          if [ -z "$GATE_RUN_ID" ]; then
+            echo "DETENIDO: staging requiere october-01-validation exitoso sobre la misma rama y SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
+            exit 43
+          fi
+          {
+            echo "TUTOP_VALIDATED_GATE_RUN_ID=$GATE_RUN_ID"
+            echo "TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA"
+          } >> "$GITHUB_ENV"
+          echo "✅ October gate same-branch/same-SHA validado: ${GATE_RUN_ID} / ${GITHUB_REF_NAME}@${GITHUB_SHA}."
+
+      - name: Require managed staging credentials before dependency setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "DETENIDO: falta credencial gestionada ${name} en GitHub Actions." >&2
+              exit 42
+            fi
+          done
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Install Firebase client for smoke (ephemeral)
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0
+
+      - name: Verify dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
+
+      - name: Deploy current strict V2 rules and indexes
+        run: npm run firebase:deploy:staging
+
+      - name: Wait for and verify deployed composite indexes
+        run: node scripts/staging-index-readiness-smoke.mjs
+
+      - name: Verify canonical catalog without overwriting
+        run: npm run v2:catalog:seed
+
+      - name: Enable base Firebase Authentication without Identity Platform upgrade
+        run: node scripts/deploy-firebase-auth-staging.mjs
+
+      - name: Prepare staging Web App runtime config
+        run: node scripts/prepare-staging-v2-auth.mjs
+
+      - name: Provision and validate staging Android Firebase app
+        run: node scripts/prepare-staging-android-app.mjs
+
+      - name: Real two-user marketplace smoke
+        run: node scripts/staging-v2-e2e-smoke.mjs
+
+      - name: Real controlled account erasure smoke
+        env:
+          TUTOP_ALLOW_ACCOUNT_ERASURE: staging-reviewed
+        run: node scripts/staging-account-erasure-smoke.mjs
+
+      - name: Enable App Check monitoring only
+        run: node scripts/configure-app-check-staging.mjs
+
+      - name: Remove temporary Firebase client configs
+        if: always()
+        run: rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json
