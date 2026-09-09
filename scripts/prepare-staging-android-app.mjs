@@ -1,19 +1,14 @@
 import fs from 'node:fs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
-const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
-const allow = String(process.env.TUTOP_ALLOW_ANDROID_APP_SETUP || '').trim();
+const projectId = assertStagingFreezeContext({
+  allowEnv: 'TUTOP_ALLOW_ANDROID_APP_SETUP',
+  allowValue: 'staging-v2',
+});
 const packageName = String(process.env.TUTOP_ANDROID_PACKAGE_NAME || 'mx.tutop.app').trim();
 const outputPath = String(process.env.TUTOP_ANDROID_GOOGLE_SERVICES_PATH || '.tutop-staging-google-services.json').trim();
-const historicalProject = 'tutop-3a4f7';
-
-function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
-if (!projectId) stop('falta TUTOP_FIREBASE_PROJECT_ID.');
-if (allow !== 'staging-v2') stop('define TUTOP_ALLOW_ANDROID_APP_SETUP=staging-v2.');
-if (projectId === historicalProject) stop(`${historicalProject} está bloqueado para Android staging.`);
-if (/prod(uction)?/i.test(projectId) && process.env.TUTOP_ALLOW_PRODUCTION_FIREBASE !== '1') stop('el project ID parece producción.');
-if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID !== '1') stop('el project ID no parece staging/beta/dev/test.');
-if (packageName !== 'mx.tutop.app') stop(`package inesperado: ${packageName}`);
+if (packageName !== 'mx.tutop.app') throw new Error(`STAGING_FREEZE_BLOCKED:package_mismatch:${packageName}`);
 
 const token = await firebaseCiAccessToken();
 const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
@@ -69,4 +64,5 @@ if (!configuredPackages.includes(packageName)) throw new Error(`google-services 
 fs.writeFileSync(outputPath, `${JSON.stringify(parsed, null, 2)}\n`);
 console.log(`✅ Firebase Android staging listo: ${app.appId}`);
 console.log(`✅ google-services.json validado para ${projectId} / ${packageName}`);
+console.log(`October gate run: ${process.env.TUTOP_VALIDATED_GATE_RUN_ID}`);
 console.log(`Archivo temporal: ${outputPath}`);
