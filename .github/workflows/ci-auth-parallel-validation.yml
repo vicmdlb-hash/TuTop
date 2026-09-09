@@ -7,31 +7,35 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: tutop-ci-auth-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  legacy-readiness:
-    name: Managed Firebase refresh-token readiness
+  auth-readiness:
+    name: Managed Firebase refresh-token + OIDC/WIF readiness
     if: github.ref_name == 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
       TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
       TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      WIF_PROVIDER: ${{ vars.TUTOP_WIF_PROVIDER }}
+      WIF_SERVICE_ACCOUNT: ${{ vars.TUTOP_WIF_SERVICE_ACCOUNT }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - name: Validate managed fallback readiness
-        run: node scripts/ci-auth-readiness.mjs
+      - name: Report external WIF configuration status without changing auth
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${WIF_PROVIDER:-}" ] && [ -n "${WIF_SERVICE_ACCOUNT:-}" ]; then
+            echo "WIF metadata present: READY_FOR_EXCHANGE_VALIDATION"
+          else
+            echo "WIF metadata absent: BLOCKED_EXTERNAL_SETUP"
+          fi
+          echo "This workflow never removes FIREBASE_TOKEN and never switches production auth."
 
-  github-oidc-producer:
-    name: GitHub OIDC producer readiness
-    if: github.ref_name == 'feat/tutop-0.8-p0'
-    runs-on: ubuntu-latest
-    steps:
       - name: Mint short-lived GitHub OIDC assertion only
         shell: bash
         run: |
@@ -45,21 +49,28 @@ jobs:
           test "$PARTS" = "3"
           echo "GitHub OIDC producer: PASS (assertion not persisted or exchanged)"
 
-  wif-config-readiness:
-    name: Google WIF config readiness
-    if: github.ref_name == 'feat/tutop-0.8-p0'
-    runs-on: ubuntu-latest
-    env:
-      WIF_PROVIDER: ${{ vars.TUTOP_WIF_PROVIDER }}
-      WIF_SERVICE_ACCOUNT: ${{ vars.TUTOP_WIF_SERVICE_ACCOUNT }}
-    steps:
-      - name: Report external configuration status without changing auth
+      - name: Require managed fallback credentials before dependency setup
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "${WIF_PROVIDER:-}" ] && [ -n "${WIF_SERVICE_ACCOUNT:-}" ]; then
-            echo "WIF metadata present: READY_FOR_EXCHANGE_VALIDATION"
-          else
-            echo "WIF metadata absent: BLOCKED_EXTERNAL_SETUP"
-          fi
-          echo "This workflow never removes FIREBASE_TOKEN and never switches production auth."
+          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
+            if [ -z "${!name:-}" ]; then
+              echo "DETENIDO: falta credencial gestionada ${name} en GitHub Actions." >&2
+              exit 42
+            fi
+          done
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate managed fallback readiness
+        run: node scripts/ci-auth-readiness.mjs
