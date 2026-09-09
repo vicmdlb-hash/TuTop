@@ -42,7 +42,6 @@ for (const [name, workflow] of [['october', october], ['staging', staging], ['an
 
 for (const expected of [
   'npm run check',
-  'npm run typecheck',
   'npm run build',
   'npm run v2:rules:prepare',
   'VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: "true"',
@@ -53,6 +52,9 @@ for (const expected of [
   'tests/firestore.v2.unread-aggregation.test.mjs',
   'tests/firestore.v2.review-strike-aggregation.test.mjs',
 ]) assert(october.includes(expected), `October missing ${expected}`);
+assert.equal(october.includes('npm run typecheck'), false, 'October must not run TypeScript validation twice');
+assert.equal(pkg.scripts.typecheck, 'tsc --noEmit');
+assert.equal(pkg.scripts.build, 'npm run typecheck && vite build');
 
 assert.match(staging, /actions: read/);
 assert.match(staging, /if: github\.ref_name == 'feat\/tutop-0\.8-p0'/);
@@ -119,6 +121,7 @@ for (const contract of [
 
 console.log('PASS runtime freeze manifest remains fail-closed and all cost cutovers default-off');
 console.log('PASS October, staging and Android remain manual-only');
+console.log('PASS October obtains typecheck evidence once through npm run build');
 console.log('PASS staging exports October run+SHA authority before any remote mutation');
 console.log('PASS Android binds October + staging evidence to the exact checkout SHA and reuses upstream static evidence');
 console.log('PASS public catalog/reconcile/maintenance npm mutation surfaces use exact-SHA wrappers');
