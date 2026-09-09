@@ -24,7 +24,9 @@ const metadata = Object.fromEntries(fs.readFileSync(metadataPath, 'utf8')
 const exact = [
   ['head_sha', candidate.build_commit_sha],
   ['gate_run_id', candidate.gate_run_id],
+  ['gate_head_sha', candidate.gate_commit_sha],
   ['staging_smoke_run_id', candidate.staging_smoke_run_id],
+  ['staging_smoke_head_sha', candidate.staging_smoke_commit_sha],
   ['firebase_project', candidate.staging_project],
   ['version', candidate.app_version],
   ['artifact_id', candidate.artifact_id],
@@ -43,12 +45,15 @@ for (const [field, expected] of exact) {
   if (String(metadata[field]) !== String(expected)) stop(`metadata.${field}=${metadata[field]} != candidate=${expected}`);
 }
 
-if (!/^[a-f0-9]{40}$/.test(metadata.head_sha || '')) stop('metadata.head_sha inválido');
-if (!/^[a-f0-9]{40}$/.test(metadata.build_tree_sha || '')) stop('metadata.build_tree_sha inválido');
+for (const field of ['head_sha', 'gate_head_sha', 'staging_smoke_head_sha', 'build_tree_sha']) {
+  if (!/^[a-f0-9]{40}$/.test(metadata[field] || '')) stop(`metadata.${field} inválido`);
+}
+if (metadata.gate_head_sha !== metadata.head_sha) stop('metadata gate SHA != build SHA');
+if (metadata.staging_smoke_head_sha !== metadata.head_sha) stop('metadata staging SHA != build SHA');
 if (!/^[a-f0-9]{64}$/.test(metadata.apk_sha256 || '')) stop('metadata.apk_sha256 inválido');
 if (!['true', 'false'].includes(metadata.reviews_lazy_cutover)) stop('reviews_lazy_cutover inválido');
 if (!['true', 'false'].includes(metadata.wallet_lazy_cutover)) stop('wallet_lazy_cutover inválido');
 if (!['true', 'false'].includes(metadata.favorites_visible_cutover)) stop('favorites_visible_cutover inválido');
 
-console.log('PASS Android metadata matches generated Physical QA candidate field by field');
+console.log('PASS Android metadata matches generated Physical QA candidate including gate/staging SHA bindings');
 console.log(`head=${metadata.head_sha} artifact=${metadata.artifact_id} apk_sha256=${metadata.apk_sha256}`);
