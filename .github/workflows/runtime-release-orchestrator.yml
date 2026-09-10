@@ -25,17 +25,34 @@ jobs:
       TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
       TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
     steps:
-      - name: Require managed Firebase credentials before child runners
+      - name: Resolve Firebase credential mode on self-hosted controller
         shell: bash
         run: |
           set -euo pipefail
-          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
-            if [ -z "${!name:-}" ]; then
-              echo "DETENIDO: falta credencial gestionada ${name}. No se lanzará October." >&2
-              exit 42
+          if [ -n "${FIREBASE_TOKEN:-}" ] && [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_ID:-}" ] && [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_SECRET:-}" ]; then
+            echo "TUTOP_FIREBASE_AUTH_MODE=managed_refresh_token" >> "$GITHUB_ENV"
+            echo "Firebase auth preflight: managed refresh-token credentials are present (values not printed)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if command -v gcloud >/dev/null 2>&1; then
+            ACCESS_TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || true)"
+            if [ -n "$ACCESS_TOKEN" ]; then
+              echo "::add-mask::$ACCESS_TOKEN"
+              {
+                echo "TUTOP_FIREBASE_ACCESS_TOKEN=$ACCESS_TOKEN"
+                echo "TUTOP_FIREBASE_AUTH_MODE=local_adc"
+                echo "FIREBASE_TOKEN="
+                echo "TUTOP_FIREBASE_OAUTH_CLIENT_ID="
+                echo "TUTOP_FIREBASE_OAUTH_CLIENT_SECRET="
+              } >> "$GITHUB_ENV"
+              echo "Firebase auth preflight: local Application Default Credentials are valid on the self-hosted controller." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
             fi
-          done
-          echo "✅ Managed Firebase credentials are present (values not printed)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "DETENIDO: no hay credencial Firebase utilizable. Configura los tres Secrets gestionados o ADC local con gcloud auth application-default login." >&2
+          exit 42
 
       - name: Capture exact target HEAD
         env:
@@ -57,7 +74,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          BODY="## APK readiness — 60%\n\nManaged Firebase credentials are available to the orchestrator. Target captured: \`${TARGET_REF}@${TARGET_SHA}\`. October has not been promoted yet."
+          BODY="## APK readiness — 60%\n\nFirebase credential preflight succeeded on the self-hosted controller via \`${TUTOP_FIREBASE_AUTH_MODE}\`. Target captured: \`${TARGET_REF}@${TARGET_SHA}\`. October has not been promoted yet."
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null
 
       - name: Dispatch exact-SHA release chain
