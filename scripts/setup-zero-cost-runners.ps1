@@ -63,7 +63,7 @@ function Get-WslDistros {
   if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) { return @() }
   $result = Invoke-WslQuiet -Arguments @('-l','-q')
   if ($result.Code -ne 0) { return @() }
-  $clean = $result.Output.Replace([char]0, '')
+  $clean = $result.Output.Replace([string][char]0, '')
   return @($clean -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
