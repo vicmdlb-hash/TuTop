@@ -175,17 +175,35 @@ jobs:
             echo "TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA"
           } >> "$GITHUB_ENV"
           echo "✅ Cadena same-branch/same-SHA validada para ${GITHUB_REF_NAME}@${GITHUB_SHA}: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
-      - name: Require managed staging credentials
+      - name: Resolve Android Firebase credential mode
         shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
-          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
-            if [ -z "${!name:-}" ]; then
-              echo "DETENIDO: falta credencial gestionada ${name} en GitHub Actions." >&2
-              exit 42
+          if [ -n "${FIREBASE_TOKEN:-}" ] && [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_ID:-}" ] && [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_SECRET:-}" ]; then
+            echo "TUTOP_FIREBASE_AUTH_MODE=managed_refresh_token" >> "$GITHUB_ENV"
+            echo "Managed refresh-token credentials are present (values not printed)."
+            exit 0
+          fi
+
+          if command -v gcloud >/dev/null 2>&1; then
+            ACCESS_TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || true)"
+            if [ -n "$ACCESS_TOKEN" ]; then
+              echo "::add-mask::$ACCESS_TOKEN"
+              {
+                echo "TUTOP_FIREBASE_ACCESS_TOKEN=$ACCESS_TOKEN"
+                echo "TUTOP_FIREBASE_AUTH_MODE=local_adc"
+                echo "FIREBASE_TOKEN="
+                echo "TUTOP_FIREBASE_OAUTH_CLIENT_ID="
+                echo "TUTOP_FIREBASE_OAUTH_CLIENT_SECRET="
+              } >> "$GITHUB_ENV"
+              echo "Local Application Default Credentials validated for Android staging build."
+              exit 0
             fi
-          done
+          fi
+
+          echo "DETENIDO: Android no tiene credencial Firebase utilizable. Configura los tres Secrets gestionados o ADC local en el self-hosted worker." >&2
+          exit 42
       - name: Node 22
         uses: actions/setup-node@v7
         with:
