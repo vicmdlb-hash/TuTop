@@ -7,6 +7,7 @@ permissions:
   contents: read
   actions: write
   issues: write
+  pull-requests: write
 
 concurrency:
   group: tutop-runtime-release-orchestrator
@@ -24,6 +25,7 @@ jobs:
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
       TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
+
     steps:
       - name: Resolve Firebase credential mode on self-hosted controller
         shell: bash
@@ -75,7 +77,9 @@ jobs:
         run: |
           set -euo pipefail
           BODY="## APK readiness — 60%\n\nFirebase credential preflight succeeded on the self-hosted controller via \`${TUTOP_FIREBASE_AUTH_MODE}\`. Target captured: \`${TARGET_REF}@${TARGET_SHA}\`. October has not been promoted yet."
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null
+          if ! gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null 2>&1; then
+            echo "WARNING: PR progress comment could not be posted; release gates continue because comments are non-authoritative." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Dispatch exact-SHA release chain
         env:
@@ -151,7 +155,9 @@ jobs:
             local message="$2"
             local body
             body="## APK readiness — ${percent}%\n\n${message}\n\nTarget: \`${TARGET_REF}@${TARGET_SHA}\`."
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$body" >/dev/null
+            if ! gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$body" >/dev/null 2>&1; then
+              echo "WARNING: could not post ${percent}% PR comment; continuing because comments are non-authoritative." >&2
+            fi
           }
 
           OCTOBER_RUN_ID="$(dispatch_and_wait 'october-01-validation.yml' 'October exact-SHA')"
@@ -240,7 +246,9 @@ jobs:
           Physical QA A+B remains the next gate and is not synthesized by this workflow.
           EOF
           )
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null
+          if ! gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null 2>&1; then
+            echo "WARNING: final PR comment could not be posted; verified APK evidence remains authoritative in this run." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Record blocked orchestrator result
         if: failure()
@@ -250,4 +258,4 @@ jobs:
         run: |
           set -euo pipefail
           BODY="Runtime release orchestrator stopped fail-closed for ${TARGET_REF}@${TARGET_SHA:-UNKNOWN}. APK readiness remains below 100%. Inspect orchestrator run ${GITHUB_RUN_ID}; no later gate should be promoted after a failed predecessor."
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null || true
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null 2>&1 || true
