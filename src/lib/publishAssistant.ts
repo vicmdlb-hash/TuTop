@@ -12,7 +12,7 @@ function normalizeIntent(text: string) {
 
 export function detectListingCondition(text: string): string | undefined {
   const value = normalizeIntent(text);
-  if (/\b(como nuevo|casi nuevo)\b/.test(value)) return 'Como nuevo';
+  if (/\b(como nuevos?|casi nuevos?)\b/.test(value)) return 'Como nuevo';
   if (/\b(para reparar|no funciona|no enciende|con falla|tiene falla|descompuesto)\b/.test(value)) return 'Para reparar';
   if (/\b(uso visible|desgaste|gastado|rayones|detalles de uso)\b/.test(value)) return 'Uso visible';
   if (/\b(sellado|sellada|sin usar|nuevo|nueva)\b/.test(value)) return 'Nuevo';
