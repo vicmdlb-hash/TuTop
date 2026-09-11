@@ -40,8 +40,9 @@ function Invoke-WslBashScript {
   )
   $normalized = $Script.Replace("`r`n", "`n").Replace("`r", "`n")
   $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($normalized))
-  & wsl.exe -d $Distro -u $User -- bash -lc "echo '$encoded' | base64 -d | bash"
-  return $LASTEXITCODE
+  & wsl.exe -d $Distro -u $User -- bash -lc "echo '$encoded' | base64 -d | bash" 2>&1 | Out-Host
+  $exitCode = $LASTEXITCODE
+  return [int]$exitCode
 }
 
 function Ensure-GitHubCli {
