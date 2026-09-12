@@ -57,8 +57,8 @@ assert.equal(pkg.scripts.typecheck, 'tsc --noEmit');
 assert.equal(pkg.scripts.build, 'npm run typecheck && vite build');
 
 assert.match(staging, /actions: read/);
-assert.match(staging, /if: github\.ref_name == 'feat\/tutop-0\.8-p0'/);
-assert.match(staging, /test "\$GITHUB_REF_NAME" = "feat\/tutop-0\.8-p0"/);
+assert.match(staging, /if: github\.ref_name == 'feat\/tutop-0\.9\.1-nearby-topi'/);
+assert.match(staging, /test "\$GITHUB_REF_NAME" = "feat\/tutop-0\.9\.1-nearby-topi"/);
 assert.match(staging, /october-01-validation\.yml\/runs/);
 assert.match(staging, /head_sha="\$GITHUB_SHA"/);
 assert.match(staging, /status=success/);
@@ -81,6 +81,7 @@ for (const step of [
   assert(stagingGateIndex >= 0 && index > stagingGateIndex, `${step} must occur after October same-SHA gate`);
 }
 
+assert.match(android, /if: github\.ref_name == 'feat\/tutop-0\.9\.1-nearby-topi'/);
 assert.match(android, /october-01-validation\.yml\/runs/);
 assert.match(android, /staging-v2-smoke\.yml\/runs/);
 assert.equal((android.match(/head_sha="\$GITHUB_SHA"/g) || []).length >= 2, true);
@@ -89,7 +90,9 @@ assert.match(android, /TUTOP_VALIDATED_STAGING_SHA=\$GITHUB_SHA/);
 assert.match(android, /head_sha=\$\{GITHUB_SHA\}/);
 assert.match(android, /gate_run_id=\$\{TUTOP_VALIDATED_GATE_RUN_ID\}/);
 assert.match(android, /staging_smoke_run_id=\$\{TUTOP_VALIDATED_STAGING_RUN_ID\}/);
-assert.match(android, /PHYSICAL_QA_CANDIDATE\.generated\.json/);
+assert.match(android, /PHYSICAL_QA_CANDIDATE_0\.9\.1\.generated\.json/);
+assert.match(android, /TUTOP_BETA_VERSION: 0\.9\.1-beta\.0/);
+assert.match(android, /TUTOP_ANDROID_VERSION_CODE: 90100/);
 assert.match(androidV2, /npm run build/);
 assert.match(androidV2, /lintDebug testDebugUnitTest assembleDebug/);
 for (const duplicate of ['npm run check', 'npm run typecheck', 'npm run v2:rules:prepare']) {
@@ -120,7 +123,7 @@ for (const contract of [
 ]) assert.match(check, new RegExp(contract.replaceAll('.', '\\.')));
 
 console.log('PASS runtime freeze manifest remains fail-closed and all cost cutovers default-off');
-console.log('PASS October, staging and Android remain manual-only');
+console.log('PASS October, staging and Android remain manual-only on the 0.9.1 lane');
 console.log('PASS October obtains typecheck evidence once through npm run build');
 console.log('PASS staging exports October run+SHA authority before any remote mutation');
 console.log('PASS Android binds October + staging evidence to the exact checkout SHA and reuses upstream static evidence');
