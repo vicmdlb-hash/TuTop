@@ -135,7 +135,7 @@ function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: Copilot
     if (issues.length) result.issues = issues;
   }
 
-  if (action === 'compose') result.compose = sanitizeCompose(value.compose, context);
+  if (action === 'compose') result.compose = sanitizeCompose(value.compose ?? value, context);
   const hasPayload = Boolean(result.category || result.description || result.priceSuggestion || result.issues?.length || result.compose);
   return hasPayload ? result : null;
 }
