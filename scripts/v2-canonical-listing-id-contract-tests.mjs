@@ -15,14 +15,17 @@ assert.match(prepare, /prepare-firestore-v2-rules\.mjs/);
 assert.match(prepare, /harden-canonical-v2-rules\.mjs/);
 assert.doesNotMatch(prepare, /harden-favorite-v2-rules\.mjs/);
 
+// Validate semantics rather than a historical hardener label. The canonical
+// helper must exist and the hardener must fail closed if any legacy productDoc
+// reference survives after the replacements are applied.
 assert.match(hardener, /function listingDoc\(listingId\)/);
-assert.match(hardener, /replace legacy productDoc with canonical listingDoc/);
+assert.match(hardener, /documents\/listings_v2\/\$\(listingId\)/);
+assert.match(hardener, /if \(rules\.includes\('productDoc\('\)\)/);
 assert.match(hardener, /favorites use canonical listing/);
 assert.match(hardener, /chat create uses canonical listing/);
 assert.match(hardener, /offers use canonical listing/);
 assert.match(hardener, /meetup campus uses canonical listing/);
 assert.match(hardener, /boost bids authorize against canonical listing/);
-assert.match(hardener, /if \(rules\.includes\('productDoc\('\)\)/);
 assert.match(hardener, /documents\/listings_v2\/\$\(request\.resource\.data\.product_id\)/);
 assert.match(hardener, /listingDoc\(request\.resource\.data\.product_id\)\.data\.status == 'active'/);
 assert.match(hardener, /listingDoc\(request\.resource\.data\.product_id\)\.data\.moderation_status == 'approved'/);
