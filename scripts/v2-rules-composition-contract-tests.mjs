@@ -26,7 +26,7 @@ assert.doesNotMatch(pkg.scripts['v2:rules:prepare'], /harden-favorite-v2-rules/)
 assert.match(prepare, /firebase\/firestore\.v2\.generated\.rules/);
 assert.match(prepare, /match \/listings_v2\/\{listingId\}/);
 assert.match(prepare, /match \/account_deletion_requests\/\{uid\}/);
-assert.match(prepare, /match \/audit_log\/\{auditId\}/);
+assert.match(prepare, /match \/audit_log\/\{entryId\}/);
 
 // Stage 2: canonical conversion must happen before any runtime hardener relies on listingDoc().
 assert.match(canonical, /function listingDoc\(listingId\)/);
