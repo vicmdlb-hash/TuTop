@@ -20,8 +20,8 @@
       "collectionGroup": "reviews",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "evaluado_id", "order": "ASCENDING" },
         { "fieldPath": "calificacion", "order": "ASCENDING" },
+        { "fieldPath": "evaluado_id", "order": "ASCENDING" },
         { "fieldPath": "fecha", "order": "ASCENDING" }
       ]
     },
@@ -29,17 +29,17 @@
       "collectionGroup": "favorites",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "uid", "order": "ASCENDING" },
-        { "fieldPath": "product_id", "order": "ASCENDING" }
+        { "fieldPath": "product_id", "order": "ASCENDING" },
+        { "fieldPath": "uid", "order": "ASCENDING" }
       ]
     },
     {
       "collectionGroup": "listings_v2",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "moderation_status", "order": "ASCENDING" },
         { "fieldPath": "campus_id", "order": "ASCENDING" },
+        { "fieldPath": "moderation_status", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "updated_at", "order": "DESCENDING" }
       ]
     },
@@ -47,9 +47,9 @@
       "collectionGroup": "listings_v2",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "moderation_status", "order": "ASCENDING" },
         { "fieldPath": "institution_id", "order": "ASCENDING" },
+        { "fieldPath": "moderation_status", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "updated_at", "order": "DESCENDING" }
       ]
     },
@@ -57,9 +57,9 @@
       "collectionGroup": "listings_v2",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "moderation_status", "order": "ASCENDING" },
         { "fieldPath": "city_id", "order": "ASCENDING" },
+        { "fieldPath": "moderation_status", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "updated_at", "order": "DESCENDING" }
       ]
     },
@@ -67,8 +67,8 @@
       "collectionGroup": "listings_v2",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "moderation_status", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "visibility_scope", "order": "ASCENDING" },
         { "fieldPath": "updated_at", "order": "DESCENDING" }
       ]
@@ -93,8 +93,8 @@
       "collectionGroup": "listings_v2",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "moderation_status", "order": "ASCENDING" },
         { "fieldPath": "institution_id", "order": "ASCENDING" },
+        { "fieldPath": "moderation_status", "order": "ASCENDING" },
         { "fieldPath": "updated_at", "order": "DESCENDING" }
       ]
     },
