@@ -16,9 +16,10 @@ assert.match(fixture, /assertFails\(updateDoc\(doc\(bob/);
 for (const workflow of [firestoreWorkflow, octoberWorkflow]) {
   assert.match(workflow, /^\s*workflow_dispatch:\s*$/m);
   assert.doesNotMatch(workflow, /^\s*(push|pull_request|schedule):\s*$/m);
+  assert.match(workflow, /--test-concurrency=1/);
   assert.match(workflow, /tests\/firestore\.v2\.unread-aggregation\.test\.mjs/);
 }
 
 console.log('PASS unread aggregation emulator fixture covers exact count, outsider denial and read-marker ownership');
-console.log('PASS both emulator gates remain manual-only and include unread aggregation validation');
+console.log('PASS both emulator gates remain manual-only, serial across test files, and include unread aggregation validation');
 console.log('Unread emulator gate contract: PASS');
