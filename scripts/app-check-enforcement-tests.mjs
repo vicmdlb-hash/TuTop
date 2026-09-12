@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import { validateAppCheckPhysicalEvidence } from './app-check-enforcement-readiness.mjs';
 
 const historical = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
-assert.equal(historical.physical_release_candidate, false);
+assert.equal(historical.physical_release_candidate, true);
+assert.equal(historical.candidate_status, 'active_exact_head');
+assert.equal(historical.replacement_required, false);
 const candidate = { ...historical, physical_release_candidate: true, candidate_status: 'synthetic_contract_fixture', replacement_required: false };
 
 const now = Date.parse('2026-09-07T04:30:00.000Z');
@@ -88,8 +90,8 @@ for (const [field, value, expectedError] of [
   assert(result.errors.includes(expectedError));
 }
 
-console.log('PASS obsolete repository manifest is not used as active App Check evidence authority');
-console.log('PASS App Check enforcement accepts fresh verified Android evidence only against an explicit active candidate');
+console.log('PASS historical 0.9.0 repository manifest remains the preserved App Check physical-evidence baseline');
+console.log('PASS App Check enforcement accepts fresh verified Android evidence only against an explicit candidate');
 console.log('PASS two independent A/B device records, sessions and sanitized fingerprints are required');
 console.log('PASS fake device_count, duplicate evidence, stale devices and nested raw tokens fail closed');
 console.log('App Check enforcement readiness contract: PASS');

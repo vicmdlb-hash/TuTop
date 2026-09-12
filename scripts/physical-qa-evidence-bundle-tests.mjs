@@ -5,9 +5,12 @@ import { validatePhysicalQaEvidence, loadPhysicalQaCandidate } from './physical-
 const now = Date.parse('2026-09-07T02:50:00.000Z');
 const template = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_EVIDENCE_BUNDLE_0.9.json', 'utf8'));
 const historical = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
-assert.equal(historical.physical_release_candidate, false);
-assert.equal(historical.candidate_status, 'obsolete_runtime_drift');
-assert.throws(() => loadPhysicalQaCandidate(), /PHYSICAL_QA_CANDIDATE_NOT_ACTIVE/);
+assert.equal(historical.physical_release_candidate, true);
+assert.equal(historical.candidate_status, 'active_exact_head');
+assert.equal(historical.replacement_required, false);
+const loadedHistorical = loadPhysicalQaCandidate();
+assert.equal(loadedHistorical.artifact_id, historical.artifact_id);
+assert.equal(loadedHistorical.build_commit_sha, historical.build_commit_sha);
 
 const exactSha = String(historical.build_commit_sha || '1'.repeat(40));
 const candidateManifest = {
@@ -164,7 +167,7 @@ delete missingCandidate.candidate;
 const missingCandidateResult = validatePhysicalQaEvidence(missingCandidate, now, candidateManifest);
 assert.equal(missingCandidateResult.overall, 'fail');
 
-console.log('PASS obsolete repository manifest cannot load as an active Physical QA candidate');
+console.log('PASS historical 0.9.0 repository manifest remains an active exact-head Physical QA candidate');
 console.log('PASS evidence validator uses an explicit synthetic active_exact_head candidate');
 console.log('PASS evidence bundles bind APK plus October/staging run IDs and SHAs');
 console.log('PASS sensitive, stale, wrong-runtime and wrong-candidate evidence remains fail-closed');

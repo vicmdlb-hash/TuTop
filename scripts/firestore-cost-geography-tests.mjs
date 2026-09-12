@@ -30,7 +30,8 @@ assert.doesNotMatch(feed, /loadListingMetadata\s*\(/);
 assert.doesNotMatch(feed, /listingMetadata/);
 assert.match(feed, /return Boolean\(product\.institution_id && product\.institution_id === institution\)/);
 assert.match(feed, /return Boolean\(product\.city_id && product\.city_id === city\)/);
-assert.match(feed, /Legacy migration fallback stays limited/);
+assert.match(feed, /if \(nearby !== null\) return nearby;/, 'nearby must use coarse-coordinate distance when available');
+assert.match(feed, /return sameCampus\(product, user, legacyFaculty\) \|\| sameCity\(product, user\);/, 'missing coarse coordinates may fall back only to campus/city identity');
 
 assert.match(store, /if \(!before \|\| \(before\.sin_leer \|\| 0\) === 0\) return/);
 assert.match(store, /onlineBackend\.markChatRead\(chatId\)/);
@@ -42,6 +43,7 @@ console.log('PASS nearby discovery is bounded to a cached 3x3 geo-cell candidate
 console.log('PASS nearby candidates are restored after canonical snapshot refreshes');
 console.log('PASS Feed no longer duplicates a 250-document metadata query');
 console.log('PASS institution/city browsing fails closed when canonical geography is missing');
+console.log('PASS coordinate-missing nearby fallback remains limited to campus/city identity');
 console.log('PASS read markers are skipped when a chat already has zero unread messages');
 console.log('PASS legacy runtime defaults are neutral instead of one university program');
 console.log('Firestore cost + geography contract: PASS');

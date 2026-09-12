@@ -98,8 +98,8 @@ assert.doesNotMatch(permissionBlock, /android\.permission\.CAMERA/, 'Capacitor 8
 assert.match(capabilities, /ACCESS_BACKGROUND_LOCATION/);
 assert.match(capabilities, /READ_EXTERNAL_STORAGE/);
 assert.match(capabilities, /WRITE_EXTERNAL_STORAGE/);
-assert.match(capabilities, /android:allowBackup=\\"false\\"/);
-assert.match(capabilities, /android:usesCleartextTraffic=\\"false\\"/);
+assert.match(capabilities, /android:allowBackup="false"/);
+assert.match(capabilities, /android:usesCleartextTraffic="false"/);
 assert.match(bootstrap, /android-native-capabilities\.mjs/);
 assert.match(bootstrap, /android-secure-session-plugin\.mjs/);
 assert.match(bootstrap, /android-topi-ai-plugin\.mjs/);

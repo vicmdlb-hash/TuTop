@@ -74,7 +74,7 @@ assert.match(onboarding, /session\.phone !== pending\.phone/);
 assert.match(onboarding, /updateUniversityIdentity/);
 assert.match(backendGate, /rememberPendingUniversityIdentity/);
 assert.match(backendGate, /completePendingUniversityIdentity/);
-assert.match(nativeSecurity, /0\.9\.0-beta\.0/);
+assert.match(nativeSecurity, /0\.9\.1-beta\.0/);
 assert.match(nativeSecurity, /notificationReceived/);
 assert.match(nativeSecurity, /notificationActionPerformed/);
 assert.match(nativeRouter, /intent\.chat_id/);
@@ -109,7 +109,7 @@ assert.match(smoke, /favorito real apunta a listing canónico/);
 assert.match(smoke, /autoaprobación del vendedor bloqueada/);
 assert.match(smoke, /re-aprobación devuelve listing editado al marketplace/);
 
-// Physical QA 0.9 diagnostics must remain privacy-safe and useful on a real phone.
+// Physical QA diagnostics remain privacy-safe and useful on a real phone.
 assert.match(qaTelemetry, /tutop\.physical-qa\.events\.v1/);
 assert.match(qaTelemetry, /replace\(\/\\b\\d\{10,13\}\\b\/g, '\[redacted-number\]'\)/);
 assert.match(qaTelemetry, /\[redacted-token\]/);
@@ -161,10 +161,10 @@ assert.match(releaseFreeze, /Nuevas features de marketplace no relacionadas con 
 assert.match(releaseFreeze, /0 P0 abiertos/);
 assert.match(releaseFreeze, /no activar proveedores externos|sin activar proveedores externos/i);
 
-assert.equal(pkg.version, '0.9.0-beta.0');
-assert.equal(lock.version, '0.9.0-beta.0');
-assert.equal(lock.packages?.['']?.version, '0.9.0-beta.0');
-assert.equal(project.currentBetaVersion, '0.9.0-beta.0');
+assert.equal(pkg.version, '0.9.1-beta.0');
+assert.equal(lock.version, '0.9.1-beta.0');
+assert.equal(lock.packages?.['']?.version, '0.9.1-beta.0');
+assert.equal(project.currentBetaVersion, '0.9.1-beta.0');
 
 console.log('PASS feed controls and canonical V2 marketplace authority');
 console.log('PASS shipping derives only from delivery methods and description is visibly bounded');
@@ -174,8 +174,8 @@ console.log('PASS V2 seller actions and structured offers stay canonical');
 console.log('PASS native push has receive/action routing and persistent read receipts');
 console.log('PASS account deletion has shared planner, dry-run safety and synthetic scenarios');
 console.log('PASS account recovery has provider-neutral policy without fake verification');
-console.log('PASS Physical QA 0.9 diagnostics auto-classify sanitized device evidence');
+console.log('PASS Physical QA diagnostics auto-classify sanitized device evidence');
 console.log('PASS Android Back has deterministic product/chat browser-history contract');
 console.log('PASS release freeze blocks unrelated scope expansion');
-console.log('PASS root/lock/project metadata matches TuTop 0.9 beta');
+console.log('PASS root/lock/project metadata matches TuTop 0.9.1 beta');
 console.log('Physical QA regression contract: PASS');
