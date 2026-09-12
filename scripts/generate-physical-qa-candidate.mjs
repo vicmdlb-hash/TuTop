@@ -42,9 +42,12 @@ function parseSha256File(file) {
   return match[1].toLowerCase();
 }
 
-const apkPath = path.resolve(process.env.TUTOP_APK_PATH || 'TuTop-0.9.0-beta.0-physical-qa-staging.apk');
+const version = String(process.env.TUTOP_BETA_VERSION || '0.9.1-beta.0').trim();
+if (!/^0\.9\.1-beta\.\d+$/.test(version)) stop(`versión beta 0.9.1 inválida: ${version}`);
+const artifactStem = `TuTop-${version}-physical-qa-staging`;
+const apkPath = path.resolve(process.env.TUTOP_APK_PATH || `${artifactStem}.apk`);
 const checksumPath = path.resolve(process.env.TUTOP_APK_SHA256_PATH || `${apkPath}.sha256`);
-const outputPath = path.resolve(process.env.TUTOP_CANDIDATE_OUTPUT_PATH || 'PHYSICAL_QA_CANDIDATE.generated.json');
+const outputPath = path.resolve(process.env.TUTOP_CANDIDATE_OUTPUT_PATH || 'PHYSICAL_QA_CANDIDATE_0.9.1.generated.json');
 if (!fs.existsSync(apkPath)) stop(`falta APK: ${apkPath}`);
 
 const headSha = required('GITHUB_SHA');
@@ -76,10 +79,8 @@ if (!Number.isSafeInteger(apkSizeBytes) || apkSizeBytes <= 0) stop('tamaño APK 
 
 const clientRuntimeRefs = Object.fromEntries(RUNTIME_PATHS.map((repoPath) => [repoPath, git('rev-parse', `HEAD:${repoPath}`)]));
 const buildTreeSha = git('rev-parse', 'HEAD^{tree}');
-const version = String(process.env.TUTOP_BETA_VERSION || '0.9.0-beta.0').trim();
 const stagingProject = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 if (stagingProject !== 'tutop-beta-vicmdlb-1356585881') stop(`staging project inválido: ${stagingProject}`);
-if (!/^0\.9\.0-beta\./.test(version)) stop(`versión beta inválida: ${version}`);
 
 const reviewsCutover = String(process.env.VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER || 'false') === 'true';
 const walletCutover = String(process.env.VITE_TUTOP_V2_WALLET_LAZY_CUTOVER || 'false') === 'true';
@@ -91,7 +92,7 @@ const candidate = {
   environment: 'staging',
   application_id: String(process.env.TUTOP_ANDROID_PACKAGE_NAME || 'mx.tutop.app'),
   staging_project: stagingProject,
-  artifact_name: `TuTop-0.9.0-beta.0-physical-qa-staging-${runNumber}`,
+  artifact_name: `${artifactStem}-${runNumber}`,
   artifact_id: artifactId,
   build_run_id: buildRunId,
   build_run_number: runNumber,
@@ -113,9 +114,9 @@ const candidate = {
   candidate_status: 'generated_exact_head_pending_repo_activation',
   replacement_required: false,
   generated_at: new Date().toISOString(),
-  notes: 'Generated from the exact Android Actions build after same-SHA consolidated gate and staging smoke. Gate SHA, staging SHA and build SHA are identical and recorded explicitly. This file is an immutable build artifact; repo activation requires copying these real values into docs/PHYSICAL_QA_CANDIDATE_0.9.json and rerunning the strict drift gate.',
+  notes: 'Generated from the exact TuTop 0.9.1 Android Actions build after same-SHA consolidated gate and staging smoke. This artifact is independent from the frozen 0.9.0 APK28 candidate; repo activation must use a separate docs/PHYSICAL_QA_CANDIDATE_0.9.1.json manifest.',
 };
 
 fs.writeFileSync(outputPath, `${JSON.stringify(candidate, null, 2)}\n`);
-console.log(`PASS generated Physical QA candidate artifact: ${outputPath}`);
+console.log(`PASS generated TuTop 0.9.1 Physical QA candidate artifact: ${outputPath}`);
 console.log(`head=${headSha} artifact=${artifactId} run=${buildRunId} apk_sha256=${apkSha256} size=${apkSizeBytes}`);
