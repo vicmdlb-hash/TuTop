@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const read = (file) => fs.readFileSync(file, 'utf8');
-const manifest = JSON.parse(read('docs/RUNTIME_FREEZE_CANDIDATE_0.9.json'));
+const manifest = JSON.parse(read('docs/RUNTIME_FREEZE_CANDIDATE_0.9.1.json'));
 const pkg = JSON.parse(read('package.json'));
 const october = read('.github/workflows/october-01-validation.yml');
 const staging = read('.github/workflows/staging-v2-smoke.yml');
@@ -12,11 +12,17 @@ const check = read('scripts/check.mjs');
 const env = read('.env.example');
 
 assert.equal(manifest.schema, 'tutop.runtime-freeze-candidate.v1');
+assert.equal(manifest.app_version, '0.9.1-beta.0');
+assert.equal(manifest.branch, 'feat/tutop-0.9.1-nearby-topi');
 assert.equal(manifest.status, 'runtime_freeze_candidate');
 assert.equal(manifest.runtime_validated, false);
 assert.equal(manifest.feature_freeze, true);
 assert.equal(manifest.required_same_sha_chain, true);
 assert.equal(manifest.current_physical_qa_candidate, null);
+assert.equal(manifest.release_identity.version_code, 90100);
+assert.equal(manifest.release_identity.historical_0_9_0_candidate_reusable, false);
+assert.equal(manifest.topi_remote_default, false);
+assert.equal(manifest.historical_0_9_0_candidate.artifact_id, 10292454237);
 assert.deepEqual(manifest.cost_cutovers_default, {
   reviews_lazy: false,
   wallet_lazy: false,
@@ -27,9 +33,9 @@ assert.deepEqual(manifest.required_promotion_sequence, [
   'staging_v2_smoke_same_sha_green',
   'android_v2_same_sha_build',
   'apk_sha256_and_metadata',
-  'generated_candidate_exact_head_verification',
-  'guarded_candidate_activation',
-  'strict_candidate_drift_green',
+  'generated_candidate_0_9_1_exact_head_verification',
+  'guarded_candidate_0_9_1_activation',
+  'strict_candidate_0_9_1_drift_green',
   'physical_qa_A_and_B',
 ]);
 
@@ -38,6 +44,7 @@ for (const [name, workflow] of [['october', october], ['staging', staging], ['an
   assert.doesNotMatch(workflow, /^\s*schedule:/m);
   assert.doesNotMatch(workflow, /^\s*push:/m);
   assert.doesNotMatch(workflow, /^\s*pull_request:/m);
+  assert.match(workflow, /feat\/tutop-0\.9\.1-nearby-topi/);
 }
 
 for (const expected of [
@@ -47,12 +54,14 @@ for (const expected of [
   'VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: "true"',
   'VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: "true"',
   'VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: "true"',
+  'VITE_TUTOP_TOPI_REMOTE_ENABLED: "false"',
   'tests/firestore.v2.transaction-lock.test.mjs',
   'tests/firestore.v2.favorite-membership.test.mjs',
   'tests/firestore.v2.unread-aggregation.test.mjs',
   'tests/firestore.v2.review-strike-aggregation.test.mjs',
 ]) assert(october.includes(expected), `October missing ${expected}`);
-assert.equal(october.includes('npm run typecheck'), false, 'October must not run TypeScript validation twice');
+assert.equal(october.includes('npm run typecheck'), false, 'October must obtain TypeScript evidence once through npm run build');
+assert.equal(pkg.version, '0.9.1-beta.0');
 assert.equal(pkg.scripts.typecheck, 'tsc --noEmit');
 assert.equal(pkg.scripts.build, 'npm run typecheck && vite build');
 
@@ -95,8 +104,8 @@ assert.match(android, /TUTOP_BETA_VERSION: 0\.9\.1-beta\.0/);
 assert.match(android, /TUTOP_ANDROID_VERSION_CODE: 90100/);
 assert.match(androidV2, /npm run build/);
 assert.match(androidV2, /lintDebug testDebugUnitTest assembleDebug/);
-for (const duplicate of ['npm run check', 'npm run typecheck', 'npm run v2:rules:prepare']) {
-  assert.equal(androidV2.includes(duplicate), false, `Android V2 must reuse October same-SHA evidence instead of repeating ${duplicate}`);
+for (const duplicate of ['npm run check', 'npm run github:ready', 'npm run beta:ready', 'npm run v2:staging:readiness:test', 'npm run typecheck', 'npm run v2:rules:prepare']) {
+  assert.equal(androidV2.includes(duplicate), false, `Android 0.9.1 must reuse October same-SHA evidence instead of repeating ${duplicate}`);
 }
 
 assert.equal(pkg.scripts['v2:catalog:seed'], 'node scripts/gated-v2-catalog-seed.mjs');
@@ -107,6 +116,7 @@ for (const line of [
   'VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER=false',
   'VITE_TUTOP_V2_WALLET_LAZY_CUTOVER=false',
   'VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER=false',
+  'VITE_TUTOP_TOPI_REMOTE_ENABLED=false',
 ]) assert.match(env, new RegExp(line));
 
 for (const contract of [
@@ -117,16 +127,16 @@ for (const contract of [
   'v2-terminal-state-authority-tests.mjs',
   'visible-favorites-cutover-tests.mjs',
   'physical-qa-candidate-generation-tests.mjs',
+  'release-091-contract-tests.mjs',
   'runtime-freeze-promotion-contract-tests.mjs',
   'secondary-workflow-freeze-contract-tests.mjs',
   'staging-mutation-surface-contract-tests.mjs',
 ]) assert.match(check, new RegExp(contract.replaceAll('.', '\\.')));
 
-console.log('PASS runtime freeze manifest remains fail-closed and all cost cutovers default-off');
-console.log('PASS October, staging and Android remain manual-only on the 0.9.1 lane');
-console.log('PASS October obtains typecheck evidence once through npm run build');
+console.log('PASS TuTop 0.9.1 runtime freeze manifest is independent from historical APK28');
+console.log('PASS October, staging and Android remain manual-only and exact-branch bound');
+console.log('PASS October owns static/typecheck/Rules/emulator evidence once per SHA');
 console.log('PASS staging exports October run+SHA authority before any remote mutation');
-console.log('PASS Android binds October + staging evidence to the exact checkout SHA and reuses upstream static evidence');
-console.log('PASS public catalog/reconcile/maintenance npm mutation surfaces use exact-SHA wrappers');
-console.log('PASS direct Spark deploy remains blocked during runtime freeze');
-console.log('Runtime freeze promotion contract: PASS');
+console.log('PASS Android binds October + staging to exact SHA and does not repeat upstream static gates');
+console.log('PASS 0.9.1 candidate identity/version are isolated from 0.9.0');
+console.log('Runtime freeze promotion contract 0.9.1: PASS');
