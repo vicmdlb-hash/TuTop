@@ -14,6 +14,7 @@ import WalletView from './components/WalletView';
 import Inbox from './components/Inbox';
 import Profile from './components/Profile';
 import AppearanceSettings from './components/AppearanceSettings';
+import PermissionSettings from './components/PermissionSettings';
 import ProductDetail from './components/ProductDetail';
 import OfflineBanner from './components/OfflineBanner';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -84,7 +85,7 @@ function MobileApp() {
     bot: v2 ? <NationalPublishScreen /> : <Chatbot />,
     wallet: <WalletView />,
     inbox: <Inbox />,
-    profile: <><Profile /><AppearanceSettings /></>,
+    profile: <><Profile /><AppearanceSettings /><PermissionSettings /></>,
   };
 
   return (
