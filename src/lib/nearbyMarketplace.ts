@@ -9,6 +9,7 @@ export type ApproxLocation = {
 };
 
 const LOCATION_KEY = 'tutop.approx-location.v1';
+export const NEARBY_LOCATION_EVENT = 'tutop:approx-location';
 export const NEARBY_RADIUS_OPTIONS = [5, 10, 25, 50] as const;
 const GEO_CELL_DEGREES = 1;
 
@@ -51,6 +52,7 @@ export function getCachedApproxLocation(maxAgeMs = 6 * 60 * 60_000): ApproxLocat
 
 export function saveApproxLocation(location: ApproxLocation) {
   try { localStorage.setItem(LOCATION_KEY, JSON.stringify(location)); } catch { /* optional cache */ }
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ApproxLocation>(NEARBY_LOCATION_EVENT, { detail: location }));
 }
 
 export function requestApproxLocation(options: { timeoutMs?: number; maximumAgeMs?: number } = {}) {
