@@ -1,5 +1,5 @@
 import { FirebaseRestClient, type AuthSession } from './firebaseRest';
-import { isNativeSecureSessionRuntime, persistNativeSessionRaw, volatileSessionStorage } from './nativeSecureSession';
+import { isNativeSecureSessionRuntime, markNativeSignedOut, persistNativeSessionRaw, volatileSessionStorage } from './nativeSecureSession';
 
 const LEGACY_SESSION_KEY = 'tutop.firebase.session.v1';
 const proto = FirebaseRestClient.prototype as any;
@@ -33,10 +33,14 @@ if (!proto.__tutopNativeSecureSessionInstalled) {
     const storage = volatileSessionStorage();
     if (!key) return;
     if (session) {
+      markNativeSignedOut(key, false);
       const raw = JSON.stringify(session);
       storage.setItem(key, raw);
       void persistNativeSessionRaw(key, raw).catch(() => undefined);
     } else {
+      // Tombstone is synchronous and non-sensitive, so a killed process cannot
+      // resurrect a stale encrypted session before plugin.remove() completes.
+      markNativeSignedOut(key, true);
       storage.removeItem(key);
       void persistNativeSessionRaw(key, null).catch(() => undefined);
     }
@@ -48,5 +52,6 @@ export const NATIVE_SECURE_SESSION_BRIDGE = {
   native_local_storage_tokens: false,
   process_session_storage_only: true,
   legacy_native_session_migrated_before_app_import: true,
+  sign_out_tombstone_fail_closed: true,
   web_behavior_unchanged: true,
 } as const;
