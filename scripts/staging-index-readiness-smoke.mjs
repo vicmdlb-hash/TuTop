@@ -134,9 +134,10 @@ async function runProbe(probe) {
   const text = await response.text();
   if (response.ok) return;
   const detail = `${response.status}: ${text.slice(0, 1200)}`;
-  const transientIndexState = /index/i.test(detail) && /(building|being built|not ready|cannot be used yet)/i.test(detail);
+  const explicitBuildingState = /index/i.test(detail) && /(building|being built|not ready|cannot be used yet)/i.test(detail);
+  const freshlyDeployedMissingState = /FAILED_PRECONDITION/i.test(detail) && /query requires an index/i.test(detail);
   const error = new Error(`${probe.name}: ${detail}`);
-  error.transientIndexState = transientIndexState;
+  error.transientIndexState = explicitBuildingState || freshlyDeployedMissingState;
   throw error;
 }
 
