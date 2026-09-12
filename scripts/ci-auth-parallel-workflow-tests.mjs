@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 const workflow = fs.readFileSync('.github/workflows/ci-auth-parallel-validation.yml', 'utf8');
 assert.match(workflow, /workflow_dispatch:/);
 assert.match(workflow, /id-token: write/);
-assert.match(workflow, /if: github\.ref_name == 'feat\/tutop-0\.8-p0'/);
+assert.match(workflow, /if: github\.ref_name == 'feat\/tutop-0\.9\.1-nearby-topi'/);
 assert.equal((workflow.match(/runs-on: ubuntu-latest/g) || []).length, 1, 'CI auth diagnostics must use one runner');
 assert.match(workflow, /cancel-in-progress: true/);
 assert.match(workflow, /FIREBASE_TOKEN: \$\{\{ secrets\.FIREBASE_TOKEN \}\}/);
@@ -31,7 +31,7 @@ assert(npmCi > credentialGate, 'managed credential preflight must precede npm ci
 assert.doesNotMatch(workflow, /firebase deploy|gcloud auth|google-github-actions\/auth/);
 assert.doesNotMatch(workflow, /upload-artifact|gh release create/);
 assert.doesNotMatch(workflow, /on:\s*\n\s*push:/);
-console.log('PASS CI auth shadow validation is manual-only and branch-scoped');
+console.log('PASS CI auth shadow validation is manual-only and TuTop 0.9.1 branch-scoped');
 console.log('PASS CI auth diagnostics use one runner instead of three');
 console.log('PASS managed credential preflight occurs before checkout/setup-node/npm ci');
 console.log('PASS refresh-token fallback remains present but requires managed OAuth client credentials');
