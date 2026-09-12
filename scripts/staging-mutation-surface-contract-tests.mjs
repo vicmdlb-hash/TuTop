@@ -34,7 +34,7 @@ const packageJson = JSON.parse(read('package.json'));
 const project = JSON.parse(read('config/project.json'));
 
 assert.match(guard, /TUTOP_V2_STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881'/);
-assert.match(guard, /TUTOP_V2_FREEZE_BRANCH = 'feat\/tutop-0\.8-p0'/);
+assert.match(guard, /TUTOP_V2_FREEZE_BRANCH = 'feat\/tutop-0\.9\.1-nearby-topi'/);
 assert.match(guard, /process\.env\.GITHUB_ACTIONS !== 'true'/);
 assert.match(guard, /invalid_or_missing_GITHUB_SHA/);
 assert.match(guard, /TUTOP_VALIDATED_GATE_RUN_ID/);
@@ -185,7 +185,7 @@ assert.match(firebaseAuth, /TUTOP_FIREBASE_OAUTH_CLIENT_SECRET/);
 assert.doesNotMatch(firebaseAuth, /const FIREBASE_OAUTH_CLIENT_ID\s*=\s*['"][^'"]+['"]/);
 assert.doesNotMatch(firebaseAuth, /const FIREBASE_OAUTH_CLIENT_SECRET\s*=\s*['"][^'"]+['"]/);
 
-console.log('PASS remote staging entrypoints require exact project, branch, GitHub Actions and October SHA binding');
+console.log('PASS remote staging entrypoints require exact project, TuTop 0.9.1 branch, GitHub Actions and October SHA binding');
 console.log('PASS real two-user E2E is independently pinned to the exact staging project with no alternate-project escape hatch');
 console.log('PASS Firestore service enablement is covered by the same central freeze guard');
 console.log('PASS staging deploy must prove real read-only composite-index readiness before catalog/E2E');
