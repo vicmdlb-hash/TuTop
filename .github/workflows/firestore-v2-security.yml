@@ -13,7 +13,7 @@ concurrency:
 jobs:
   firestore-v2-security:
     name: Firestore V2 emulator security
-    if: github.ref_name == 'feat/tutop-0.8-p0'
+    if: github.ref_name == 'feat/tutop-0.9.1-nearby-topi'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
