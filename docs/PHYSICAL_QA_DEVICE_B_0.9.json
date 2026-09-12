@@ -3,12 +3,16 @@
   "app_version": "0.9.0-beta.0",
   "environment": "staging",
   "candidate": {
-    "artifact_name": "TuTop-0.9.0-beta.0-physical-qa-staging-20",
-    "artifact_id": 10002986519,
-    "build_run_id": 34078588228,
-    "build_commit_sha": "43326a9633fd841f95b8ea8f61af5699cc2c9383",
-    "build_tree_sha": "d1d90343806871479d1685783d1c1e5db1b5c341",
-    "apk_sha256": "57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493"
+    "artifact_name": "TuTop-0.9.0-beta.0-physical-qa-staging-28",
+    "artifact_id": 10292454237,
+    "build_run_id": 34677397609,
+    "build_commit_sha": "b3efd2fc3b6236206f6f209a0c65c7420f1b4b90",
+    "build_tree_sha": "a42bfcedf7eb2ecefd0e84f63c4ae82d077cbbd1",
+    "apk_sha256": "2131007fb944b144d85eb8c5deb9ad80f93bd20c1515b7793f89278cd1a9f7e3",
+    "gate_run_id": 34677058300,
+    "gate_commit_sha": "b3efd2fc3b6236206f6f209a0c65c7420f1b4b90",
+    "staging_smoke_run_id": 34677242862,
+    "staging_smoke_commit_sha": "b3efd2fc3b6236206f6f209a0c65c7420f1b4b90"
   },
   "evidence_session_id": "PENDIENTE-DEVICE-B",
   "evidence_started_at": "PENDIENTE-ISO8601",
@@ -43,9 +47,21 @@
   "fcm_fixture_report": null,
   "app_check_evidence": null,
   "screenshots": [
-    { "case": "keyboard", "captured_at": "PENDIENTE-ISO8601", "sha256": "PENDIENTE-SHA256" },
-    { "case": "safe_areas", "captured_at": "PENDIENTE-ISO8601", "sha256": "PENDIENTE-SHA256" },
-    { "case": "rotation", "captured_at": "PENDIENTE-ISO8601", "sha256": "PENDIENTE-SHA256" }
+    {
+      "case": "keyboard",
+      "captured_at": "PENDIENTE-ISO8601",
+      "sha256": "PENDIENTE-SHA256"
+    },
+    {
+      "case": "safe_areas",
+      "captured_at": "PENDIENTE-ISO8601",
+      "sha256": "PENDIENTE-SHA256"
+    },
+    {
+      "case": "rotation",
+      "captured_at": "PENDIENTE-ISO8601",
+      "sha256": "PENDIENTE-SHA256"
+    }
   ],
-  "notes": "HISTÓRICO / NO EJECUTAR: este template sigue ligado a APK20 obsoleta sólo para trazabilidad. Debe regenerarse con rebind-physical-qa-templates.mjs después de activar un nuevo candidato exact-head. No contiene evidencia física real."
+  "notes": "Template Device B regenerado desde candidato exact-head activo. Todos los campos de evidencia permanecen pendientes y deben completarse sólo con observación física real."
 }
