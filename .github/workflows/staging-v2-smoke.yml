@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   smoke:
-    if: github.ref_name == 'feat/tutop-0.8-p0'
+    if: github.ref_name == 'feat/tutop-0.9.1-nearby-topi'
     runs-on: [self-hosted, linux, x64, tutop-zero-cost-worker]
     timeout-minutes: 30
     env:
@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
+          test "$GITHUB_REF_NAME" = "feat/tutop-0.9.1-nearby-topi"
           GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
             -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
             --jq '.workflow_runs[0].id // empty')"
