@@ -149,7 +149,7 @@ jobs:
             local percent="$1"
             local text="$2"
             gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" \
-              -f body="## TuTop 0.9.1 beta closeout — ${percent}%\n\n${text}\n\nExact target: \`${TARGET_REF}@${TARGET_SHA}\`." >/dev/null
+              -f body="## TuTop 0.9.1 beta closeout — ${percent}%\n\n${text}\n\nExact target: \`${TARGET_REF}@${TARGET_SHA}\`." >/dev/null || true
           }
 
           OCTOBER_RUN_ID="$(dispatch_and_wait 'october-01-validation.yml' 'October exact-SHA')"
@@ -234,10 +234,10 @@ jobs:
           - versionCode: \`90100\`
           - cutovers: reviews=false, wallet=false, favorites=false
 
-          This is **APK readiness**, not production release. Physical device QA and Firebase AI generateContent runtime proof remain separate evidence gates.
+          This is **APK readiness**, not production release. Physical device QA remains the final external evidence gate.
           EOF
           )
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null || true
 
       - name: Record fail-closed stop on PR 8
         if: failure()
