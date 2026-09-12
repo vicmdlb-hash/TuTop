@@ -135,7 +135,6 @@ export function validateCanonicalListingPolicy(listing: CanonicalListingV2, cate
   if (missing.length) throw new Error(`RESTRICTED_FLOW_MISSING:${missing.join(',')}`);
   const exposed = requirements.forbiddenPublic.filter((key) => hasValue(listing.attributes[key]));
   if (exposed.length) throw new Error(`PRIVATE_FIELD_EXPOSED:${exposed.join(',')}`);
-  if (listing.visibility_scope === 'national' && !listing.shipping_available) throw new Error('NATIONAL_SHIPPING_REQUIRED');
   if (listing.status === 'active' && !listing.published_at) throw new Error('PUBLISHED_AT_REQUIRED');
   return policy;
 }
