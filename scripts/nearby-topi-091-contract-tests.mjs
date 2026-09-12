@@ -106,7 +106,7 @@ assert.match(bootstrap, /android-topi-ai-plugin\.mjs/);
 
 assert.match(appIcon, />TuTop<\/text>/, 'app icon must be TuTop branding, not the mascot');
 assert.match(appIcon, /6D28D9|8B5CF6|4B2EDB/);
-assert.match(adaptiveIcon, /8B5CF6/);
+assert.match(adaptiveIcon, /6D28D9|8B5CF6|4B2EDB/, 'adaptive icon must stay inside the approved TuTop purple palette');
 assert.match(splash, /Tu comunidad, más cerca/);
 assert.match(androidAssets, /tutop-app-icon\.svg/);
 assert.match(androidAssets, /tutop-adaptive-foreground\.svg/);
