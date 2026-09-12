@@ -1,0 +1,120 @@
+{
+  "schema": "tutop.runtime-freeze-candidate.v1",
+  "app_version": "0.9.1-beta.0",
+  "branch": "feat/tutop-0.9.1-nearby-topi",
+  "base_branch": "feat/tutop-0.8-p0",
+  "base_sha": "e49f6d6ad0e87d750e8295db57fad8c353ccfd1c",
+  "status": "runtime_freeze_candidate",
+  "runtime_validated": false,
+  "head_binding": "resolve_at_gate_from_GITHUB_SHA",
+  "feature_freeze": true,
+  "release_identity": {
+    "package": "mx.tutop.app",
+    "version_name": "0.9.1-beta.0",
+    "version_code": 90100,
+    "staging_project": "tutop-beta-vicmdlb-1356585881",
+    "historical_0_9_0_candidate_reusable": false,
+    "candidate_manifest": "docs/PHYSICAL_QA_CANDIDATE_0.9.1.json"
+  },
+  "included_0_9_1_scope": [
+    "nearby_marketplace_5_10_25_50_km",
+    "approximate_location_privacy",
+    "bounded_geo_cell_discovery",
+    "no_tutop_shipping_requirement",
+    "camera_microphone_location_permissions",
+    "native_keystore_session",
+    "topi_local_first_remote_optional",
+    "topi_sanitized_compose",
+    "topi_knitted_mole_T_beanie_branding",
+    "white_purple_light_theme",
+    "black_purple_dark_theme",
+    "system_theme_option"
+  ],
+  "allowed_pre_validation_changes": [
+    "P0_or_P1_bug_fix",
+    "security_fix",
+    "integration_fix",
+    "cost_guard",
+    "QA_or_release_hardening",
+    "documentation_that_does_not_change_runtime_behavior"
+  ],
+  "forbidden_without_explicit_authorization": [
+    "merge_main",
+    "production_deploy",
+    "billing_enablement",
+    "play_store_release",
+    "sms_or_identity_platform_enablement",
+    "app_check_enforcement",
+    "physical_qa_candidate_claim_without_exact_head_build"
+  ],
+  "cost_cutovers_default": {
+    "reviews_lazy": false,
+    "wallet_lazy": false,
+    "favorites_visible": false
+  },
+  "topi_remote_default": false,
+  "required_promotion_sequence": [
+    "october_01_validation_same_sha_green",
+    "staging_v2_smoke_same_sha_green",
+    "android_v2_same_sha_build",
+    "apk_sha256_and_metadata",
+    "generated_candidate_0_9_1_exact_head_verification",
+    "guarded_candidate_0_9_1_activation",
+    "strict_candidate_0_9_1_drift_green",
+    "physical_qa_A_and_B"
+  ],
+  "required_october_evidence": [
+    "npm_run_check",
+    "github_readiness",
+    "beta_readiness",
+    "v2_catalog_plan",
+    "v2_staging_readiness",
+    "typecheck",
+    "web_build_with_all_three_cutovers_compiled",
+    "v2_rules_prepare",
+    "firestore_emulator_security_suite"
+  ],
+  "required_same_sha_chain": true,
+  "staging_mutation_surface": {
+    "exact_project": "tutop-beta-vicmdlb-1356585881",
+    "exact_branch": "feat/tutop-0.9.1-nearby-topi",
+    "requires_github_actions": true,
+    "requires_github_sha": true,
+    "requires_october_gate_run_id": true,
+    "requires_october_gate_sha_equal_github_sha": true,
+    "trusted_apply_requires_staging_run_id": true,
+    "trusted_apply_requires_staging_sha_equal_github_sha": true,
+    "direct_spark_deploy": "blocked",
+    "app_check_modes_during_freeze": ["OFF", "UNENFORCED"],
+    "app_check_enforced": false,
+    "google_play_internal_sharing": false,
+    "production_override_envs_supported_by_guarded_entrypoints": false,
+    "central_guard": "scripts/staging-freeze-guard.mjs"
+  },
+  "secondary_workflow_policy": {
+    "diagnostic_manual_only": [
+      "quality.yml",
+      "firestore-v2-security.yml",
+      "ci-auth-parallel-validation.yml"
+    ],
+    "trusted_staging_mutation": {
+      "workflow": "v2-trusted-maintenance.yml",
+      "manual_only": true,
+      "requires_october_same_sha_green": true,
+      "requires_staging_same_sha_green": true,
+      "requires_exact_sha_wrapper": true
+    },
+    "quarantined_historical_workflows": [
+      "one-shot-085-hardened.yml",
+      "provision-firebase-staging-v2.yml"
+    ]
+  },
+  "historical_0_9_0_candidate": {
+    "manifest": "docs/PHYSICAL_QA_CANDIDATE_0.9.json",
+    "artifact_id": 10292454237,
+    "apk_sha256": "2131007fb944b144d85eb8c5deb9ad80f93bd20c1515b7793f89278cd1a9f7e3",
+    "status": "preserved_history_not_0_9_1_authority"
+  },
+  "current_physical_qa_candidate": null,
+  "notes": "TuTop 0.9.1 has an independent exact-SHA promotion chain. The certified 0.9.0 APK28 remains immutable historical evidence and is never reused as 0.9.1 runtime authority."
+}
