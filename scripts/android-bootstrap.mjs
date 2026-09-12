@@ -43,6 +43,7 @@ if (!fs.existsSync(path.join(root, 'android'))) run('npx', ['cap', 'add', 'andro
 run('npx', ['cap', 'sync', 'android']);
 run('node', ['scripts/android-assets.mjs']);
 run('node', ['scripts/android-native-capabilities.mjs']);
+run('node', ['scripts/android-secure-session-plugin.mjs']);
 
 const variables = path.join(root, 'android/variables.gradle');
 if (fs.existsSync(variables)) {
