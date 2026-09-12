@@ -3,6 +3,7 @@ import { getCachedApproxLocation, nearbyGeoCells, NEARBY_LOCATION_EVENT, type Ap
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { useAppStore } from '../store/useAppStore';
 import type { Product } from '../types';
+import { V2_LISTINGS_BASE_HYDRATED_EVENT } from './V2ListingsHydrator';
 
 function timestamp(product: Product) {
   const value = Date.parse(product.updated_at || product.fecha_creacion || '');
@@ -37,17 +38,23 @@ export default function V2NearbyListingsHydrator() {
       }
     };
 
-    const cached = getCachedApproxLocation();
-    if (cached) void hydrate(cached);
+    const hydrateCached = () => {
+      const cached = getCachedApproxLocation();
+      if (cached) void hydrate(cached);
+    };
+    hydrateCached();
+
     const onLocation = (event: Event) => {
       const location = (event as CustomEvent<ApproxLocation>).detail;
       if (location) void hydrate(location);
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
+    window.addEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, hydrateCached);
     return () => {
       active = false;
       requestSerial += 1;
       window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
+      window.removeEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, hydrateCached);
     };
   }, []);
 
