@@ -34,8 +34,14 @@ const pkg = JSON.parse(read('package.json'));
 const project = JSON.parse(read('config/project.json'));
 const freeze = JSON.parse(read('docs/RUNTIME_FREEZE_CANDIDATE_0.9.json'));
 
-for (const marker of ['npm ci', 'npm run check', 'npm run beta:ready', 'assembleDebug', 'actions/upload-artifact']) {
+// Android 0.9.1 deliberately reuses same-SHA October evidence instead of
+// repeating npm run check / beta:ready. It still performs the real web build,
+// native build/tests and artifact upload on the exact validated SHA.
+for (const marker of ['npm ci', 'npm run build', 'assembleDebug', 'actions/upload-artifact']) {
   if (!android.includes(marker)) errors.push(`Workflow Android no contiene: ${marker}`);
+}
+if (android.includes('npm run check') || android.includes('npm run beta:ready')) {
+  errors.push('Android no debe repetir check/beta:ready; debe reutilizar evidencia October same-SHA.');
 }
 for (const marker of ['npm ci', 'npm run check', 'npm run build']) {
   if (!quality.includes(marker)) errors.push(`Workflow quality no contiene: ${marker}`);
