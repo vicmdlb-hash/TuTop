@@ -15,6 +15,7 @@ const steps = [
   [process.execPath, ['scripts/actions-budget-policy-tests.mjs']],
   [process.execPath, ['scripts/local-topi-favorites-tests.mjs']],
   [process.execPath, ['scripts/nearby-topi-091-contract-tests.mjs']],
+  [process.execPath, ['scripts/topi-consumer-support-091-contract-tests.mjs']],
   [process.execPath, ['scripts/release-091-contract-tests.mjs']],
   [process.execPath, ['scripts/firestore-cost-geography-tests.mjs']],
   [process.execPath, ['scripts/seller-profile-cache-tests.mjs']],
