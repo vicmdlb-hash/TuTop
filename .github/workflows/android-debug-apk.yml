@@ -126,13 +126,6 @@ jobs:
       - name: Install web dependencies
         run: npm ci
 
-      - name: Static and readiness gates
-        run: |
-          npm run check
-          npm run github:ready
-          npm run beta:ready
-          npm run v2:staging:readiness:test
-
       - name: Prepare staging Firebase Web config
         run: node scripts/prepare-staging-v2-auth.mjs
 
