@@ -32,6 +32,8 @@ for (const permission of ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'CAM
 assert.match(capabilities, /ACCESS_BACKGROUND_LOCATION/);
 assert.match(capabilities, /READ_EXTERNAL_STORAGE/);
 assert.match(capabilities, /WRITE_EXTERNAL_STORAGE/);
+assert.match(capabilities, /android:allowBackup=\\"false\\"/);
+assert.match(capabilities, /android:usesCleartextTraffic=\\"false\\"/);
 assert.match(bootstrap, /android-native-capabilities\.mjs/);
 
 assert.match(pkg.scripts['v2:rules:prepare'], /harden-nearby-v2-rules\.mjs/);
