@@ -7,13 +7,14 @@ import { nationalFieldsFor, normalizeNationalAttributes } from '../lib/nationalL
 import type { CanonicalListingV2, ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import { smartPriceFromTuTop } from '../lib/smartPricing';
 import { startTopiDictation } from '../lib/topiVoice';
-import { cleanTitle, detectCategory, extractPrice, improveDescription, isForbiddenProductText, MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
-import { detectDeliveryIntent, detectListingCondition, detectNegotiableIntent, detectVisibilityIntent } from '../lib/publishAssistant';
+import { isForbiddenProductText, MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
 import { defaultScopeForCategory, identityFor, safeMeetingPointsFor, VISIBILITY_SCOPES } from '../lib/universityNetwork';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
+import { askTopi } from '../services/assistantProvider';
 import { nationalBackend } from '../services/nationalBackend';
 import { useAppStore } from '../store/useAppStore';
 import type { ListingVisibilityScope, Product, ProductCategory } from '../types';
+import TopiMascot from './TopiMascot';
 
 const FALLBACK_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="#111827"/><text x="450" y="310" text-anchor="middle" fill="#c4b5fd" font-size="42" font-family="Arial">TuTop</text></svg>')}`;
 const DELIVERY: Array<{ id: ListingDeliveryMethod; label: string }> = [
@@ -44,6 +45,8 @@ export default function NationalPublishScreen() {
   const [attributes, setAttributes] = useState<Record<string, string | number | boolean>>({});
   const [images, setImages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [topiBusy, setTopiBusy] = useState(false);
+  const [topiSource, setTopiSource] = useState<'local' | 'topi-endpoint' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening'>('idle');
   const [approxLocation, setApproxLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
@@ -84,40 +87,52 @@ export default function NationalPublishScreen() {
   }, [category, user.id, user.nombre, user.facultad, title, description, price, normalizedAttributes, institutionId, campusId, cityId, scope]);
   const pricing = useMemo(() => pricingTarget ? smartPriceFromTuTop(pricingTarget, products) : null, [pricingTarget, products]);
 
-  const applyTopi = () => {
+  const applyTopi = async () => {
     const text = assistantText.trim();
     if (text.length < 3) return setMessage('Cuéntale a Topi qué quieres vender en una frase.');
     if (isForbiddenProductText(text)) return setMessage('Ese tipo de artículo o servicio no está permitido en TuTop. No se creó ningún borrador.');
 
-    const inferredCategory = category || detectCategory(text) || '';
-    const extractedPrice = extractPrice(text);
-    const inferredPrice = price || (extractedPrice && extractedPrice > 0 ? String(extractedPrice) : '');
-    const inferredTitle = title || cleanTitle(text) || text.slice(0, 90);
-    const inferredCondition = detectListingCondition(text);
-    const inferredNegotiable = detectNegotiableIntent(text);
-    const explicitScope = detectVisibilityIntent(text);
-    const inferredScope = explicitScope || (inferredCategory ? defaultScopeForCategory(inferredCategory) : scope);
-    const inferredDelivery = detectDeliveryIntent(text).filter((method) => method !== 'shipping');
+    setTopiBusy(true);
+    setMessage(null);
+    try {
+      const result = await askTopi('compose', {
+        prompt: text,
+        products,
+        draft: {
+          titulo: title || undefined,
+          descripcion: description || undefined,
+          precio_mxn: hasValidPrice ? parsedPrice : undefined,
+          categoria: category || undefined,
+          precio_negociable: negotiable,
+          visibility_scope: scope,
+        },
+      });
+      const suggestion = result.compose;
+      if (!suggestion) {
+        setMessage('Topi no encontró datos seguros para completar. Puedes seguir manualmente.');
+        return;
+      }
 
-    if (inferredCategory && inferredCategory !== category) {
-      setCategory(inferredCategory);
-      setAttributes({});
-    }
-    setTitle(inferredTitle);
-    if (inferredPrice) setPrice(inferredPrice);
-    if (inferredCondition) setCondition(inferredCondition);
-    if (inferredNegotiable !== undefined) setNegotiable(inferredNegotiable);
-    setScope(inferredScope);
-    if (inferredDelivery.length) setDeliveryMethods(inferredDelivery);
-    if (!description.trim()) {
-      const generated = text.length > inferredTitle.length + 8
-        ? text.slice(0, 900)
-        : improveDescription({ titulo: inferredTitle, categoria: inferredCategory || undefined, descripcion: '' });
-      setDescription(generated);
-    }
-    setMessage(inferredPrice
-      ? 'Topi preparó título, categoría, precio y forma de encuentro. Revisa y publica.'
-      : 'Topi preparó el anuncio. Sólo falta que confirmes un precio mayor a $0.');
+      if (!title.trim() && suggestion.title) setTitle(suggestion.title);
+      if (!price.trim() && suggestion.price) setPrice(String(suggestion.price));
+      if (!description.trim() && suggestion.description) setDescription(suggestion.description);
+      if (!category && suggestion.category) {
+        setCategory(suggestion.category);
+        setAttributes({});
+      }
+      if (condition === 'Buen estado' && suggestion.condition) setCondition(suggestion.condition);
+      if (suggestion.negotiable !== undefined) setNegotiable(suggestion.negotiable);
+      if (suggestion.visibilityScope) setScope(suggestion.visibilityScope);
+      else if (!category && suggestion.category) setScope(defaultScopeForCategory(suggestion.category));
+      if (suggestion.deliveryMethods?.length) setDeliveryMethods(suggestion.deliveryMethods);
+
+      setTopiSource(result.source);
+      setMessage(result.source === 'topi-endpoint'
+        ? 'Topi IA completó el borrador con una respuesta remota sanitizada. Revisa todo antes de publicar.'
+        : 'Topi local completó el borrador sin costo. Revisa todo antes de publicar.');
+    } catch {
+      setMessage('Topi no pudo completar el borrador esta vez. Puedes seguir publicando manualmente.');
+    } finally { setTopiBusy(false); }
   };
 
   const startVoice = () => {
@@ -208,7 +223,7 @@ export default function NationalPublishScreen() {
   return <div className="publish-screen pb-[calc(82px+env(safe-area-inset-bottom))]">
     <header className="publish-header pt-safe"><button onClick={() => setActiveTab('feed')} className="icon-button-lg"><ArrowLeft className="h-5 w-5" /></button><div><h1 className="text-lg font-black">Publica fácil con Topi</h1><p className="text-[10px] text-slate-500">Topi entiende TuTop: venta local, campus y acuerdos directos.</p></div></header>
     <main className="page-pad space-y-3 pt-3">
-      <section className="publish-card border-violet-400/15 bg-violet-500/[0.05]"><div className="flex items-center gap-2"><WandSparkles className="h-4 w-4 text-violet-300" /><div><strong className="text-xs">Topi te ayuda a publicar</strong><p className="mt-0.5 text-[9px] text-slate-500">Escribe o dicta una frase. Topi reconoce producto, precio, estado, encuentro y alcance.</p></div></div><div className="relative mt-3"><textarea className="publish-textarea pr-12" rows={3} value={assistantText} onChange={(e) => setAssistantText(e.target.value.slice(0, 700))} placeholder="Ej. Vendo audífonos Sony como nuevos, $2,500 negociables, entrego cerca de Campus Ribereña." /><button type="button" onClick={startVoice} className={`absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-xl ${voiceStatus === 'listening' ? 'bg-fuchsia-500 text-white' : 'bg-white/[0.06] text-violet-200'}`} aria-label="Dictar a Topi"><Mic className="h-4 w-4" /></button></div><button type="button" onClick={applyTopi} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-xs font-black text-white"><Sparkles className="h-4 w-4" />Topi, prepara mi anuncio</button></section>
+      <section className="publish-card border-violet-400/15 bg-violet-500/[0.05]"><div className="flex items-center gap-3"><TopiMascot className="h-12 w-12 shrink-0" /><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><strong className="text-xs">Topi te ayuda a publicar</strong>{topiSource && <span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${topiSource === 'topi-endpoint' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-violet-500/10 text-violet-300'}`}>{topiSource === 'topi-endpoint' ? 'IA conectada' : 'Local $0'}</span>}</div><p className="mt-0.5 text-[9px] text-slate-500">Escribe o dicta una frase. Topi reconoce producto, precio, estado, encuentro y alcance.</p></div></div><div className="relative mt-3"><textarea className="publish-textarea pr-12" rows={3} value={assistantText} onChange={(e) => setAssistantText(e.target.value.slice(0, 700))} placeholder="Ej. Vendo audífonos Sony como nuevos, $2,500 negociables, entrego cerca de Campus Ribereña." /><button type="button" onClick={startVoice} className={`absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-xl ${voiceStatus === 'listening' ? 'bg-fuchsia-500 text-white' : 'bg-white/[0.06] text-violet-200'}`} aria-label="Dictar a Topi"><Mic className="h-4 w-4" /></button></div><button disabled={topiBusy} type="button" onClick={() => void applyTopi()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-xs font-black text-white disabled:opacity-60">{topiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{topiBusy ? 'Topi está preparando…' : 'Topi, prepara mi anuncio'}</button><p className="mt-2 text-[8px] leading-4 text-slate-600">Las respuestas remotas se validan en el teléfono antes de modificar el formulario. Topi no recibe fotos, tokens ni ubicación exacta.</p></section>
 
       <section className="publish-card"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-300" /><div className="min-w-0 flex-1"><strong className="text-xs">Cercanía para compradores</strong><p className="mt-1 text-[9px] text-slate-500">{approxLocation ? 'Ubicación aproximada activa (~1 km). Nunca se publica tu domicilio exacto.' : 'Actívala para aparecer en filtros de 5, 10, 25 y 50 km.'}</p></div><button type="button" onClick={() => void refreshLocation()} className="rounded-xl bg-emerald-500/10 px-3 py-2 text-[9px] font-bold text-emerald-200">{approxLocation ? 'Actualizar' : 'Activar'}</button></div></section>
 
