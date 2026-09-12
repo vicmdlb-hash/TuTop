@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { getFirebaseConfig } from './services/runtimeConfig';
 import { restoreNativeSessionForProject } from './services/nativeSecureSession';
 import './index.css';
+import './brand091.css';
 
 async function bootstrap() {
   const config = getFirebaseConfig();
