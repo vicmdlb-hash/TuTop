@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const file = path.resolve(process.argv[2] || 'PHYSICAL_QA_CANDIDATE.generated.json');
-const metadataFile = path.resolve(process.argv[3] || 'TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt');
+const file = path.resolve(process.argv[2] || 'PHYSICAL_QA_CANDIDATE_0.9.1.generated.json');
+const metadataFile = path.resolve(process.argv[3] || 'TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt');
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -24,6 +24,7 @@ if (candidate?.candidate_status !== 'generated_exact_head_pending_repo_activatio
 if (candidate?.replacement_required !== false) stop('candidate generado no debe requerir reemplazo');
 if (candidate?.environment !== 'staging') stop('candidate no es staging');
 if (candidate?.staging_project !== 'tutop-beta-vicmdlb-1356585881') stop('candidate apunta a proyecto incorrecto');
+if (!/^0\.9\.1-beta\.\d+$/.test(String(candidate?.app_version || ''))) stop('candidate no pertenece a TuTop 0.9.1');
 
 const head = git('rev-parse', 'HEAD');
 const tree = git('rev-parse', 'HEAD^{tree}');
@@ -61,5 +62,5 @@ const metadataCheck = spawnSync(process.execPath, [
 ], { encoding: 'utf8', shell: false });
 if (metadataCheck.status !== 0) stop(String(metadataCheck.stderr || metadataCheck.stdout || 'metadata mismatch').trim());
 
-console.log(`PASS generated Physical QA candidate matches exact checkout, gate/staging SHAs and Android metadata: ${head}`);
+console.log(`PASS generated TuTop 0.9.1 Physical QA candidate matches exact checkout, gate/staging SHAs and Android metadata: ${head}`);
 console.log(`artifact=${candidate.artifact_id} run=${candidate.build_run_id} apk_sha256=${candidate.apk_sha256}`);
