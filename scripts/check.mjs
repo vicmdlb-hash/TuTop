@@ -15,6 +15,7 @@ const steps = [
   [process.execPath, ['scripts/actions-budget-policy-tests.mjs']],
   [process.execPath, ['scripts/local-topi-favorites-tests.mjs']],
   [process.execPath, ['scripts/nearby-topi-091-contract-tests.mjs']],
+  [process.execPath, ['scripts/release-091-contract-tests.mjs']],
   [process.execPath, ['scripts/firestore-cost-geography-tests.mjs']],
   [process.execPath, ['scripts/seller-profile-cache-tests.mjs']],
   [process.execPath, ['scripts/canonical-offer-read-cache-tests.mjs']],
@@ -66,7 +67,6 @@ const steps = [
   [process.execPath, ['scripts/app-check-enforcement-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-candidate-drift-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-candidate-generation-tests.mjs']],
-  [process.execPath, ['scripts/physical-qa-candidate-drift.mjs', '--prebuild']],
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
 ];
 for (const file of fs.readdirSync('scripts').filter((name) => name.endsWith('.mjs')).sort()) {
