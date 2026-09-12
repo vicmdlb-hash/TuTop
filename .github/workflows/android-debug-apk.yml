@@ -1,20 +1,20 @@
-name: Build TuTop Android APK (zero cost)
+name: Build TuTop 0.9.1 Android APK (zero cost)
 
 on:
   workflow_dispatch:
     inputs:
       enable_reviews_lazy_cutover:
-        description: 'Staging-only: remove review lists from V2 startup snapshot after consolidated gate is green'
+        description: 'Staging-only reviews lazy cutover'
         required: false
         default: false
         type: boolean
       enable_wallet_lazy_cutover:
-        description: 'Staging-only: remove wallet history from V2 startup snapshot after consolidated gate is green'
+        description: 'Staging-only wallet lazy cutover'
         required: false
         default: false
         type: boolean
       enable_favorites_visible_cutover:
-        description: 'Staging-only: replace broad favorite list with exact membership for currently hydrated V2 listings'
+        description: 'Staging-only favorites visible cutover'
         required: false
         default: false
         type: boolean
@@ -23,109 +23,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: tutop-android-${{ github.ref }}
+  group: tutop-091-android-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  firestore-rules:
-    name: Firestore security rules
-    if: github.ref_name != 'feat/tutop-0.8-p0'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Node 22
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-      - name: Java 21
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
-      - name: Install web dependencies
-        run: npm ci
-      - name: Install emulator test dependencies (ephemeral)
-        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2
-      - name: Verify dependency manifests stayed immutable
-        run: git diff --exit-code -- package.json package-lock.json
-      - name: Execute Firestore rules tests
-        run: npx --yes firebase-tools@15.29.0 emulators:exec --project demo-tutop-rules-test --only firestore "node --test tests/firestore.rules.test.mjs"
-
-  android-debug-apk:
-    name: TuTop stable debug APK
-    if: github.ref_name != 'feat/tutop-0.8-p0'
-    needs: firestore-rules
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Node 22
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          cache: npm
-      - name: Java 21
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
-      - name: Prepare Android SDK 36
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
-          log-accepted-android-sdk-licenses: false
-      - name: Install web dependencies
-        run: npm ci
-      - name: Static checks
-        run: npm run check
-      - name: GitHub readiness gate
-        run: npm run github:ready
-      - name: Beta readiness gate
-        run: npm run beta:ready
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Build web app
-        run: npm run build
-      - name: Install Capacitor Android stack
-        run: npm run deps:mobile
-      - name: Verify dependency manifests stayed immutable
-        run: git diff --exit-code -- package.json package-lock.json
-      - name: Generate Android project
-        run: npm run android:bootstrap
-      - name: Android doctor
-        run: npm run android:doctor
-      - name: Cache Gradle dependencies
-        uses: gradle/actions/setup-gradle@v6
-      - name: Build debug APK
-        working-directory: android
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon clean lintDebug testDebugUnitTest assembleDebug
-      - name: Verify APK and checksum
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
-          sha256sum "$APK" | tee TuTop-debug.apk.sha256
-          cp "$APK" TuTop-debug.apk
-      - name: Upload TuTop APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: TuTop-Android-debug-${{ github.run_number }}
-          path: |
-            TuTop-debug.apk
-            TuTop-debug.apk.sha256
-          if-no-files-found: error
-          retention-days: 90
-
   android-v2-staging:
-    name: TuTop 0.9 V2 physical QA staging APK
-    if: github.ref_name == 'feat/tutop-0.8-p0'
+    name: TuTop 0.9.1 V2 physical QA staging APK
+    if: github.ref_name == 'feat/tutop-0.9.1-nearby-topi'
     runs-on: [self-hosted, linux, x64, tutop-zero-cost-worker]
     timeout-minutes: 50
     permissions:
@@ -137,8 +41,12 @@ jobs:
       TUTOP_ANDROID_GOOGLE_SERVICES_PATH: .tutop-staging-google-services.json
       TUTOP_ALLOW_ANDROID_APP_SETUP: staging-v2
       TUTOP_ANDROID_PACKAGE_NAME: mx.tutop.app
-      TUTOP_BETA_VERSION: 0.9.0-beta.0
-      TUTOP_ANDROID_VERSION_CODE: 90000
+      TUTOP_BETA_VERSION: 0.9.1-beta.0
+      TUTOP_ANDROID_VERSION_CODE: 90100
+      TUTOP_APK_PATH: TuTop-0.9.1-beta.0-physical-qa-staging.apk
+      TUTOP_APK_SHA256_PATH: TuTop-0.9.1-beta.0-physical-qa-staging.apk.sha256
+      TUTOP_CANDIDATE_OUTPUT_PATH: PHYSICAL_QA_CANDIDATE_0.9.1.generated.json
+      VITE_TUTOP_TOPI_REMOTE_ENABLED: "false"
       VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: ${{ inputs.enable_reviews_lazy_cutover }}
       VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: ${{ inputs.enable_wallet_lazy_cutover }}
       VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: ${{ inputs.enable_favorites_visible_cutover }}
@@ -146,46 +54,40 @@ jobs:
       TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
       TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
     steps:
-      - name: Checkout feature ref
+      - name: Checkout exact 0.9.1 feature ref
         uses: actions/checkout@v7
-      - name: Require same-SHA green consolidated gate and real staging smoke
+
+      - name: Require same-SHA green October and Staging
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
+          test "$GITHUB_REF_NAME" = "feat/tutop-0.9.1-nearby-topi"
           GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
             -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
             --jq '.workflow_runs[0].id // empty')"
-          if [ -z "$GATE_RUN_ID" ]; then
-            echo "DETENIDO: falta october-01-validation exitoso sobre la misma rama y SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
-            exit 43
-          fi
+          test -n "$GATE_RUN_ID" || { echo "DETENIDO: falta October verde same-SHA ${GITHUB_SHA}." >&2; exit 43; }
           STAGING_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/staging-v2-smoke.yml/runs" \
             -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
             --jq '.workflow_runs[0].id // empty')"
-          if [ -z "$STAGING_RUN_ID" ]; then
-            echo "DETENIDO: falta staging-v2-smoke exitoso sobre la misma rama y SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
-            exit 44
-          fi
+          test -n "$STAGING_RUN_ID" || { echo "DETENIDO: falta Staging verde same-SHA ${GITHUB_SHA}." >&2; exit 44; }
           {
             echo "TUTOP_VALIDATED_GATE_RUN_ID=$GATE_RUN_ID"
             echo "TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA"
             echo "TUTOP_VALIDATED_STAGING_RUN_ID=$STAGING_RUN_ID"
             echo "TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA"
           } >> "$GITHUB_ENV"
-          echo "✅ Cadena same-branch/same-SHA validada para ${GITHUB_REF_NAME}@${GITHUB_SHA}: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
+          echo "✅ 0.9.1 same-SHA chain: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}, sha=${GITHUB_SHA}."
+
       - name: Resolve Android Firebase credential mode
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
           if [ -n "${FIREBASE_TOKEN:-}" ] && [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_ID:-}" ] && [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_SECRET:-}" ]; then
             echo "TUTOP_FIREBASE_AUTH_MODE=managed_refresh_token" >> "$GITHUB_ENV"
-            echo "Managed refresh-token credentials are present (values not printed)."
             exit 0
           fi
-
           if command -v gcloud >/dev/null 2>&1; then
             ACCESS_TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || true)"
             if [ -n "$ACCESS_TOKEN" ]; then
@@ -197,76 +99,95 @@ jobs:
                 echo "TUTOP_FIREBASE_OAUTH_CLIENT_ID="
                 echo "TUTOP_FIREBASE_OAUTH_CLIENT_SECRET="
               } >> "$GITHUB_ENV"
-              echo "Local Application Default Credentials validated for Android staging build."
               exit 0
             fi
           fi
-
-          echo "DETENIDO: Android no tiene credencial Firebase utilizable. Configura los tres Secrets gestionados o ADC local en el self-hosted worker." >&2
+          echo "DETENIDO: Android staging no tiene credencial Firebase utilizable." >&2
           exit 42
+
       - name: Node 22
         uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
+
       - name: Java 21
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
+
       - name: Prepare Android SDK 36
         uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
           log-accepted-android-sdk-licenses: false
+
       - name: Install web dependencies
         run: npm ci
+
+      - name: Static and readiness gates
+        run: |
+          npm run check
+          npm run github:ready
+          npm run beta:ready
+          npm run v2:staging:readiness:test
+
       - name: Prepare staging Firebase Web config
         run: node scripts/prepare-staging-v2-auth.mjs
+
       - name: Prepare staging Firebase Android app config
         run: node scripts/prepare-staging-android-app.mjs
+
       - name: Export V2 staging build environment
         run: node scripts/export-staging-v2-build-env.mjs
+
       - name: Build V2 web bundle
         run: npm run build
+
       - name: Install Capacitor + native Firebase plugins
         run: npm run deps:mobile
+
       - name: Verify dependency manifests stayed immutable
         run: git diff --exit-code -- package.json package-lock.json
+
       - name: Generate Android project
         run: npm run android:bootstrap
-      - name: Fix Android beta version
+
+      - name: Fix Android 0.9.1 beta version
         run: node scripts/configure-android-beta-version.mjs
+
       - name: Android doctor
         run: npm run android:doctor
-      - name: Verify staging-only native config
+
+      - name: Verify staging-only native config and version
         shell: bash
         run: |
           set -euo pipefail
           test -s android/app/google-services.json
           grep -q 'tutop-beta-vicmdlb-1356585881' android/app/google-services.json
-          if grep -q 'tutop-3a4f7' android/app/google-services.json; then
-            echo "DETENIDO: google-services.json histórico detectado." >&2
-            exit 2
-          fi
-          grep -q 'versionCode 90000' android/app/build.gradle
-          grep -q 'versionName "0.9.0-beta.0"' android/app/build.gradle
+          ! grep -q 'tutop-3a4f7' android/app/google-services.json
+          grep -q 'versionCode 90100' android/app/build.gradle
+          grep -q 'versionName "0.9.1-beta.0"' android/app/build.gradle
+
       - name: Cache Gradle dependencies
         uses: gradle/actions/setup-gradle@v6
+
       - name: Build staging debug APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon clean lintDebug testDebugUnitTest assembleDebug
-      - name: Verify and stage artifact
+
+      - name: Verify and stage 0.9.1 artifact
         shell: bash
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          cp "$APK" TuTop-0.9.0-beta.0-physical-qa-staging.apk
-          sha256sum TuTop-0.9.0-beta.0-physical-qa-staging.apk | tee TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256
-          cat > TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt <<EOF
+          cp "$APK" "$TUTOP_APK_PATH"
+          sha256sum "$TUTOP_APK_PATH" | tee "$TUTOP_APK_SHA256_PATH"
+          cat > TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt <<EOF
           head_sha=${GITHUB_SHA}
           gate_run_id=${TUTOP_VALIDATED_GATE_RUN_ID}
           gate_head_sha=${TUTOP_VALIDATED_GATE_SHA}
@@ -279,26 +200,28 @@ jobs:
           wallet_lazy_cutover=${VITE_TUTOP_V2_WALLET_LAZY_CUTOVER}
           favorites_visible_cutover=${VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER}
           EOF
-      - name: Upload beta APK
+
+      - name: Upload 0.9.1 beta APK
         id: upload-staging
         uses: actions/upload-artifact@v7
         with:
-          name: TuTop-0.9.0-beta.0-physical-qa-staging-${{ github.run_number }}
+          name: TuTop-0.9.1-beta.0-physical-qa-staging-${{ github.run_number }}
           path: |
-            TuTop-0.9.0-beta.0-physical-qa-staging.apk
-            TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256
-            TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt
+            TuTop-0.9.1-beta.0-physical-qa-staging.apk
+            TuTop-0.9.1-beta.0-physical-qa-staging.apk.sha256
+            TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt
           if-no-files-found: error
           retention-days: 90
-      - name: Generate exact candidate manifest from uploaded build
+
+      - name: Generate and verify independent 0.9.1 candidate manifest
         env:
           TUTOP_UPLOAD_ARTIFACT_ID: ${{ steps.upload-staging.outputs.artifact-id }}
         shell: bash
         run: |
           set -euo pipefail
           BUILD_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
-          APK_SHA256="$(cut -d ' ' -f1 TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256)"
-          APK_SIZE="$(wc -c < TuTop-0.9.0-beta.0-physical-qa-staging.apk | tr -d ' ')"
+          APK_SHA256="$(cut -d ' ' -f1 "$TUTOP_APK_SHA256_PATH")"
+          APK_SIZE="$(wc -c < "$TUTOP_APK_PATH" | tr -d ' ')"
           {
             echo "artifact_id=${TUTOP_UPLOAD_ARTIFACT_ID}"
             echo "build_run_id=${GITHUB_RUN_ID}"
@@ -306,34 +229,37 @@ jobs:
             echo "build_tree_sha=${BUILD_TREE_SHA}"
             echo "apk_sha256=${APK_SHA256}"
             echo "apk_size_bytes=${APK_SIZE}"
-          } >> TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt
+          } >> TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt
           node scripts/generate-physical-qa-candidate.mjs
-          node scripts/verify-generated-physical-qa-candidate.mjs PHYSICAL_QA_CANDIDATE.generated.json
-      - name: Upload exact candidate manifest and complete metadata
+          node scripts/verify-generated-physical-qa-candidate.mjs "$TUTOP_CANDIDATE_OUTPUT_PATH" TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt
+
+      - name: Upload 0.9.1 candidate evidence
         uses: actions/upload-artifact@v7
         with:
-          name: TuTop-0.9.0-beta.0-physical-qa-candidate-${{ github.run_number }}
+          name: TuTop-0.9.1-beta.0-physical-qa-candidate-${{ github.run_number }}
           path: |
-            PHYSICAL_QA_CANDIDATE.generated.json
-            TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt
+            PHYSICAL_QA_CANDIDATE_0.9.1.generated.json
+            TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt
           if-no-files-found: error
           retention-days: 90
-      - name: Publish durable Physical QA prerelease
+
+      - name: Publish durable 0.9.1 Physical QA prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="tutop-0.9.0-beta.0-physical-qa-${GITHUB_RUN_NUMBER}"
+          TAG="tutop-0.9.1-beta.0-physical-qa-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" \
-            TuTop-0.9.0-beta.0-physical-qa-staging.apk \
-            TuTop-0.9.0-beta.0-physical-qa-staging.apk.sha256 \
-            TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt \
-            PHYSICAL_QA_CANDIDATE.generated.json \
+            TuTop-0.9.1-beta.0-physical-qa-staging.apk \
+            TuTop-0.9.1-beta.0-physical-qa-staging.apk.sha256 \
+            TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt \
+            PHYSICAL_QA_CANDIDATE_0.9.1.generated.json \
             --target "$GITHUB_SHA" \
-            --title "TuTop 0.9.0 beta.0 Physical QA — build ${GITHUB_RUN_NUMBER}" \
-            --notes "Physical QA staging candidate only. Not production-ready, not Play-ready. SHA=${GITHUB_SHA}. artifact=${{ steps.upload-staging.outputs.artifact-id }}. gate=${TUTOP_VALIDATED_GATE_RUN_ID}. staging=${TUTOP_VALIDATED_STAGING_RUN_ID}. reviews_cutover=${VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER}. wallet_cutover=${VITE_TUTOP_V2_WALLET_LAZY_CUTOVER}. favorites_cutover=${VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER}." \
+            --title "TuTop 0.9.1 beta.0 Physical QA — build ${GITHUB_RUN_NUMBER}" \
+            --notes "0.9.1 staging candidate only. Not production-ready or Play-ready. Exact SHA=${GITHUB_SHA}; artifact=${{ steps.upload-staging.outputs.artifact-id }}; gate=${TUTOP_VALIDATED_GATE_RUN_ID}; staging=${TUTOP_VALIDATED_STAGING_RUN_ID}." \
             --prerelease
+
       - name: Remove temporary Firebase configs
         if: always()
         run: rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json android/app/google-services.json
