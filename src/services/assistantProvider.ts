@@ -2,6 +2,7 @@ import { cleanTitle, detectCategory, extractPrice, improveDescription, isForbidd
 import { detectDeliveryIntent, detectListingCondition, detectNegotiableIntent, detectVisibilityIntent } from '../lib/publishAssistant';
 import type { ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import type { ListingVisibilityScope, Product, ProductCategory, ProductCondition, ProductFormData } from '../types';
+import { generateNativeTopiText } from './nativeTopiAI';
 
 export const TOPI_PERSONA = {
   name: 'Topi',
@@ -33,13 +34,15 @@ export interface TopiComposeSuggestion {
   description?: string;
 }
 
+export type TopiSource = 'local' | 'firebase-ai' | 'topi-endpoint';
+
 export interface CopilotResult {
   category?: ProductCategory;
   description?: string;
   priceSuggestion?: { low: number; high: number; median: number; samples: number } | null;
   issues?: string[];
   compose?: TopiComposeSuggestion;
-  source: 'local' | 'topi-endpoint';
+  source: TopiSource;
 }
 
 export type TopiAction = 'category' | 'description' | 'price' | 'review' | 'compose';
@@ -70,6 +73,15 @@ function safeDraftForRemote(draft: Partial<ProductFormData>) {
     precio_negociable: typeof draft.precio_negociable === 'boolean' ? draft.precio_negociable : undefined,
     visibility_scope: VALID_SCOPES.includes(draft.visibility_scope as ListingVisibilityScope) ? draft.visibility_scope : undefined,
   };
+}
+
+function safeComparables(products: Product[]) {
+  return products.slice(0, 24).map((product) => ({
+    title: safeText(product.titulo, 120),
+    category: product.categoria,
+    price_mxn: Number(product.precio_mxn),
+    condition: product.condicion,
+  }));
 }
 
 function sanitizeCompose(raw: unknown, context: CopilotContext): TopiComposeSuggestion | undefined {
@@ -106,10 +118,10 @@ function sanitizeCompose(raw: unknown, context: CopilotContext): TopiComposeSugg
   return Object.values(suggestion).some((item) => item !== undefined) ? suggestion : undefined;
 }
 
-function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: CopilotContext): CopilotResult | null {
+function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: CopilotContext, source: Exclude<TopiSource, 'local'>): CopilotResult | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
-  const result: CopilotResult = { source: 'topi-endpoint' };
+  const result: CopilotResult = { source };
 
   const category = validCategory(value.category);
   if (category) result.category = category;
@@ -125,9 +137,7 @@ function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: Copilot
     const samples = Math.round(Number(price.samples));
     if ([low, high, median].every((item) => Number.isFinite(item) && item >= 0 && item <= 1_000_000)
       && Number.isFinite(samples) && samples >= 1 && samples <= 500
-      && low <= median && median <= high) {
-      result.priceSuggestion = { low, high, median, samples };
-    }
+      && low <= median && median <= high) result.priceSuggestion = { low, high, median, samples };
   }
 
   if (Array.isArray(value.issues)) {
@@ -169,6 +179,42 @@ function localTopi(action: TopiAction, context: CopilotContext): CopilotResult {
   };
 }
 
+function nativePrompt(action: TopiAction, context: CopilotContext) {
+  const payload = {
+    action,
+    user_prompt: safeText(context.prompt, 1200),
+    draft: safeDraftForRemote(context.draft),
+    comparable_products: action === 'price' || action === 'compose' ? safeComparables(context.products) : [],
+  };
+  return [
+    'Eres Topi, asistente de TuTop para un marketplace universitario en México.',
+    'Responde SOLO JSON válido, sin markdown, sin explicaciones fuera del JSON.',
+    'Nunca inventes identidad, dirección, ubicación exacta, stock, marca, condición ni precio que no pueda inferirse razonablemente.',
+    'Nunca propongas artículos prohibidos. TuTop no opera envíos; shipping sólo puede aparecer si el usuario lo pidió explícitamente.',
+    `Categorías válidas: ${MARKETPLACE_CATEGORIES.join(' | ')}`,
+    `Condiciones válidas: ${VALID_CONDITIONS.join(' | ')}`,
+    `Alcances válidos: ${VALID_SCOPES.join(' | ')}`,
+    'Para compose usa {"compose":{"title":string?,"category":string?,"condition":string?,"price":number?,"negotiable":boolean?,"visibilityScope":string?,"deliveryMethods":string[]?,"description":string?}}.',
+    'Para category usa {"category":string}; description usa {"description":string}; review usa {"issues":string[]}; price usa {"priceSuggestion":{"low":number,"high":number,"median":number,"samples":number}} sólo si hay comparables reales suficientes.',
+    `ENTRADA_SEGURA=${JSON.stringify(payload)}`,
+  ].join('\n').slice(0, 6000);
+}
+
+function parseModelJson(text: string) {
+  const clean = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  const start = clean.indexOf('{');
+  const end = clean.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try { return JSON.parse(clean.slice(start, end + 1)) as unknown; } catch { return null; }
+}
+
+async function askNativeFirebaseTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult | null> {
+  const generated = await generateNativeTopiText(nativePrompt(action, context));
+  if (!generated) return null;
+  const parsed = parseModelJson(generated.text);
+  return sanitizeRemoteResult(action, parsed, context, 'firebase-ai');
+}
+
 function topiEndpoint() {
   const enabled = String(import.meta.env.VITE_TUTOP_TOPI_REMOTE_ENABLED || '').toLowerCase() === 'true';
   const endpoint = String(import.meta.env.VITE_TUTOP_TOPI_ENDPOINT || '').trim();
@@ -181,9 +227,8 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 6500);
   try {
-    // IMPORTANT: this request intentionally carries NO provider API key. The
-    // configured URL must be a TuTop-controlled backend proxy that owns secrets,
-    // rate limits, moderation and cost controls server-side.
+    // No provider API key is sent by the client. This optional URL must be a
+    // TuTop-controlled HTTPS proxy with its own moderation/rate limits.
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -193,28 +238,23 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
         action,
         prompt: String(context.prompt || '').slice(0, 1200),
         draft: safeDraftForRemote(context.draft),
-        comparable_products: context.products.slice(0, 24).map((product) => ({
-          title: product.titulo,
-          category: product.categoria,
-          price_mxn: product.precio_mxn,
-          condition: product.condicion,
-          city_id: product.city_id,
-          campus_id: product.campus_id,
-        })),
+        comparable_products: safeComparables(context.products),
       }),
     });
     if (!response.ok) return null;
-    return sanitizeRemoteResult(action, await response.json(), context);
+    return sanitizeRemoteResult(action, await response.json(), context, 'topi-endpoint');
   } catch { return null; }
   finally { window.clearTimeout(timer); }
 }
 
 /**
- * Topi is local-first and zero-cost by default. A future/private AI model can be
- * attached through VITE_TUTOP_TOPI_ENDPOINT, but client builds never receive the
- * provider secret. Any endpoint failure falls back to deterministic local Topi.
+ * Topi 0.9.1 cascade: native Firebase AI Logic when explicitly enabled,
+ * optional private HTTPS proxy, then deterministic local Topi. Provider failure
+ * never blocks publishing and no Gemini/provider secret exists in the JS bundle.
  */
 export async function askTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult> {
+  const native = await askNativeFirebaseTopi(action, context);
+  if (native) return native;
   const remote = await askConfiguredTopi(action, context);
   return remote || localTopi(action, context);
 }
