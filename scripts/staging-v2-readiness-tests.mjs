@@ -44,7 +44,7 @@ for (const signature of requiredIndexSignatures) {
 }
 
 assert.match(guard, /TUTOP_V2_STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881'/);
-assert.match(guard, /TUTOP_V2_FREEZE_BRANCH = 'feat\/tutop-0\.8-p0'/);
+assert.match(guard, /TUTOP_V2_FREEZE_BRANCH = 'feat\/tutop-0\.9\.1-nearby-topi'/);
 assert.match(guard, /GITHUB_ACTIONS/);
 assert.match(guard, /TUTOP_VALIDATED_GATE_RUN_ID/);
 assert.match(guard, /TUTOP_VALIDATED_GATE_SHA/);
