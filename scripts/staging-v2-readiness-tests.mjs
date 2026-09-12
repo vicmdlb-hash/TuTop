@@ -7,6 +7,7 @@ const seed = fs.readFileSync('scripts/seed-v2-catalog.mjs', 'utf8');
 const seedWrapper = fs.readFileSync('scripts/gated-v2-catalog-seed.mjs', 'utf8');
 const guard = fs.readFileSync('scripts/staging-freeze-guard.mjs', 'utf8');
 const generator = fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs', 'utf8');
+const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
 const firebaseV2 = JSON.parse(fs.readFileSync('firebase.v2.json', 'utf8'));
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 
@@ -33,7 +34,9 @@ assert.match(deploy, /allowValue: 'staging-v2'/);
 assert.match(deploy, /v2:rules:prepare/);
 assert.match(deploy, /--config', 'firebase\.v2\.json'/);
 assert.match(deploy, /--only', 'firestore:rules,firestore:indexes'/);
-assert.match(deploy, /v2:catalog:plan/);
+assert.doesNotMatch(deploy, /run\('npm', \['run', 'v2:catalog:plan'\]\)/);
+assert.match(deploy, /catalog-plan evidence is reused from the required same-SHA October gate/);
+assert.match(october, /npm run v2:catalog:plan/);
 assert.doesNotMatch(deploy, /TUTOP_ALLOW_PRODUCTION_FIREBASE/);
 assert.doesNotMatch(deploy, /TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID/);
 assert.doesNotMatch(deploy, /firestore:rules,firestore:indexes,storage,functions,hosting/);
@@ -62,7 +65,7 @@ console.log('PASS staging Auth is frozen to Email/Password only; anonymous/Googl
 console.log('PASS reputation strict schema is generated deterministically');
 console.log('PASS Firestore/Auth deploys are exact-project/exact-branch/exact-October-SHA gated centrally');
 console.log('PASS deploy scope remains Firestore V2 rules/indexes plus explicit Auth provider config only');
+console.log('PASS catalog plan executes once in October and staging reuses same-SHA evidence without duplication');
 console.log('PASS catalog seed public npm entrypoint is exact-gate wrapped');
-console.log('PASS V2 catalog dry-run remains mandatory before deploy');
 console.log('PASS V2 seed implementation remains atomic create-only');
 console.log('V2 staging readiness checks: PASS');
