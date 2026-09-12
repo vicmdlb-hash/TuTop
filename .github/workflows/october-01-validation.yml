@@ -48,6 +48,7 @@ jobs:
         run: |
           npm run github:ready
           npm run beta:ready
+          npm run v2:catalog:plan
           npm run v2:staging:readiness:test
 
       - name: Typecheck once and build web with V2 cost cutovers compiled
