@@ -30,13 +30,26 @@ function plugin(name: string): CapacitorPlugin | null {
   return capacitor.Plugins?.[name] || null;
 }
 
+function useStagingDebugProvider() {
+  const environment = String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').trim().toLowerCase();
+  const version = String(import.meta.env.VITE_TUTOP_APP_VERSION || '').trim();
+  return environment === 'staging' && /^0\.9\.1-beta\./.test(version);
+}
+
 export async function initializeNativeAppCheck() {
   if (!isNativeFirebaseRuntime()) return null;
   if (initializePromise) return initializePromise;
   initializePromise = (async () => {
     const appCheck = plugin('FirebaseAppCheck');
     if (!appCheck?.initialize || !appCheck?.getToken) return null;
-    await appCheck.initialize({ isTokenAutoRefreshEnabled: true });
+    // Firebase AI Logic requires App Check in current Firebase setup flows.
+    // The private 0.9.1 staging APK therefore uses the Android debug provider;
+    // production builds never inherit it because both environment and beta version
+    // must match. The generated debug secret is never committed to the repository.
+    await appCheck.initialize({
+      isTokenAutoRefreshEnabled: true,
+      debugToken: useStagingDebugProvider(),
+    });
     if (appCheck.setTokenAutoRefreshEnabled) await appCheck.setTokenAutoRefreshEnabled({ enabled: true });
     if (appCheck.addListener) {
       await appCheck.addListener('tokenChanged', (event: { token?: string }) => {
