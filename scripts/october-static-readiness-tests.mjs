@@ -9,6 +9,12 @@ function walk(dir) {
   });
 }
 
+function executableSource(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+}
+
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const campus = fs.readFileSync('src/components/UniversityNetworkSetup.tsx', 'utf8');
 const demand = fs.readFileSync('src/components/DemandRequestComposer.tsx', 'utf8');
@@ -45,18 +51,19 @@ assert.match(performance, /search_page_size:\s*24/);
 assert.match(performance, /max_cached_feed_items:\s*80/);
 assert.match(performance, /network_retry_limit:\s*4/);
 
-// UATx is allowed as catalog data, never as a UI/runtime default elsewhere in src/.
+// UATx is allowed as catalog data, never as executable UI/runtime defaults elsewhere in src/.
+// Comments/documentation are intentionally ignored so migration notes cannot create false positives.
 const allowedUatx = new Set(['src/lib/universityNetwork.ts']);
 const offenders = walk('src')
   .filter((file) => /\.(ts|tsx)$/.test(file))
   .filter((file) => !allowedUatx.has(file.replaceAll('\\', '/')))
-  .filter((file) => /\bUATx\b|Universidad Autónoma de Tlaxcala|Turismo Internacional/.test(fs.readFileSync(file, 'utf8')));
-assert.deepEqual(offenders, [], `Hardcodes universitarios fuera del catálogo: ${offenders.join(', ')}`);
+  .filter((file) => /\bUATx\b|Universidad Autónoma de Tlaxcala|Turismo Internacional/.test(executableSource(fs.readFileSync(file, 'utf8'))));
+assert.deepEqual(offenders, [], `Hardcodes universitarios ejecutables fuera del catálogo: ${offenders.join(', ')}`);
 
 console.log('PASS feed utilities no longer overlap search/campus');
 console.log('PASS Topi remains local-only and zero-cost');
 console.log('PASS recovery remains trusted-backend/fail-closed');
 console.log('PASS Android secure-storage migration contract remains Keystore-backed');
 console.log('PASS beta network/read budgets remain bounded');
-console.log('PASS no UATx/program hardcodes remain outside the national catalog');
+console.log('PASS no executable UATx/program hardcodes remain outside the national catalog');
 console.log('October static readiness: PASS');
