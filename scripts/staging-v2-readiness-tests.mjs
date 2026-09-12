@@ -32,6 +32,7 @@ const requiredIndexSignatures = [
   'listings_v2:COLLECTION:campus_id:ASCENDING|moderation_status:ASCENDING|status:ASCENDING|updated_at:DESCENDING',
   'listings_v2:COLLECTION:institution_id:ASCENDING|moderation_status:ASCENDING|status:ASCENDING|updated_at:DESCENDING',
   'listings_v2:COLLECTION:city_id:ASCENDING|moderation_status:ASCENDING|status:ASCENDING|updated_at:DESCENDING',
+  'listings_v2:COLLECTION:attributes.geo_cell:ASCENDING|moderation_status:ASCENDING|status:ASCENDING|updated_at:DESCENDING',
   'listings_v2:COLLECTION:moderation_status:ASCENDING|status:ASCENDING|visibility_scope:ASCENDING|updated_at:DESCENDING',
   'listings_v2:COLLECTION:seller_id:ASCENDING|updated_at:DESCENDING',
   'listings_v2:COLLECTION:moderation_status:ASCENDING|updated_at:DESCENDING',
@@ -82,7 +83,7 @@ assert.match(seed, /currentDocument: \{ exists: false \}/);
 assert.match(seed, /documents:commit/);
 
 console.log('PASS V2 config points to generated strict rules/indexes');
-console.log('PASS staging composite-index matrix is frozen in canonical Firestore query order');
+console.log('PASS staging composite-index matrix includes bounded nearby geo-cell discovery');
 console.log('PASS staging Auth is frozen to Email/Password only; anonymous/Google are absent');
 console.log('PASS reputation strict schema is generated deterministically');
 console.log('PASS Firestore/Auth deploys are exact-project/exact-branch/exact-October-SHA gated centrally');
