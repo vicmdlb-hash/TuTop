@@ -71,9 +71,23 @@ const steps = [
 for (const file of fs.readdirSync('scripts').filter((name) => name.endsWith('.mjs')).sort()) {
   steps.unshift([process.execPath, ['--check', `scripts/${file}`]]);
 }
+
+const failures = [];
 for (const [command, args] of steps) {
   console.log(`\n==> ${command} ${args.join(' ')}`);
   const result = spawnSync(command, args, { stdio: 'inherit', shell: false });
-  if (result.status !== 0) process.exit(result.status || 1);
+  if (result.status !== 0) {
+    failures.push({ command, args, status: result.status ?? 1, signal: result.signal ?? null });
+    console.error(`\n[COLLECTED FAILURE ${failures.length}] ${command} ${args.join(' ')} (exit ${result.status ?? 1})`);
+  }
 }
+
+if (failures.length > 0) {
+  console.error(`\n❌ TuTop local check found ${failures.length} failing step(s). All remaining static checks were still executed so they can be repaired in one batch.`);
+  for (const [index, failure] of failures.entries()) {
+    console.error(`${index + 1}. exit=${failure.status} ${failure.command} ${failure.args.join(' ')}`);
+  }
+  process.exit(1);
+}
+
 console.log('\n✅ TuTop local check PASS (no sustituye build npm/Android/Firebase emulator).');
