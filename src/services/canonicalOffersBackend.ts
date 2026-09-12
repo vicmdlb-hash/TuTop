@@ -48,7 +48,9 @@ async function loadCurrentOffer(client: FirebaseRestClient, offerId: string) {
 }
 
 async function assertCurrentPendingParent(client: FirebaseRestClient, parent: Offer, actorId: string) {
-  const current = await loadCurrentOffer(client, parent.id);
+  const stored = await client.getDocument<any>(`offers/${parent.id}`);
+  if (!stored) throw new Error('PARENT_OFFER_NOT_FOUND');
+  const current = { id: stored.id, ...stored.data } as Offer;
   if (current.listing_id !== parent.listing_id || current.chat_id !== parent.chat_id || current.buyer_id !== parent.buyer_id || current.seller_id !== parent.seller_id) {
     throw new Error('PARENT_OFFER_MISMATCH');
   }
