@@ -19,11 +19,11 @@ const assertManualOnly = (name, workflow) => {
   assert.doesNotMatch(workflow, /\n\s+schedule:/, `${name} no debe consumir minutos por cron`);
 };
 
-const assertCredentialPreflightBeforeSetup = (name, workflow) => {
-  const preflight = workflow.indexOf('Require managed staging credentials before dependency setup');
+const assertCredentialPreflightBeforeSetup = (name, workflow, stepName, message) => {
+  const preflight = workflow.indexOf(stepName);
   const setupNode = workflow.indexOf('uses: actions/setup-node@v7');
   const npmCi = workflow.indexOf('run: npm ci');
-  assert.notEqual(preflight, -1, `${name} debe validar credenciales gestionadas antes de preparar dependencias`);
+  assert.notEqual(preflight, -1, message);
   assert(preflight < setupNode, `${name} debe fallar por credenciales antes de setup-node`);
   assert(preflight < npmCi, `${name} debe fallar por credenciales antes de npm ci`);
 };
@@ -69,7 +69,15 @@ assert.match(androidV2, /verify-generated-physical-qa-candidate\.mjs/);
 
 assertManualOnly('staging real', staging);
 assertSerializedWithoutCancellation('staging real', staging);
-assertCredentialPreflightBeforeSetup('staging real', staging);
+assertCredentialPreflightBeforeSetup(
+  'staging real',
+  staging,
+  'Resolve staging Firebase credential mode',
+  'staging real debe resolver una credencial Firebase utilizable antes de preparar dependencias',
+);
+assert.match(staging, /TUTOP_FIREBASE_AUTH_MODE=managed_refresh_token/);
+assert.match(staging, /TUTOP_FIREBASE_AUTH_MODE=local_adc/);
+assert.match(staging, /gcloud auth application-default print-access-token/);
 assert.equal(branchEvidenceFilterCount(staging), 1, 'Staging debe aceptar October sólo desde la rama exacta del freeze');
 assert.match(stagingDeploy, /assertStagingFreezeContext/);
 assert.match(stagingDeploy, /run\('npm', \['run', 'v2:rules:prepare'\]\)/);
@@ -99,7 +107,12 @@ assertManualOnly('Firestore V2', firestore);
 assert.match(firestore, /Firestore V2 emulator security/);
 assertManualOnly('Trusted maintenance', trusted);
 assertSerializedWithoutCancellation('Trusted maintenance', trusted);
-assertCredentialPreflightBeforeSetup('Trusted maintenance', trusted);
+assertCredentialPreflightBeforeSetup(
+  'Trusted maintenance',
+  trusted,
+  'Require managed staging credentials before dependency setup',
+  'Trusted maintenance debe exigir credenciales gestionadas antes de preparar dependencias',
+);
 assert.equal(branchEvidenceFilterCount(trusted), 2, 'Trusted maintenance debe ligar October y staging a la rama exacta además del SHA');
 
 assertManualOnly('October consolidated gate', october);
@@ -135,7 +148,8 @@ console.log('PASS no PR/push/cron trigger can burn the future 2,000-minute budge
 console.log('PASS Android, staging and trusted mutation/promotion workflows serialize without mid-run cancellation');
 console.log('PASS October is blocked outside the exact runtime-freeze branch');
 console.log('PASS promotion evidence lookups require same branch + same SHA + success + workflow_dispatch');
-console.log('PASS staging and trusted maintenance reject missing managed auth before setup-node/npm ci');
+console.log('PASS staging resolves managed refresh-token or local ADC auth before setup-node/npm ci');
+console.log('PASS trusted maintenance still rejects missing managed auth before setup-node/npm ci');
 console.log('PASS staging deploy reuses same-SHA October static/typecheck/catalog evidence and only regenerates job-local Rules');
 console.log('PASS October combines static, typecheck+build and Firestore emulator work in one runner');
 console.log('PASS October and Quality perform TypeScript validation once through the canonical npm build command');
