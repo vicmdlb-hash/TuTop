@@ -24,8 +24,8 @@ const legacyConfirmCalls = conversation.match(/confirmDelivery\(chatId\)/g) || [
 assert.equal(legacyConfirmCalls.length, 1, 'ChatConversation sólo debe conservar una llamada legacy confirmDelivery(chatId)');
 assert.match(
   conversation,
-  /if \(!v2 && !deliveryCompleted\)[\s\S]{0,700}?confirmDelivery\(chatId\)/,
-  'la única llamada legacy confirmDelivery(chatId) debe quedar protegida por !v2',
+  /\{!v2 && !deliveryCompleted && <button[^>]*onClick=\{\(\) => \{ confirmDelivery\(chatId\); feedbackSuccess\(\); \}\}/,
+  'la única llamada legacy confirmDelivery(chatId) debe quedar protegida por el render guard !v2 && !deliveryCompleted',
 );
 
 assert.match(card, /transactionHint\?: MarketplaceTransaction \| null/);
