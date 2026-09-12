@@ -9,6 +9,7 @@ const optimize = fs.readFileSync('scripts/optimize-listing-rate-limit-rules.mjs'
 const account = fs.readFileSync('scripts/harden-account-operations-rules.mjs', 'utf8');
 const receipts = fs.readFileSync('scripts/harden-notification-receipts-rules.mjs', 'utf8');
 const locks = fs.readFileSync('scripts/harden-transaction-lock-rules.mjs', 'utf8');
+const nearby = fs.readFileSync('scripts/harden-nearby-v2-rules.mjs', 'utf8');
 
 const expected = [
   'node scripts/prepare-firestore-v2-rules.mjs',
@@ -18,6 +19,7 @@ const expected = [
   'node scripts/harden-account-operations-rules.mjs',
   'node scripts/harden-notification-receipts-rules.mjs',
   'node scripts/harden-transaction-lock-rules.mjs',
+  'node scripts/harden-nearby-v2-rules.mjs',
 ].join(' && ');
 assert.equal(pkg.scripts['v2:rules:prepare'], expected, 'V2 Rules composition order changed');
 assert.doesNotMatch(pkg.scripts['v2:rules:prepare'], /harden-favorite-v2-rules/);
@@ -54,6 +56,10 @@ for (const [name, source] of [
   assert.match(source, /const path = 'firebase\/firestore\.v2\.generated\.rules'/, `${name} must target generated rules only`);
   assert.match(source, /encontró \$\{count\}|encontró \$\{occurrences\}|esperaba 1 coincidencia/, `${name} must fail closed on marker drift`);
 }
+assert.match(nearby, /const path = 'firebase\/firestore\.v2\.generated\.rules'/);
+assert.match(nearby, /canonicalCount !== 2/);
+assert.match(nearby, /legacyCount !== 1/);
+assert.match(nearby, /legacyShippingRequirement/);
 
 assert.match(account, /account deletion transition/);
 assert.match(account, /support deletion audit read scope/);
@@ -62,8 +68,9 @@ assert.match(locks, /transaction create requires unique reservation lock/);
 assert.match(locks, /expiry releases reservation lock/);
 assert.match(locks, /reservation lock collection/);
 
-console.log('PASS V2 Rules pipeline order is explicit and frozen');
+console.log('PASS V2 Rules pipeline order is explicit and frozen, including 0.9.1 nearby semantics');
 console.log('PASS canonical listing conversion precedes runtime rules that depend on listingDoc');
 console.log('PASS runtime markers precede listing optimization, notification receipts and reservation-lock hardeners');
+console.log('PASS nearby hardener removes canonical and legacy shipping mandates fail-closed');
 console.log('PASS duplicate favorites hardener is absent; canonical conversion owns V2 listing identity');
 console.log('V2 Rules composition contract: PASS');
