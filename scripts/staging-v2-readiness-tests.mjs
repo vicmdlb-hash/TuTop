@@ -9,6 +9,7 @@ const guard = fs.readFileSync('scripts/staging-freeze-guard.mjs', 'utf8');
 const generator = fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs', 'utf8');
 const october = fs.readFileSync('.github/workflows/october-01-validation.yml', 'utf8');
 const firebaseV2 = JSON.parse(fs.readFileSync('firebase.v2.json', 'utf8'));
+const firestoreIndexes = JSON.parse(fs.readFileSync('firebase/firestore.indexes.json', 'utf8'));
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 
 assert.equal(firebaseV2.firestore.rules, 'firebase/firestore.v2.generated.rules');
@@ -20,6 +21,26 @@ assert.match(generator, /match \/reputation\/\{uid\}/);
 assert.match(generator, /subject_uid/);
 assert.match(generator, /completed_transactions == request\.resource\.data\.completed_as_seller \+ request\.resource\.data\.completed_as_buyer/);
 assert.match(generator, /allow delete: if false/);
+
+const indexSignature = (index) => `${index.collectionGroup}:${index.queryScope}:${index.fields.map((field) => `${field.fieldPath}:${field.order || field.arrayConfig}`).join('|')}`;
+const declaredIndexSignatures = new Set(firestoreIndexes.indexes.map(indexSignature));
+const requiredIndexSignatures = [
+  'chats:COLLECTION:participants:CONTAINS|updated_at:DESCENDING',
+  'wallet_transactions:COLLECTION:user_id:ASCENDING|created_at:DESCENDING',
+  'reviews:COLLECTION:calificacion:ASCENDING|evaluado_id:ASCENDING|fecha:ASCENDING',
+  'favorites:COLLECTION:product_id:ASCENDING|uid:ASCENDING',
+  'listings_v2:COLLECTION:campus_id:ASCENDING|moderation_status:ASCENDING|status:ASCENDING|updated_at:DESCENDING',
+  'listings_v2:COLLECTION:institution_id:ASCENDING|moderation_status:ASCENDING|status:ASCENDING|updated_at:DESCENDING',
+  'listings_v2:COLLECTION:city_id:ASCENDING|moderation_status:ASCENDING|status:ASCENDING|updated_at:DESCENDING',
+  'listings_v2:COLLECTION:moderation_status:ASCENDING|status:ASCENDING|visibility_scope:ASCENDING|updated_at:DESCENDING',
+  'listings_v2:COLLECTION:seller_id:ASCENDING|updated_at:DESCENDING',
+  'listings_v2:COLLECTION:moderation_status:ASCENDING|updated_at:DESCENDING',
+  'listings_v2:COLLECTION:institution_id:ASCENDING|moderation_status:ASCENDING|updated_at:DESCENDING',
+  'notification_outbox:COLLECTION:recipient_uid:ASCENDING|created_at:DESCENDING',
+];
+for (const signature of requiredIndexSignatures) {
+  assert.ok(declaredIndexSignatures.has(signature), `missing canonical staging index: ${signature}`);
+}
 
 assert.match(guard, /TUTOP_V2_STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881'/);
 assert.match(guard, /TUTOP_V2_FREEZE_BRANCH = 'feat\/tutop-0\.8-p0'/);
@@ -61,6 +82,7 @@ assert.match(seed, /currentDocument: \{ exists: false \}/);
 assert.match(seed, /documents:commit/);
 
 console.log('PASS V2 config points to generated strict rules/indexes');
+console.log('PASS staging composite-index matrix is frozen in canonical Firestore query order');
 console.log('PASS staging Auth is frozen to Email/Password only; anonymous/Google are absent');
 console.log('PASS reputation strict schema is generated deterministically');
 console.log('PASS Firestore/Auth deploys are exact-project/exact-branch/exact-October-SHA gated centrally');
