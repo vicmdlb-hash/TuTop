@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Loader2, MapPin, Mic, Plus, ShieldCheck, Sparkles, WandSparkles, X } from 'lucide-react';
+import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Images, Loader2, MapPin, Mic, Plus, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { compressImageForFirestore } from '../lib/imageCompression';
 import { categorySafetyRequirements } from '../lib/marketplaceGovernance';
 import { getCachedApproxLocation, locationAttributes, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
@@ -12,6 +12,7 @@ import { defaultScopeForCategory, identityFor, safeMeetingPointsFor, VISIBILITY_
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { askTopi } from '../services/assistantProvider';
 import { nationalBackend } from '../services/nationalBackend';
+import { isNativeDeviceRuntime, nativePhotoToImageFile, pickNativePhoto, takeNativePhoto } from '../services/nativeDeviceCapabilities';
 import { useAppStore } from '../store/useAppStore';
 import type { ListingVisibilityScope, Product, ProductCategory } from '../types';
 import TopiMascot from './TopiMascot';
@@ -23,13 +24,17 @@ const DELIVERY: Array<{ id: ListingDeliveryMethod; label: string }> = [
   { id: 'local_delivery', label: 'Entrega local acordada' },
   { id: 'shipping', label: 'Envío externo acordado' },
 ];
-function slug(value: string) { return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+
+function slug(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
 
 export default function NationalPublishScreen() {
   const user = useAppStore((state) => state.user);
   const products = useAppStore((state) => state.products);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const fileRef = useRef<HTMLInputElement>(null);
+  const nativeDevice = isNativeDeviceRuntime();
   const [assistantText, setAssistantText] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -132,7 +137,9 @@ export default function NationalPublishScreen() {
         : 'Topi local completó el borrador sin costo. Revisa todo antes de publicar.');
     } catch {
       setMessage('Topi no pudo completar el borrador esta vez. Puedes seguir publicando manualmente.');
-    } finally { setTopiBusy(false); }
+    } finally {
+      setTopiBusy(false);
+    }
   };
 
   const startVoice = () => {
@@ -148,7 +155,7 @@ export default function NationalPublishScreen() {
 
   const refreshLocation = async () => {
     setMessage('Obteniendo una ubicación aproximada…');
-    const location = await requestApproxLocation();
+    const location = await requestApproxLocation({ requestPermission: true });
     setApproxLocation(location);
     setMessage(location
       ? 'Ubicación aproximada activada. TuTop guardará sólo precisión cercana a 1 km, nunca tu domicilio exacto.'
@@ -157,13 +164,40 @@ export default function NationalPublishScreen() {
 
   const addPhotos = async (files: FileList | null) => {
     if (!files?.length) return;
-    setBusy(true); setMessage(null);
+    setBusy(true);
+    setMessage(null);
     try {
       const next: string[] = [];
-      for (const file of Array.from(files).slice(0, Math.max(0, 4 - images.length))) next.push(await compressImageForFirestore(file, { maxDimension: 960, maxBytes: 82_000 }));
+      for (const file of Array.from(files).slice(0, Math.max(0, 4 - images.length))) {
+        next.push(await compressImageForFirestore(file, { maxDimension: 960, maxBytes: 82_000 }));
+      }
       setImages((current) => [...current, ...next].slice(0, 4));
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'No pudimos procesar las fotos.'); }
-    finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No pudimos procesar las fotos.');
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const addNativePhoto = async (source: 'camera' | 'photos') => {
+    if (busy || images.length >= 4) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const selected = source === 'camera' ? await takeNativePhoto() : await pickNativePhoto();
+      if (!selected) {
+        setMessage(source === 'camera' ? 'No se tomó ninguna foto.' : 'No se seleccionó ninguna foto.');
+        return;
+      }
+      const file = await nativePhotoToImageFile(selected, `tutop-${source}-${Date.now()}.jpg`);
+      const compressed = await compressImageForFirestore(file, { maxDimension: 960, maxBytes: 82_000 });
+      setImages((current) => [...current, compressed].slice(0, 4));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No pudimos procesar la foto.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const toggleDelivery = (method: ListingDeliveryMethod) => {
@@ -192,7 +226,7 @@ export default function NationalPublishScreen() {
       );
       await nationalBackend.updateUniversityIdentity(identity, user.facultad);
 
-      const location = approxLocation || await requestApproxLocation();
+      const location = approxLocation || await requestApproxLocation({ requestPermission: true });
       if (location && !approxLocation) setApproxLocation(location);
       const now = new Date().toISOString();
       const listing: CanonicalListingV2 = {
@@ -217,19 +251,56 @@ export default function NationalPublishScreen() {
       } else {
         setMessage(raw.startsWith('PROHIBITED_LISTING:') ? 'Ese artículo no está permitido en TuTop.' : raw.startsWith('PRIVATE_FIELD_EXPOSED:') ? 'Hay un dato privado que no debe publicarse.' : `No pudimos publicar: ${raw}`);
       }
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   };
 
   return <div className="publish-screen pb-[calc(82px+env(safe-area-inset-bottom))]">
-    <header className="publish-header pt-safe"><button onClick={() => setActiveTab('feed')} className="icon-button-lg"><ArrowLeft className="h-5 w-5" /></button><div><h1 className="text-lg font-black">Publica fácil con Topi</h1><p className="text-[10px] text-slate-500">Topi entiende TuTop: venta local, campus y acuerdos directos.</p></div></header>
-    <main className="page-pad space-y-3 pt-3">
-      <section className="publish-card border-violet-400/15 bg-violet-500/[0.05]"><div className="flex items-center gap-3"><TopiMascot className="h-12 w-12 shrink-0" /><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><strong className="text-xs">Topi te ayuda a publicar</strong>{topiSource && <span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${topiSource === 'topi-endpoint' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-violet-500/10 text-violet-300'}`}>{topiSource === 'topi-endpoint' ? 'IA conectada' : 'Local $0'}</span>}</div><p className="mt-0.5 text-[9px] text-slate-500">Escribe o dicta una frase. Topi reconoce producto, precio, estado, encuentro y alcance.</p></div></div><div className="relative mt-3"><textarea className="publish-textarea pr-12" rows={3} value={assistantText} onChange={(e) => setAssistantText(e.target.value.slice(0, 700))} placeholder="Ej. Vendo audífonos Sony como nuevos, $2,500 negociables, entrego cerca de Campus Ribereña." /><button type="button" onClick={startVoice} className={`absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-xl ${voiceStatus === 'listening' ? 'bg-fuchsia-500 text-white' : 'bg-white/[0.06] text-violet-200'}`} aria-label="Dictar a Topi"><Mic className="h-4 w-4" /></button></div><button disabled={topiBusy} type="button" onClick={() => void applyTopi()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-xs font-black text-white disabled:opacity-60">{topiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{topiBusy ? 'Topi está preparando…' : 'Topi, prepara mi anuncio'}</button><p className="mt-2 text-[8px] leading-4 text-slate-600">Las respuestas remotas se validan en el teléfono antes de modificar el formulario. Topi no recibe fotos, tokens ni ubicación exacta.</p></section>
+    <header className="publish-header pt-safe">
+      <button onClick={() => setActiveTab('feed')} className="icon-button-lg"><ArrowLeft className="h-5 w-5" /></button>
+      <div><h1 className="text-lg font-black">Publica fácil con Topi</h1><p className="text-[10px] text-slate-500">Topi entiende TuTop: venta local, campus y acuerdos directos.</p></div>
+    </header>
 
-      <section className="publish-card"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-300" /><div className="min-w-0 flex-1"><strong className="text-xs">Cercanía para compradores</strong><p className="mt-1 text-[9px] text-slate-500">{approxLocation ? 'Ubicación aproximada activa (~1 km). Nunca se publica tu domicilio exacto.' : 'Actívala para aparecer en filtros de 5, 10, 25 y 50 km.'}</p></div><button type="button" onClick={() => void refreshLocation()} className="rounded-xl bg-emerald-500/10 px-3 py-2 text-[9px] font-bold text-emerald-200">{approxLocation ? 'Actualizar' : 'Activar'}</button></div></section>
+    <main className="page-pad space-y-3 pt-3">
+      <section className="publish-card border-violet-400/15 bg-violet-500/[0.05]">
+        <div className="flex items-center gap-3">
+          <TopiMascot className="h-12 w-12 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2"><strong className="text-xs">Topi te ayuda a publicar</strong>{topiSource && <span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${topiSource === 'topi-endpoint' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-violet-500/10 text-violet-300'}`}>{topiSource === 'topi-endpoint' ? 'IA conectada' : 'Local $0'}</span>}</div>
+            <p className="mt-0.5 text-[9px] text-slate-500">Escribe o dicta una frase. Topi reconoce producto, precio, estado, encuentro y alcance.</p>
+          </div>
+        </div>
+        <div className="relative mt-3">
+          <textarea className="publish-textarea pr-12" rows={3} value={assistantText} onChange={(e) => setAssistantText(e.target.value.slice(0, 700))} placeholder="Ej. Vendo audífonos Sony como nuevos, $2,500 negociables, entrego cerca de Campus Ribereña." />
+          <button type="button" onClick={startVoice} className={`absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-xl ${voiceStatus === 'listening' ? 'bg-fuchsia-500 text-white' : 'bg-white/[0.06] text-violet-200'}`} aria-label="Dictar a Topi"><Mic className="h-4 w-4" /></button>
+        </div>
+        <button disabled={topiBusy} type="button" onClick={() => void applyTopi()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-xs font-black text-white disabled:opacity-60">{topiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{topiBusy ? 'Topi está preparando…' : 'Topi, prepara mi anuncio'}</button>
+        <p className="mt-2 text-[8px] leading-4 text-slate-600">Las respuestas de IA se validan en el teléfono antes de modificar el formulario. Topi no recibe fotos, tokens ni ubicación exacta.</p>
+      </section>
+
+      <section className="publish-card">
+        <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-300" /><div className="min-w-0 flex-1"><strong className="text-xs">Cercanía para compradores</strong><p className="mt-1 text-[9px] text-slate-500">{approxLocation ? 'Ubicación aproximada activa (~1 km). Nunca se publica tu domicilio exacto.' : 'Actívala para aparecer en filtros de 5, 10, 25 y 50 km.'}</p></div><button type="button" onClick={() => void refreshLocation()} className="rounded-xl bg-emerald-500/10 px-3 py-2 text-[9px] font-bold text-emerald-200">{approxLocation ? 'Actualizar' : 'Activar'}</button></div>
+      </section>
 
       <section className="publish-card"><strong className="text-xs">{user.university?.institution_name || institutionId || 'Elige tu universidad'}</strong><p className="mt-1 text-[9px] text-slate-500">{user.university?.campus_name || campusId || 'Falta campus'}{user.university?.career_name ? ` · ${user.university.career_name}` : ''}</p></section>
 
-      <section className="publish-card"><div className="flex items-center justify-between"><p className="eyebrow">FOTOS</p><button type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 rounded-lg bg-violet-500/10 px-2 py-1 text-[9px] font-bold text-violet-200"><Camera className="h-3.5 w-3.5" />Cámara</button></div><div className="mt-2 grid grid-cols-4 gap-2">{images.map((image, index) => <div key={index} className="publish-photo relative"><img src={image} alt={`Foto ${index + 1}`} /><button onClick={() => setImages((current) => current.filter((_, i) => i !== index))}><X /></button></div>)}{images.length < 4 && <button onClick={() => fileRef.current?.click()} className="publish-photo-add"><Plus /><small>Agregar</small></button>}</div><input ref={fileRef} type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={(event) => void addPhotos(event.target.files)} /></section>
+      <section className="publish-card">
+        <div className="flex items-center justify-between gap-2">
+          <div><p className="eyebrow">FOTOS</p><p className="mt-1 text-[8px] text-slate-600">Máximo 4 · TuTop comprime antes de guardar.</p></div>
+          <div className="flex gap-2">
+            {nativeDevice ? <>
+              <button disabled={busy || images.length >= 4} type="button" onClick={() => void addNativePhoto('camera')} className="inline-flex items-center gap-1 rounded-lg bg-violet-500/10 px-2 py-1.5 text-[9px] font-bold text-violet-200 disabled:opacity-40"><Camera className="h-3.5 w-3.5" />Cámara</button>
+              <button disabled={busy || images.length >= 4} type="button" onClick={() => void addNativePhoto('photos')} className="inline-flex items-center gap-1 rounded-lg bg-white/[0.05] px-2 py-1.5 text-[9px] font-bold text-slate-300 disabled:opacity-40"><Images className="h-3.5 w-3.5" />Galería</button>
+            </> : <button disabled={busy || images.length >= 4} type="button" onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 rounded-lg bg-violet-500/10 px-2 py-1.5 text-[9px] font-bold text-violet-200 disabled:opacity-40"><Images className="h-3.5 w-3.5" />Elegir fotos</button>}
+          </div>
+        </div>
+        <div className="mt-2 grid grid-cols-4 gap-2">
+          {images.map((image, index) => <div key={index} className="publish-photo relative"><img src={image} alt={`Foto ${index + 1}`} /><button type="button" onClick={() => setImages((current) => current.filter((_, i) => i !== index))}><X /></button></div>)}
+          {images.length < 4 && <button type="button" onClick={() => nativeDevice ? void addNativePhoto('photos') : fileRef.current?.click()} className="publish-photo-add"><Plus /><small>Agregar</small></button>}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => void addPhotos(event.target.files)} />
+      </section>
 
       <section className="publish-card"><p className="eyebrow">REVISA LO ESENCIAL</p><label className="publish-label">Título</label><input className="publish-input" value={title} onChange={(e) => setTitle(e.target.value.slice(0, 120))} placeholder="¿Qué vendes?" /><label className="publish-label">Precio</label><input className="publish-input" type="number" min="0.01" step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Precio en MXN" /><label className="publish-label">Categoría</label><select className="publish-input" value={category} onChange={(e) => { const next = e.target.value as ProductCategory; setCategory(next); setAttributes({}); if (next) setScope(defaultScopeForCategory(next)); }}><option value="">Selecciona</option>{MARKETPLACE_CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select><label className="publish-label">Descripción</label><textarea className="publish-textarea" rows={3} maxLength={3000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Lo más importante del producto." /><p className="mt-1 text-right text-[8px] text-slate-600">{description.length.toLocaleString('es-MX')} / 3,000</p></section>
 
