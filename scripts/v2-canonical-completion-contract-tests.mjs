@@ -20,7 +20,13 @@ assert.match(conversation, /<TransactionReservationCard[^>]*transactionHint=\{ca
 assert.match(conversation, /!v2 && !deliveryCompleted/);
 assert.match(conversation, /En V2 la única confirmación válida es la de la tarjeta/);
 assert.match(conversation, /deliveryCompleted && !alreadyReviewed/);
-assert.doesNotMatch(conversation, /v2 &&[^\n]*confirmDelivery\(chatId\)/);
+const legacyConfirmCalls = conversation.match(/confirmDelivery\(chatId\)/g) || [];
+assert.equal(legacyConfirmCalls.length, 1, 'ChatConversation sólo debe conservar una llamada legacy confirmDelivery(chatId)');
+assert.match(
+  conversation,
+  /if \(!v2 && !deliveryCompleted\)[\s\S]{0,700}?confirmDelivery\(chatId\)/,
+  'la única llamada legacy confirmDelivery(chatId) debe quedar protegida por !v2',
+);
 
 assert.match(card, /transactionHint\?: MarketplaceTransaction \| null/);
 assert.match(card, /onTransactionChange\?: \(transaction: MarketplaceTransaction \| null\) => void/);
