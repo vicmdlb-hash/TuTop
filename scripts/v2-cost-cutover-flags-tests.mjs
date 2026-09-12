@@ -67,7 +67,7 @@ assert.match(android, /VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: \$\{\{ inputs\.enable
 assert.match(android, /VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: \$\{\{ inputs\.enable_wallet_lazy_cutover \}\}/);
 assert.match(android, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: \$\{\{ inputs\.enable_favorites_visible_cutover \}\}/);
 assert.match(android, /actions: read/);
-assert.match(android, /Require same-SHA green consolidated gate and real staging smoke/);
+assert.match(android, /Require same-SHA green October and Staging/);
 assert.match(android, /actions\/workflows\/october-01-validation\.yml\/runs/);
 assert.match(android, /actions\/workflows\/staging-v2-smoke\.yml\/runs/);
 assert.match(android, /head_sha="\$GITHUB_SHA"/);
