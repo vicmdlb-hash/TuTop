@@ -61,7 +61,8 @@ assert.match(guardedRunner, /Las demás tareas seguras sí pudieron continuar/);
 assert.match(workflow, /on:\s*\n\s*workflow_dispatch:/);
 assert.doesNotMatch(workflow, /schedule:/);
 assert.match(workflow, /TUTOP_ALLOW_V2_MAINTENANCE: staging-v2/);
-assert.match(workflow, /node scripts\/v2-trusted-maintenance-guarded\.mjs --apply/);
+assert.match(workflow, /node scripts\/gated-trusted-staging-apply\.mjs maintenance/);
+assert.doesNotMatch(workflow, /run: node scripts\/v2-trusted-maintenance-guarded\.mjs --apply/);
 assert.doesNotMatch(workflow, /run: node scripts\/v2-trusted-maintenance\.mjs --apply/);
 
 console.log('PASS private reviews remain restricted to their participants/admin');
@@ -70,5 +71,5 @@ console.log('PASS trusted reputation derives from completed transaction evidence
 console.log('PASS every trusted maintenance task capacity-checks all source collections it scans');
 console.log('PASS oversized tasks fail closed without blocking other safe maintenance tasks');
 console.log('PASS stale trusted snapshots are disclosed instead of presented as real-time');
-console.log('PASS trusted maintenance remains manual-only during the Actions outage');
+console.log('PASS trusted maintenance workflow routes through the exact-SHA gated apply wrapper');
 console.log('Trusted public reputation + maintenance capacity contract: PASS');
