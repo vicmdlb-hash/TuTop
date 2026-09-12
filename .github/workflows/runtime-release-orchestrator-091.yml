@@ -1,0 +1,215 @@
+name: TuTop 0.9.1 runtime release orchestrator
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: tutop-091-runtime-release-orchestrator
+  cancel-in-progress: false
+
+jobs:
+  release-chain-091:
+    name: 0.9.1 October → Staging → Android → verified APK
+    if: github.ref_name == 'main'
+    runs-on: [self-hosted, linux, x64, tutop-zero-cost-controller]
+    timeout-minutes: 150
+    env:
+      TARGET_REF: feat/tutop-0.9.1-nearby-topi
+      EXPECTED_VERSION: 0.9.1-beta.0
+      EXPECTED_VERSION_CODE: "90100"
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
+
+    steps:
+      - name: Resolve Firebase credential mode on controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${FIREBASE_TOKEN:-}" ] && [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_ID:-}" ] && [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_SECRET:-}" ]; then
+            echo "TUTOP_FIREBASE_AUTH_MODE=managed_refresh_token" >> "$GITHUB_ENV"
+            echo "Firebase auth: managed refresh-token credentials present." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if command -v gcloud >/dev/null 2>&1; then
+            ACCESS_TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || true)"
+            if [ -n "$ACCESS_TOKEN" ]; then
+              echo "::add-mask::$ACCESS_TOKEN"
+              {
+                echo "TUTOP_FIREBASE_ACCESS_TOKEN=$ACCESS_TOKEN"
+                echo "TUTOP_FIREBASE_AUTH_MODE=local_adc"
+                echo "FIREBASE_TOKEN="
+                echo "TUTOP_FIREBASE_OAUTH_CLIENT_ID="
+                echo "TUTOP_FIREBASE_OAUTH_CLIENT_SECRET="
+              } >> "$GITHUB_ENV"
+              echo "Firebase auth: local ADC valid on controller." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
+          echo "DETENIDO: no hay credencial Firebase utilizable." >&2
+          exit 42
+
+      - name: Capture exact 0.9.1 target HEAD
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_SHA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_REF}" --jq '.sha')"
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "DETENIDO: SHA inválido para ${TARGET_REF}." >&2; exit 41; }
+          echo "TARGET_SHA=${TARGET_SHA}" >> "$GITHUB_ENV"
+          echo "## TuTop 0.9.1 release chain" >> "$GITHUB_STEP_SUMMARY"
+          echo "Target: \`${TARGET_REF}@${TARGET_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run October exact-SHA gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_REF}" --jq '.sha')"
+          test "$current" = "$TARGET_SHA"
+          before="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" -f branch="$TARGET_REF" -f head_sha="$TARGET_SHA" -f event=workflow_dispatch -f per_page=20 --jq '.workflow_runs[0].id // 0')"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/dispatches" -f ref="$TARGET_REF" >/dev/null
+          for attempt in $(seq 1 240); do
+            json="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" -f branch="$TARGET_REF" -f head_sha="$TARGET_SHA" -f event=workflow_dispatch -f per_page=20)"
+            run_id="$(printf '%s' "$json" | jq -r --arg before "$before" '.workflow_runs | map(select(.id > ($before|tonumber))) | .[0].id // empty')"
+            if [ -n "$run_id" ]; then
+              status="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status')"
+              conclusion="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion // ""')"
+              echo "October: run=${run_id} status=${status} conclusion=${conclusion:-pending}"
+              if [ "$status" = "completed" ]; then
+                test "$conclusion" = "success"
+                echo "OCTOBER_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+                echo "✅ October 75%: ${run_id}" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          echo "DETENIDO: timeout esperando October." >&2
+          exit 50
+
+      - name: Run Staging same-SHA gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_REF}" --jq '.sha')"
+          test "$current" = "$TARGET_SHA"
+          before="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/staging-v2-smoke.yml/runs" -f branch="$TARGET_REF" -f head_sha="$TARGET_SHA" -f event=workflow_dispatch -f per_page=20 --jq '.workflow_runs[0].id // 0')"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/staging-v2-smoke.yml/dispatches" -f ref="$TARGET_REF" >/dev/null
+          for attempt in $(seq 1 240); do
+            json="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/staging-v2-smoke.yml/runs" -f branch="$TARGET_REF" -f head_sha="$TARGET_SHA" -f event=workflow_dispatch -f per_page=20)"
+            run_id="$(printf '%s' "$json" | jq -r --arg before "$before" '.workflow_runs | map(select(.id > ($before|tonumber))) | .[0].id // empty')"
+            if [ -n "$run_id" ]; then
+              status="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status')"
+              conclusion="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion // ""')"
+              echo "Staging: run=${run_id} status=${status} conclusion=${conclusion:-pending}"
+              if [ "$status" = "completed" ]; then
+                test "$conclusion" = "success"
+                echo "STAGING_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+                echo "✅ Staging 85%: ${run_id}" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          echo "DETENIDO: timeout esperando Staging." >&2
+          exit 50
+
+      - name: Run Android same-SHA gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_REF}" --jq '.sha')"
+          test "$current" = "$TARGET_SHA"
+          before="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/android-debug-apk.yml/runs" -f branch="$TARGET_REF" -f head_sha="$TARGET_SHA" -f event=workflow_dispatch -f per_page=20 --jq '.workflow_runs[0].id // 0')"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/android-debug-apk.yml/dispatches" -f ref="$TARGET_REF" >/dev/null
+          for attempt in $(seq 1 240); do
+            json="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/android-debug-apk.yml/runs" -f branch="$TARGET_REF" -f head_sha="$TARGET_SHA" -f event=workflow_dispatch -f per_page=20)"
+            run_id="$(printf '%s' "$json" | jq -r --arg before "$before" '.workflow_runs | map(select(.id > ($before|tonumber))) | .[0].id // empty')"
+            if [ -n "$run_id" ]; then
+              status="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status')"
+              conclusion="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion // ""')"
+              echo "Android: run=${run_id} status=${status} conclusion=${conclusion:-pending}"
+              if [ "$status" = "completed" ]; then
+                test "$conclusion" = "success"
+                echo "ANDROID_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+                echo "✅ Android 95%: ${run_id}" >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          echo "DETENIDO: timeout esperando Android." >&2
+          exit 50
+
+      - name: Download and independently verify 0.9.1 APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${OCTOBER_RUN_ID:-}"
+          test -n "${STAGING_RUN_ID:-}"
+          test -n "${ANDROID_RUN_ID:-}"
+          ARTIFACT_JSON="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${ANDROID_RUN_ID}/artifacts" -f per_page=100)"
+          APK_ARTIFACT_ID="$(printf '%s' "$ARTIFACT_JSON" | jq -r '.artifacts | map(select(.expired == false and (.name | startswith("TuTop-0.9.1-beta.0-physical-qa-staging-")))) | .[0].id // empty')"
+          APK_ARTIFACT_NAME="$(printf '%s' "$ARTIFACT_JSON" | jq -r '.artifacts | map(select(.expired == false and (.name | startswith("TuTop-0.9.1-beta.0-physical-qa-staging-")))) | .[0].name // empty')"
+          test -n "$APK_ARTIFACT_ID"
+          test -n "$APK_ARTIFACT_NAME"
+          rm -rf apk-verified-091
+          mkdir -p apk-verified-091
+          gh run download "$ANDROID_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$APK_ARTIFACT_NAME" --dir apk-verified-091
+          APK_FILE="apk-verified-091/TuTop-0.9.1-beta.0-physical-qa-staging.apk"
+          HASH_FILE="apk-verified-091/TuTop-0.9.1-beta.0-physical-qa-staging.apk.sha256"
+          META_FILE="apk-verified-091/TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt"
+          test -s "$APK_FILE"
+          test -s "$HASH_FILE"
+          test -s "$META_FILE"
+          EXPECTED_SHA="$(awk '{print $1; exit}' "$HASH_FILE")"
+          ACTUAL_SHA="$(sha256sum "$APK_FILE" | awk '{print $1}')"
+          test "$EXPECTED_SHA" = "$ACTUAL_SHA"
+          grep -q "head_sha=${TARGET_SHA}" "$META_FILE"
+          grep -q "gate_run_id=${OCTOBER_RUN_ID}" "$META_FILE"
+          grep -q "staging_smoke_run_id=${STAGING_RUN_ID}" "$META_FILE"
+          grep -q "version=${EXPECTED_VERSION}" "$META_FILE"
+          grep -q "version_code=${EXPECTED_VERSION_CODE}" "$META_FILE"
+          grep -q 'reviews_lazy_cutover=false' "$META_FILE"
+          grep -q 'wallet_lazy_cutover=false' "$META_FILE"
+          grep -q 'favorites_visible_cutover=false' "$META_FILE"
+          echo "APK_ARTIFACT_ID=${APK_ARTIFACT_ID}" >> "$GITHUB_ENV"
+          echo "APK_ARTIFACT_NAME=${APK_ARTIFACT_NAME}" >> "$GITHUB_ENV"
+          echo "APK_SHA256=${ACTUAL_SHA}" >> "$GITHUB_ENV"
+          echo "✅ APK 100% independently verified: ${ACTUAL_SHA}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload independently verified APK copy
+        uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-0.9.1-beta.0-verified-${{ github.run_number }}
+          path: apk-verified-091/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Release summary
+        shell: bash
+        run: |
+          {
+            echo ""
+            echo "### Verified candidate"
+            echo "- Target SHA: \`${TARGET_SHA}\`"
+            echo "- October: \`${OCTOBER_RUN_ID}\`"
+            echo "- Staging: \`${STAGING_RUN_ID}\`"
+            echo "- Android: \`${ANDROID_RUN_ID}\`"
+            echo "- Source artifact: \`${APK_ARTIFACT_ID}\`"
+            echo "- APK SHA-256: \`${APK_SHA256}\`"
+            echo "- Status: installable beta candidate; Physical QA on real device remains required."
+          } >> "$GITHUB_STEP_SUMMARY"
