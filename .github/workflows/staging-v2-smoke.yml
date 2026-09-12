@@ -112,6 +112,11 @@ jobs:
       - name: Prepare staging Web App runtime config
         run: node scripts/prepare-staging-v2-auth.mjs
 
+      - name: Prove Firebase AI Logic generateContent runtime
+        env:
+          TUTOP_TOPI_AI_MODEL: gemini-3.8-flash
+        run: node scripts/staging-topi-ai-runtime-smoke.mjs
+
       - name: Provision and validate staging Android Firebase app
         run: node scripts/prepare-staging-android-app.mjs
 
