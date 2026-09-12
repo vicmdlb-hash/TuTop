@@ -14,7 +14,7 @@ concurrency:
 jobs:
   smoke:
     if: github.ref_name == 'feat/tutop-0.8-p0'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, tutop-zero-cost-worker]
     timeout-minutes: 30
     env:
       TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
@@ -53,16 +53,34 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "✅ October gate same-branch/same-SHA validado: ${GATE_RUN_ID} / ${GITHUB_REF_NAME}@${GITHUB_SHA}."
 
-      - name: Require managed staging credentials before dependency setup
+      - name: Resolve staging Firebase credential mode
         shell: bash
         run: |
           set -euo pipefail
-          for name in FIREBASE_TOKEN TUTOP_FIREBASE_OAUTH_CLIENT_ID TUTOP_FIREBASE_OAUTH_CLIENT_SECRET; do
-            if [ -z "${!name:-}" ]; then
-              echo "DETENIDO: falta credencial gestionada ${name} en GitHub Actions." >&2
-              exit 42
+          if [ -n "${FIREBASE_TOKEN:-}" ] && [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_ID:-}" ] && [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_SECRET:-}" ]; then
+            echo "TUTOP_FIREBASE_AUTH_MODE=managed_refresh_token" >> "$GITHUB_ENV"
+            echo "Managed refresh-token credentials are present (values not printed)."
+            exit 0
+          fi
+
+          if command -v gcloud >/dev/null 2>&1; then
+            ACCESS_TOKEN="$(gcloud auth application-default print-access-token 2>/dev/null || true)"
+            if [ -n "$ACCESS_TOKEN" ]; then
+              echo "::add-mask::$ACCESS_TOKEN"
+              {
+                echo "TUTOP_FIREBASE_ACCESS_TOKEN=$ACCESS_TOKEN"
+                echo "TUTOP_FIREBASE_AUTH_MODE=local_adc"
+                echo "FIREBASE_TOKEN="
+                echo "TUTOP_FIREBASE_OAUTH_CLIENT_ID="
+                echo "TUTOP_FIREBASE_OAUTH_CLIENT_SECRET="
+              } >> "$GITHUB_ENV"
+              echo "Local Application Default Credentials validated for staging."
+              exit 0
             fi
-          done
+          fi
+
+          echo "DETENIDO: staging no tiene credencial Firebase utilizable. Configura los tres Secrets gestionados o ADC local en el self-hosted worker." >&2
+          exit 42
 
       - name: Node 22
         uses: actions/setup-node@v7

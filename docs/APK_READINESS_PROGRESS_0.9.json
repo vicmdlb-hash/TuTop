@@ -1,0 +1,70 @@
+{
+  "schema": "tutop.apk-readiness-progress.v1",
+  "target": "real_installable_apk",
+  "app_version": "0.9.0-beta.0",
+  "application_id": "mx.tutop.app",
+  "branch": "feat/tutop-0.8-p0",
+  "progress_percent": 55,
+  "status": "STATIC_PREPARATION_COMPLETE_EXTERNAL_GATES_PENDING",
+  "head_policy": "Every runtime gate must execute against the current PR #6 HEAD at dispatch time. A fixed SHA is intentionally not stored here because updating this tracker itself changes HEAD.",
+  "milestones": [
+    {
+      "id": "static_freeze_release_chain",
+      "weight_percent": 55,
+      "status": "complete",
+      "evidence": "PR #6 runtime/release hardening through cycle 74 plus this progress tracker"
+    },
+    {
+      "id": "managed_oauth_secrets",
+      "weight_percent": 5,
+      "status": "pending_external",
+      "required": [
+        "FIREBASE_TOKEN",
+        "FIREBASE_OAUTH_CLIENT_ID",
+        "FIREBASE_OAUTH_CLIENT_SECRET"
+      ],
+      "notes": "Values must remain in GitHub Secrets and must never be committed or printed."
+    },
+    {
+      "id": "october_exact_sha_green",
+      "weight_percent": 15,
+      "status": "pending",
+      "workflow": "october-01-validation.yml",
+      "required_ref": "current PR #6 HEAD at dispatch time"
+    },
+    {
+      "id": "staging_same_sha_green",
+      "weight_percent": 10,
+      "status": "pending",
+      "workflow": "staging-v2-smoke.yml",
+      "required_ref": "same branch and same SHA as the successful October gate"
+    },
+    {
+      "id": "android_same_sha_build",
+      "weight_percent": 10,
+      "status": "pending",
+      "workflow": "android-debug-apk.yml",
+      "required_ref": "same branch and same SHA as successful October and Staging gates",
+      "required_cutovers": {
+        "reviews_lazy": false,
+        "wallet_lazy": false,
+        "favorites_visible": false
+      }
+    },
+    {
+      "id": "apk_artifact_hash_verified",
+      "weight_percent": 5,
+      "status": "pending",
+      "requirements": [
+        "APK artifact exists and is downloadable",
+        "SHA-256 recorded and verified",
+        "artifact_id and build_run_id recorded",
+        "gate SHA = staging SHA = Android build SHA"
+      ]
+    }
+  ],
+  "completion_rule": "100 percent means a real downloadable Android APK exists for the exact validated SHA with verified SHA-256. Physical QA A+B is the next gate after APK readiness and is intentionally not counted toward this target.",
+  "runtime_validated": false,
+  "current_apk": null,
+  "updated_at": "2026-09-09T08:00:00-06:00"
+}

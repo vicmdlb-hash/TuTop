@@ -1,28 +1,38 @@
 import { spawnSync } from 'node:child_process';
+import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
-const project = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
-if (!project) {
-  console.error('Falta TUTOP_FIREBASE_PROJECT_ID. Usa un proyecto Firebase dedicado a beta/staging.');
-  process.exit(2);
-}
-if (process.env.TUTOP_ALLOW_FIREBASE_DEPLOY !== 'staging') {
-  console.error('DETENIDO: define TUTOP_ALLOW_FIREBASE_DEPLOY=staging solo después de verificar el project ID.');
-  process.exit(2);
-}
-if (/prod(uction)?/i.test(project) && process.env.TUTOP_ALLOW_PRODUCTION_FIREBASE !== '1') {
-  console.error('DETENIDO: el project ID parece producción. Esta automatización es para staging/beta.');
-  process.exit(2);
-}
-
+const project = assertStagingFreezeContext({
+  allowEnv: 'TUTOP_ALLOW_FIREBASE_DEPLOY',
+  allowValue: 'staging-v2',
+});
+const firebaseTools = 'firebase-tools@15.29.0';
 const isWindows = process.platform === 'win32';
+
 const run = (command, args) => {
   console.log(`\n> ${command} ${args.join(' ')}`);
   const result = spawnSync(command, args, { stdio: 'inherit', shell: isWindows, env: process.env });
   if (result.status !== 0) process.exit(result.status || 1);
 };
 
-run('npm', ['run', 'check']);
-run('npm', ['run', 'functions:build']);
-run('npm', ['run', 'build']);
-run('npx', ['firebase-tools', 'deploy', '--project', project, '--only', 'firestore:rules,firestore:indexes,storage,functions,hosting']);
-console.log(`\n✅ Firebase staging desplegado en ${project}. Verifica Auth, App Check y URLs de Hosting antes de distribuir la beta.`);
+console.log(`TuTop V2 staging deploy target: ${project}`);
+console.log(`October gate run: ${process.env.TUTOP_VALIDATED_GATE_RUN_ID}`);
+console.log('Config: firebase.v2.json');
+console.log('Rules: firebase/firestore.v2.generated.rules (generadas antes de deploy)');
+console.log('Scope: firestore:rules,firestore:indexes únicamente');
+console.log('Static/typecheck/catalog-plan evidence is reused from the required same-SHA October gate.');
+
+// The central freeze guard above requires a real same-SHA October gate. Do not
+// repeat static/typecheck/catalog-plan work in this staging runner. Rules must
+// still be generated in this job because the generated file is job-local.
+run('npm', ['run', 'v2:rules:prepare']);
+run('npx', [
+  '--yes', firebaseTools,
+  'deploy',
+  '--config', 'firebase.v2.json',
+  '--project', project,
+  '--only', 'firestore:rules,firestore:indexes',
+]);
+
+console.log(`\n✅ Firestore V2 staging desplegado en ${project}.`);
+console.log(`Firebase CLI efímero y fijado: ${firebaseTools}.`);
+console.log('Este comando NO despliega hosting, storage, functions ni activa VITE_TUTOP_SCHEMA_V2.');

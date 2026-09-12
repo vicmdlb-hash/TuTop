@@ -6,14 +6,15 @@ export interface FirebaseRuntimeConfig {
 }
 
 const STORAGE_KEY = 'tutop.firebase.config.v1';
+const HISTORICAL_PROJECT_ID = 'tutop-3a4f7';
+const STAGING_PROJECT_ID = 'tutop-beta-vicmdlb-1356585881';
 
-// Firebase Web config is public client configuration, not a server secret.
-// Shipping it here means every installed TuTop build connects to the same
-// production beta backend without exposing infrastructure setup to students.
+// Stable V1 keeps its historical backend until an explicit release migration.
+// V2 is forbidden from using this config by assertRuntimeEnvironment().
 const BUILT_IN_CONFIG: FirebaseRuntimeConfig = {
   apiKey: 'AIzaSyDWEv_N_CMwtvPzbPQ7-6zajJfOf06WR7A',
   authDomain: 'tutop-3a4f7.firebaseapp.com',
-  projectId: 'tutop-3a4f7',
+  projectId: HISTORICAL_PROJECT_ID,
   appId: '1:418411650162:web:5e435d81fb1e7880a9b6eb',
 };
 
@@ -46,8 +47,27 @@ function storedConfig(): FirebaseRuntimeConfig | null {
   }
 }
 
+function v2Enabled() {
+  return String(import.meta.env.VITE_TUTOP_SCHEMA_V2 || '').toLowerCase() === 'true';
+}
+
+function expectedEnvironment() {
+  return String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').trim().toLowerCase();
+}
+
+export function assertRuntimeEnvironment(config: FirebaseRuntimeConfig) {
+  if (!v2Enabled()) return config;
+  if (config.projectId === HISTORICAL_PROJECT_ID) throw new Error('V2_LEGACY_FIREBASE_BLOCKED');
+
+  const environment = expectedEnvironment();
+  if (environment === 'staging' && config.projectId !== STAGING_PROJECT_ID) throw new Error('V2_STAGING_PROJECT_MISMATCH');
+  if (environment === 'production' && /(beta|staging|stage|dev|test|sandbox)/i.test(config.projectId)) throw new Error('V2_PRODUCTION_PROJECT_MISMATCH');
+  if (environment && !['development', 'staging', 'production'].includes(environment)) throw new Error('INVALID_TUTOP_ENVIRONMENT');
+  return config;
+}
+
 export function getFirebaseConfig(): FirebaseRuntimeConfig {
-  return envConfig() || storedConfig() || BUILT_IN_CONFIG;
+  return assertRuntimeEnvironment(envConfig() || storedConfig() || BUILT_IN_CONFIG);
 }
 
 // Kept for admin/development overrides. Normal users never see this flow.
@@ -59,6 +79,7 @@ export function saveFirebaseConfig(config: FirebaseRuntimeConfig) {
     appId: config.appId?.trim() || undefined,
   };
   if (!clean.apiKey || !clean.projectId) throw new Error('Configuración incompleta.');
+  assertRuntimeEnvironment(clean);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(clean));
 }
 
@@ -87,10 +108,10 @@ export function parseFirebaseConfig(input: string): FirebaseRuntimeConfig {
   const apiKey = String(parsed.apiKey || '').trim();
   const projectId = String(parsed.projectId || '').trim();
   if (!apiKey || !projectId) throw new Error('Configuración incompleta.');
-  return {
+  return assertRuntimeEnvironment({
     apiKey,
     projectId,
     authDomain: parsed.authDomain ? String(parsed.authDomain) : undefined,
     appId: parsed.appId ? String(parsed.appId) : undefined,
-  };
+  });
 }

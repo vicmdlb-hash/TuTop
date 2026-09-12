@@ -1,20 +1,12 @@
 import type { AssistantResult, MeetingPoint, Product, ProductCategory, ProductFormData } from '../types';
 
+// TuTop 0.8 keeps the active Spark catalog compatible with the already deployed rules.
+// More granular options are captured by the adaptive form and stored as listing details
+// until the dedicated schema migration is deployed.
 export const MARKETPLACE_CATEGORIES: ProductCategory[] = [
-  'Electrónica',
-  'Ropa & Accesorios',
-  'Libros & Apuntes',
-  'Comida',
-  'Postres',
-  'Servicios',
-  'Transporte',
-  'Cuartos & Renta',
-  'Eventos',
-  'Arte & Manualidades',
-  'Otros',
+  'Electrónica', 'Ropa & Accesorios', 'Libros & Apuntes', 'Comida', 'Postres',
+  'Servicios', 'Transporte', 'Cuartos & Renta', 'Eventos', 'Arte & Manualidades', 'Otros',
 ];
-
-// Old records remain readable while new listings use the cleaner category name.
 export const VALID_CATEGORIES: ProductCategory[] = [...MARKETPLACE_CATEGORIES, 'Apuntes & Guías'];
 export const VALID_MEETING_POINTS: MeetingPoint[] = ['Cafetería Central', 'Puerta Principal', 'Salón de Clases', 'Coordinar por Chat'];
 
@@ -56,7 +48,7 @@ export function detectCategory(text: string): ProductCategory | null {
   const value = normalize(text);
   if (/(iphone|ipad|android|celular|telefono|laptop|computadora|audifono|cargador|usb|teclado|mouse|tablet|bocina|electronica)/.test(value)) return 'Electrónica';
   if (/(ropa|tenis|zapato|sudadera|playera|camisa|pantalon|mochila|bolsa|gorra|chamarra|accesorio|vestido)/.test(value)) return 'Ropa & Accesorios';
-  if (/(apunte|guia|resumen|libro|cuaderno|manual|formulario|material de estudio|antologia|fotocopia)/.test(value)) return 'Libros & Apuntes';
+  if (/(apunte|guia|resumen|libro|cuaderno|manual|formulario|material de estudio|antologia|fotocopia|calculadora|papeleria|material escolar)/.test(value)) return 'Libros & Apuntes';
   if (/(comida|hamburguesa|taco|pizza|burrito|sandwich|torta|chilaquil|tamal|hot dog|comida corrida|ensalada|pasta)/.test(value)) return 'Comida';
   if (/(brownie|galleta|pastel|postre|cupcake|flan|gelatina|alegria|amaranto|dulce|pay|cheesecake)/.test(value)) return 'Postres';
   if (/(servicio|tutoria|asesoria|clase|diseno|edicion|fotografia|traduccion|reparacion|impresion|maquillaje)/.test(value)) return 'Servicios';
@@ -107,15 +99,10 @@ export function improveDescription(draft: Partial<ProductFormData>) {
   if (!title) return 'Agrega primero un título para que Topi pueda ayudarte a redactar mejor.';
   const current = draft.descripcion?.trim();
   const category = normalizeCategory(draft.categoria || detectCategory(title) || 'Otros');
-  if (current && current.length >= 70) {
-    return current
-      .replace(/\s+/g, ' ')
-      .replace(/^./, (letter) => letter.toUpperCase())
-      .slice(0, 900);
-  }
+  if (current && current.length >= 70) return current.replace(/\s+/g, ' ').replace(/^./, (letter) => letter.toUpperCase()).slice(0, 900);
   const templates: Partial<Record<ProductCategory, string>> = {
-    'Electrónica': `${title}. Indica estado, funcionamiento, accesorios incluidos y cualquier detalle importante. Entrega dentro de la comunidad TuTop.`,
-    'Ropa & Accesorios': `${title}. Agrega talla, estado, medidas si aplica y cualquier detalle de uso. Entrega a convenir dentro de TuTop.`,
+    'Electrónica': `${title}. Indica estado, funcionamiento, accesorios incluidos y cualquier detalle importante.`,
+    'Ropa & Accesorios': `${title}. Agrega talla, estado, medidas si aplica y cualquier detalle de uso.`,
     'Libros & Apuntes': `${title}. Explica materia/semestre, contenido, formato y estado para que otros estudiantes sepan exactamente qué reciben.`,
     'Comida': `${title}. Describe porción, ingredientes principales, horario de entrega y si requiere pedido previo.`,
     'Postres': `${title}. Describe tamaño o porción, sabor, ingredientes principales y disponibilidad.`,
@@ -131,10 +118,7 @@ export function improveDescription(draft: Partial<ProductFormData>) {
 export function suggestPriceFromProducts(draft: Partial<ProductFormData>, products: Product[]) {
   const category = draft.categoria ? normalizeCategory(draft.categoria) : detectCategory(`${draft.titulo || ''} ${draft.descripcion || ''}`);
   if (!category) return null;
-  const comparable = products
-    .filter((product) => normalizeCategory(product.categoria) === category && product.estado === 'Activo' && product.precio_mxn > 0)
-    .map((product) => product.precio_mxn)
-    .sort((a, b) => a - b);
+  const comparable = products.filter((product) => normalizeCategory(product.categoria) === category && product.estado === 'Activo' && product.precio_mxn > 0).map((product) => product.precio_mxn).sort((a, b) => a - b);
   if (comparable.length < 2) return null;
   const median = comparable[Math.floor(comparable.length / 2)];
   const low = Math.max(1, Math.round(median * 0.8 / 5) * 5);
@@ -153,6 +137,17 @@ export function reviewProductDraft(draft: Partial<ProductFormData>) {
   if (!draft.imagen_url && !draft.imagenes_url?.length) issues.push('Una foto ayuda mucho a que el anuncio genere confianza.');
   if ((draft.descripcion?.trim().length || 0) < 20) issues.push('Una descripción un poco más completa puede ayudarte a vender más rápido.');
   return issues;
+}
+
+export function publicationQuality(draft: Partial<ProductFormData>) {
+  let score = 35;
+  if (draft.titulo?.trim().length && draft.precio_mxn && draft.categoria) score += 25;
+  if (draft.imagenes_url?.length || draft.imagen_url) score += 15;
+  if ((draft.descripcion?.trim().length || 0) >= 40) score += 10;
+  if (draft.condicion) score += 5;
+  if (draft.metodos_entrega?.length) score += 5;
+  if (draft.etiquetas?.length) score += 5;
+  return Math.min(100, score);
 }
 
 function nextMissing(data: Partial<ProductFormData>): keyof ProductFormData | null {
@@ -175,11 +170,8 @@ function askFor(field: keyof ProductFormData | null): string {
   }
 }
 
-// Compatibility parser kept for older flows/tests. New UI is manual-first.
 export function parseProductMessage(text: string, previous: Partial<ProductFormData>, defaultFaculty: string): AssistantResult {
-  if (isForbiddenProductText(text)) {
-    return { blocked: true, response: 'Ese tipo de publicación no está permitido en TuTop.', data: previous, complete: false, needs: nextMissing(previous) };
-  }
+  if (isForbiddenProductText(text)) return { blocked: true, response: 'Ese tipo de publicación no está permitido en TuTop.', data: previous, complete: false, needs: nextMissing(previous) };
   const data: Partial<ProductFormData> = { ...previous };
   const price = extractPrice(text);
   const category = detectCategory(text);

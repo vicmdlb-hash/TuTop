@@ -1,0 +1,177 @@
+# TuTop 0.9 — Gate Execution Dossier
+
+Estado: **RUNTIME FREEZE CANDIDATE / NOT VALIDATED**.
+
+Este documento define cómo usar los próximos minutos de GitHub Actions sin romper la cadena exact-SHA ni repetir runners innecesariamente.
+
+## Regla cero
+
+El SHA que se despacha en October se convierte en el único candidato de esa ronda.
+
+Si cualquier reparación cambia el HEAD, **toda evidencia anterior deja de autorizar promoción del nuevo HEAD**. Se vuelve a empezar desde October sobre el SHA nuevo.
+
+No fusionar `main`, no producción, no Play Store, no billing, no SMS/Identity Platform y no App Check enforcement.
+
+## Antes del primer runner
+
+Confirmar:
+
+- PR #6 abierto y no fusionado;
+- rama `feat/tutop-0.8-p0`;
+- working HEAD definitivo de la ronda;
+- feature freeze vigente;
+- `runtime_validated=false`;
+- no candidato Physical QA vigente;
+- reviews/Wallet/favorites cutovers `false` por defecto;
+- no editar ni ejecutar `one-shot-085-hardened.yml` ni `provision-firebase-staging-v2.yml`;
+- no disparar Quality/Firestore/CI-auth por rutina: son diagnósticos opcionales, no prerequisitos de promoción;
+- **rotar en el proveedor la credencial OAuth que estuvo embebida en código y no reutilizarla**;
+- configurar GitHub Secrets `FIREBASE_OAUTH_CLIENT_ID` y `FIREBASE_OAUTH_CLIENT_SECRET` con credenciales gestionadas/rotadas antes de staging, Android V2 o trusted maintenance;
+- mantener `FIREBASE_TOKEN` sólo como refresh-token fallback gestionado; por sí solo ya no se considera suficiente.
+
+## Paso 1 — October consolidated gate
+
+Workflow: `.github/workflows/october-01-validation.yml`.
+
+Debe ejecutarse una sola vez sobre el HEAD seleccionado y demostrar en el mismo runner:
+
+1. `npm ci`;
+2. `npm run check`;
+3. GitHub/beta/V2 staging readiness;
+4. una sola pasada TypeScript mediante `npm run build` (`npm run typecheck && vite build`);
+5. web build con reviews + Wallet + favorites cutovers compilados en `true`;
+6. `v2:rules:prepare`;
+7. Firestore Emulator completo, incluyendo transaction locks, completion bilateral, unread COUNT, review strike COUNT, favorites membership/fallback exacto y contracts de account/governance/notifications.
+
+### Si October falla
+
+**STOP. No ejecutar staging, Android ni otro workflow para “ver si pasa”.**
+
+Identificar el primer error causal, corregir únicamente el P0/P1/integración/gate, asumir que el SHA cambió y volver a empezar desde October. No gastar runners paralelos para diagnosticar la misma falla salvo que el log no permita aislarla.
+
+## Paso 2 — Staging same-SHA
+
+Workflow: `.github/workflows/staging-v2-smoke.yml`.
+
+Sólo puede comenzar si existe `october-01-validation.yml` exitoso sobre **el mismo `GITHUB_SHA`**. El workflow exporta tanto el run ID como `TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA`; los entrypoints remotos verifican esa igualdad antes de tocar staging.
+
+Antes de mutar remoto, staging exige `FIREBASE_TOKEN` + `TUTOP_FIREBASE_OAUTH_CLIENT_ID` + `TUTOP_FIREBASE_OAUTH_CLIENT_SECRET`, alimentados exclusivamente desde GitHub Secrets. Si falta cualquiera, termina fail-closed antes del deploy.
+
+Staging puede entonces desplegar Rules/índices V2, verificar catálogo, preparar Auth/configs, ejecutar smoke real de dos usuarios, borrado de cuenta controlado y mantener App Check `UNENFORCED`.
+
+### Surface remoto durante el freeze
+
+Las mutaciones de staging soportadas pasan por `scripts/staging-freeze-guard.mjs` y requieren simultáneamente:
+
+- proyecto exacto `tutop-beta-vicmdlb-1356585881`;
+- rama exacta `feat/tutop-0.8-p0`;
+- `GITHUB_ACTIONS=true`;
+- `GITHUB_SHA` válido;
+- October run ID validado;
+- `TUTOP_VALIDATED_GATE_SHA === GITHUB_SHA`;
+- allow-sentinel específico cuando corresponda.
+
+Entry points protegidos:
+
+- Firestore Rules/index deploy;
+- Firebase Auth base deploy;
+- habilitación de Cloud Firestore API;
+- Firebase Web App/config setup;
+- Firebase Android App/config setup;
+- staging admin helper;
+- App Check staging configuration.
+
+El seed canónico remoto sólo se soporta mediante `scripts/gated-v2-catalog-seed.mjs`, y `npm run v2:catalog:seed` apunta a ese wrapper.
+
+Además, `scripts/firebase-ci-auth.mjs` instala `dangerous-script-apply-guard.mjs`: si alguien intenta ejecutar directamente `seed-v2-catalog.mjs`, `reconcile-v2-reservations.mjs`, `v2-trusted-maintenance.mjs` o `v2-observability-snapshot.mjs` con `--apply`, el proceso exige el mismo contexto exact-SHA antes de obtener un access token. El dry-run sigue disponible.
+
+Durante Runtime Freeze, App Check sólo admite `OFF` o `UNENFORCED`; `ENFORCED` está físicamente bloqueado en el configurador.
+
+`npm run firebase:deploy:spark` también está bloqueado explícitamente durante el freeze. Los emuladores locales siguen disponibles porque no mutan remoto.
+
+Google Play/Internal App Sharing permanece bloqueado por `config/project.json`: zero-investment activo, billing no autorizado y production publishing desactivado.
+
+### Si staging falla
+
+**STOP. No construir APK.** Si la reparación cambia código/config versionado, el SHA cambia y la ronda vuelve a October. Si la causa es configuración externa no versionada, corregirla y repetir staging sobre el mismo SHA antes de continuar.
+
+## Paso 3 — Selección de cutovers para Android
+
+La primera APK Physical QA debe aislar riesgo:
+
+1. baseline reviews=false, Wallet=false, favorites=false;
+2. después de baseline Android verde, probar cutovers incrementalmente;
+3. no declarar `565→365→265→65` como ahorro activo hasta observarlo realmente.
+
+October compila los tres flags en `true` para detectar incompatibilidades, pero eso no obliga a activarlos en la primera APK.
+
+## Paso 4 — Android exact-SHA
+
+Workflow: `.github/workflows/android-debug-apk.yml`.
+
+Debe verificar October same-SHA + staging same-SHA y las credenciales gestionadas antes de cualquier setup remoto. El job V2 **no repite** `npm run check`, readiness ni Rules prepare: reutiliza la evidencia upstream del mismo SHA para ahorrar minutos. Sí ejecuta `npm run build`, que incluye el typecheck canónico una sola vez, prepara config staging-only, genera Android, ejecuta `lintDebug testDebugUnitTest assembleDebug`, valida configuración nativa, calcula SHA-256, escribe metadata con IDs de gate/staging y los 3 cutovers, genera candidate y verifica checkout ↔ metadata ↔ candidate.
+
+## Paso 5 — Activación del candidato
+
+```bash
+TUTOP_ALLOW_PHYSICAL_QA_CANDIDATE_ACTIVATION=exact-head \
+node scripts/activate-generated-physical-qa-candidate.mjs \
+  PHYSICAL_QA_CANDIDATE.generated.json \
+  docs/PHYSICAL_QA_CANDIDATE_0.9.json
+
+node scripts/physical-qa-candidate-drift.mjs
+```
+
+Sólo continuar si el drift estricto pasa.
+
+## Paso 6 — Rebind de templates
+
+```bash
+TUTOP_ALLOW_PHYSICAL_QA_TEMPLATE_REBIND=exact-head \
+node scripts/rebind-physical-qa-templates.mjs
+```
+
+Esto sólo cambia bindings y debe dejar toda evidencia en `pending`, `false` o `null`.
+
+## Paso 7 — Physical QA A+B
+
+Usar el mismo APK exacto en dos dispositivos/perfiles físicos independientes y validar install/boot, auth/identity, publicación/feed/favorite/chat, oferta/contraoferta/reserva, seller-second y buyer-second completion, terminal states, offline/reconnect, keyboard/back/lifecycle/safe areas/rotation, FCM y App Check observado sin guardar token. `warn`, `pending` o `not_applicable` mantienen release bloqueada.
+
+## Workflows secundarios durante el freeze
+
+### Diagnóstico opcional, manual-only
+
+- `quality.yml`
+- `firestore-v2-security.yml`
+- `ci-auth-parallel-validation.yml`
+
+No son autoridad de promoción y no deben ejecutarse por rutina si October ya cubre la señal necesaria. Quality reutiliza `npm run check` y evita repetir pruebas idénticas/typecheck antes del build.
+
+### Mutación staging controlada
+
+Trusted maintenance sólo puede mutar staging después de **October + staging green sobre el mismo SHA**. `v2-trusted-maintenance.yml` verifica ambos runs, exige las credenciales gestionadas, exporta ambos run IDs y ambos SHA bindings y luego llama exclusivamente `scripts/gated-trusted-staging-apply.mjs` para reconcile/maintenance/observability. Los entrypoints raw conservan además el guard independiente previo a CI auth.
+
+### Cuarentena — no editar / no ejecutar
+
+- `one-shot-085-hardened.yml`
+- `provision-firebase-staging-v2.yml`
+
+Ambos conservan triggers históricos sobre cambios a su propio archivo. Durante el outage/freeze, editarlos puede gastar un runner automáticamente. No forman parte de la cadena de promoción 0.9.
+
+## Política de minutos
+
+- Un failure causal por runner.
+- Reparar antes de reintentar.
+- No lanzar Quality + Firestore + October en paralelo para la misma señal.
+- No construir Android si staging no está green same-SHA.
+- No ejecutar trusted maintenance como prueba.
+- No generar APK sólo para ver si compila.
+- No usar comandos locales de deploy para saltarse October/staging.
+- No usar `--apply` interno como sustituto de los wrappers exact-SHA.
+- No ejecutar staging/Android/trusted mientras falten las credenciales OAuth gestionadas: ese fallo es configuración externa conocida, no un bug de runtime.
+
+## Criterio de salida del freeze
+
+`runtime_validated` sólo puede cambiar cuando exista evidencia real del mismo SHA de October green, staging green, Android green, APK/candidate exactos y Physical QA A+B green.
+
+Hasta entonces: **RUNTIME FREEZE CANDIDATE / NOT VALIDATED**.

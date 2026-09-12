@@ -1,8 +1,14 @@
 import { useEffect, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Home, MessageCircle, PlusCircle, UserRound, WalletCards } from 'lucide-react';
+import { Home, MessageCircle, PlusCircle, ShieldAlert, UserRound, WalletCards } from 'lucide-react';
 import Feed from './components/Feed';
 import Chatbot from './components/Chatbot';
+import NationalPublishScreen from './components/NationalPublishScreen';
+import V2ListingsHydrator from './components/V2ListingsHydrator';
+import V2ChatHistoryHydrator from './components/V2ChatHistoryHydrator';
+import V2ReviewStatusHydrator from './components/V2ReviewStatusHydrator';
+import V2ReviewStrikeHydrator from './components/V2ReviewStrikeHydrator';
+import V2VisibleFavoritesHydrator from './components/V2VisibleFavoritesHydrator';
 import WalletView from './components/WalletView';
 import Inbox from './components/Inbox';
 import Profile from './components/Profile';
@@ -10,36 +16,70 @@ import ProductDetail from './components/ProductDetail';
 import OfflineBanner from './components/OfflineBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import BackendGate from './components/BackendGate';
+import WelcomeTour from './components/WelcomeTour';
+import DraftShelf from './components/DraftShelf';
+import SellerTools from './components/SellerTools';
+import UniversityNetworkSetup from './components/UniversityNetworkSetup';
+import DemandRequestComposer from './components/DemandRequestComposer';
+import NationalAccountControls from './components/NationalAccountControls';
+import OwnTrustedReputationCard from './components/OwnTrustedReputationCard';
+import RecoveryReadinessCard from './components/RecoveryReadinessCard';
+import PhysicalQaPanel from './components/PhysicalQaPanel';
+import './services/nationalBackendCanonicalBridge';
+import './services/rateLimitedOnlineBridge';
+import './services/canonicalStoreBridge';
+import './services/v2LeanChatSnapshotBridge';
+import './services/v2StoreChatMutationBridge';
+import './services/v2StoreReviewMutationBridge';
+import './services/v2CostCutoverSnapshotBridge';
+import './services/v2FavoriteMutationCacheBridge';
+import './services/nationalIdentityHydrationBridge';
+import './services/notificationReceiptStoreBridge';
+import './services/physicalQaTelemetry';
+import { handleTutopPopState } from './services/navigationHistoryBridge';
+import './services/nativeNotificationRouter';
+import { nationalSchemaEnabled } from './services/nationalBackend';
+import { initializeNativeFirebaseSecurity } from './services/nativeFirebaseSecurity';
 import { useAppStore } from './store/useAppStore';
 import type { AppTab } from './types';
 import AdminDashboard from './admin/AdminDashboard';
+import ScopedModerationDashboard from './admin/ScopedModerationDashboard';
+import PendingListingModeration from './admin/PendingListingModeration';
+import AccountDeletionQueue from './admin/AccountDeletionQueue';
 
 export default function App() {
+  const path = window.location.pathname;
+  const admin = path.startsWith('/admin');
+  const moderation = path.startsWith('/admin/moderation');
   return (
     <ErrorBoundary>
       <BackendGate>
-        {window.location.pathname.startsWith('/admin') ? <AdminDashboard /> : <MobileApp />}
+        {moderation ? <><PendingListingModeration /><AccountDeletionQueue /><ScopedModerationDashboard /></> : admin ? <><AdminDashboard /><a href="/admin/moderation" className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-2xl border border-violet-300/20 bg-violet-600 px-4 py-3 text-xs font-black text-white shadow-2xl shadow-violet-950/40"><ShieldAlert className="h-4 w-4"/>Moderación V2</a></> : <MobileApp />}
       </BackendGate>
     </ErrorBoundary>
   );
 }
 
 function MobileApp() {
-  const { activeTab, setActiveTab, chats, activeChatId, selectedProductId, closeChat, closeProduct } = useAppStore();
+  const { activeTab, setActiveTab, chats, activeChatId, selectedProductId } = useAppStore();
   const unread = chats.reduce((sum, chat) => sum + (chat.sin_leer || 0), 0);
+  const v2 = nationalSchemaEnabled();
+  const showFeedUtilities = activeTab === 'feed' && !activeChatId && !selectedProductId;
 
   useEffect(() => {
-    const onPopState = () => {
-      if (selectedProductId) closeProduct();
-      else if (activeChatId) closeChat();
-    };
+    if (!v2) return;
+    void initializeNativeFirebaseSecurity();
+  }, [v2]);
+
+  useEffect(() => {
+    const onPopState = () => { handleTutopPopState(); };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeChatId, selectedProductId, closeChat, closeProduct]);
+  }, []);
 
   const content: Record<AppTab, ReactNode> = {
     feed: <Feed />,
-    bot: <Chatbot />,
+    bot: v2 ? <NationalPublishScreen /> : <Chatbot />,
     wallet: <WalletView />,
     inbox: <Inbox />,
     profile: <Profile />,
@@ -48,6 +88,20 @@ function MobileApp() {
   return (
     <div className="app-shell">
       <OfflineBanner />
+      <WelcomeTour />
+      {showFeedUtilities && (
+        <div className="page-pad pt-safe pb-1">
+          <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2" aria-label="Acciones de comunidad">
+            <DemandRequestComposer />
+            <UniversityNetworkSetup />
+          </div>
+        </div>
+      )}
+      {v2 && <V2ListingsHydrator />}
+      {v2 && <V2VisibleFavoritesHydrator />}
+      {v2 && <V2ChatHistoryHydrator />}
+      {v2 && <V2ReviewStatusHydrator />}
+      {v2 && <V2ReviewStrikeHydrator />}
       <main className="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))]">
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
@@ -55,6 +109,9 @@ function MobileApp() {
           </motion.div>
         </AnimatePresence>
       </main>
+
+      {!v2 && activeTab === 'bot' && !activeChatId && !selectedProductId && <DraftShelf />}
+      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <><OwnTrustedReputationCard /><RecoveryReadinessCard /><PhysicalQaPanel /></>}</>}
 
       {!activeChatId && (
         <nav className="bottom-nav" aria-label="Navegación principal">

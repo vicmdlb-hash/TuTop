@@ -1,0 +1,33 @@
+{
+  "status": "pending_human",
+  "platform": "android",
+  "app_version": "0.9.0-beta.0",
+  "staging_project": "tutop-beta-vicmdlb-1356585881",
+  "candidate_apk_sha256": "2131007fb944b144d85eb8c5deb9ad80f93bd20c1515b7793f89278cd1a9f7e3",
+  "candidate_artifact_id": 10292454237,
+  "candidate_build_run_id": 34677397609,
+  "candidate_build_tree_sha": "a42bfcedf7eb2ecefd0e84f63c4ae82d077cbbd1",
+  "device_count": 0,
+  "devices": [
+    {
+      "slot": "A",
+      "physical": false,
+      "evidence_session_id": "PENDIENTE-DEVICE-A",
+      "profile_fingerprint_sha256": "PENDIENTE-SHA256-SIN-HARDWARE-ID",
+      "app_check_token_observed": false,
+      "verified_at": null
+    },
+    {
+      "slot": "B",
+      "physical": false,
+      "evidence_session_id": "PENDIENTE-DEVICE-B",
+      "profile_fingerprint_sha256": "PENDIENTE-SHA256-SIN-HARDWARE-ID",
+      "app_check_token_observed": false,
+      "verified_at": null
+    }
+  ],
+  "app_check_token_observed": false,
+  "verified_at": null,
+  "contains_raw_token": false,
+  "evidence_note": "Template App Check regenerado desde candidato exact-head activo. Completar sólo con dos sesiones físicas reales; nunca guardar token App Check ni hardware IDs crudos."
+}

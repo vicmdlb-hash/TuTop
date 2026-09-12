@@ -1,0 +1,32 @@
+{
+  "schema": "tutop.fcm-physical-fixture.v1",
+  "candidate": {
+    "artifact_id": 10292454237,
+    "build_run_id": 34677397609,
+    "build_tree_sha": "a42bfcedf7eb2ecefd0e84f63c4ae82d077cbbd1",
+    "apk_sha256": "2131007fb944b144d85eb8c5deb9ad80f93bd20c1515b7793f89278cd1a9f7e3"
+  },
+  "device_slot": "A|B",
+  "evidence_session_id": "PENDIENTE-FCM-SESSION",
+  "evidence_started_at": "PENDIENTE-ISO8601",
+  "evidence_completed_at": "PENDIENTE-ISO8601",
+  "scenarios": [
+    {
+      "name": "foreground",
+      "events": []
+    },
+    {
+      "name": "background",
+      "events": []
+    },
+    {
+      "name": "cold_start",
+      "events": []
+    },
+    {
+      "name": "deep_link",
+      "events": []
+    }
+  ],
+  "notes": "Template FCM regenerado desde candidato exact-head activo. No incluye evidencia, token FCM, notification ID crudo, teléfono ni payload sensible."
+}

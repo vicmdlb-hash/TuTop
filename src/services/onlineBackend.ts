@@ -28,6 +28,7 @@ function weekId(date = new Date()) {
 }
 
 function nowIso() { return new Date().toISOString(); }
+function v2SnapshotMode() { return String(import.meta.env.VITE_TUTOP_SCHEMA_V2 || '').toLowerCase() === 'true'; }
 
 function asProduct(doc: FirestoreDocument<any>): Product {
   const data = doc.data || {};
@@ -42,7 +43,7 @@ function asProduct(doc: FirestoreDocument<any>): Product {
     precio_mxn: Number(data.precio_mxn || 0),
     stock: Math.max(1, Number(data.stock || 1)),
     categoria: normalizeCategory(String(data.categoria || 'Otros')),
-    facultad: String(data.facultad || 'Turismo Internacional'),
+    facultad: String(data.facultad || 'Comunidad universitaria'),
     punto_encuentro: data.punto_encuentro,
     imagen_url: String(data.imagen_url || (Array.isArray(data.imagenes_url) ? data.imagenes_url[0] : '') || ''),
     imagenes_url: Array.isArray(data.imagenes_url) ? data.imagenes_url.map(String).slice(0, 4) : undefined,
@@ -86,7 +87,6 @@ export class TuTopOnlineBackend {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!/EMAIL_EXISTS/i.test(message)) throw error;
-      // Recovery path for the rare case where Auth was created but the atomic Firestore bootstrap failed.
       createdAuthIdentity = false;
       session = await client.signInWithPhonePassword(phone, password);
       const existingProfile = await client.getDocument<any>(`users/${session.uid}`);
@@ -99,7 +99,6 @@ export class TuTopOnlineBackend {
       await this.createInitialAccount(session, profile);
       await this.ensureMarketplaceCatalog();
     } catch (error) {
-      // Delete only identities created by this attempt. Never delete an existing account during repair.
       if (createdAuthIdentity) {
         try { await client.deleteAuthAccount(); } catch { client.signOut(); }
       } else client.signOut();
@@ -189,11 +188,12 @@ export class TuTopOnlineBackend {
     if (!session) throw new Error('AUTH_REQUIRED');
     await client.getIdToken();
     await this.ensureMarketplaceCatalog().catch(() => undefined);
+    const leanV2 = v2SnapshotMode();
 
     const [profileDoc, walletDoc, productsDocs, chatsDocs, favoritesDocs, ownReviewDocs, receivedReviewDocs, txDocs, publicVerification, adminDoc, moderationDoc, bidDocs] = await Promise.all([
       client.getDocument<any>(`users/${session.uid}`),
       client.getDocument<any>(`wallets/${session.uid}`),
-      client.runQuery<any>('products', [], [{ field: 'fecha_creacion', direction: 'DESCENDING' }], 100),
+      leanV2 ? Promise.resolve([] as FirestoreDocument<any>[]) : client.runQuery<any>('products', [], [{ field: 'fecha_creacion', direction: 'DESCENDING' }], 100),
       client.runQuery<any>('chats', [{ field: 'participants', op: 'ARRAY_CONTAINS', value: session.uid }], [{ field: 'updated_at', direction: 'DESCENDING' }], 60),
       client.runQuery<any>('favorites', [{ field: 'uid', op: 'EQUAL', value: session.uid }], [], 200),
       client.runQuery<any>('reviews', [{ field: 'evaluador_id', op: 'EQUAL', value: session.uid }], [], 100),
@@ -202,7 +202,7 @@ export class TuTopOnlineBackend {
       client.getDocument<any>(`publicVerifications/${session.uid}`),
       client.getDocument<any>(`admins/${session.uid}`),
       client.getDocument<any>(`moderationStatus/${session.uid}`),
-      client.runQuery<any>('bids', [{ field: 'week_id', op: 'EQUAL', value: weekId() }], [], 300),
+      leanV2 ? Promise.resolve([] as FirestoreDocument<any>[]) : client.runQuery<any>('bids', [{ field: 'week_id', op: 'EQUAL', value: weekId() }], [], 300),
     ]);
 
     if (!profileDoc) throw new Error('PROFILE_MISSING');
@@ -227,7 +227,7 @@ export class TuTopOnlineBackend {
       id: session.uid,
       telefono: session.phone,
       nombre: String(profile.nombre || 'Estudiante'),
-      facultad: String(profile.facultad || 'Turismo Internacional'),
+      facultad: String(profile.facultad || 'Comunidad universitaria'),
       saldo_ucoins: Number(wallet.balance || 0),
       puntos_prestigio: Number(wallet.prestige || 0),
       nivel_vendedor: sellerLevelFor(Number(wallet.prestige || 0)),

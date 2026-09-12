@@ -1,0 +1,108 @@
+{
+  "schema": "tutop.runtime-freeze-candidate.v1",
+  "app_version": "0.9.0-beta.0",
+  "branch": "feat/tutop-0.8-p0",
+  "base_branch": "main",
+  "base_sha": "b3dfb5eaf87c41109e6e1c640bae040c77b5a917",
+  "status": "runtime_freeze_candidate",
+  "runtime_validated": false,
+  "head_binding": "resolve_at_gate_from_GITHUB_SHA",
+  "feature_freeze": true,
+  "allowed_pre_validation_changes": [
+    "P0_or_P1_bug_fix",
+    "security_fix",
+    "integration_fix",
+    "cost_guard",
+    "QA_or_release_hardening",
+    "documentation_that_does_not_change_runtime_behavior"
+  ],
+  "forbidden_without_explicit_authorization": [
+    "merge_main",
+    "production_deploy",
+    "billing_enablement",
+    "play_store_release",
+    "sms_or_identity_platform_enablement",
+    "app_check_enforcement",
+    "physical_qa_candidate_claim_without_exact_head_build"
+  ],
+  "cost_cutovers_default": {
+    "reviews_lazy": false,
+    "wallet_lazy": false,
+    "favorites_visible": false
+  },
+  "required_promotion_sequence": [
+    "october_01_validation_same_sha_green",
+    "staging_v2_smoke_same_sha_green",
+    "android_v2_same_sha_build",
+    "apk_sha256_and_metadata",
+    "generated_candidate_exact_head_verification",
+    "guarded_candidate_activation",
+    "strict_candidate_drift_green",
+    "physical_qa_A_and_B"
+  ],
+  "required_october_evidence": [
+    "npm_run_check",
+    "github_readiness",
+    "beta_readiness",
+    "v2_staging_readiness",
+    "typecheck",
+    "web_build_with_all_three_cutovers_compiled",
+    "v2_rules_prepare",
+    "firestore_emulator_security_suite"
+  ],
+  "required_same_sha_chain": true,
+  "staging_mutation_surface": {
+    "exact_project": "tutop-beta-vicmdlb-1356585881",
+    "exact_branch": "feat/tutop-0.8-p0",
+    "requires_github_actions": true,
+    "requires_github_sha": true,
+    "requires_october_gate_run_id": true,
+    "requires_october_gate_sha_equal_github_sha": true,
+    "trusted_apply_requires_staging_run_id": true,
+    "trusted_apply_requires_staging_sha_equal_github_sha": true,
+    "direct_spark_deploy": "blocked",
+    "app_check_modes_during_freeze": [
+      "OFF",
+      "UNENFORCED"
+    ],
+    "app_check_enforced": false,
+    "google_play_internal_sharing": false,
+    "production_override_envs_supported_by_guarded_entrypoints": false,
+    "central_guard": "scripts/staging-freeze-guard.mjs",
+    "guarded_entrypoints": [
+      "deploy-firebase-staging.mjs",
+      "deploy-firebase-auth-staging.mjs",
+      "enable-firestore-api.mjs",
+      "prepare-staging-v2-auth.mjs",
+      "prepare-staging-android-app.mjs",
+      "staging-v2-admin.mjs",
+      "configure-app-check-staging.mjs"
+    ],
+    "supported_apply_wrappers": {
+      "catalog_seed": "scripts/gated-v2-catalog-seed.mjs",
+      "trusted_tasks": "scripts/gated-trusted-staging-apply.mjs"
+    },
+    "large_apply_scripts_policy": "Internal seed/reconciliation/trusted-maintenance/observability implementations are not promotion authorities. Supported mutation paths must enter through exact-SHA wrappers/workflows; direct raw --apply invocation is unsupported during runtime freeze."
+  },
+  "secondary_workflow_policy": {
+    "diagnostic_manual_only": [
+      "quality.yml",
+      "firestore-v2-security.yml",
+      "ci-auth-parallel-validation.yml"
+    ],
+    "trusted_staging_mutation": {
+      "workflow": "v2-trusted-maintenance.yml",
+      "manual_only": true,
+      "requires_october_same_sha_green": true,
+      "requires_staging_same_sha_green": true,
+      "requires_exact_sha_wrapper": true
+    },
+    "quarantined_self_trigger_workflows": [
+      "one-shot-085-hardened.yml",
+      "provision-firebase-staging-v2.yml"
+    ],
+    "quarantine_rule": "Do not edit, dispatch, or use quarantined self-trigger workflows during the Actions budget outage. Editing either file can trigger a push run. They are not promotion authorities for TuTop 0.9 runtime freeze."
+  },
+  "current_physical_qa_candidate": null,
+  "notes": "This manifest freezes promotion and mutation invariants, not a commit SHA. The exact candidate SHA is resolved at workflow dispatch through GITHUB_SHA and must remain identical across October, staging and Android. runtime_validated remains false until those real gates pass."
+}

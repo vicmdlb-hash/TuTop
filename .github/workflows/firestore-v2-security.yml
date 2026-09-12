@@ -1,0 +1,43 @@
+name: TuTop Firestore V2 security
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-firestore-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firestore-v2-security:
+    name: Firestore V2 emulator security
+    if: github.ref_name == 'feat/tutop-0.8-p0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install app dependencies
+        run: npm ci
+      - name: Install emulator test harness
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+      - name: Verify dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
+      - name: Prepare strict V2 rules
+        run: npm run v2:rules:prepare
+      - name: Firestore V2 abuse + atomic + governance + runtime + transaction tests
+        # Test files share one emulator project and clear the database between tests.
+        # Keep cross-file execution serial so fixtures cannot erase each other.
+        run: npx --yes firebase-tools@15.29.0 emulators:exec --only firestore --config firebase.v2.json --project demo-tutop-v2-rules "node --test --test-concurrency=1 tests/firestore.v2.rules.test.mjs tests/firestore.v2.atomic.test.mjs tests/firestore.v2.acceptance-atomic.test.mjs tests/firestore.v2.reputation-trust.test.mjs tests/firestore.v2.governance.test.mjs tests/firestore.v2.runtime-services.test.mjs tests/firestore.v2.account-operations.test.mjs tests/firestore.v2.notification-receipts.test.mjs tests/firestore.v2.transaction-lock.test.mjs tests/firestore.v2.unread-aggregation.test.mjs tests/firestore.v2.review-strike-aggregation.test.mjs tests/firestore.v2.favorite-membership.test.mjs"

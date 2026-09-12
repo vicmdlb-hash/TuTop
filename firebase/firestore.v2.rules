@@ -1,0 +1,650 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function adminDoc() { return /databases/$(database)/documents/admins/$(request.auth.uid); }
+    function statusDoc(uid) { return /databases/$(database)/documents/moderationStatus/$(uid); }
+    function isAdmin() { return signedIn() && exists(adminDoc()) && get(adminDoc()).data.active == true; }
+    function notSuspended() { return signedIn() && (!exists(statusDoc(request.auth.uid)) || get(statusDoc(request.auth.uid)).data.suspended != true); }
+    function userDoc(uid) { return get(/databases/$(database)/documents/users/$(uid)); }
+    function productDoc(productId) { return get(/databases/$(database)/documents/products/$(productId)); }
+    function chatDoc(chatId) { return get(/databases/$(database)/documents/chats/$(chatId)); }
+    function participant(chatId) { return signedIn() && request.auth.uid in chatDoc(chatId).data.participants; }
+    function fresh(ts) {
+      return ts is timestamp && ts <= request.time + duration.value(5, 'm') && ts >= request.time - duration.value(10, 'm');
+    }
+    function sellerAcceptanceReady(offerId, offerData) {
+      let txId = 'tx-' + offerId;
+      return existsAfter(/databases/$(database)/documents/transactions_v2/$(txId))
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.accepted_offer_id == offerId
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.listing_id == offerData.listing_id
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.chat_id == offerData.chat_id
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.buyer_id == offerData.buyer_id
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.seller_id == offerData.seller_id
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.agreed_amount_mxn == offerData.amount_mxn
+        && getAfter(/databases/$(database)/documents/transactions_v2/$(txId)).data.status == 'reserved'
+        && getAfter(/databases/$(database)/documents/chats/$(offerData.chat_id)).data.transaction_id == txId
+        && getAfter(/databases/$(database)/documents/chats/$(offerData.chat_id)).data.current_offer_id == offerId
+        && getAfter(/databases/$(database)/documents/products/$(offerData.listing_id)).data.estado == 'Reservado';
+    }
+    function validCategory(value) {
+      return value in [
+        'Electrónica','Ropa & Accesorios','Libros & Apuntes','Apuntes & Guías','Material Escolar',
+        'Comida','Postres','Servicios','Transporte','Hogar','Deportes','Videojuegos','Coleccionables',
+        'Arte & Manualidades','Eventos','Entradas permitidas','Belleza & Cuidado','Mascotas',
+        'Instrumentos Musicales','Cuartos & Renta','Otros'
+      ];
+    }
+    function validMeetingPoint(value) {
+      return value in [
+        'Cafetería Central','Puerta Principal','Biblioteca','Facultad','Estacionamiento','Rectoría',
+        'Salón de Clases','Campus específico','Otro punto público','Coordinar por Chat'
+      ];
+    }
+    function validVisibilityScope(value) {
+      return value in ['campus','institution','university-zone','city','national'];
+    }
+    function validImages(data) {
+      return !('imagenes_url' in data) || (
+        data.imagenes_url is list
+        && data.imagenes_url.size() >= 1 && data.imagenes_url.size() <= 4
+        && data.imagenes_url[0] == data.imagen_url
+        && data.imagenes_url[0] is string && data.imagenes_url[0].size() <= 180000 && data.imagenes_url[0].matches('^data:image/.*')
+        && (data.imagenes_url.size() < 2 || (data.imagenes_url[1] is string && data.imagenes_url[1].size() <= 180000 && data.imagenes_url[1].matches('^data:image/.*')))
+        && (data.imagenes_url.size() < 3 || (data.imagenes_url[2] is string && data.imagenes_url[2].size() <= 180000 && data.imagenes_url[2].matches('^data:image/.*')))
+        && (data.imagenes_url.size() < 4 || (data.imagenes_url[3] is string && data.imagenes_url[3].size() <= 180000 && data.imagenes_url[3].matches('^data:image/.*')))
+      );
+    }
+    function validUniversityMetadata(data) {
+      return (!('country_code' in data) || data.country_code == 'MX')
+        && (!('state_code' in data) || (data.state_code is string && data.state_code.size() >= 2 && data.state_code.size() <= 8))
+        && (!('city_id' in data) || (data.city_id is string && data.city_id.size() >= 2 && data.city_id.size() <= 120))
+        && (!('city_name' in data) || (data.city_name is string && data.city_name.size() >= 2 && data.city_name.size() <= 120))
+        && (!('institution_id' in data) || (
+          data.institution_id is string && data.institution_id.size() >= 2 && data.institution_id.size() <= 120
+          && exists(/databases/$(database)/documents/institutions/$(data.institution_id))
+        ))
+        && (!('campus_id' in data) || (
+          data.campus_id is string && data.campus_id.size() >= 2 && data.campus_id.size() <= 120
+          && exists(/databases/$(database)/documents/campuses/$(data.campus_id))
+          && (!('institution_id' in data) || get(/databases/$(database)/documents/campuses/$(data.campus_id)).data.institution_id == data.institution_id)
+        ))
+        && (!('faculty_id' in data) || (
+          data.faculty_id is string && data.faculty_id.size() >= 2 && data.faculty_id.size() <= 120
+          && exists(/databases/$(database)/documents/faculties/$(data.faculty_id))
+        ))
+        && (!('career_id' in data) || (
+          data.career_id is string && data.career_id.size() >= 2 && data.career_id.size() <= 120
+          && exists(/databases/$(database)/documents/careers/$(data.career_id))
+        ));
+    }
+    function productMatchesSellerIdentity(data, uid) {
+      return !('institution_id' in userDoc(uid).data) || (
+        'institution_id' in data
+        && data.institution_id == userDoc(uid).data.institution_id
+        && (!('campus_id' in userDoc(uid).data) || ('campus_id' in data && data.campus_id == userDoc(uid).data.campus_id))
+      );
+    }
+    function validProductContent(data) {
+      return data.titulo is string && data.titulo.size() >= 2 && data.titulo.size() <= 120
+        && data.descripcion is string && data.descripcion.size() <= 3000
+        && data.precio_mxn is number && data.precio_mxn >= 0 && data.precio_mxn <= 1000000
+        && (!('stock' in data) || (data.stock is int && data.stock >= 1 && data.stock <= 99))
+        && validCategory(data.categoria)
+        && data.facultad is string && data.facultad.size() >= 2 && data.facultad.size() <= 120
+        && validMeetingPoint(data.punto_encuentro)
+        && (!('visibility_scope' in data) || validVisibilityScope(data.visibility_scope))
+        && (!('listing_kind' in data) || data.listing_kind == 'offer')
+        && (!('shipping_available' in data) || data.shipping_available is bool)
+        && (!('visibility_scope' in data) || data.visibility_scope != 'national' || ('shipping_available' in data && data.shipping_available == true))
+        && validUniversityMetadata(data)
+        && data.imagen_url is string && data.imagen_url.size() <= 180000
+        && data.imagen_url.matches('^data:image/.*')
+        && validImages(data);
+    }
+
+    match /catalog/{catalogId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && notSuspended() && catalogId == 'marketplace'
+        && request.resource.data.keys().hasOnly(['version','categories','meeting_points','updated_at'])
+        && request.resource.data.version == 1
+        && request.resource.data.categories == ['Electrónica','Ropa & Accesorios','Libros & Apuntes','Comida','Postres','Servicios','Transporte','Cuartos & Renta','Eventos','Arte & Manualidades','Otros']
+        && request.resource.data.meeting_points == ['Cafetería Central','Puerta Principal','Salón de Clases','Coordinar por Chat']
+        && fresh(request.resource.data.updated_at);
+      allow update, delete: if false;
+    }
+
+    match /institutions/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /campuses/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /faculties/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /careers/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /institution_domains/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /approved_meeting_points/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly([
+          'uid','nombre','facultad','esta_verificado','country_code','state_code','city_id','city_name',
+          'institution_id','institution_name','campus_id','campus_name','faculty_id','faculty_name',
+          'career_id','career_name','verification_level','verification_badge','created_at','updated_at'
+        ])
+        && request.resource.data.uid == uid
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() >= 2 && request.resource.data.nombre.size() <= 80
+        && request.resource.data.facultad is string && request.resource.data.facultad.size() <= 120
+        && request.resource.data.esta_verificado == false
+        && (!('verification_level' in request.resource.data) || request.resource.data.verification_level == 0)
+        && (!('verification_badge' in request.resource.data) || request.resource.data.verification_badge == 'Cuenta TuTop')
+        && validUniversityMetadata(request.resource.data)
+        && fresh(request.resource.data.created_at)
+        && fresh(request.resource.data.updated_at);
+      allow update: if owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'nombre','facultad','avatar_url','country_code','state_code','city_id','city_name','institution_id','institution_name',
+          'campus_id','campus_name','faculty_id','faculty_name','career_id','career_name','updated_at'
+        ])
+        && request.resource.data.nombre is string && request.resource.data.nombre.size() >= 2 && request.resource.data.nombre.size() <= 80
+        && request.resource.data.facultad is string && request.resource.data.facultad.size() <= 120
+        && (!('avatar_url' in request.resource.data) || (request.resource.data.avatar_url is string && request.resource.data.avatar_url.size() <= 120000))
+        && validUniversityMetadata(request.resource.data)
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    match /user_private/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly(['uid','telefono','institutional_email','created_at','updated_at','auth_mode'])
+        && request.resource.data.uid == uid
+        && request.resource.data.telefono is string && request.resource.data.telefono.size() >= 11 && request.resource.data.telefono.size() <= 16
+        && (!('institutional_email' in request.resource.data) || (request.resource.data.institutional_email is string && request.resource.data.institutional_email.size() <= 180))
+        && request.resource.data.auth_mode == 'phone_password_beta'
+        && fresh(request.resource.data.created_at)
+        && (!('updated_at' in request.resource.data) || fresh(request.resource.data.updated_at));
+      allow update: if owner(uid) && notSuspended()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['institutional_email','updated_at'])
+        && request.resource.data.institutional_email is string && request.resource.data.institutional_email.size() <= 180
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    match /wallets/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow create: if owner(uid)
+        && request.resource.data.keys().hasOnly(['owner_uid','balance','prestige','welcome_granted','last_op_id','updated_at'])
+        && request.resource.data.owner_uid == uid
+        && request.resource.data.balance == 10
+        && request.resource.data.prestige == 0
+        && request.resource.data.welcome_granted == true
+        && request.resource.data.last_op_id == 'welcome-' + uid
+        && fresh(request.resource.data.updated_at)
+        && getAfter(/databases/$(database)/documents/wallet_transactions/$(request.resource.data.last_op_id)).data.user_id == uid
+        && getAfter(/databases/$(database)/documents/wallet_transactions/$(request.resource.data.last_op_id)).data.amount == 10;
+      allow update: if owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance','prestige','last_op_id','updated_at'])
+        && request.resource.data.owner_uid == resource.data.owner_uid
+        && request.resource.data.welcome_granted == resource.data.welcome_granted
+        && request.resource.data.balance is int && request.resource.data.balance >= 0
+        && request.resource.data.prestige is int && request.resource.data.prestige >= resource.data.prestige
+        && resource.data.balance - request.resource.data.balance > 0
+        && request.resource.data.prestige - resource.data.prestige == resource.data.balance - request.resource.data.balance
+        && request.resource.data.last_op_id is string
+        && fresh(request.resource.data.updated_at)
+        && getAfter(/databases/$(database)/documents/bids/$(request.resource.data.last_op_id)).data.uid == uid
+        && getAfter(/databases/$(database)/documents/bids/$(request.resource.data.last_op_id)).data.amount == resource.data.balance - request.resource.data.balance
+        && getAfter(/databases/$(database)/documents/wallet_transactions/$(request.resource.data.last_op_id)).data.amount == -(resource.data.balance - request.resource.data.balance);
+      allow delete: if false;
+    }
+
+    match /wallet_transactions/{transactionId} {
+      allow read: if signedIn() && (resource.data.user_id == request.auth.uid || isAdmin());
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['user_id','type','description','amount','operation_id','created_at'])
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.operation_id == transactionId
+        && request.resource.data.description is string && request.resource.data.description.size() <= 180
+        && fresh(request.resource.data.created_at)
+        && (
+          (transactionId == 'welcome-' + request.auth.uid
+            && request.resource.data.type == 'income'
+            && request.resource.data.amount == 10
+            && getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.balance == 10)
+          ||
+          (request.resource.data.type == 'expense'
+            && request.resource.data.amount < 0
+            && getAfter(/databases/$(database)/documents/bids/$(transactionId)).data.uid == request.auth.uid
+            && getAfter(/databases/$(database)/documents/bids/$(transactionId)).data.amount == -request.resource.data.amount)
+        );
+      allow update, delete: if false;
+    }
+
+    match /products/{productId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly([
+          'vendedor_id','vendedor_nombre','vendedor_handle','titulo','descripcion','precio_mxn','stock','categoria','facultad',
+          'country_code','state_code','city_id','city_name','institution_id','campus_id','faculty_id','career_id','visibility_scope','listing_kind',
+          'punto_encuentro','meeting_point_id','shipping_available','imagen_url','imagenes_url','estado','likes','fecha_creacion','updated_at'
+        ])
+        && request.resource.data.vendedor_id == request.auth.uid
+        && request.resource.data.vendedor_nombre is string && request.resource.data.vendedor_nombre.size() <= 80
+        && request.resource.data.vendedor_nombre == userDoc(request.auth.uid).data.nombre
+        && request.resource.data.facultad == userDoc(request.auth.uid).data.facultad
+        && request.resource.data.vendedor_handle is string && request.resource.data.vendedor_handle.size() <= 80
+        && productMatchesSellerIdentity(request.resource.data, request.auth.uid)
+        && validProductContent(request.resource.data)
+        && request.resource.data.estado == 'Activo'
+        && request.resource.data.likes == 0
+        && fresh(request.resource.data.fecha_creacion)
+        && fresh(request.resource.data.updated_at);
+      allow update: if signedIn() && notSuspended() && resource.data.vendedor_id == request.auth.uid
+        && request.resource.data.vendedor_id == resource.data.vendedor_id
+        && request.resource.data.vendedor_nombre == resource.data.vendedor_nombre
+        && (request.resource.data.facultad == resource.data.facultad || request.resource.data.facultad == userDoc(request.auth.uid).data.facultad)
+        && request.resource.data.fecha_creacion == resource.data.fecha_creacion
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'titulo','descripcion','precio_mxn','stock','categoria','facultad','country_code','state_code','city_id','city_name',
+          'institution_id','campus_id','faculty_id','career_id','visibility_scope','listing_kind','punto_encuentro','meeting_point_id',
+          'shipping_available','imagen_url','imagenes_url','estado','updated_at'
+        ])
+        && request.resource.data.estado in ['Activo','Reservado','Pausado','Vendido','Agotado','Archivado']
+        && productMatchesSellerIdentity(request.resource.data, request.auth.uid)
+        && validProductContent(request.resource.data)
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    match /favorites/{favoriteId} {
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['uid','product_id','created_at'])
+        && request.resource.data.uid == request.auth.uid
+        && favoriteId == request.auth.uid + '_' + request.resource.data.product_id
+        && exists(/databases/$(database)/documents/products/$(request.resource.data.product_id))
+        && fresh(request.resource.data.created_at);
+      allow delete: if signedIn() && notSuspended() && resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
+    match /chats/{chatId} {
+      allow read: if signedIn() && (request.auth.uid in resource.data.participants || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['product_id','producto_id','buyer_id','comprador_id','seller_id','vendedor_id','participants','nombre_otro_usuario','transaction_id','current_offer_id','created_at','updated_at','last_message','last_message_at'])
+        && request.resource.data.buyer_id == request.auth.uid
+        && request.resource.data.comprador_id == request.auth.uid
+        && request.resource.data.product_id == request.resource.data.producto_id
+        && request.resource.data.seller_id == request.resource.data.vendedor_id
+        && request.resource.data.seller_id != request.auth.uid
+        && chatId == 'chat-' + request.auth.uid + '-' + request.resource.data.product_id
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.seller_id in request.resource.data.participants
+        && productDoc(request.resource.data.product_id).data.vendedor_id == request.resource.data.seller_id
+        && productDoc(request.resource.data.product_id).data.estado in ['Activo','Reservado']
+        && request.resource.data.last_message is string && request.resource.data.last_message.size() <= 180
+        && fresh(request.resource.data.last_message_at)
+        && fresh(request.resource.data.created_at)
+        && fresh(request.resource.data.updated_at);
+      allow update: if participant(chatId) && notSuspended()
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updated_at','last_message','last_message_at','transaction_id','current_offer_id'])
+        && request.resource.data.last_message is string && request.resource.data.last_message.size() <= 180
+        && fresh(request.resource.data.updated_at)
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['last_message','last_message_at'])
+          || fresh(request.resource.data.last_message_at)
+        );
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if participant(chatId) || isAdmin();
+        allow create: if participant(chatId) && notSuspended()
+          && request.resource.data.keys().hasOnly(['sender_id','text','image_url','event_type','related_offer_id','related_transaction_id','created_at'])
+          && request.resource.data.sender_id == request.auth.uid
+          && request.resource.data.text is string && request.resource.data.text.size() <= 1500
+          && (!('image_url' in request.resource.data) || (request.resource.data.image_url is string && request.resource.data.image_url.size() <= 130000 && request.resource.data.image_url.matches('^data:image/.*')))
+          && (!('event_type' in request.resource.data) || request.resource.data.event_type in ['offer','offer_accepted','offer_rejected','counter_offer','reservation','meetup','completion','safety'])
+          && (request.resource.data.text.size() > 0 || ('image_url' in request.resource.data))
+          && fresh(request.resource.data.created_at);
+        allow update, delete: if false;
+      }
+
+      match /confirmations/{uid} {
+        allow read: if participant(chatId) || isAdmin();
+        allow create: if participant(chatId) && owner(uid) && notSuspended()
+          && request.resource.data.keys().hasOnly(['user_id','created_at'])
+          && request.resource.data.user_id == uid
+          && fresh(request.resource.data.created_at);
+        allow update, delete: if false;
+      }
+
+      match /reads/{uid} {
+        allow read: if participant(chatId) || isAdmin();
+        allow create, update: if participant(chatId) && owner(uid) && notSuspended()
+          && request.resource.data.keys().hasOnly(['user_id','read_at'])
+          && request.resource.data.user_id == uid
+          && fresh(request.resource.data.read_at);
+        allow delete: if false;
+      }
+    }
+
+    match /offers/{offerId} {
+      allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','created_by','amount_mxn','status','parent_offer_id','counter_offer_id','expires_at','created_at','updated_at'])
+        && request.resource.data.buyer_id != request.resource.data.seller_id
+        && request.resource.data.created_by == request.auth.uid
+        && request.auth.uid in [request.resource.data.buyer_id, request.resource.data.seller_id]
+        && request.resource.data.amount_mxn is number && request.resource.data.amount_mxn >= 1 && request.resource.data.amount_mxn <= 1000000
+        && request.resource.data.status == 'pending'
+        && productDoc(request.resource.data.listing_id).data.vendedor_id == request.resource.data.seller_id
+        && productDoc(request.resource.data.listing_id).data.estado == 'Activo'
+        && request.resource.data.listing_id == chatDoc(request.resource.data.chat_id).data.product_id
+        && request.resource.data.buyer_id == chatDoc(request.resource.data.chat_id).data.buyer_id
+        && request.resource.data.seller_id == chatDoc(request.resource.data.chat_id).data.seller_id
+        && (
+          (request.resource.data.created_by == request.resource.data.buyer_id && !('parent_offer_id' in request.resource.data))
+          ||
+          ('parent_offer_id' in request.resource.data
+            && exists(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id))
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.status == 'pending'
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.created_by != request.auth.uid
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.listing_id == request.resource.data.listing_id
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.chat_id == request.resource.data.chat_id
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.buyer_id == request.resource.data.buyer_id
+            && get(/databases/$(database)/documents/offers/$(request.resource.data.parent_offer_id)).data.seller_id == request.resource.data.seller_id)
+        )
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if signedIn() && notSuspended()
+        && resource.data.status == 'pending'
+        && request.resource.data.buyer_id == resource.data.buyer_id
+        && request.resource.data.seller_id == resource.data.seller_id
+        && request.resource.data.created_by == resource.data.created_by
+        && request.resource.data.listing_id == resource.data.listing_id
+        && request.resource.data.chat_id == resource.data.chat_id
+        && request.resource.data.amount_mxn == resource.data.amount_mxn
+        && request.resource.data.created_at == resource.data.created_at
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','counter_offer_id','updated_at'])
+        && fresh(request.resource.data.updated_at)
+        && (
+          (request.auth.uid == resource.data.created_by && request.resource.data.status == 'withdrawn')
+          ||
+          (request.auth.uid != resource.data.created_by
+            && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]
+            && request.resource.data.status == 'rejected')
+          ||
+          (request.auth.uid == resource.data.buyer_id
+            && resource.data.created_by == resource.data.seller_id
+            && request.resource.data.status == 'accepted')
+          ||
+          (request.auth.uid == resource.data.seller_id
+            && resource.data.created_by == resource.data.buyer_id
+            && request.resource.data.status == 'accepted'
+            && sellerAcceptanceReady(offerId, resource.data))
+          ||
+          (request.auth.uid != resource.data.created_by
+            && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]
+            && request.resource.data.status == 'countered'
+            && 'counter_offer_id' in request.resource.data
+            && existsAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id))
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.parent_offer_id == offerId
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.created_by == request.auth.uid
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.status == 'pending'
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.listing_id == resource.data.listing_id
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.chat_id == resource.data.chat_id
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.buyer_id == resource.data.buyer_id
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.counter_offer_id)).data.seller_id == resource.data.seller_id)
+        );
+      allow delete: if false;
+    }
+
+    match /transactions_v2/{transactionId} {
+      allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','accepted_offer_id','agreed_amount_mxn','status','reservation_expires_at','meeting_point_id','meetup_at','buyer_confirmed_at','seller_confirmed_at','created_at','updated_at'])
+        && request.auth.uid == request.resource.data.seller_id
+        && request.resource.data.buyer_id != request.resource.data.seller_id
+        && transactionId == 'tx-' + request.resource.data.accepted_offer_id
+        && request.resource.data.status == 'reserved'
+        && request.resource.data.reservation_expires_at is timestamp
+        && request.resource.data.reservation_expires_at > request.time
+        && request.resource.data.reservation_expires_at <= request.time + duration.value(24, 'h')
+        && !('meeting_point_id' in request.resource.data)
+        && !('meetup_at' in request.resource.data)
+        && !('buyer_confirmed_at' in request.resource.data)
+        && !('seller_confirmed_at' in request.resource.data)
+        && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.status == 'accepted'
+        && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.listing_id == request.resource.data.listing_id
+        && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.chat_id == request.resource.data.chat_id
+        && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.buyer_id == request.resource.data.buyer_id
+        && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.seller_id == request.resource.data.seller_id
+        && request.resource.data.agreed_amount_mxn == getAfter(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.amount_mxn
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if signedIn() && notSuspended()
+        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]
+        && request.resource.data.listing_id == resource.data.listing_id
+        && request.resource.data.chat_id == resource.data.chat_id
+        && request.resource.data.buyer_id == resource.data.buyer_id
+        && request.resource.data.seller_id == resource.data.seller_id
+        && request.resource.data.accepted_offer_id == resource.data.accepted_offer_id
+        && request.resource.data.agreed_amount_mxn == resource.data.agreed_amount_mxn
+        && request.resource.data.reservation_expires_at == resource.data.reservation_expires_at
+        && request.resource.data.created_at == resource.data.created_at
+        && fresh(request.resource.data.updated_at)
+        && (
+          (
+            resource.data.status in ['reserved','meetup_scheduled']
+            && request.resource.data.status == 'meetup_scheduled'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','meeting_point_id','meetup_at','updated_at'])
+            && (resource.data.status != 'reserved' || resource.data.reservation_expires_at > request.time)
+            && !('buyer_confirmed_at' in resource.data)
+            && !('seller_confirmed_at' in resource.data)
+            && request.resource.data.meeting_point_id is string
+            && exists(/databases/$(database)/documents/approved_meeting_points/$(request.resource.data.meeting_point_id))
+            && get(/databases/$(database)/documents/approved_meeting_points/$(request.resource.data.meeting_point_id)).data.active == true
+            && get(/databases/$(database)/documents/approved_meeting_points/$(request.resource.data.meeting_point_id)).data.is_tutop_safe_point == true
+            && get(/databases/$(database)/documents/approved_meeting_points/$(request.resource.data.meeting_point_id)).data.campus_id == productDoc(resource.data.listing_id).data.campus_id
+            && request.resource.data.meetup_at is timestamp
+            && request.resource.data.meetup_at > request.time
+            && request.resource.data.meetup_at <= request.time + duration.value(30, 'd')
+          )
+          ||
+          (
+            request.auth.uid == resource.data.buyer_id
+            && resource.data.status == 'meetup_scheduled'
+            && !('buyer_confirmed_at' in resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','buyer_confirmed_at','updated_at'])
+            && fresh(request.resource.data.buyer_confirmed_at)
+            && (
+              (('seller_confirmed_at' in resource.data) && request.resource.data.status == 'completed')
+              || (!('seller_confirmed_at' in resource.data) && request.resource.data.status == 'meetup_scheduled')
+            )
+          )
+          ||
+          (
+            request.auth.uid == resource.data.seller_id
+            && resource.data.status == 'meetup_scheduled'
+            && !('seller_confirmed_at' in resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','seller_confirmed_at','updated_at'])
+            && fresh(request.resource.data.seller_confirmed_at)
+            && (
+              (('buyer_confirmed_at' in resource.data) && request.resource.data.status == 'completed')
+              || (!('buyer_confirmed_at' in resource.data) && request.resource.data.status == 'meetup_scheduled')
+            )
+          )
+          ||
+          (
+            resource.data.status in ['reserved','meetup_scheduled']
+            && request.resource.data.status == 'disputed'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+          )
+          ||
+          (
+            request.auth.uid == resource.data.seller_id
+            && resource.data.status == 'reserved'
+            && resource.data.reservation_expires_at is timestamp
+            && resource.data.reservation_expires_at <= request.time
+            && request.resource.data.status == 'expired'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+          )
+        );
+      allow delete: if false;
+    }
+
+    match /demand_requests/{requestId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['buyer_id','title','description','category','max_price_mxn','needed_by','institution_id','campus_id','city_id','visibility_scope','status','created_at','updated_at'])
+        && request.resource.data.buyer_id == request.auth.uid
+        && request.resource.data.title is string && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 120
+        && (!('description' in request.resource.data) || (request.resource.data.description is string && request.resource.data.description.size() <= 1200))
+        && (!('category' in request.resource.data) || validCategory(request.resource.data.category))
+        && (!('max_price_mxn' in request.resource.data) || (request.resource.data.max_price_mxn is number && request.resource.data.max_price_mxn >= 0 && request.resource.data.max_price_mxn <= 1000000))
+        && validVisibilityScope(request.resource.data.visibility_scope)
+        && request.resource.data.status == 'active'
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if signedIn() && notSuspended() && resource.data.buyer_id == request.auth.uid
+        && request.resource.data.buyer_id == resource.data.buyer_id
+        && request.resource.data.created_at == resource.data.created_at
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','description','category','max_price_mxn','needed_by','institution_id','campus_id','city_id','visibility_scope','status','updated_at'])
+        && request.resource.data.status in ['active','matched','fulfilled','paused','expired']
+        && request.resource.data.title is string && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 120
+        && validVisibilityScope(request.resource.data.visibility_scope)
+        && fresh(request.resource.data.updated_at);
+      allow delete: if signedIn() && resource.data.buyer_id == request.auth.uid;
+    }
+
+    match /saved_searches/{searchId} {
+      allow read: if signedIn() && (resource.data.owner_uid == request.auth.uid || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['owner_uid','query','category','max_price_mxn','institution_id','campus_id','visibility_scope','notifications_enabled','created_at','updated_at'])
+        && request.resource.data.owner_uid == request.auth.uid
+        && request.resource.data.query is string && request.resource.data.query.size() >= 1 && request.resource.data.query.size() <= 180
+        && (!('category' in request.resource.data) || validCategory(request.resource.data.category))
+        && (!('max_price_mxn' in request.resource.data) || (request.resource.data.max_price_mxn is number && request.resource.data.max_price_mxn >= 0 && request.resource.data.max_price_mxn <= 1000000))
+        && validVisibilityScope(request.resource.data.visibility_scope)
+        && request.resource.data.notifications_enabled is bool
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if signedIn() && notSuspended() && resource.data.owner_uid == request.auth.uid
+        && request.resource.data.owner_uid == resource.data.owner_uid
+        && request.resource.data.created_at == resource.data.created_at
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['query','category','max_price_mxn','institution_id','campus_id','visibility_scope','notifications_enabled','updated_at'])
+        && request.resource.data.query is string && request.resource.data.query.size() >= 1 && request.resource.data.query.size() <= 180
+        && validVisibilityScope(request.resource.data.visibility_scope)
+        && request.resource.data.notifications_enabled is bool
+        && fresh(request.resource.data.updated_at);
+      allow delete: if signedIn() && resource.data.owner_uid == request.auth.uid;
+    }
+
+    match /reviews/{reviewId} {
+      allow read: if signedIn() && (resource.data.evaluador_id == request.auth.uid || resource.data.evaluado_id == request.auth.uid || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['chat_id','evaluador_id','evaluado_id','calificacion','comentario','fecha'])
+        && request.resource.data.evaluador_id == request.auth.uid
+        && request.resource.data.calificacion in ['positive','negative']
+        && request.resource.data.comentario is string && request.resource.data.comentario.size() <= 500
+        && participant(request.resource.data.chat_id)
+        && reviewId == request.resource.data.chat_id + '_' + request.auth.uid
+        && request.resource.data.evaluado_id != request.auth.uid
+        && request.resource.data.evaluado_id in chatDoc(request.resource.data.chat_id).data.participants
+        && exists(/databases/$(database)/documents/chats/$(request.resource.data.chat_id)/confirmations/$(chatDoc(request.resource.data.chat_id).data.buyer_id))
+        && exists(/databases/$(database)/documents/chats/$(request.resource.data.chat_id)/confirmations/$(chatDoc(request.resource.data.chat_id).data.seller_id))
+        && fresh(request.resource.data.fecha);
+      allow update, delete: if false;
+    }
+
+    match /bids/{bidId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['uid','product_id','facultad','categoria','amount','week_id','created_at'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.amount is int && request.resource.data.amount >= 1 && request.resource.data.amount <= 5000
+        && request.resource.data.week_id is string && request.resource.data.week_id.size() <= 10
+        && fresh(request.resource.data.created_at)
+        && productDoc(request.resource.data.product_id).data.vendedor_id == request.auth.uid
+        && productDoc(request.resource.data.product_id).data.estado == 'Activo'
+        && request.resource.data.facultad == productDoc(request.resource.data.product_id).data.facultad
+        && request.resource.data.categoria == productDoc(request.resource.data.product_id).data.categoria
+        && getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.last_op_id == bidId
+        && get(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.balance - getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.balance == request.resource.data.amount;
+      allow update, delete: if false;
+    }
+
+    match /verificationRequests/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow create: if owner(uid) && notSuspended()
+        && request.resource.data.keys().hasOnly(['uid','status','image_data','institution_id','method','retention_delete_after','created_at','updated_at'])
+        && request.resource.data.uid == uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.image_data is string && request.resource.data.image_data.size() <= 230000
+        && (!('method' in request.resource.data) || request.resource.data.method in ['credential','institutional_email'])
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if (
+        owner(uid) && notSuspended()
+        && resource.data.status in ['pending','rejected']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','image_data','institution_id','method','retention_delete_after','updated_at'])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.image_data is string && request.resource.data.image_data.size() <= 230000
+        && fresh(request.resource.data.updated_at)
+      ) || (
+        isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','retention_delete_after','updated_at'])
+        && request.resource.data.status in ['approved','rejected']
+        && fresh(request.resource.data.updated_at)
+      );
+      allow delete: if false;
+    }
+
+    match /publicVerifications/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['approved','verification_level','verification_badge','institution_id','method','verified_at','updated_at','reviewed_by'])
+        && request.resource.data.approved is bool
+        && (!('verification_level' in request.resource.data) || (request.resource.data.verification_level is int && request.resource.data.verification_level >= 0 && request.resource.data.verification_level <= 4))
+        && request.resource.data.reviewed_by == request.auth.uid
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    match /reports/{reportId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.created_by == request.auth.uid);
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['created_by','target_type','target_id','reason','status','institution_id','priority','created_at','updated_at'])
+        && request.resource.data.created_by == request.auth.uid
+        && request.resource.data.target_type in ['product','user','chat','offer','transaction','demand_request']
+        && request.resource.data.target_id is string && request.resource.data.target_id.size() >= 2 && request.resource.data.target_id.size() <= 180
+        && request.resource.data.reason is string && request.resource.data.reason.size() >= 3 && request.resource.data.reason.size() <= 500
+        && (!('priority' in request.resource.data) || request.resource.data.priority in ['normal','high','urgent'])
+        && request.resource.data.status == 'open'
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','priority','updated_at'])
+        && request.resource.data.status in ['open','reviewing','resolved','dismissed']
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    match /moderation_cases/{caseId} { allow read, write: if isAdmin(); }
+    match /audit_log/{entryId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.admin_uid == request.auth.uid && fresh(request.resource.data.created_at);
+      allow update, delete: if false;
+    }
+    match /reputation/{uid} { allow read: if signedIn(); allow write: if isAdmin(); }
+
+    match /moderationStatus/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['suspended','reason','updated_at','admin_uid'])
+        && request.resource.data.suspended is bool
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 300
+        && request.resource.data.admin_uid == request.auth.uid
+        && fresh(request.resource.data.updated_at);
+      allow delete: if false;
+    }
+
+    match /admins/{uid} { allow read: if owner(uid) || isAdmin(); allow write: if false; }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

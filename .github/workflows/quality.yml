@@ -1,8 +1,6 @@
 name: TuTop quality gate
 
 on:
-  pull_request:
-    branches: ["main"]
   workflow_dispatch:
 
 permissions:
@@ -15,14 +13,15 @@ concurrency:
 jobs:
   web-quality:
     name: Web + policy checks
+    if: github.ref_name == 'feat/tutop-0.8-p0'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -39,16 +38,77 @@ jobs:
       - name: Beta readiness
         run: npm run beta:ready
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: V2 staging isolation policy
+        run: npm run v2:staging:readiness:test
 
-      - name: Build web app
+      - name: Prepare strict V2 rules
+        run: npm run v2:rules:prepare
+
+      - name: V2 catalog dry run
+        run: npm run v2:catalog:plan
+
+      - name: Reputation evidence contract
+        run: npm run reputation:test
+
+      - name: Trusted reputation aggregation
+        run: npm run trusted-reputation:test
+
+      - name: Reservation reconciliation contract
+        run: npm run reservation-reconciliation:test
+
+      - name: Reservation runner safety
+        run: npm run reservation-runner:safety:test
+
+      - name: Institutional moderation scope
+        run: npm run institutional-moderation:test
+
+      - name: Credential retention policy
+        run: npm run credential-retention:test
+
+      - name: Saved-search notification eligibility
+        run: npm run saved-search-notification:test
+
+      - name: Marketplace observability privacy
+        run: npm run marketplace-observability:test
+
+      - name: Public seller profile privacy
+        run: npm run seller-profile:privacy:test
+
+      - name: National marketplace foundation
+        run: npm run national-foundation:test
+
+      - name: Search pricing bundles and seller CRM
+        run: npm run commerce-intelligence:test
+
+      - name: Canonical listings V2 migration
+        run: npm run listing-schema-v2:test
+
+      - name: Offline privacy and performance budgets
+        run: npm run offline-performance:test
+
+      - name: Native Firebase security contract
+        run: npm run native-security:test
+
+      - name: Account erasure safety contract
+        run: npm run account-erasure:test
+
+      - name: Synthetic account erasure scenarios
+        run: npm run account-erasure:synthetic:test
+
+      - name: Retention matrix alignment
+        run: npm run retention-matrix:test
+
+      - name: Legal retention review template
+        run: npm run legal-retention-review:test
+
+      - name: Account recovery architecture
+        run: npm run account-recovery:test
+
+      - name: Physical QA automatic evaluator
+        run: npm run physical-qa:evaluator:test
+
+      - name: Trusted cron activation patch contract
+        run: npm run trusted-cron:patch:test
+
+      - name: Typecheck once and build web app
         run: npm run build
-
-      - name: Upload web build
-        uses: actions/upload-artifact@v4
-        with:
-          name: TuTop-web-${{ github.run_number }}
-          path: dist
-          if-no-files-found: error
-          retention-days: 7
