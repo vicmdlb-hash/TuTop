@@ -115,7 +115,7 @@ export async function takeNativePhoto(): Promise<NativePhoto | null> {
       targetWidth: 1280,
       targetHeight: 1280,
       cameraDirection: 'REAR',
-      editable: 'none',
+      editable: 'no',
       saveToGallery: false,
       includeMetadata: true,
     });
@@ -135,9 +135,9 @@ export async function pickNativePhoto(): Promise<NativePhoto | null> {
       targetWidth: 1280,
       targetHeight: 1280,
       allowMultipleSelection: false,
-      limit: 1,
       includeMetadata: true,
-      mediaType: 'PHOTO',
+      editable: 'no',
+      mediaType: 0,
     });
     return mediaResult(Array.isArray(result?.results) ? result.results[0] : null, 'photos');
   } catch {
