@@ -11,8 +11,13 @@ function safeQuestion(value: string) {
   return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim().slice(0, 900);
 }
 
-function deterministicAnswer(question: string, routeHint?: SupportRouteId): SupportAnswer {
-  const route = routeHint && routeHint !== 'root' ? routeHint : classifySupportQuery(question);
+function resolveRoute(question: string, routeHint: SupportRouteId) {
+  const detected = classifySupportQuery(question);
+  return detected !== 'root' ? detected : routeHint;
+}
+
+function deterministicAnswer(question: string, routeHint: SupportRouteId = 'root'): SupportAnswer {
+  const route = resolveRoute(question, routeHint);
   const node = supportNode(route);
   if (node.answer) return { text: node.answer, source: 'guided', route };
   if (node.choices?.length) {
@@ -48,9 +53,9 @@ function aiPrompt(question: string, route: SupportRouteId) {
 export async function answerConsumerSupport(question: string, routeHint: SupportRouteId = 'root'): Promise<SupportAnswer> {
   const clean = safeQuestion(question);
   if (clean.length < 3) return deterministicAnswer(clean, routeHint);
-  const classified = routeHint !== 'root' ? routeHint : classifySupportQuery(clean);
-  const generated = await generateNativeTopiText(aiPrompt(clean, classified));
+  const route = resolveRoute(clean, routeHint);
+  const generated = await generateNativeTopiText(aiPrompt(clean, route));
   const text = generated?.text?.replace(/^```(?:text)?\s*/i, '').replace(/\s*```$/i, '').trim().slice(0, 900);
-  if (text) return { text, source: 'firebase-ai', route: classified };
-  return deterministicAnswer(clean, classified);
+  if (text) return { text, source: 'firebase-ai', route };
+  return deterministicAnswer(clean, route);
 }
