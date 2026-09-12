@@ -1,4 +1,5 @@
 import type { Product } from '../types';
+import { getNativeApproxPosition, isNativeDeviceRuntime, nativeLocationPermission, type DevicePermissionState } from '../services/nativeDeviceCapabilities';
 
 export type ApproxLocationSource = 'device' | 'cache' | 'campus';
 export type ApproxLocation = {
@@ -19,11 +20,7 @@ function validCoordinate(latitude: number, longitude: number) {
     && longitude >= -180 && longitude <= 180;
 }
 
-/**
- * Privacy rule: TuTop never persists exact device coordinates in listings.
- * Two decimals are roughly kilometre-level precision and are sufficient for
- * Marketplace-style 5/10/25/50 km discovery without exposing a precise home.
- */
+/** Privacy: persist only kilometre-level approximate coordinates, never an exact home location. */
 export function coarseCoordinate(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -55,7 +52,17 @@ export function saveApproxLocation(location: ApproxLocation) {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ApproxLocation>(NEARBY_LOCATION_EVENT, { detail: location }));
 }
 
-export function requestApproxLocation(options: { timeoutMs?: number; maximumAgeMs?: number } = {}) {
+export async function nearbyLocationPermission(): Promise<DevicePermissionState> {
+  if (isNativeDeviceRuntime()) return nativeLocationPermission(false);
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return 'unavailable';
+  try {
+    const result = await navigator.permissions?.query?.({ name: 'geolocation' as PermissionName });
+    if (!result) return 'prompt';
+    return result.state === 'granted' ? 'granted' : result.state === 'denied' ? 'denied' : 'prompt';
+  } catch { return 'prompt'; }
+}
+
+function requestBrowserLocation(options: { timeoutMs?: number; maximumAgeMs?: number } = {}) {
   return new Promise<ApproxLocation | null>((resolve) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
@@ -74,6 +81,20 @@ export function requestApproxLocation(options: { timeoutMs?: number; maximumAgeM
   });
 }
 
+export async function requestApproxLocation(options: { timeoutMs?: number; maximumAgeMs?: number; requestPermission?: boolean } = {}) {
+  if (isNativeDeviceRuntime()) {
+    const position = await getNativeApproxPosition({
+      requestPermission: options.requestPermission !== false,
+      timeoutMs: options.timeoutMs,
+      maximumAgeMs: options.maximumAgeMs,
+    });
+    const location = position ? toApproxLocation(position.latitude, position.longitude, 'device') : null;
+    if (location) saveApproxLocation(location);
+    return location;
+  }
+  return requestBrowserLocation(options);
+}
+
 export function geoCellForLocation(location: Pick<ApproxLocation, 'latitude' | 'longitude'>) {
   if (!validCoordinate(location.latitude, location.longitude)) return null;
   const latIndex = Math.floor((location.latitude + 90) / GEO_CELL_DEGREES);
@@ -89,9 +110,7 @@ export function nearbyGeoCells(location: Pick<ApproxLocation, 'latitude' | 'long
   const lon = Number(rawLon);
   const cells: string[] = [];
   for (let latOffset = -1; latOffset <= 1; latOffset += 1) {
-    for (let lonOffset = -1; lonOffset <= 1; lonOffset += 1) {
-      cells.push(`g1:${lat + latOffset}:${lon + lonOffset}`);
-    }
+    for (let lonOffset = -1; lonOffset <= 1; lonOffset += 1) cells.push(`g1:${lat + latOffset}:${lon + lonOffset}`);
   }
   return cells;
 }
