@@ -44,8 +44,8 @@ assert.match(verifier, /candidate\.gate_commit_sha !== candidate\.build_commit_s
 assert.match(verifier, /candidate\.staging_smoke_commit_sha !== candidate\.build_commit_sha/);
 assert.match(verifier, /candidate\.build_tree_sha !== tree/);
 assert.match(verifier, /git\('rev-parse', `HEAD:\$\{repoPath\}`\)/);
-assert.match(verifier, /candidate\.candidate_status !== 'generated_exact_head_pending_repo_activation'/);
-assert.match(verifier, /candidate\.physical_release_candidate !== true/);
+assert.match(verifier, /candidate\?\.candidate_status !== 'generated_exact_head_pending_repo_activation'/);
+assert.match(verifier, /candidate\?\.physical_release_candidate !== true/);
 assert.match(verifier, /favorites_visible flag inválido/);
 assert.match(verifier, /verify-physical-qa-candidate-metadata\.mjs/);
 
