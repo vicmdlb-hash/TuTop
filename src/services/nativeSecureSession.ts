@@ -8,6 +8,7 @@ type CapacitorRuntime = {
 
 const LEGACY_SESSION_KEY = 'tutop.firebase.session.v1';
 const SESSION_KEY_PREFIX = 'tutop.firebase.session.v2.';
+const SIGNED_OUT_PREFIX = 'tutop.native.session.signedout.';
 
 function runtime(): CapacitorRuntime | null {
   if (typeof window === 'undefined') return null;
@@ -32,8 +33,18 @@ export function nativeSessionKey(projectId: string) {
   return `${SESSION_KEY_PREFIX}${projectId}`;
 }
 
+export function nativeSignOutTombstoneKey(sessionKey: string) {
+  return `${SIGNED_OUT_PREFIX}${sessionKey}`;
+}
+
 export function volatileSessionStorage() {
   return isNativeSecureSessionRuntime() ? sessionStorage : localStorage;
+}
+
+export function markNativeSignedOut(sessionKey: string, signedOut: boolean) {
+  const key = nativeSignOutTombstoneKey(sessionKey);
+  if (signedOut) localStorage.setItem(key, '1');
+  else localStorage.removeItem(key);
 }
 
 export async function persistNativeSessionRaw(key: string, raw: string | null) {
@@ -54,6 +65,14 @@ export async function restoreNativeSessionForProject(projectId: string) {
   const key = nativeSessionKey(projectId);
   const plugin = securePlugin();
   if (!plugin?.get || !plugin?.set) throw new Error('NATIVE_SECURE_STORE_UNAVAILABLE');
+
+  if (localStorage.getItem(nativeSignOutTombstoneKey(key)) === '1') {
+    sessionStorage.removeItem(key);
+    localStorage.removeItem(key);
+    localStorage.removeItem(LEGACY_SESSION_KEY);
+    if (plugin.remove) await plugin.remove({ key }).catch(() => undefined);
+    return { restored: false, migrated: false };
+  }
 
   try {
     const stored = await plugin.get({ key });
@@ -77,6 +96,7 @@ export async function restoreNativeSessionForProject(projectId: string) {
     sessionStorage.setItem(key, legacyRaw);
     localStorage.removeItem(key);
     localStorage.removeItem(LEGACY_SESSION_KEY);
+    markNativeSignedOut(key, false);
     return { restored: true, migrated: true };
   } catch {
     return { restored: false, migrated: false };
@@ -85,6 +105,7 @@ export async function restoreNativeSessionForProject(projectId: string) {
 
 export async function clearNativeSessionForProject(projectId: string) {
   const key = nativeSessionKey(projectId);
+  markNativeSignedOut(key, true);
   sessionStorage.removeItem(key);
   localStorage.removeItem(key);
   localStorage.removeItem(LEGACY_SESSION_KEY);
