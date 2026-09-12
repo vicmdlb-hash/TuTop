@@ -6,9 +6,15 @@ type CapacitorRuntime = {
   Plugins?: Record<string, CapacitorPlugin>;
 };
 
-export type DevicePermissionState = 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' | 'unavailable';
+export type DevicePermissionState = 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' | 'limited' | 'unavailable';
 export type NativeApproxPosition = { latitude: number; longitude: number; accuracy?: number };
-export type NativePhoto = { dataUrl: string; source: 'camera' | 'photos' };
+export type NativePhoto = {
+  source: 'camera' | 'photos';
+  webPath?: string;
+  uri?: string;
+  thumbnail?: string;
+  format?: string;
+};
 
 function runtime(): CapacitorRuntime | null {
   if (typeof window === 'undefined') return null;
@@ -31,7 +37,7 @@ function plugin(name: string): CapacitorPlugin | null {
 
 function permission(value: unknown): DevicePermissionState {
   const normalized = String(value || 'prompt') as DevicePermissionState;
-  return ['granted', 'denied', 'prompt', 'prompt-with-rationale'].includes(normalized) ? normalized : 'unavailable';
+  return ['granted', 'denied', 'prompt', 'prompt-with-rationale', 'limited'].includes(normalized) ? normalized : 'unavailable';
 }
 
 export async function nativeLocationPermission(request = false): Promise<DevicePermissionState> {
@@ -74,63 +80,80 @@ export async function getNativeApproxPosition(options: { requestPermission?: boo
   }
 }
 
-export async function nativeCameraPermission(request = false): Promise<DevicePermissionState> {
+export async function nativeCameraPermission(): Promise<DevicePermissionState> {
   if (!isNativeDeviceRuntime()) return 'unavailable';
   const camera = plugin('Camera');
   if (!camera?.checkPermissions) return 'unavailable';
   try {
-    let status = await camera.checkPermissions();
-    let cameraState = permission(status?.camera);
-    if (request && cameraState !== 'granted' && camera.requestPermissions) {
-      status = await camera.requestPermissions({ permissions: ['camera'] });
-      cameraState = permission(status?.camera);
-    }
-    return cameraState;
+    const status = await camera.checkPermissions();
+    return permission(status?.camera);
   } catch {
     return 'unavailable';
   }
 }
 
-async function getNativePhoto(source: 'CAMERA' | 'PHOTOS'): Promise<NativePhoto | null> {
+function mediaResult(result: any, source: NativePhoto['source']): NativePhoto | null {
+  if (!result || typeof result !== 'object') return null;
+  const metadata = result.metadata && typeof result.metadata === 'object' ? result.metadata : {};
+  const webPath = String(result.webPath || '').trim() || undefined;
+  const uri = String(result.uri || '').trim() || undefined;
+  const thumbnail = String(result.thumbnail || '').trim() || undefined;
+  const format = String(metadata.format || '').trim().toLowerCase() || undefined;
+  if (!webPath && !uri && !thumbnail) return null;
+  return { source, webPath, uri, thumbnail, format };
+}
+
+export async function takeNativePhoto(): Promise<NativePhoto | null> {
   if (!isNativeDeviceRuntime()) return null;
   const camera = plugin('Camera');
-  if (!camera?.getPhoto) return null;
-  if (source === 'CAMERA') {
-    const permissionState = await nativeCameraPermission(true);
-    if (permissionState !== 'granted') return null;
-  }
+  if (!camera?.takePhoto) return null;
   try {
-    const result = await camera.getPhoto({
-      source,
-      resultType: 'dataUrl',
+    // Capacitor Camera 8 uses a system camera activity on Android; no legacy
+    // storage permission is needed and saveToGallery remains false.
+    const result = await camera.takePhoto({
       quality: 82,
-      width: 1280,
-      height: 1280,
-      correctOrientation: true,
-      allowEditing: false,
+      targetWidth: 1280,
+      targetHeight: 1280,
+      cameraDirection: 'REAR',
+      editable: 'none',
       saveToGallery: false,
-      promptLabelHeader: 'Foto para TuTop',
-      promptLabelPhoto: 'Galería',
-      promptLabelPicture: 'Cámara',
+      includeMetadata: true,
     });
-    const dataUrl = String(result?.dataUrl || '').trim();
-    if (!dataUrl.startsWith('data:image/')) return null;
-    return { dataUrl, source: source === 'CAMERA' ? 'camera' : 'photos' };
+    return mediaResult(result, 'camera');
   } catch {
     return null;
   }
 }
 
-export function takeNativePhoto() {
-  return getNativePhoto('CAMERA');
+export async function pickNativePhoto(): Promise<NativePhoto | null> {
+  if (!isNativeDeviceRuntime()) return null;
+  const camera = plugin('Camera');
+  if (!camera?.chooseFromGallery) return null;
+  try {
+    const result = await camera.chooseFromGallery({
+      quality: 82,
+      targetWidth: 1280,
+      targetHeight: 1280,
+      allowMultipleSelection: false,
+      limit: 1,
+      includeMetadata: true,
+      mediaType: 'PHOTO',
+    });
+    return mediaResult(Array.isArray(result?.results) ? result.results[0] : null, 'photos');
+  } catch {
+    return null;
+  }
 }
 
-export function pickNativePhoto() {
-  return getNativePhoto('PHOTOS');
-}
-
-export async function dataUrlToImageFile(dataUrl: string, filename = 'tutop-photo.jpg') {
-  const response = await fetch(dataUrl);
+export async function nativePhotoToImageFile(photo: NativePhoto, filename = 'tutop-photo.jpg') {
+  let source = photo.webPath || '';
+  if (!source && photo.thumbnail) {
+    const format = photo.format && /^[a-z0-9.+-]+$/.test(photo.format) ? photo.format : 'jpeg';
+    source = `data:image/${format};base64,${photo.thumbnail}`;
+  }
+  if (!source) throw new Error('No pudimos leer la foto seleccionada.');
+  const response = await fetch(source);
+  if (!response.ok && !source.startsWith('data:') && !source.startsWith('blob:')) throw new Error('No pudimos abrir la foto seleccionada.');
   const blob = await response.blob();
   if (!blob.type.startsWith('image/')) throw new Error('La selección no contiene una imagen válida.');
   return new File([blob], filename, { type: blob.type || 'image/jpeg' });
