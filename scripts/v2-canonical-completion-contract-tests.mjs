@@ -5,6 +5,7 @@ const conversation = fs.readFileSync('src/components/ChatConversation.tsx', 'utf
 const card = fs.readFileSync('src/components/TransactionReservationCard.tsx', 'utf8');
 const reviewBridge = fs.readFileSync('src/services/v2StoreReviewMutationBridge.ts', 'utf8');
 const transactionBackend = fs.readFileSync('src/services/canonicalTransactionsBackend.ts', 'utf8');
+const onlineBackend = fs.readFileSync('src/services/onlineBackend.ts', 'utf8');
 const rules = fs.readFileSync('scripts/harden-canonical-v2-rules.mjs', 'utf8');
 const reconciliation = fs.readFileSync('src/lib/reservationReconciliation.ts', 'utf8');
 const store = fs.readFileSync('src/store/useAppStore.ts', 'utf8');
@@ -64,7 +65,9 @@ assert.match(reconciliation, /completed_listing_already_sold/);
 
 // Legacy confirmation remains available for V1 compatibility, but V2 ChatConversation must not use it.
 assert.match(store, /confirmDelivery: \(chatId\) =>/);
-assert.match(store, /chats\/\$\{chatId\}\/confirmations/);
+assert.match(store, /onlineBackend\.confirmDelivery\(chatId\)/);
+assert.match(onlineBackend, /async confirmDelivery\(chatId: string\)/);
+assert.match(onlineBackend, /chats\/\$\{chatId\}\/confirmations\/\$\{uid\}/);
 assert.match(conversation, /!v2 && !deliveryCompleted/);
 
 console.log('PASS transactions_v2 is the sole V2 delivery-completion authority');
@@ -75,5 +78,5 @@ console.log('PASS canonical transaction state projects locally into chat compati
 console.log('PASS newly created transactions surface through transactionHint without polling or duplicate reads');
 console.log('PASS review UI/bridge is unlocked only after canonical completed transaction projection');
 console.log('PASS trusted reconciliation remains a drift/historical repair path only');
-console.log('PASS legacy chat confirmations remain V1-only compatibility behavior');
+console.log('PASS legacy chat confirmations remain V1-only compatibility behavior through the store → onlineBackend boundary');
 console.log('V2 canonical completion contract: PASS');
