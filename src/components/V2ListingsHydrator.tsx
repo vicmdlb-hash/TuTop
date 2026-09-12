@@ -4,6 +4,7 @@ import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { useAppStore } from '../store/useAppStore';
 
 const FOREGROUND_REFRESH_COOLDOWN_MS = 60_000;
+export const V2_LISTINGS_BASE_HYDRATED_EVENT = 'tutop:v2-listings-base-hydrated';
 
 export default function V2ListingsHydrator() {
   const user = useAppStore((state) => state.user);
@@ -28,6 +29,7 @@ export default function V2ListingsHydrator() {
         if (active) {
           lastSuccessfulSync = Date.now();
           useAppStore.setState({ products });
+          window.dispatchEvent(new Event(V2_LISTINGS_BASE_HYDRATED_EVENT));
         }
       } catch (error) {
         console.warn('[TuTop V2 listings sync]', error);
