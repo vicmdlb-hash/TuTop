@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
+import { ensureFirebaseAiApiKeyAllowlist, ensureFirebaseAiServices } from './firebase-ai-staging-provision.mjs';
 
 const projectId = assertStagingFreezeContext({
   allowEnv: 'TUTOP_ALLOW_ANDROID_APP_SETUP',
@@ -34,6 +35,8 @@ async function operationResult(name) {
   throw new Error('Timeout esperando Firebase Android app operation.');
 }
 
+await ensureFirebaseAiServices({ projectId, token });
+
 const parent = `projects/${projectId}`;
 const listed = await request(`https://firebase.googleapis.com/v1beta1/${parent}/androidApps?pageSize=100`);
 let app = (listed.apps || []).find((candidate) => candidate.packageName === packageName && candidate.state !== 'DELETED');
@@ -57,12 +60,22 @@ if (config.configFilename !== 'google-services.json' || !config.configFileConten
 const decoded = Buffer.from(config.configFileContents, 'base64').toString('utf8');
 const parsed = JSON.parse(decoded);
 const configuredProject = String(parsed?.project_info?.project_id || '');
+const matchingClients = (parsed?.client || []).filter((client) => String(client?.client_info?.android_client_info?.package_name || '') === packageName);
 const configuredPackages = (parsed?.client || []).map((client) => String(client?.client_info?.android_client_info?.package_name || '')).filter(Boolean);
 if (configuredProject !== projectId) throw new Error(`google-services project mismatch: ${configuredProject}`);
 if (!configuredPackages.includes(packageName)) throw new Error(`google-services package mismatch: ${configuredPackages.join(',')}`);
 
+const androidApiKeys = new Set(
+  matchingClients.flatMap((client) => (client?.api_key || []).map((item) => String(item?.current_key || '').trim())).filter(Boolean),
+);
+if (androidApiKeys.size === 0) throw new Error('google-services.json no contiene Firebase API key para mx.tutop.app.');
+for (const apiKey of androidApiKeys) {
+  await ensureFirebaseAiApiKeyAllowlist({ projectId, token, apiKey });
+}
+
 fs.writeFileSync(outputPath, `${JSON.stringify(parsed, null, 2)}\n`);
 console.log(`✅ Firebase Android staging listo: ${app.appId}`);
 console.log(`✅ google-services.json validado para ${projectId} / ${packageName}`);
+console.log('✅ Android Firebase API key(s) verificadas para Firebase AI Logic sin imprimir valores.');
 console.log(`October gate run: ${process.env.TUTOP_VALIDATED_GATE_RUN_ID}`);
 console.log(`Archivo temporal: ${outputPath}`);

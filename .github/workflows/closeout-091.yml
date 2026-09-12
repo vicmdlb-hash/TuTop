@@ -92,7 +92,7 @@ jobs:
             current="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_REF}" --jq '.sha')"
             test "$current" = "$TARGET_SHA" || {
               echo "DETENIDO: branch drift. expected=${TARGET_SHA} current=${current}." >&2
-              exit 48
+              return 48
             }
           }
 
@@ -117,12 +117,12 @@ jobs:
                 conclusion="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion // ""')"
                 echo "${label}: run=${run_id} status=${status} conclusion=${conclusion:-pending}" >&2
                 if [ "$status" = "completed" ]; then
-                  test "$conclusion" = "success" || {
+                  if [ "$conclusion" != "success" ]; then
                     echo "DETENIDO: ${label} terminó ${conclusion}." >&2
                     echo "FAILED_CHILD_WORKFLOW=${workflow}" >> "$GITHUB_ENV"
                     echo "FAILED_CHILD_RUN_ID=${run_id}" >> "$GITHUB_ENV"
-                    exit 49
-                  }
+                    return 49
+                  fi
                   printf '%s' "$run_id"
                   return 0
                 fi
@@ -130,18 +130,24 @@ jobs:
               sleep 15
             done
             echo "DETENIDO: timeout esperando ${label}." >&2
-            exit 50
+            echo "FAILED_CHILD_WORKFLOW=${workflow}" >> "$GITHUB_ENV"
+            return 50
           }
 
           dispatch_and_wait() {
             local workflow="$1"
             local label="$2"
-            local before run_id
-            assert_target_unchanged
+            local before run_id rc
+            assert_target_unchanged || return $?
             before="$(latest_matching_run_id "$workflow")"
             gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" -f ref="$TARGET_REF" >/dev/null
-            run_id="$(wait_for_new_success "$workflow" "$before" "$label")"
-            assert_target_unchanged
+            if run_id="$(wait_for_new_success "$workflow" "$before" "$label")"; then
+              :
+            else
+              rc=$?
+              return "$rc"
+            fi
+            assert_target_unchanged || return $?
             printf '%s' "$run_id"
           }
 
@@ -152,16 +158,28 @@ jobs:
               -f body="## TuTop 0.9.1 beta closeout — ${percent}%\n\n${text}\n\nExact target: \`${TARGET_REF}@${TARGET_SHA}\`." >/dev/null || true
           }
 
-          OCTOBER_RUN_ID="$(dispatch_and_wait 'october-01-validation.yml' 'October exact-SHA')"
-          echo "OCTOBER_RUN_ID=$OCTOBER_RUN_ID" >> "$GITHUB_ENV"
+          if OCTOBER_RUN_ID="$(dispatch_and_wait 'october-01-validation.yml' 'October exact-SHA')"; then
+            echo "OCTOBER_RUN_ID=$OCTOBER_RUN_ID" >> "$GITHUB_ENV"
+          else
+            rc=$?
+            exit "$rc"
+          fi
           post_progress 75 "October static + build + Rules + serial Firestore Emulator is green. Run: \`${OCTOBER_RUN_ID}\`."
 
-          STAGING_RUN_ID="$(dispatch_and_wait 'staging-v2-smoke.yml' 'Staging same-SHA')"
-          echo "STAGING_RUN_ID=$STAGING_RUN_ID" >> "$GITHUB_ENV"
-          post_progress 85 "Real staging smoke is green. October: \`${OCTOBER_RUN_ID}\`; Staging: \`${STAGING_RUN_ID}\`."
+          if STAGING_RUN_ID="$(dispatch_and_wait 'staging-v2-smoke.yml' 'Staging same-SHA')"; then
+            echo "STAGING_RUN_ID=$STAGING_RUN_ID" >> "$GITHUB_ENV"
+          else
+            rc=$?
+            exit "$rc"
+          fi
+          post_progress 85 "Real staging smoke + Firebase AI runtime proof are green. October: \`${OCTOBER_RUN_ID}\`; Staging: \`${STAGING_RUN_ID}\`."
 
-          ANDROID_RUN_ID="$(dispatch_and_wait 'android-debug-apk.yml' 'Android 0.9.1 exact-SHA')"
-          echo "ANDROID_RUN_ID=$ANDROID_RUN_ID" >> "$GITHUB_ENV"
+          if ANDROID_RUN_ID="$(dispatch_and_wait 'android-debug-apk.yml' 'Android 0.9.1 exact-SHA')"; then
+            echo "ANDROID_RUN_ID=$ANDROID_RUN_ID" >> "$GITHUB_ENV"
+          else
+            rc=$?
+            exit "$rc"
+          fi
           post_progress 95 "Android compile/lint/unit-test/assemble is green. Run: \`${ANDROID_RUN_ID}\`. Independent APK verification remains."
 
       - name: Independently verify APK artifact
@@ -170,6 +188,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test -n "${ANDROID_RUN_ID:-}" && test -n "${STAGING_RUN_ID:-}" && test -n "${OCTOBER_RUN_ID:-}" || {
+            echo "DETENIDO: faltan IDs de provenance; no se verificará un artefacto ambiguo." >&2
+            exit 53
+          }
           ARTIFACT_JSON="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${ANDROID_RUN_ID}/artifacts" -f per_page=100)"
           APK_ARTIFACT_ID="$(printf '%s' "$ARTIFACT_JSON" | jq -r '.artifacts | map(select(.expired == false and (.name | startswith("TuTop-0.9.1-beta.0-physical-qa-staging-")))) | .[0].id // empty')"
           APK_ARTIFACT_NAME="$(printf '%s' "$ARTIFACT_JSON" | jq -r '.artifacts | map(select(.expired == false and (.name | startswith("TuTop-0.9.1-beta.0-physical-qa-staging-")))) | .[0].name // empty')"
