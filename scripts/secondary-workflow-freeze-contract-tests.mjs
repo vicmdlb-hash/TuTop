@@ -91,8 +91,9 @@ assert.match(provision, /workflow_dispatch:/);
 assert.doesNotMatch(provision, /^\s+schedule:/m);
 assert.doesNotMatch(provision, /^\s+pull_request:/m);
 
-assert.match(dossier, /no editar ni ejecutar `one-shot-085-hardened\.yml` ni `provision-firebase-staging-v2\.yml`/);
-assert.match(dossier, /trusted maintenance sólo puede mutar staging después de October \+ staging green sobre el mismo SHA/i);
+const dossierPlain = dossier.replace(/[*_`]/g, '');
+assert.match(dossierPlain, /no editar ni ejecutar one-shot-085-hardened\.yml ni provision-firebase-staging-v2\.yml/);
+assert.match(dossierPlain, /trusted maintenance sólo puede mutar staging después de October \+ staging green sobre el mismo SHA/i);
 
 console.log('PASS diagnostic secondary workflows are manual-only and non-mutating');
 console.log('PASS diagnostic secondary jobs are blocked outside the exact runtime-freeze branch');
