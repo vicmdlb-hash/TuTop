@@ -5,6 +5,7 @@ import Feed from './components/Feed';
 import Chatbot from './components/Chatbot';
 import NationalPublishScreen from './components/NationalPublishScreen';
 import V2ListingsHydrator from './components/V2ListingsHydrator';
+import V2NearbyListingsHydrator from './components/V2NearbyListingsHydrator';
 import V2ChatHistoryHydrator from './components/V2ChatHistoryHydrator';
 import V2ReviewStatusHydrator from './components/V2ReviewStatusHydrator';
 import V2ReviewStrikeHydrator from './components/V2ReviewStrikeHydrator';
@@ -98,6 +99,7 @@ function MobileApp() {
         </div>
       )}
       {v2 && <V2ListingsHydrator />}
+      {v2 && <V2NearbyListingsHydrator />}
       {v2 && <V2VisibleFavoritesHydrator />}
       {v2 && <V2ChatHistoryHydrator />}
       {v2 && <V2ReviewStatusHydrator />}
