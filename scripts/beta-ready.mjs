@@ -35,7 +35,7 @@ const privacy = read('public/privacy.html');
 const terms = read('public/terms.html');
 const assistant = read('src/lib/productAssistant.ts');
 
-const expectedBeta = '0.9.0-beta.0';
+const expectedBeta = '0.9.1-beta.0';
 if (pkg.version !== expectedBeta) errors.push(`Versión core npm inesperada: ${pkg.version || 'vacía'}`);
 if (lock.version !== expectedBeta || lock.packages?.['']?.version !== expectedBeta) errors.push('package-lock.json no está sincronizado con la versión beta raíz');
 if (pkg.type !== 'module') errors.push('package.json debe declarar type=module para evitar carga CommonJS ambigua');
@@ -52,9 +52,15 @@ if (project.zeroInvestmentMode !== true || project.billingAllowed !== false || p
 if (freeze.status !== 'runtime_freeze_candidate' || freeze.runtime_validated !== false || freeze.feature_freeze !== true) {
   errors.push('Runtime Freeze Candidate no está en estado fail-closed esperado.');
 }
-if (freeze.current_physical_qa_candidate !== null) errors.push('Freeze manifest no debe declarar Physical QA candidate antes del build exact-head real.');
-if (physicalCandidate.physical_release_candidate !== false || physicalCandidate.replacement_required !== true) {
-  errors.push('El candidato Physical QA histórico debe permanecer obsoleto hasta activación exact-head real.');
+if (freeze.current_physical_qa_candidate !== null) errors.push('Freeze manifest no debe declarar Physical QA candidate 0.9.1 antes del build exact-head real.');
+
+// APK28 is preserved as immutable historical 0.9.0 evidence. Building 0.9.1
+// must not rewrite or degrade that exact-head candidate.
+if (physicalCandidate.app_version !== '0.9.0-beta.0'
+    || physicalCandidate.physical_release_candidate !== true
+    || physicalCandidate.candidate_status !== 'active_exact_head'
+    || physicalCandidate.replacement_required !== false) {
+  errors.push('El candidato histórico APK28 0.9.0 debe permanecer preservado como active_exact_head independiente de 0.9.1.');
 }
 if (!app.includes('<BackendGate>')) errors.push('App no está protegida por BackendGate');
 if (!runtime.includes('BUILT_IN_CONFIG') || !runtime.includes("const HISTORICAL_PROJECT_ID = 'tutop-3a4f7'")) errors.push('Falta configuración online V1 integrada para instalaciones estables');
@@ -67,7 +73,6 @@ if (!online.includes('FirebaseRestClient')) errors.push('Backend online no usa F
 if (!rules.includes('match /wallets/{uid}')) errors.push('Rules no protegen Wallet');
 if (!rules.includes('match /admins/{uid}')) errors.push('Rules no protegen administradores');
 if (!workflow.includes('assembleDebug')) errors.push('Workflow Android no genera APK debug');
-if (!workflow.includes('test:rules') && !workflow.includes('firestore.rules.test')) errors.push('Workflow estable no ejecuta pruebas de Firestore Rules');
 if (!workflow.includes('git diff --exit-code -- package.json package-lock.json')) errors.push('Workflow Android no prueba inmutabilidad de manifests npm');
 if (!workflow.includes('TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA') || !workflow.includes('TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA')) {
   errors.push('Workflow Android no conserva binding exact-SHA de gate + staging.');
@@ -76,6 +81,7 @@ if (!stagingWorkflow.includes('TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA')) errors.pu
 if (!octoberWorkflow.includes('npm run check') || !octoberWorkflow.includes('npm run build') || !octoberWorkflow.includes('npm run v2:rules:prepare')) {
   errors.push('October consolidated gate está incompleto.');
 }
+if (!octoberWorkflow.includes('emulators:exec --only firestore')) errors.push('October debe ejecutar el Firestore Emulator security suite antes de staging/Android.');
 if (octoberWorkflow.includes('npm run typecheck')) errors.push('October no debe repetir typecheck antes del build canónico.');
 if (!octoberWorkflow.includes('tests/firestore.v2.account-operations.test.mjs')) {
   errors.push('October debe conservar el fixture Emulator de operaciones de cuenta.');
@@ -122,7 +128,8 @@ notes.push(`Core npm/base ${pkg.version || 'desconocida'} · Android beta ${proj
 notes.push(`Versionado raíz/lock/Android sincronizado en ${expectedBeta}`);
 notes.push(`Application ID ${cap.appId || 'desconocido'}`);
 notes.push('Backend beta: Firebase REST + Firestore Security Rules');
-notes.push('Estado release: Runtime Freeze Candidate / NOT VALIDATED; no existe APK Physical QA vigente.');
+notes.push('Estado release: Runtime Freeze Candidate / NOT VALIDATED; todavía no existe candidato Physical QA 0.9.1 validado.');
+notes.push('APK28 0.9.0 permanece como evidencia histórica exact-head y no es autoridad de la beta 0.9.1.');
 notes.push('Próxima promoción permitida: October same-SHA → staging same-SHA → Android same-SHA → Physical QA A+B.');
 
 for (const note of notes) console.log(`OK   ${note}`);
