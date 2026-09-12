@@ -31,8 +31,8 @@ assert.match(app, /<V2ReviewStrikeHydrator \/>/);
 const parsed = JSON.parse(indexes);
 const strikeIndex = parsed.indexes.find((index) => index.collectionGroup === 'reviews'
   && index.queryScope === 'COLLECTION'
-  && index.fields?.map((field) => field.fieldPath).join(',') === 'evaluado_id,calificacion,fecha');
-assert.ok(strikeIndex, 'reviews strike aggregation composite index missing');
+  && index.fields?.map((field) => field.fieldPath).join(',') === 'calificacion,evaluado_id,fecha');
+assert.ok(strikeIndex, 'reviews strike aggregation composite index missing or non-canonical');
 
 // Legacy snapshot remains the source until the explicit staging-only flag is
 // enabled. Point reviews loaded later cannot turn COUNT off accidentally.
@@ -40,7 +40,7 @@ assert.match(online, /runQuery<any>\('reviews', \[\{ field: 'evaluador_id'/);
 assert.match(online, /runQuery<any>\('reviews', \[\{ field: 'evaluado_id'/);
 
 console.log('PASS exact 30-day negative-review strike COUNT is prepared');
-console.log('PASS required reviews composite index is declared');
+console.log('PASS required reviews composite index is declared in Firestore canonical field order');
 console.log('PASS strike hydration is tied to the explicit staging-only cutover flag');
 console.log('PASS point review hydration cannot disable strike COUNT after cutover');
 console.log('Review strike cutover readiness contract: PASS');
