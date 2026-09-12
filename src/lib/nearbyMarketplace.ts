@@ -71,6 +71,16 @@ export function requestApproxLocation(options: { timeoutMs?: number; maximumAgeM
   });
 }
 
+export function locationAttributes(location: ApproxLocation | null) {
+  return location ? { approx_latitude: location.latitude, approx_longitude: location.longitude } : {};
+}
+
+function productCoordinates(product: Pick<Product, 'attributes'>) {
+  const latitude = Number(product.attributes?.approx_latitude);
+  const longitude = Number(product.attributes?.approx_longitude);
+  return validCoordinate(latitude, longitude) ? { latitude, longitude } : null;
+}
+
 export function haversineDistanceKm(a: Pick<ApproxLocation, 'latitude' | 'longitude'>, b: { latitude: number; longitude: number }) {
   if (!validCoordinate(a.latitude, a.longitude) || !validCoordinate(b.latitude, b.longitude)) return null;
   const toRad = (value: number) => value * Math.PI / 180;
@@ -82,12 +92,13 @@ export function haversineDistanceKm(a: Pick<ApproxLocation, 'latitude' | 'longit
   return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-export function productDistanceKm(location: ApproxLocation | null, product: Pick<Product, 'approx_latitude' | 'approx_longitude'>) {
-  if (!location || product.approx_latitude === undefined || product.approx_longitude === undefined) return null;
-  return haversineDistanceKm(location, { latitude: product.approx_latitude, longitude: product.approx_longitude });
+export function productDistanceKm(location: ApproxLocation | null, product: Pick<Product, 'attributes'>) {
+  const coordinates = productCoordinates(product);
+  if (!location || !coordinates) return null;
+  return haversineDistanceKm(location, coordinates);
 }
 
-export function withinRadius(location: ApproxLocation | null, product: Pick<Product, 'approx_latitude' | 'approx_longitude'>, radiusKm: number) {
+export function withinRadius(location: ApproxLocation | null, product: Pick<Product, 'attributes'>, radiusKm: number) {
   const distance = productDistanceKm(location, product);
   return distance === null ? null : distance <= radiusKm;
 }
