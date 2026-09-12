@@ -1,5 +1,5 @@
 export const TUTOP_V2_STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
-export const TUTOP_V2_FREEZE_BRANCH = 'feat/tutop-0.8-p0';
+export const TUTOP_V2_FREEZE_BRANCH = 'feat/tutop-0.9.1-nearby-topi';
 
 function stop(message) {
   throw new Error(`STAGING_FREEZE_BLOCKED:${message}`);
