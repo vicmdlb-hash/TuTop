@@ -36,6 +36,7 @@ function deterministicAnswer(question: string, routeHint: SupportRouteId = 'root
 
 function aiPrompt(question: string, route: SupportRouteId) {
   const node = supportNode(route);
+  const activeGuidance = node.answer || node.prompt;
   return [
     'Eres Topi Ayuda, asistente de soporte al consumidor dentro de TuTop, marketplace universitario en México.',
     'Responde en español de México, claro y breve, máximo 900 caracteres.',
@@ -45,6 +46,7 @@ function aiPrompt(question: string, route: SupportRouteId) {
     'Si detectas fraude o riesgo, indica detener la operación y no compartir secretos.',
     'Topi explica y orienta; no ejecuta compras, publicaciones, pagos, recuperaciones de cuenta ni decisiones de moderación por el usuario.',
     `RUTA_ACTUAL=${node.title}`,
+    `GUIA_DE_ESTA_RUTA=${activeGuidance}`,
     `PREGUNTA=${question}`,
     `HECHOS_TUTOP=\n${supportTreeFacts()}`,
   ].join('\n').slice(0, 12000);
