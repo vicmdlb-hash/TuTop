@@ -13,6 +13,8 @@ const provision = read('.github/workflows/provision-firebase-staging-v2.yml');
 const trustedWrapper = read('scripts/gated-trusted-staging-apply.mjs');
 const guard = read('scripts/staging-freeze-guard.mjs');
 
+const ACTIVE_BRANCH = 'feat/tutop-0.9.1-nearby-topi';
+
 function assertManualOnly(name, workflow) {
   assert.match(workflow, /^on:\s*\n\s+workflow_dispatch:/m, `${name} must keep workflow_dispatch`);
   assert.doesNotMatch(workflow, /^\s+push:/m, `${name} must not run on push`);
@@ -27,12 +29,16 @@ for (const [name, workflow] of [
   ['v2-trusted-maintenance', trusted],
 ]) assertManualOnly(name, workflow);
 
-const countFreezeBranchGuards = (workflow) =>
-  (workflow.match(/if: github\.ref_name == 'feat\/tutop-0\.8-p0'/g) || []).length;
-
-assert.equal(countFreezeBranchGuards(quality), 1, 'quality must be blocked outside the runtime-freeze branch');
-assert.equal(countFreezeBranchGuards(firestore), 1, 'firestore-v2-security must be blocked outside the runtime-freeze branch');
-assert.equal(countFreezeBranchGuards(ciAuth), 1, 'single CI auth diagnostic job must be blocked outside the runtime-freeze branch');
+const activeBranchGuard = `if: github.ref_name == '${ACTIVE_BRANCH}'`;
+for (const [name, workflow] of [
+  ['quality', quality],
+  ['firestore-v2-security', firestore],
+  ['ci-auth-parallel-validation', ciAuth],
+  ['v2-trusted-maintenance', trusted],
+]) {
+  assert.equal((workflow.match(new RegExp(activeBranchGuard.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length, 1,
+    `${name} must be blocked outside the exact 0.9.1 feature branch`);
+}
 assert.equal((ciAuth.match(/runs-on: ubuntu-latest/g) || []).length, 1, 'CI auth diagnostics must stay on one runner');
 
 for (const [name, workflow] of [
@@ -41,13 +47,13 @@ for (const [name, workflow] of [
   ['ci-auth-parallel-validation', ciAuth],
 ]) {
   assert.doesNotMatch(workflow, /firebase:deploy:staging|--apply|projects:create|firestore:databases:create|v2:catalog:seed|gh release create/, `${name} must remain diagnostic-only`);
-  assert.doesNotMatch(workflow, /upload-artifact/, `${name} must not publish diagnostic artifacts during runtime freeze`);
+  assert.doesNotMatch(workflow, /upload-artifact/, `${name} must not publish diagnostic artifacts`);
 }
 
 assert.equal(manifest.secondary_workflow_policy.trusted_staging_mutation.requires_october_same_sha_green, true);
 assert.equal(manifest.secondary_workflow_policy.trusted_staging_mutation.requires_staging_same_sha_green, true);
 assert.match(trusted, /actions: read/);
-assert.match(trusted, /if: github\.ref_name == 'feat\/tutop-0\.8-p0'/);
+assert.match(trusted, /if: github\.ref_name == 'feat\/tutop-0\.9\.1-nearby-topi'/);
 assert.match(trusted, /october-01-validation\.yml\/runs/);
 assert.match(trusted, /staging-v2-smoke\.yml\/runs/);
 assert.equal((trusted.match(/head_sha="\$GITHUB_SHA"/g) || []).length >= 2, true);
@@ -69,21 +75,21 @@ assert.match(trustedWrapper, /v2-observability-snapshot\.mjs', '--apply'/);
 assert.match(guard, /TUTOP_VALIDATED_GATE_SHA/);
 assert.match(guard, /TUTOP_VALIDATED_STAGING_SHA/);
 assert.match(guard, /stagingSha !== githubSha/);
+assert.match(guard, /TUTOP_V2_FREEZE_BRANCH = 'feat\/tutop-0\.9\.1-nearby-topi'/);
 
 const trustedGate = trusted.indexOf('Require same-SHA green October and staging before trusted mutation');
 const firstTrustedMutation = trusted.indexOf('Expire reservations and repair completed listings');
 assert(trustedGate >= 0 && firstTrustedMutation > trustedGate, 'October + staging gate must precede any trusted staging mutation');
 
+// Historical self-trigger workflows stay quarantined on their old 0.8 branch and are never migrated.
 const quarantine = manifest.secondary_workflow_policy.quarantined_self_trigger_workflows;
 assert.deepEqual(quarantine, ['one-shot-085-hardened.yml', 'provision-firebase-staging-v2.yml']);
 assert.match(String(manifest.secondary_workflow_policy.quarantine_rule), /Do not edit, dispatch, or use/i);
-
 assert.match(oneShot, /^on:\s*\n\s+push:/m);
 assert.match(oneShot, /branches: \["feat\/tutop-0\.8-p0"\]/);
 assert.match(oneShot, /- "\.github\/workflows\/one-shot-085-hardened\.yml"/);
 assert.doesNotMatch(oneShot, /^\s+schedule:/m);
 assert.doesNotMatch(oneShot, /^\s+pull_request:/m);
-
 assert.match(provision, /^on:\s*\n\s+push:/m);
 assert.match(provision, /branches: \["feat\/tutop-0\.8-p0"\]/);
 assert.match(provision, /- "\.github\/workflows\/provision-firebase-staging-v2\.yml"/);
@@ -95,11 +101,9 @@ const dossierPlain = dossier.replace(/[*_`]/g, '');
 assert.match(dossierPlain, /no editar ni ejecutar one-shot-085-hardened\.yml ni provision-firebase-staging-v2\.yml/);
 assert.match(dossierPlain, /trusted maintenance sólo puede mutar staging después de October \+ staging green sobre el mismo SHA/i);
 
-console.log('PASS diagnostic secondary workflows are manual-only and non-mutating');
-console.log('PASS diagnostic secondary jobs are blocked outside the exact runtime-freeze branch');
+console.log('PASS active diagnostic workflows are manual-only and bound to TuTop 0.9.1');
 console.log('PASS CI auth diagnostics stay consolidated on one runner');
-console.log('PASS diagnostic secondary workflows do not publish artifacts or releases');
-console.log('PASS trusted maintenance requires October + staging run and SHA evidence before any apply wrapper');
-console.log('PASS trusted workflow cannot call raw apply scripts directly');
-console.log('PASS self-trigger historical workflows remain quarantined without editing them');
+console.log('PASS diagnostic workflows do not publish artifacts or releases');
+console.log('PASS trusted maintenance requires October + staging same-SHA evidence');
+console.log('PASS historical self-trigger workflows remain quarantined on 0.8 and were not migrated');
 console.log('Secondary workflow runtime-freeze contract: PASS');
