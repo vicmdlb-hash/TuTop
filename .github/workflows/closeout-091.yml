@@ -1,0 +1,249 @@
+name: TuTop 0.9.1 beta closeout
+
+on:
+  push:
+    branches:
+      - feat/tutop-0.9.1-nearby-topi
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+
+concurrency:
+  group: tutop-091-beta-closeout
+  cancel-in-progress: false
+
+jobs:
+  normalize-version:
+    name: Normalize 0.9.1 package lock
+    runs-on: [self-hosted, linux, x64, tutop-zero-cost-controller]
+    timeout-minutes: 10
+    outputs:
+      mutated: ${{ steps.normalize.outputs.mutated }}
+    steps:
+      - name: Checkout exact feature ref
+        uses: actions/checkout@v7
+        with:
+          ref: feat/tutop-0.9.1-nearby-topi
+          fetch-depth: 0
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Align lockfile root version
+        id: normalize
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/fix-091-lock-version.mjs
+          if git diff --quiet -- package-lock.json; then
+            echo "mutated=false" >> "$GITHUB_OUTPUT"
+            echo "✅ package-lock already aligned with 0.9.1-beta.0." >> "$GITHUB_STEP_SUMMARY"
+          else
+            git diff -- package-lock.json
+            git config user.name "TuTop Release Bot"
+            git config user.email "actions@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "fix: align 0.9.1 package lock version"
+            git push origin HEAD:feat/tutop-0.9.1-nearby-topi
+            echo "mutated=true" >> "$GITHUB_OUTPUT"
+            echo "✅ package-lock aligned and committed. Re-run closeout on the new exact HEAD." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  release-chain:
+    name: October → Staging → Android → verified APK
+    needs: normalize-version
+    if: needs.normalize-version.outputs.mutated == 'false'
+    runs-on: [self-hosted, linux, x64, tutop-zero-cost-controller]
+    timeout-minutes: 150
+    env:
+      TARGET_REF: feat/tutop-0.9.1-nearby-topi
+      TARGET_PR: "8"
+    steps:
+      - name: Capture immutable target SHA
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_SHA="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_REF}" --jq '.sha')"
+          test "$TARGET_SHA" = "$GITHUB_SHA" || {
+            echo "DETENIDO: closeout event SHA=${GITHUB_SHA}, branch HEAD=${TARGET_SHA}. Trigger a fresh run on current HEAD." >&2
+            exit 48
+          }
+          echo "TARGET_SHA=$TARGET_SHA" >> "$GITHUB_ENV"
+          echo "sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+          echo "Target exacto: ${TARGET_REF}@${TARGET_SHA}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch exact-SHA validation chain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          assert_target_unchanged() {
+            local current
+            current="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/commits/${TARGET_REF}" --jq '.sha')"
+            test "$current" = "$TARGET_SHA" || {
+              echo "DETENIDO: branch drift. expected=${TARGET_SHA} current=${current}." >&2
+              exit 48
+            }
+          }
+
+          latest_matching_run_id() {
+            local workflow="$1"
+            gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
+              -f branch="$TARGET_REF" -f head_sha="$TARGET_SHA" -f event=workflow_dispatch -f per_page=20 \
+              --jq '.workflow_runs[0].id // 0'
+          }
+
+          wait_for_new_success() {
+            local workflow="$1"
+            local before_id="$2"
+            local label="$3"
+            local attempt json run_id status conclusion
+            for attempt in $(seq 1 240); do
+              json="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
+                -f branch="$TARGET_REF" -f head_sha="$TARGET_SHA" -f event=workflow_dispatch -f per_page=20)"
+              run_id="$(printf '%s' "$json" | jq -r --arg before "$before_id" '.workflow_runs | map(select(.id > ($before|tonumber))) | .[0].id // empty')"
+              if [ -n "$run_id" ]; then
+                status="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status')"
+                conclusion="$(printf '%s' "$json" | jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .conclusion // ""')"
+                echo "${label}: run=${run_id} status=${status} conclusion=${conclusion:-pending}" >&2
+                if [ "$status" = "completed" ]; then
+                  test "$conclusion" = "success" || {
+                    echo "DETENIDO: ${label} terminó ${conclusion}." >&2
+                    echo "FAILED_CHILD_WORKFLOW=${workflow}" >> "$GITHUB_ENV"
+                    echo "FAILED_CHILD_RUN_ID=${run_id}" >> "$GITHUB_ENV"
+                    exit 49
+                  }
+                  printf '%s' "$run_id"
+                  return 0
+                fi
+              fi
+              sleep 15
+            done
+            echo "DETENIDO: timeout esperando ${label}." >&2
+            exit 50
+          }
+
+          dispatch_and_wait() {
+            local workflow="$1"
+            local label="$2"
+            local before run_id
+            assert_target_unchanged
+            before="$(latest_matching_run_id "$workflow")"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" -f ref="$TARGET_REF" >/dev/null
+            run_id="$(wait_for_new_success "$workflow" "$before" "$label")"
+            assert_target_unchanged
+            printf '%s' "$run_id"
+          }
+
+          post_progress() {
+            local percent="$1"
+            local text="$2"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" \
+              -f body="## TuTop 0.9.1 beta closeout — ${percent}%\n\n${text}\n\nExact target: \`${TARGET_REF}@${TARGET_SHA}\`." >/dev/null
+          }
+
+          OCTOBER_RUN_ID="$(dispatch_and_wait 'october-01-validation.yml' 'October exact-SHA')"
+          echo "OCTOBER_RUN_ID=$OCTOBER_RUN_ID" >> "$GITHUB_ENV"
+          post_progress 75 "October static + build + Rules + serial Firestore Emulator is green. Run: \`${OCTOBER_RUN_ID}\`."
+
+          STAGING_RUN_ID="$(dispatch_and_wait 'staging-v2-smoke.yml' 'Staging same-SHA')"
+          echo "STAGING_RUN_ID=$STAGING_RUN_ID" >> "$GITHUB_ENV"
+          post_progress 85 "Real staging smoke is green. October: \`${OCTOBER_RUN_ID}\`; Staging: \`${STAGING_RUN_ID}\`."
+
+          ANDROID_RUN_ID="$(dispatch_and_wait 'android-debug-apk.yml' 'Android 0.9.1 exact-SHA')"
+          echo "ANDROID_RUN_ID=$ANDROID_RUN_ID" >> "$GITHUB_ENV"
+          post_progress 95 "Android compile/lint/unit-test/assemble is green. Run: \`${ANDROID_RUN_ID}\`. Independent APK verification remains."
+
+      - name: Independently verify APK artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT_JSON="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/${ANDROID_RUN_ID}/artifacts" -f per_page=100)"
+          APK_ARTIFACT_ID="$(printf '%s' "$ARTIFACT_JSON" | jq -r '.artifacts | map(select(.expired == false and (.name | startswith("TuTop-0.9.1-beta.0-physical-qa-staging-")))) | .[0].id // empty')"
+          APK_ARTIFACT_NAME="$(printf '%s' "$ARTIFACT_JSON" | jq -r '.artifacts | map(select(.expired == false and (.name | startswith("TuTop-0.9.1-beta.0-physical-qa-staging-")))) | .[0].name // empty')"
+          test -n "$APK_ARTIFACT_ID" && test -n "$APK_ARTIFACT_NAME" || {
+            echo "DETENIDO: Android terminó green pero no existe el artifact APK 0.9.1 esperado." >&2
+            exit 51
+          }
+
+          rm -rf apk-verified
+          mkdir -p apk-verified
+          gh run download "$ANDROID_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$APK_ARTIFACT_NAME" --dir apk-verified
+
+          APK_FILE="apk-verified/TuTop-0.9.1-beta.0-physical-qa-staging.apk"
+          HASH_FILE="apk-verified/TuTop-0.9.1-beta.0-physical-qa-staging.apk.sha256"
+          META_FILE="apk-verified/TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt"
+          test -s "$APK_FILE" && test -s "$HASH_FILE" && test -s "$META_FILE"
+
+          EXPECTED_SHA="$(awk '{print $1; exit}' "$HASH_FILE")"
+          ACTUAL_SHA="$(sha256sum "$APK_FILE" | awk '{print $1}')"
+          test "$EXPECTED_SHA" = "$ACTUAL_SHA" || { echo "DETENIDO: APK SHA-256 mismatch." >&2; exit 52; }
+
+          grep -q "head_sha=${TARGET_SHA}" "$META_FILE"
+          grep -q "gate_run_id=${OCTOBER_RUN_ID}" "$META_FILE"
+          grep -q "staging_smoke_run_id=${STAGING_RUN_ID}" "$META_FILE"
+          grep -q 'firebase_project=tutop-beta-vicmdlb-1356585881' "$META_FILE"
+          grep -q 'version=0.9.1-beta.0' "$META_FILE"
+          grep -q 'version_code=90100' "$META_FILE"
+          grep -q 'reviews_lazy_cutover=false' "$META_FILE"
+          grep -q 'wallet_lazy_cutover=false' "$META_FILE"
+          grep -q 'favorites_visible_cutover=false' "$META_FILE"
+
+          echo "APK_ARTIFACT_ID=$APK_ARTIFACT_ID" >> "$GITHUB_ENV"
+          echo "APK_ARTIFACT_NAME=$APK_ARTIFACT_NAME" >> "$GITHUB_ENV"
+          echo "APK_SHA256=$ACTUAL_SHA" >> "$GITHUB_ENV"
+          {
+            echo "✅ TuTop 0.9.1 APK independently verified"
+            echo "- artifact_id: ${APK_ARTIFACT_ID}"
+            echo "- artifact_name: ${APK_ARTIFACT_NAME}"
+            echo "- apk_sha256: ${ACTUAL_SHA}"
+            echo "- exact_sha: ${TARGET_SHA}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record 100% APK readiness on PR 8
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BODY=$(cat <<EOF
+          ## TuTop 0.9.1 beta closeout — 100% APK readiness
+
+          Real Android staging APK independently verified.
+
+          - exact target: \`${TARGET_REF}@${TARGET_SHA}\`
+          - October run: \`${OCTOBER_RUN_ID}\`
+          - Staging run: \`${STAGING_RUN_ID}\`
+          - Android run: \`${ANDROID_RUN_ID}\`
+          - APK artifact: \`${APK_ARTIFACT_ID}\` / \`${APK_ARTIFACT_NAME}\`
+          - APK SHA-256: \`${APK_SHA256}\`
+          - package: \`mx.tutop.app\`
+          - version: \`0.9.1-beta.0\`
+          - versionCode: \`90100\`
+          - cutovers: reviews=false, wallet=false, favorites=false
+
+          This is **APK readiness**, not production release. Physical device QA and Firebase AI generateContent runtime proof remain separate evidence gates.
+          EOF
+          )
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null
+
+      - name: Record fail-closed stop on PR 8
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          BODY="TuTop 0.9.1 beta closeout stopped fail-closed for \`${TARGET_REF}@${TARGET_SHA:-UNKNOWN}\`. Child workflow: \`${FAILED_CHILD_WORKFLOW:-unknown}\`; child run: \`${FAILED_CHILD_RUN_ID:-unknown}\`. No later gate is promoted after a failed predecessor."
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${TARGET_PR}/comments" -f body="$BODY" >/dev/null || true
