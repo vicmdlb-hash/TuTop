@@ -36,14 +36,16 @@ import com.google.firebase.ai.java.GenerativeModelFutures;
 import com.google.firebase.ai.type.Content;
 import com.google.firebase.ai.type.GenerateContentResponse;
 
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 @CapacitorPlugin(name = "TuTopAI")
 public class TuTopAIPlugin extends Plugin {
-    private static final Set<String> ALLOWED_MODELS = Set.of("gemini-3.8-flash", "gemini-3.5-flash-lite");
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+
+    private boolean modelAllowed(String model) {
+        return "gemini-3.8-flash".equals(model) || "gemini-3.5-flash-lite".equals(model);
+    }
 
     @PluginMethod
     public void generate(PluginCall call) {
@@ -53,7 +55,7 @@ public class TuTopAIPlugin extends Plugin {
             call.reject("TOPI_AI_PROMPT_INVALID");
             return;
         }
-        if (!ALLOWED_MODELS.contains(requestedModel)) {
+        if (!modelAllowed(requestedModel)) {
             call.reject("TOPI_AI_MODEL_NOT_ALLOWED");
             return;
         }
@@ -67,8 +69,8 @@ public class TuTopAIPlugin extends Plugin {
             Futures.addCallback(response, new FutureCallback<GenerateContentResponse>() {
                 @Override
                 public void onSuccess(GenerateContentResponse result) {
-                    String text = result == null ? "" : String.valueOf(result.getText());
-                    if (text == null || text.trim().isEmpty() || "null".equals(text)) {
+                    String text = result == null ? "" : result.getText();
+                    if (text == null || text.trim().isEmpty()) {
                         call.reject("TOPI_AI_EMPTY_RESPONSE");
                         return;
                     }
@@ -87,12 +89,6 @@ public class TuTopAIPlugin extends Plugin {
         } catch (Throwable error) {
             call.reject("TOPI_AI_UNAVAILABLE", error);
         }
-    }
-
-    @Override
-    protected void handleOnDestroy() {
-        executor.shutdownNow();
-        super.handleOnDestroy();
     }
 }
 `;
