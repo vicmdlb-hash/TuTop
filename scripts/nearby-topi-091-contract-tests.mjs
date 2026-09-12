@@ -1,3 +1,4 @@
+import './native-secure-session-091-contract-tests.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -35,6 +36,7 @@ assert.match(capabilities, /WRITE_EXTERNAL_STORAGE/);
 assert.match(capabilities, /android:allowBackup=\\"false\\"/);
 assert.match(capabilities, /android:usesCleartextTraffic=\\"false\\"/);
 assert.match(bootstrap, /android-native-capabilities\.mjs/);
+assert.match(bootstrap, /android-secure-session-plugin\.mjs/);
 
 assert.match(pkg.scripts['v2:rules:prepare'], /harden-nearby-v2-rules\.mjs/);
 assert.match(rulesHardener, /visibility_scope != 'national'/);
