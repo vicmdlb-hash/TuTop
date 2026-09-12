@@ -60,7 +60,7 @@ const fields: Partial<Record<ProductCategory, NationalListingField[]>> = {
     { key: 'house_rules', label: 'Reglas', placeholder: 'Ej. no fumar' },
   ],
   'Transporte': [
-    { key: 'origin_zone', label: 'Zona de salida', placeholder: 'Ej. centro de la ciudad' , required: true },
+    { key: 'origin_zone', label: 'Zona de salida', placeholder: 'Ej. centro de la ciudad', required: true },
     { key: 'destination_zone', label: 'Destino', placeholder: 'Ej. campus principal / facultad', required: true },
     { key: 'departure_window', label: 'Horario', placeholder: 'Ej. 06:45–07:00', required: true },
     { key: 'rideshare_cost_share', label: 'Cooperación', placeholder: 'Ej. 35', kind: 'number', required: true },
@@ -87,7 +87,7 @@ export function nationalFieldsFor(category?: ProductCategory) {
   return category ? fields[category] || [] : [];
 }
 
-export function normalizeNationalAttributes(fieldsForCategory: NationalListingField[], values: Record<string, string | boolean>) {
+export function normalizeNationalAttributes(fieldsForCategory: NationalListingField[], values: Record<string, string | number | boolean>) {
   const output: Record<string, string | number | boolean | string[]> = {};
   for (const field of fieldsForCategory) {
     const value = values[field.key];
