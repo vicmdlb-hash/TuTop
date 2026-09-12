@@ -10,6 +10,7 @@ export type ApproxLocation = {
 
 const LOCATION_KEY = 'tutop.approx-location.v1';
 export const NEARBY_RADIUS_OPTIONS = [5, 10, 25, 50] as const;
+const GEO_CELL_DEGREES = 1;
 
 function validCoordinate(latitude: number, longitude: number) {
   return Number.isFinite(latitude) && Number.isFinite(longitude)
@@ -71,8 +72,36 @@ export function requestApproxLocation(options: { timeoutMs?: number; maximumAgeM
   });
 }
 
+export function geoCellForLocation(location: Pick<ApproxLocation, 'latitude' | 'longitude'>) {
+  if (!validCoordinate(location.latitude, location.longitude)) return null;
+  const latIndex = Math.floor((location.latitude + 90) / GEO_CELL_DEGREES);
+  const lonIndex = Math.floor((location.longitude + 180) / GEO_CELL_DEGREES);
+  return `g1:${latIndex}:${lonIndex}`;
+}
+
+export function nearbyGeoCells(location: Pick<ApproxLocation, 'latitude' | 'longitude'>) {
+  const center = geoCellForLocation(location);
+  if (!center) return [];
+  const [, rawLat, rawLon] = center.split(':');
+  const lat = Number(rawLat);
+  const lon = Number(rawLon);
+  const cells: string[] = [];
+  for (let latOffset = -1; latOffset <= 1; latOffset += 1) {
+    for (let lonOffset = -1; lonOffset <= 1; lonOffset += 1) {
+      cells.push(`g1:${lat + latOffset}:${lon + lonOffset}`);
+    }
+  }
+  return cells;
+}
+
 export function locationAttributes(location: ApproxLocation | null) {
-  return location ? { approx_latitude: location.latitude, approx_longitude: location.longitude } : {};
+  if (!location) return {};
+  const geoCell = geoCellForLocation(location);
+  return {
+    approx_latitude: location.latitude,
+    approx_longitude: location.longitude,
+    ...(geoCell ? { geo_cell: geoCell } : {}),
+  };
 }
 
 function productCoordinates(product: Pick<Product, 'attributes'>) {
