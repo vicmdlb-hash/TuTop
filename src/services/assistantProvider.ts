@@ -34,7 +34,9 @@ export interface TopiComposeSuggestion {
   description?: string;
 }
 
-export type TopiSource = 'local' | 'firebase-ai' | 'topi-endpoint';
+// UI intentionally keeps one generic connected-AI state. Provider details stay
+// internal so switching Firebase AI / private proxy never leaks into components.
+export type TopiSource = 'local' | 'topi-endpoint';
 
 export interface CopilotResult {
   category?: ProductCategory;
@@ -118,10 +120,10 @@ function sanitizeCompose(raw: unknown, context: CopilotContext): TopiComposeSugg
   return Object.values(suggestion).some((item) => item !== undefined) ? suggestion : undefined;
 }
 
-function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: CopilotContext, source: Exclude<TopiSource, 'local'>): CopilotResult | null {
+function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: CopilotContext): CopilotResult | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
-  const result: CopilotResult = { source };
+  const result: CopilotResult = { source: 'topi-endpoint' };
 
   const category = validCategory(value.category);
   if (category) result.category = category;
@@ -211,8 +213,7 @@ function parseModelJson(text: string) {
 async function askNativeFirebaseTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult | null> {
   const generated = await generateNativeTopiText(nativePrompt(action, context));
   if (!generated) return null;
-  const parsed = parseModelJson(generated.text);
-  return sanitizeRemoteResult(action, parsed, context, 'firebase-ai');
+  return sanitizeRemoteResult(action, parseModelJson(generated.text), context);
 }
 
 function topiEndpoint() {
@@ -242,7 +243,7 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
       }),
     });
     if (!response.ok) return null;
-    return sanitizeRemoteResult(action, await response.json(), context, 'topi-endpoint');
+    return sanitizeRemoteResult(action, await response.json(), context);
   } catch { return null; }
   finally { window.clearTimeout(timer); }
 }
