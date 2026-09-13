@@ -30,11 +30,11 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.firebase.ai.FirebaseAI;
-import com.google.firebase.ai.GenerativeBackend;
 import com.google.firebase.ai.GenerativeModel;
 import com.google.firebase.ai.java.GenerativeModelFutures;
 import com.google.firebase.ai.type.Content;
 import com.google.firebase.ai.type.GenerateContentResponse;
+import com.google.firebase.ai.type.GenerativeBackend;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -45,6 +45,10 @@ public class TuTopAIPlugin extends Plugin {
 
     private boolean modelAllowed(String model) {
         return "gemini-3.8-flash".equals(model) || "gemini-3.5-flash-lite".equals(model);
+    }
+
+    private Exception asException(Throwable error) {
+        return error instanceof Exception ? (Exception) error : new Exception(error);
     }
 
     @PluginMethod
@@ -83,11 +87,11 @@ public class TuTopAIPlugin extends Plugin {
 
                 @Override
                 public void onFailure(Throwable error) {
-                    call.reject("TOPI_AI_REQUEST_FAILED", error);
+                    call.reject("TOPI_AI_REQUEST_FAILED", asException(error));
                 }
             }, executor);
         } catch (Throwable error) {
-            call.reject("TOPI_AI_UNAVAILABLE", error);
+            call.reject("TOPI_AI_UNAVAILABLE", asException(error));
         }
     }
 }
