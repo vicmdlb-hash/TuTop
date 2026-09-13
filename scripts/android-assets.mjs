@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 
 const root = process.cwd();
 const require = createRequire(import.meta.url);
+const appVersion = String(process.env.TUTOP_BETA_VERSION || process.env.VITE_TUTOP_APP_VERSION || '0.9.2-beta.0').trim();
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -24,22 +25,24 @@ const brand = {
   splash: path.join(root, 'assets/branding/tutop-splash-091.svg'),
 };
 for (const source of Object.values(brand)) {
-  if (!fs.existsSync(source)) stop(`Falta fuente de branding 0.9.1: ${path.relative(root, source)}`);
+  if (!fs.existsSync(source)) stop(`Falta fuente de branding TuTop: ${path.relative(root, source)}`);
 }
 
 async function renderBrandAssets() {
-  const backgroundSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7C4DFF"/><stop offset=".48" stop-color="#4B2EDB"/><stop offset="1" stop-color="#7C4DFF"/></linearGradient></defs><rect width="1024" height="1024" fill="url(#g)"/></svg>');
+  const backgroundSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><defs><radialGradient id="r" cx="38%" cy="28%" r="82%"><stop stop-color="#9B72FF"/><stop offset=".42" stop-color="#6D3EF0"/><stop offset="1" stop-color="#34206F"/></radialGradient></defs><rect width="1024" height="1024" rx="224" fill="url(#r)"/></svg>');
   const splashSource = fs.readFileSync(brand.splash, 'utf8');
   const splashDarkSource = splashSource
-    .replaceAll('#F5F6FB', '#0F0F14')
+    .replaceAll('#F5F6FB', '#090A10')
     .replaceAll('#211A47', '#F8F7FF')
     .replaceAll('#EEDFFF', '#241B3D')
-    .replaceAll('#4B2EDB', '#8B5CFF');
+    .replaceAll('#4B2EDB', '#9B72FF');
 
   await sharp(brand.icon, { density: 240 }).resize(1024, 1024).png().toFile(path.join(root, 'assets/icon-only.png'));
   await sharp(brand.foreground, { density: 240 }).resize(1024, 1024).png().toFile(path.join(root, 'assets/icon-foreground.png'));
   await sharp(backgroundSvg, { density: 240 }).resize(1024, 1024).png().toFile(path.join(root, 'assets/icon-background.png'));
-  await sharp(Buffer.from(splashSource), { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash.png'));
+  // 0.9.2 launches dark even when Android itself is in light mode, matching the
+  // app's new default and avoiding a bright flash before React mounts.
+  await sharp(Buffer.from(splashDarkSource), { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash.png'));
   await sharp(Buffer.from(splashDarkSource), { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash-dark.png'));
 }
 
@@ -76,9 +79,9 @@ for (const [relative, width, height] of required) {
 const args = [
   '@capacitor/assets', 'generate', '--android',
   '--iconBackgroundColor', '#4B2EDB',
-  '--iconBackgroundColorDark', '#4B2EDB',
-  '--splashBackgroundColor', '#F5F6FB',
-  '--splashBackgroundColorDark', '#0F0F14',
+  '--iconBackgroundColorDark', '#34206F',
+  '--splashBackgroundColor', '#090A10',
+  '--splashBackgroundColorDark', '#090A10',
 ];
 const result = spawnSync('npx', args, {
   cwd: root,
@@ -86,4 +89,4 @@ const result = spawnSync('npx', args, {
   shell: process.platform === 'win32',
 });
 if (result.status !== 0) process.exit(result.status || 1);
-console.log('✅ Branding Android 0.9.1 generado: icono TuTop morado + splash Topi claro/oscuro según referencia aprobada.');
+console.log(`✅ Branding Android ${appVersion} generado: icono TuTop morado refinado + splash Topi oscuro consistente con el tema predeterminado.`);
