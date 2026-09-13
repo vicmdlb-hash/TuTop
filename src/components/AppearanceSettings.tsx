@@ -11,6 +11,7 @@ const OPTIONS: Array<{ id: ThemePreference; label: string; short: string; icon: 
 export default function AppearanceSettings() {
   const [preference, setPreference] = useState<ThemePreference>(() => getThemePreference());
   const current = useMemo(() => OPTIONS.find((option) => option.id === preference) || OPTIONS[0], [preference]);
+  const CurrentIcon = current.icon;
 
   useEffect(() => {
     const sync = () => setPreference(getThemePreference());
@@ -27,8 +28,8 @@ export default function AppearanceSettings() {
     <section className="page-pad mt-4 pb-2" aria-labelledby="appearance-title">
       <div className="appearance-card overflow-hidden rounded-[24px] border p-4">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-violet-500/12 text-violet-300">
-            <current.icon className="h-5 w-5" />
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-violet-500/[0.12] text-violet-300">
+            <CurrentIcon className="h-5 w-5" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="eyebrow">APARIENCIA</p>
