@@ -5,8 +5,12 @@ const expectedVersionName = String(process.env.TUTOP_BETA_VERSION || '0.9.1-beta
 const versionCode = Number(process.env.TUTOP_ANDROID_VERSION_CODE || 90100);
 
 function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
-if (!/^0\.9\.1-beta\.\d+$/.test(expectedVersionName)) stop(`versionName inesperado: ${expectedVersionName}`);
-if (!Number.isInteger(versionCode) || versionCode < 90100 || versionCode > 90199) stop(`versionCode fuera del rango 0.9.1 beta: ${versionCode}`);
+const versionMatch = expectedVersionName.match(/^0\.9\.(1|2)-beta\.(\d+)$/);
+if (!versionMatch) stop(`versionName inesperado: ${expectedVersionName}`);
+const minor = Number(versionMatch[1]);
+const minCode = minor === 1 ? 90100 : 90200;
+const maxCode = minor === 1 ? 90199 : 90299;
+if (!Number.isInteger(versionCode) || versionCode < minCode || versionCode > maxCode) stop(`versionCode fuera del rango 0.9.${minor} beta: ${versionCode}`);
 if (!fs.existsSync(gradlePath)) stop(`falta ${gradlePath}; ejecuta android:bootstrap primero.`);
 
 let source = fs.readFileSync(gradlePath, 'utf8');
