@@ -78,7 +78,10 @@ const milestoneSteps = packageVersion === '0.9.1-beta.0'
       [process.execPath, ['scripts/physical-qa-candidate-generation-tests.mjs']],
     ]
   : packageVersion === '0.9.2-beta.0'
-    ? [[process.execPath, ['scripts/release-092-contract-tests.mjs']]]
+    ? [
+        [process.execPath, ['scripts/release-092-contract-tests.mjs']],
+        [process.execPath, ['scripts/device-ux-ai-092-contract-tests.mjs']],
+      ]
     : null;
 
 if (!milestoneSteps) {
