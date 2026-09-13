@@ -57,7 +57,7 @@ export async function queryTopiVoicePermission(): Promise<'granted' | 'prompt' |
       return state === 'granted' || state === 'denied' ? state : 'prompt';
     } catch { return 'unsupported'; }
   }
-  if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+  if (typeof navigator !== 'undefined') {
     try {
       const result = await (navigator.permissions as any).query({ name: 'microphone' });
       return result.state === 'granted' || result.state === 'denied' ? result.state : 'prompt';
