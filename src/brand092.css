@@ -57,3 +57,32 @@
 [data-theme="light"] .wordmark span:last-child::after {
   box-shadow: 0 0 0 2px rgba(245, 246, 251, .9), 0 4px 10px rgba(124, 77, 255, .28);
 }
+
+/* 0.9.2 accessibility baseline. Do not remove focus indication just because
+   the visual design is compact: keyboard/switch users need the same controls. */
+:where(button, a, input, select, textarea, [role="button"]):focus-visible {
+  outline: 3px solid #b788ff;
+  outline-offset: 2px;
+}
+
+:where(button, [role="button"], input[type="button"], input[type="submit"]) {
+  touch-action: manipulation;
+}
+
+/* Primary mobile controls should not collapse below the recommended touch
+   target even when copy is short. Icon-only exceptions keep their explicit
+   component sizing. */
+:where(.filter-chip, .detail-contact, .detail-favorite, .publish-input, .publish-textarea) {
+  min-height: 44px;
+}
+
+::placeholder { opacity: .72; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
