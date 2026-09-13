@@ -53,36 +53,41 @@ jobs:
 
       - name: Release identity and real-AI contract
         run: node scripts/release-092-contract-tests.mjs
-
       - name: Device, media, location and branding contract
         run: node scripts/device-ux-ai-092-contract-tests.mjs
-
       - name: Canonical listing and video schema contract
         run: npm run listing-schema-v2:test
-
       - name: Staging mutation/freeze surface contract
         run: node scripts/staging-mutation-surface-contract-tests.mjs
-
       - name: Secondary workflow freeze contract
         run: node scripts/secondary-workflow-freeze-contract-tests.mjs
-
       - name: Actions budget policy contract
         run: node scripts/actions-budget-policy-tests.mjs
 
-      - name: Regression A — core, security and CI auth
-        run: |
-          node scripts/preflight.mjs
-          node scripts/syntax-check.mjs
-          node scripts/logic-tests.mjs
-          node scripts/marketplace-core-tests.mjs
-          node scripts/schema-v2-tests.mjs
-          node scripts/functions-domain-tests.mjs
-          node scripts/security-tests.mjs
-          node scripts/ci-auth-redaction-contract-tests.mjs
-          node scripts/ci-auth-readiness-tests.mjs
-          node scripts/ci-auth-parallel-workflow-tests.mjs
-          node scripts/policy-scan.mjs
-          node scripts/local-topi-favorites-tests.mjs
+      - name: Core A1 — preflight
+        run: node scripts/preflight.mjs
+      - name: Core A2 — syntax contract
+        run: node scripts/syntax-check.mjs
+      - name: Core A3 — logic
+        run: node scripts/logic-tests.mjs
+      - name: Core A4 — marketplace core
+        run: node scripts/marketplace-core-tests.mjs
+      - name: Core A5 — schema V2
+        run: node scripts/schema-v2-tests.mjs
+      - name: Core A6 — functions domain
+        run: node scripts/functions-domain-tests.mjs
+      - name: Core A7 — security
+        run: node scripts/security-tests.mjs
+      - name: Core A8 — CI auth redaction
+        run: node scripts/ci-auth-redaction-contract-tests.mjs
+      - name: Core A9 — CI auth readiness
+        run: node scripts/ci-auth-readiness-tests.mjs
+      - name: Core A10 — parallel CI auth
+        run: node scripts/ci-auth-parallel-workflow-tests.mjs
+      - name: Core A11 — policy scan
+        run: node scripts/policy-scan.mjs
+      - name: Core A12 — local Topi favorites
+        run: node scripts/local-topi-favorites-tests.mjs
 
       - name: Regression B — data, identity, canonical bridges and cost
         run: |
@@ -147,12 +152,9 @@ jobs:
 
       - name: Full regression parity
         run: npm run check
-
       - name: Typecheck
         run: npm run typecheck
-
       - name: Build V2 staging web bundle
         run: npm run build
-
       - name: Verify source tree stayed clean
         run: git diff --exit-code -- package.json package-lock.json src scripts firebase tests
