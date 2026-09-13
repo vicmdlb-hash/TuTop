@@ -15,6 +15,8 @@ const nativeCapabilities = read('scripts/android-native-capabilities.mjs');
 const topi = read('src/services/assistantProvider.ts');
 const publish = read('src/components/NationalPublishScreen.tsx');
 const support = read('src/components/TopiSupportAssistant.tsx');
+const consumerSupport = read('src/services/topiConsumerSupport.ts');
+const mediaStorage = read('src/services/firebaseMediaStorage.ts');
 const nearby = read('src/lib/nearbyMarketplace.ts');
 const generator = read('scripts/generate-physical-qa-candidate.mjs');
 const verifier = read('scripts/verify-generated-physical-qa-candidate.mjs');
@@ -85,9 +87,6 @@ assert.match(theme, /return value === 'dark' \|\| value === 'system' \|\| value 
 assert.match(theme, /return 'dark'/);
 assert.match(nativeSecurity, /0\.9\.2-beta\.0/);
 assert.match(appCheck, /environment === 'staging'/);
-// 0.9.1 historical staging can still use Firebase's debug provider. 0.9.2
-// physical QA must use the Android-native default (Play Integrity) so real AI
-// does not depend on a manually registered per-device debug secret.
 assert(appCheck.includes('/^0\\.9\\.1-beta\\./.test(version)'), '0.9.2 must leave the debug provider behind and restrict it to historical 0.9.1 staging');
 assert(!appCheck.includes('/^0\\.9\\.(?:1|2)-beta\\./.test(version)'), '0.9.2 must not re-enable the staging debug provider');
 assert.match(appCheck, /play-integrity/);
@@ -95,6 +94,7 @@ assert.match(appCheck, /debugToken: useStagingDebugProvider\(\)/);
 assert.doesNotMatch(appCheck, /debugToken:\s*['"][A-Za-z0-9_-]{12,}['"]/);
 assert.match(nativeDevice, /permissions: \['coarseLocation'\]/);
 assert.match(nativeDevice, /enableHighAccuracy: false/);
+assert.match(nativeDevice, /enableLocationManagerFallback: true/);
 assert.match(nativeDevice, /camera\.takePhoto/);
 assert.match(nativeDevice, /camera\.chooseFromGallery/);
 assert.match(nativeDevice, /camera\.getPhoto/);
@@ -107,19 +107,24 @@ assert.doesNotMatch(permissionBlock, /ACCESS_BACKGROUND_LOCATION/);
 assert.doesNotMatch(permissionBlock, /android\.permission\.CAMERA/);
 assert.match(nearby, /Math\.round\(value \* 100\) \/ 100/);
 
-// Topi must distinguish real model output from connected endpoint and local
-// deterministic fallback without leaking provider credentials.
+// Topi physical QA must prove the real Firebase provider. Outside physical QA,
+// deterministic local guidance remains available, but staging 0.9.2 may not
+// disguise a failed AI request as a successful local AI response.
 assert.match(topi, /generateNativeTopiText/);
 assert.match(topi, /askNativeFirebaseTopi/);
 assert.match(topi, /provider: TopiProvider/);
 assert.match(topi, /sanitizeRemoteResult/);
 assert.match(topi, /safeDraftForRemote/);
-assert.match(topi, /return remote \|\| localTopi/);
+assert.match(topi, /physicalQaRequiresRealAI/);
+assert.match(topi, /TOPI_REAL_AI_UNAVAILABLE/);
+assert.match(topi, /nativeTopiAIStatus\(\)\.reason/);
+assert.match(topi, /return localTopi\(action, context\)/);
 assert.doesNotMatch(topi, /authorization['"]?\s*:/i);
 assert.match(publish, /result\.provider === 'firebase-ai-logic'/);
 assert.match(publish, /result\.provider === 'private-endpoint'/);
 assert.match(publish, /Topi IA real \(Firebase AI\)/);
-assert.match(publish, /Topi usó el asistente local, no una IA remota/);
+assert.match(publish, /La IA real de Topi no respondió/);
+assert.match(publish, /no lo disfraza con un asistente local/);
 assert.match(publish, /takeNativePhoto\(\)/);
 assert.match(publish, /pickNativePhoto\(\)/);
 assert.match(publish, /refreshLocation/);
@@ -127,6 +132,19 @@ assert.match(support, /Pregúntale a Topi/);
 assert.match(support, /Tu amigo para resolver dudas y usar TuTop/);
 assert.match(support, /Firebase AI real/);
 assert.match(support, /Guía local/);
+assert.match(support, /IA no disponible/);
+assert.match(consumerSupport, /source: 'unavailable'/);
+assert.match(consumerSupport, /physicalQaRequiresRealAI/);
+
+// Video software is complete but fail-closed until Cloud Storage/Blaze is
+// explicitly authorized. A disabled feature must never trigger billing itself.
+assert.match(env, /VITE_TUTOP_MEDIA_STORAGE_ENABLED=false/);
+assert.match(mediaStorage, /MEDIA_STORAGE_INFRASTRUCTURE_DISABLED/);
+assert.match(mediaStorage, /MAX_LISTING_VIDEO_BYTES = 50 \* 1024 \* 1024/);
+assert.match(mediaStorage, /product-videos\/\$\{uid\}/);
+assert.match(mediaStorage, /Authorization: `Firebase \$\{idToken\}`/);
+assert.match(publish, /firebaseMediaStorage\.uploadListingVideo/);
+assert.match(publish, /firebaseMediaStorage\.delete/);
 
 // Candidate generation is exact-head, same-SHA and version-aware for 0.9.2.
 assert(generator.includes('/^0\\.9\\.(1|2)-beta\\.\\d+$/'), 'candidate generator must accept only the 0.9.1/0.9.2 beta namespaces');
@@ -138,4 +156,4 @@ assert.match(verifier, /build_commit_sha/);
 assert.match(verifier, /gate_commit_sha/);
 assert.match(verifier, /staging_smoke_commit_sha/);
 
-console.log('✅ TuTop 0.9.2 canonical release identity / UX / native / Topi / Play Integrity / exact-SHA Physical QA contract PASS');
+console.log('✅ TuTop 0.9.2 canonical release identity / UX / native / mandatory real-AI QA / video gate / exact-SHA Physical QA contract PASS');
