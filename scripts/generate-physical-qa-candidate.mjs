@@ -42,7 +42,8 @@ function parseSha256File(file) {
   return match[1].toLowerCase();
 }
 
-const version = String(process.env.TUTOP_BETA_VERSION || '0.9.1-beta.0').trim();
+const packageVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+const version = String(process.env.TUTOP_BETA_VERSION || packageVersion).trim();
 const versionMatch = version.match(/^0\.9\.(1|2)-beta\.\d+$/);
 if (!versionMatch) stop(`versión beta TuTop inválida: ${version}`);
 const minor = versionMatch[1];
