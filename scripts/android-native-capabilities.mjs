@@ -21,8 +21,19 @@ const permissions = [
 
 const manifestMarker = '<manifest';
 const markerIndex = manifest.indexOf(manifestMarker);
-const manifestOpenEnd = markerIndex >= 0 ? manifest.indexOf('>', markerIndex) : -1;
+let manifestOpenEnd = markerIndex >= 0 ? manifest.indexOf('>', markerIndex) : -1;
 if (manifestOpenEnd < 0) stop('no pude localizar apertura <manifest>.');
+
+// tools:ignore is intentionally used only for the Play-services Photo Picker
+// backport metadata service. That service is discovered by Play services at
+// runtime and is not linked as an app class, so Android lint otherwise reports
+// a false-positive MissingClass.
+let manifestOpen = manifest.slice(markerIndex, manifestOpenEnd + 1);
+if (!manifestOpen.includes('xmlns:tools=')) {
+  manifestOpen = manifestOpen.replace('<manifest', '<manifest xmlns:tools="http://schemas.android.com/tools"');
+  manifest = `${manifest.slice(0, markerIndex)}${manifestOpen}${manifest.slice(manifestOpenEnd + 1)}`;
+  manifestOpenEnd = markerIndex + manifestOpen.length - 1;
+}
 
 const missing = permissions.filter((permission) => !manifest.includes(permission));
 if (missing.length) {
@@ -51,7 +62,8 @@ if (!manifest.includes('photopicker_activity:0:required')) {
         <service
             android:name="com.google.android.gms.metadata.ModuleDependencies"
             android:enabled="false"
-            android:exported="false">
+            android:exported="false"
+            tools:ignore="MissingClass">
             <intent-filter>
                 <action android:name="com.google.android.gms.metadata.MODULE_DEPENDENCIES" />
             </intent-filter>
@@ -67,6 +79,8 @@ if (manifest.includes('READ_EXTERNAL_STORAGE') || manifest.includes('WRITE_EXTER
 if (!manifest.includes('android.permission.ACCESS_COARSE_LOCATION')) stop('falta permiso de ubicación aproximada.');
 if (!manifest.includes('android.permission.RECORD_AUDIO')) stop('falta permiso de micrófono bajo demanda.');
 if (!manifest.includes('photopicker_activity:0:required')) stop('falta backport del Photo Picker para Android compatible.');
+if (!manifest.includes('xmlns:tools="http://schemas.android.com/tools"')) stop('falta namespace tools requerido por el Photo Picker backport.');
+if (!manifest.includes('tools:ignore="MissingClass"')) stop('falta supresión acotada de MissingClass para el Photo Picker backport.');
 if (!manifest.includes('android:allowBackup="false"')) stop('allowBackup debe quedar desactivado.');
 if (!manifest.includes('android:usesCleartextTraffic="false"')) stop('cleartext traffic debe quedar desactivado.');
 
