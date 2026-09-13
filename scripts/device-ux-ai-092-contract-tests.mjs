@@ -67,10 +67,13 @@ assert.match(app, /Mi Wallet/);
 assert.match(explore, /RADII = \[5, 10, 25, 50\]/);
 assert.match(explore, /requestApproxLocation/);
 assert.match(explore, /nearbyLocationPermission/);
+assert.match(explore, /nearbyGeoCells/);
+assert.match(explore, /canonicalListingsBackend\.loadNearbyProducts/);
 assert.match(explore, /Android bloqueó la ubicación/);
 assert.match(explore, /Volver a intentar/);
 assert.match(explore, /Ver todo/);
 assert.match(explore, /Guardados/);
+assert.match(explore, /Consultando publicaciones cercanas/);
 assert.match(explore, /ProductCard/);
 
 // Nearby public reads stay approved-only, but the signed-in seller must see
@@ -83,4 +86,4 @@ assert.match(listings, /doc\.data\.status === 'active'/);
 assert.match(listings, /cells\.includes\(cell\)/);
 assert.match(listings, /\[\.\.\.sets\.flat\(\), \.\.\.ownNearby\]/);
 
-console.log('✅ TuTop 0.9.2 device UX + navigation + Nearby seller visibility + explore recovery + camera/gallery + coarse-location + voice + real-AI/App Check hardening contract PASS');
+console.log('✅ TuTop 0.9.2 device UX + navigation + canonical Nearby query/seller visibility + explore recovery + camera/gallery + coarse-location + voice + real-AI/App Check hardening contract PASS');
