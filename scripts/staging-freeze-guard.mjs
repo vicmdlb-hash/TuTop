@@ -1,5 +1,9 @@
 export const TUTOP_V2_STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 export const TUTOP_V2_FREEZE_BRANCH = 'feat/tutop-0.9.1-nearby-topi';
+export const TUTOP_V2_ALLOWED_STAGING_BRANCHES = [
+  'feat/tutop-0.9.1-nearby-topi',
+  'feat/tutop-0.9.2-hardening',
+];
 
 function stop(message) {
   throw new Error(`STAGING_FREEZE_BLOCKED:${message}`);
@@ -22,8 +26,8 @@ export function assertStagingFreezeContext({
     stop('remote_staging_mutation_requires_GITHUB_ACTIONS_true');
   }
   const branch = String(process.env.GITHUB_REF_NAME || '').trim();
-  if (branch !== TUTOP_V2_FREEZE_BRANCH) {
-    stop(`branch_must_equal_${TUTOP_V2_FREEZE_BRANCH}`);
+  if (!TUTOP_V2_ALLOWED_STAGING_BRANCHES.includes(branch)) {
+    stop(`branch_not_authorized_for_staging_${branch || 'missing'}`);
   }
   const githubSha = String(process.env.GITHUB_SHA || '').trim();
   if (!/^[a-f0-9]{40}$/i.test(githubSha)) stop('invalid_or_missing_GITHUB_SHA');
