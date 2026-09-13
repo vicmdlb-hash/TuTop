@@ -89,22 +89,34 @@ jobs:
       - name: Core A12 — local Topi favorites
         run: node scripts/local-topi-favorites-tests.mjs
 
-      - name: Regression B — data, identity, canonical bridges and cost
-        run: |
-          node scripts/firestore-cost-geography-tests.mjs
-          node scripts/seller-profile-cache-tests.mjs
-          node scripts/canonical-offer-read-cache-tests.mjs
-          node scripts/offer-backend-drift-audit.mjs
-          node scripts/transaction-bridge-fresh-offer-tests.mjs
-          node scripts/profile-editor-v2-contract-tests.mjs
-          node scripts/v2-canonical-listing-id-contract-tests.mjs
-          node scripts/v2-canonical-completion-contract-tests.mjs
-          node scripts/v2-terminal-state-authority-tests.mjs
-          node scripts/v2-rules-composition-contract-tests.mjs
-          node scripts/v2-rules-access-budget-tests.mjs
-          node scripts/v2-canonical-bridge-coverage-tests.mjs
-          node scripts/v2-snapshot-cost-audit.mjs
-          node scripts/v2-snapshot-budget-tests.mjs
+      - name: Data B1 — Firestore cost geography
+        run: node scripts/firestore-cost-geography-tests.mjs
+      - name: Data B2 — seller profile cache
+        run: node scripts/seller-profile-cache-tests.mjs
+      - name: Data B3 — canonical offer read cache
+        run: node scripts/canonical-offer-read-cache-tests.mjs
+      - name: Data B4 — offer backend drift audit
+        run: node scripts/offer-backend-drift-audit.mjs
+      - name: Data B5 — transaction bridge fresh offer
+        run: node scripts/transaction-bridge-fresh-offer-tests.mjs
+      - name: Data B6 — profile editor V2
+        run: node scripts/profile-editor-v2-contract-tests.mjs
+      - name: Data B7 — canonical listing ID
+        run: node scripts/v2-canonical-listing-id-contract-tests.mjs
+      - name: Data B8 — canonical completion
+        run: node scripts/v2-canonical-completion-contract-tests.mjs
+      - name: Data B9 — terminal state authority
+        run: node scripts/v2-terminal-state-authority-tests.mjs
+      - name: Data B10 — rules composition
+        run: node scripts/v2-rules-composition-contract-tests.mjs
+      - name: Data B11 — rules access budget
+        run: node scripts/v2-rules-access-budget-tests.mjs
+      - name: Data B12 — canonical bridge coverage
+        run: node scripts/v2-canonical-bridge-coverage-tests.mjs
+      - name: Data B13 — snapshot cost audit
+        run: node scripts/v2-snapshot-cost-audit.mjs
+      - name: Data B14 — snapshot budget
+        run: node scripts/v2-snapshot-budget-tests.mjs
 
       - name: Regression C — cutovers, reviews and chat snapshots
         run: |
