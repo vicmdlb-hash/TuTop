@@ -1,8 +1,9 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Home, MessageCircle, PlusCircle, ShieldAlert, UserRound, WalletCards } from 'lucide-react';
+import { ChevronRight, Compass, Home, MessageCircle, PlusCircle, ShieldAlert, UserRound, WalletCards } from 'lucide-react';
 import Feed from './components/Feed';
 import Chatbot from './components/Chatbot';
+import ExploreScreen from './components/ExploreScreen';
 import NationalPublishScreen from './components/NationalPublishScreen';
 import V2ListingsHydrator from './components/V2ListingsHydrator';
 import V2NearbyListingsHydrator from './components/V2NearbyListingsHydrator';
@@ -62,11 +63,14 @@ export default function App() {
   );
 }
 
+type UtilitySurface = 'explore' | 'wallet' | null;
+
 function MobileApp() {
   const { activeTab, setActiveTab, chats, activeChatId, selectedProductId } = useAppStore();
+  const [surface, setSurface] = useState<UtilitySurface>(null);
   const unread = chats.reduce((sum, chat) => sum + (chat.sin_leer || 0), 0);
   const v2 = nationalSchemaEnabled();
-  const showFeedUtilities = activeTab === 'feed' && !activeChatId && !selectedProductId;
+  const showFeedUtilities = activeTab === 'feed' && surface === null && !activeChatId && !selectedProductId;
 
   useEffect(() => {
     if (!v2) return;
@@ -79,13 +83,32 @@ function MobileApp() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  const navigate = (tab: AppTab) => {
+    setSurface(null);
+    setActiveTab(tab);
+  };
+
   const content: Record<AppTab, ReactNode> = {
     feed: <Feed />,
     bot: v2 ? <NationalPublishScreen /> : <Chatbot />,
     wallet: <WalletView />,
     inbox: <Inbox />,
-    profile: <><Profile /><AppearanceSettings /><PermissionSettings /></>,
+    profile: <>
+      <Profile />
+      <section className="page-pad mt-4 pb-1">
+        <button type="button" onClick={() => setSurface('wallet')} className="flex w-full items-center gap-3 rounded-[22px] border border-white/[0.06] bg-white/[0.025] p-4 text-left transition active:scale-[0.99]">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-violet-500/10 text-violet-300"><WalletCards className="h-5 w-5" /></span>
+          <span className="min-w-0 flex-1"><strong className="block text-xs">Mi Wallet</strong><span className="mt-1 block text-[9px] leading-4 text-slate-500">Movimientos, U-Coins y actividad de tus transacciones.</span></span>
+          <ChevronRight className="h-4 w-4 text-slate-600" />
+        </button>
+      </section>
+      <AppearanceSettings />
+      <PermissionSettings />
+    </>,
   };
+
+  const renderedContent = surface === 'explore' ? <ExploreScreen /> : surface === 'wallet' ? <WalletView /> : content[activeTab];
+  const transitionKey = surface || activeTab;
 
   return (
     <div className="app-shell">
@@ -107,23 +130,23 @@ function MobileApp() {
       {v2 && <V2ReviewStrikeHydrator />}
       <main className="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))]">
         <AnimatePresence mode="wait">
-          <motion.div key={activeTab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
-            {content[activeTab]}
+          <motion.div key={transitionKey} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
+            {renderedContent}
           </motion.div>
         </AnimatePresence>
       </main>
 
-      {!v2 && activeTab === 'bot' && !activeChatId && !selectedProductId && <DraftShelf />}
-      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <OwnTrustedReputationCard />}</>}
+      {!v2 && activeTab === 'bot' && surface === null && !activeChatId && !selectedProductId && <DraftShelf />}
+      {activeTab === 'profile' && surface === null && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <OwnTrustedReputationCard />}</>}
       {!activeChatId && <TopiSupportAssistant />}
 
       {!activeChatId && (
         <nav className="bottom-nav" aria-label="Navegación principal">
-          <NavButton icon={<Home />} label="Inicio" active={activeTab === 'feed'} onClick={() => setActiveTab('feed')} />
-          <NavButton icon={<PlusCircle />} label="Publicar" active={activeTab === 'bot'} onClick={() => setActiveTab('bot')} />
-          <NavButton icon={<WalletCards />} label="Wallet" active={activeTab === 'wallet'} onClick={() => setActiveTab('wallet')} />
-          <NavButton icon={<MessageCircle />} label="Mensajes" active={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} badge={unread > 0 ? String(Math.min(unread, 99)) : undefined} />
-          <NavButton icon={<UserRound />} label="Perfil" active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} />
+          <NavButton icon={<Home />} label="Inicio" active={surface === null && activeTab === 'feed'} onClick={() => navigate('feed')} />
+          <NavButton icon={<Compass />} label="Explorar" active={surface === 'explore'} onClick={() => setSurface('explore')} />
+          <NavButton icon={<PlusCircle />} label="Publicar" active={surface === null && activeTab === 'bot'} onClick={() => navigate('bot')} />
+          <NavButton icon={<MessageCircle />} label="Mensajes" active={surface === null && activeTab === 'inbox'} onClick={() => navigate('inbox')} badge={unread > 0 ? String(Math.min(unread, 99)) : undefined} />
+          <NavButton icon={<UserRound />} label="Perfil" active={surface === 'wallet' || (surface === null && activeTab === 'profile')} onClick={() => navigate('profile')} />
         </nav>
       )}
 

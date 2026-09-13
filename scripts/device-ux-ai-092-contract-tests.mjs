@@ -10,6 +10,8 @@ const nativeCaps = read('scripts/android-native-capabilities.mjs');
 const voicePlugin = read('scripts/android-topi-voice-plugin.mjs');
 const nativeAI = read('src/services/nativeTopiAI.ts');
 const nativeAppCheck = read('src/services/nativeAppCheckToken.ts');
+const app = read('src/App.tsx');
+const explore = read('src/components/ExploreScreen.tsx');
 
 assert.match(theme, /return value === 'dark' \|\| value === 'system' \|\| value === 'light' \? value : 'dark'/);
 assert.match(index, /tutop\.theme\.v2/);
@@ -53,4 +55,17 @@ assert.doesNotMatch(nativeAppCheck, /\^0\\\.9\\\.\(\?:1\|2\)-beta/);
 assert.match(nativeAppCheck, /play-integrity/);
 assert.match(nativeAppCheck, /debugToken: useStagingDebugProvider\(\)/);
 
-console.log('✅ TuTop 0.9.2 device UX + camera/gallery + coarse-location + voice + real-AI/App Check hardening contract PASS');
+// Main navigation now matches the approved consumer IA/marketplace direction:
+// Inicio / Explorar / Publicar / Mensajes / Perfil. Wallet remains available
+// from Perfil instead of occupying one of the five primary navigation slots.
+assert.match(app, /import ExploreScreen from '\.\/components\/ExploreScreen'/);
+const nav = app.match(/<nav className="bottom-nav"[\s\S]*?<\/nav>/)?.[0] || '';
+for (const label of ['Inicio', 'Explorar', 'Publicar', 'Mensajes', 'Perfil']) assert.match(nav, new RegExp(`label="${label}"`));
+assert.doesNotMatch(nav, /label="Wallet"/);
+assert.match(app, /Mi Wallet/);
+assert.match(explore, /RADII = \[5, 10, 25, 50\]/);
+assert.match(explore, /requestApproxLocation/);
+assert.match(explore, /Guardados/);
+assert.match(explore, /ProductCard/);
+
+console.log('✅ TuTop 0.9.2 device UX + navigation + explore + camera/gallery + coarse-location + voice + real-AI/App Check hardening contract PASS');
