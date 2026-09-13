@@ -65,7 +65,11 @@ assert.doesNotMatch(nav, /label="Wallet"/);
 assert.match(app, /Mi Wallet/);
 assert.match(explore, /RADII = \[5, 10, 25, 50\]/);
 assert.match(explore, /requestApproxLocation/);
+assert.match(explore, /nearbyLocationPermission/);
+assert.match(explore, /Android bloqueó la ubicación/);
+assert.match(explore, /Volver a intentar/);
+assert.match(explore, /Ver todo/);
 assert.match(explore, /Guardados/);
 assert.match(explore, /ProductCard/);
 
-console.log('✅ TuTop 0.9.2 device UX + navigation + explore + camera/gallery + coarse-location + voice + real-AI/App Check hardening contract PASS');
+console.log('✅ TuTop 0.9.2 device UX + navigation + explore recovery + camera/gallery + coarse-location + voice + real-AI/App Check hardening contract PASS');
