@@ -28,12 +28,19 @@ for (const source of Object.values(brand)) {
 }
 
 async function renderBrandAssets() {
-  const backgroundSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#050A13"/><stop offset=".58" stop-color="#111827"/><stop offset="1" stop-color="#2E1065"/></linearGradient></defs><rect width="1024" height="1024" fill="url(#g)"/></svg>');
+  const backgroundSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7C4DFF"/><stop offset=".48" stop-color="#4B2EDB"/><stop offset="1" stop-color="#7C4DFF"/></linearGradient></defs><rect width="1024" height="1024" fill="url(#g)"/></svg>');
+  const splashSource = fs.readFileSync(brand.splash, 'utf8');
+  const splashDarkSource = splashSource
+    .replaceAll('#F5F6FB', '#0F0F14')
+    .replaceAll('#211A47', '#F8F7FF')
+    .replaceAll('#EEDFFF', '#241B3D')
+    .replaceAll('#4B2EDB', '#8B5CFF');
+
   await sharp(brand.icon, { density: 240 }).resize(1024, 1024).png().toFile(path.join(root, 'assets/icon-only.png'));
   await sharp(brand.foreground, { density: 240 }).resize(1024, 1024).png().toFile(path.join(root, 'assets/icon-foreground.png'));
   await sharp(backgroundSvg, { density: 240 }).resize(1024, 1024).png().toFile(path.join(root, 'assets/icon-background.png'));
-  await sharp(brand.splash, { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash.png'));
-  await sharp(brand.splash, { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash-dark.png'));
+  await sharp(Buffer.from(splashSource), { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash.png'));
+  await sharp(Buffer.from(splashDarkSource), { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash-dark.png'));
 }
 
 await renderBrandAssets();
@@ -68,10 +75,10 @@ for (const [relative, width, height] of required) {
 
 const args = [
   '@capacitor/assets', 'generate', '--android',
-  '--iconBackgroundColor', '#050A13',
-  '--iconBackgroundColorDark', '#050A13',
-  '--splashBackgroundColor', '#050A13',
-  '--splashBackgroundColorDark', '#050A13',
+  '--iconBackgroundColor', '#4B2EDB',
+  '--iconBackgroundColorDark', '#4B2EDB',
+  '--splashBackgroundColor', '#F5F6FB',
+  '--splashBackgroundColorDark', '#0F0F14',
 ];
 const result = spawnSync('npx', args, {
   cwd: root,
@@ -79,4 +86,4 @@ const result = spawnSync('npx', args, {
   shell: process.platform === 'win32',
 });
 if (result.status !== 0) process.exit(result.status || 1);
-console.log('✅ Branding Android 0.9.1 generado: Topi + pin de cercanía + splash TuTop. Revisa icono adaptativo y splash en emulador/dispositivo.');
+console.log('✅ Branding Android 0.9.1 generado: icono TuTop morado + splash Topi claro/oscuro según referencia aprobada.');
