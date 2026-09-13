@@ -66,9 +66,26 @@ jobs:
           node scripts/device-ux-ai-092-contract-tests.mjs
           npm run listing-schema-v2:test
 
-      - name: Generate and statically validate V2 rules
+      - name: Rules R1 — base generator
+        run: node scripts/prepare-firestore-v2-rules.mjs
+      - name: Rules R2 — canonical listing hardener
+        run: node scripts/harden-canonical-v2-rules.mjs
+      - name: Rules R3 — runtime hardener
+        run: node scripts/harden-runtime-v2-rules.mjs
+      - name: Rules R4 — listing rate-limit optimizer
+        run: node scripts/optimize-listing-rate-limit-rules.mjs
+      - name: Rules R5 — account operations hardener
+        run: node scripts/harden-account-operations-rules.mjs
+      - name: Rules R6 — notification receipts hardener
+        run: node scripts/harden-notification-receipts-rules.mjs
+      - name: Rules R7 — transaction lock hardener
+        run: node scripts/harden-transaction-lock-rules.mjs
+      - name: Rules R8 — nearby semantics hardener
+        run: node scripts/harden-nearby-v2-rules.mjs
+      - name: Rules R9 — listing video hardener
+        run: node scripts/harden-listing-video-rules.mjs
+      - name: Rules R10 — static final assertions
         run: |
-          npm run v2:rules:prepare
           grep -q "video_urls" firebase/firestore.v2.generated.rules
           grep -q "firebase-storage://" firebase/firestore.v2.generated.rules
           grep -q "product-videos" firebase/storage.rules
