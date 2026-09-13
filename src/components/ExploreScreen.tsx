@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Compass, Heart, MapPin, Search, SlidersHorizontal } from 'lucide-react';
+import { Compass, Heart, MapPin, Search, SlidersHorizontal, TriangleAlert } from 'lucide-react';
 import { MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
-import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, productDistanceKm, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, nearbyLocationPermission, productDistanceKm, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
 import { useAppStore } from '../store/useAppStore';
 import type { ProductCategory } from '../types';
 import ProductCard from './ProductCard';
@@ -22,11 +22,14 @@ export default function ExploreScreen() {
   const [radiusKm, setRadiusKm] = useState<(typeof RADII)[number]>(25);
   const [location, setLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
   const [locationBusy, setLocationBusy] = useState(false);
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const onLocation = (event: Event) => {
       const detail = (event as CustomEvent<ApproxLocation>).detail;
-      if (detail) setLocation(detail);
+      if (!detail) return;
+      setLocation(detail);
+      setLocationMessage(null);
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
     return () => window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
@@ -60,16 +63,38 @@ export default function ExploreScreen() {
 
   const activateNearby = async () => {
     if (locationBusy) return;
+    setScope('nearby');
     setLocationBusy(true);
+    setLocationMessage(null);
     try {
+      const cached = getCachedApproxLocation();
+      if (cached) {
+        setLocation(cached);
+        return;
+      }
       const next = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000 });
       if (next) {
         setLocation(next);
-        setScope('nearby');
+        return;
       }
+      const permission = await nearbyLocationPermission();
+      if (permission === 'denied') {
+        setLocationMessage('Android bloqueó la ubicación para TuTop. Activa ubicación aproximada en los permisos de la app y vuelve a intentarlo.');
+      } else if (permission === 'unavailable') {
+        setLocationMessage('TuTop no pudo obtener una posición. Comprueba que los servicios de ubicación de Android estén encendidos y vuelve a intentarlo.');
+      } else {
+        setLocationMessage('El permiso está disponible, pero Android todavía no entregó una posición aproximada. Espera unos segundos y vuelve a intentar.');
+      }
+    } catch {
+      setLocationMessage('No pudimos activar la cercanía esta vez. TuTop seguirá funcionando por campus y ciudad; vuelve a intentarlo cuando tengas mejor señal.');
     } finally {
       setLocationBusy(false);
     }
+  };
+
+  const selectAll = () => {
+    setScope('all');
+    setLocationMessage(null);
   };
 
   return (
@@ -96,8 +121,8 @@ export default function ExploreScreen() {
         </div>
 
         <div className="mt-3 grid grid-cols-3 gap-2" aria-label="Filtros rápidos">
-          <button type="button" onClick={() => setScope('all')} className={`filter-chip justify-center ${scope === 'all' ? 'filter-chip-active' : ''}`}><SlidersHorizontal className="h-3.5 w-3.5" />Todo</button>
-          <button type="button" onClick={() => location ? setScope('nearby') : void activateNearby()} className={`filter-chip justify-center ${scope === 'nearby' ? 'filter-chip-active' : ''}`}><MapPin className="h-3.5 w-3.5" />{locationBusy ? 'Activando…' : 'Cerca'}</button>
+          <button type="button" onClick={selectAll} className={`filter-chip justify-center ${scope === 'all' ? 'filter-chip-active' : ''}`}><SlidersHorizontal className="h-3.5 w-3.5" />Todo</button>
+          <button type="button" onClick={() => location ? (setLocationMessage(null), setScope('nearby')) : void activateNearby()} className={`filter-chip justify-center ${scope === 'nearby' ? 'filter-chip-active' : ''}`}><MapPin className="h-3.5 w-3.5" />{locationBusy ? 'Activando…' : 'Cerca'}</button>
           <button type="button" onClick={() => setScope('favorites')} className={`filter-chip justify-center ${scope === 'favorites' ? 'filter-chip-active' : ''}`}><Heart className="h-3.5 w-3.5" />Guardados</button>
         </div>
 
@@ -121,13 +146,21 @@ export default function ExploreScreen() {
 
         {!location && scope === 'nearby' && (
           <div className="empty-card mb-3">
-            <p className="font-bold">Activa ubicación aproximada</p>
-            <p className="mt-1 text-[9px] text-slate-500">TuTop nunca necesita tu domicilio exacto para mostrar publicaciones cercanas.</p>
-            <button type="button" disabled={locationBusy} onClick={() => void activateNearby()} className="mt-3 rounded-xl bg-violet-600 px-3 py-2 text-[9px] font-black text-white disabled:opacity-50">{locationBusy ? 'Obteniendo ubicación…' : 'Activar cercanía'}</button>
+            <div className="flex items-start gap-2">
+              {locationMessage && <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />}
+              <div className="min-w-0 flex-1">
+                <p className="font-bold">{locationMessage ? 'No pudimos activar cercanía' : 'Activa ubicación aproximada'}</p>
+                <p className="mt-1 text-[9px] leading-4 text-slate-500">{locationMessage || 'TuTop nunca necesita tu domicilio exacto para mostrar publicaciones cercanas.'}</p>
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button type="button" disabled={locationBusy} onClick={() => void activateNearby()} className="flex-1 rounded-xl bg-violet-600 px-3 py-2 text-[9px] font-black text-white disabled:opacity-50">{locationBusy ? 'Obteniendo ubicación…' : 'Volver a intentar'}</button>
+              <button type="button" onClick={selectAll} className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-[9px] font-black text-slate-300">Ver todo</button>
+            </div>
           </div>
         )}
 
-        {filtered.length === 0 ? (
+        {scope === 'nearby' && !location ? null : filtered.length === 0 ? (
           <div className="empty-card">
             <p className="font-bold">No encontramos publicaciones con estos filtros.</p>
             <p className="mt-1 text-[9px] text-slate-500">Prueba otra categoría, aumenta la distancia o vuelve a “Todo”.</p>
