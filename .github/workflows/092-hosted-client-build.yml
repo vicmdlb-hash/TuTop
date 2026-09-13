@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: tutop-092-hosted-client-build-${{ github.ref }}-${{ github.sha }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
@@ -27,10 +27,58 @@ env:
   VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: "false"
   VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: "false"
   VITE_TUTOP_TOPI_REMOTE_ENABLED: "false"
+  VITE_TUTOP_MEDIA_STORAGE_ENABLED: "false"
 
 jobs:
+  route:
+    name: Route client-only vs full backend validation
+    runs-on: ubuntu-24.04
+    outputs:
+      backend_sensitive: ${{ steps.route.outputs.backend_sensitive }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: route
+        name: Detect backend/rules/deploy changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "${TUTOP_VALIDATED_BASE_SHA}^{commit}"
+          mapfile -t changed < <(git diff --name-only "${TUTOP_VALIDATED_BASE_SHA}...${GITHUB_SHA}")
+          backend=false
+          for path in "${changed[@]}"; do
+            case "$path" in
+              .firebaserc|firebase.json|firestore.rules|firestore.indexes.json|firebase/*|functions/*)
+                backend=true ;;
+              scripts/prepare-firestore*.mjs|scripts/harden-*rules*.mjs|scripts/optimize-*rules*.mjs|scripts/deploy-firebase*.mjs|scripts/configure-app-check-staging.mjs|scripts/firebase-ai-staging-provision.mjs|scripts/prepare-staging-v2-auth.mjs|scripts/prepare-staging-android-app.mjs|scripts/staging-v2-e2e-smoke.mjs|scripts/staging-topi-ai-runtime-smoke.mjs|scripts/staging-account-erasure-smoke.mjs|scripts/staging-index-readiness-smoke.mjs|scripts/staging-freeze-guard.mjs)
+                backend=true ;;
+            esac
+          done
+          echo "backend_sensitive=$backend" >> "$GITHUB_OUTPUT"
+          if [ "$backend" = true ]; then
+            echo "Backend/rules changed: hosted client candidate is intentionally skipped."
+            echo "Authoritative gates for this SHA are 092-software-hardening + 092-real-staging-software-proof."
+          else
+            echo "Client-only diff: hosted candidate path is allowed."
+          fi
+
+  backend-validation-required:
+    name: Full validation owns this SHA
+    needs: route
+    if: needs.route.outputs.backend_sensitive == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          echo "✅ Routing decision: backend-sensitive SHA detected."
+          echo "No inherited-backend APK will be published from this workflow."
+          echo "Wait for software hardening and real staging proof on the same SHA."
+
   candidate:
     name: Hardened Android 0.9.2 client candidate
+    needs: route
+    if: needs.route.outputs.backend_sensitive == 'false'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -57,7 +105,7 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
           log-accepted-android-sdk-licenses: false
 
-      - name: Prove exact source and unchanged backend surface
+      - name: Prove exact source and client-only backend surface
         shell: bash
         run: |
           set -euo pipefail
@@ -75,6 +123,7 @@ jobs:
           npm run check
           npm run typecheck
           node scripts/device-ux-ai-092-contract-tests.mjs
+          npm run listing-schema-v2:test
 
       - name: Recover validated public Firebase client configuration
         env:
@@ -107,13 +156,9 @@ jobs:
             'client':[{'client_info':{'mobilesdk_app_id':android_app,'android_client_info':{'package_name':package}},'oauth_client':[],'api_key':[{'current_key':android_key}],'services':{'appinvite_service':{'other_platform_oauth_client':[]}}}],
             'configuration_version':'1'}))
           with open(os.environ['GITHUB_ENV'],'a') as env:
-              env.write(f'VITE_FIREBASE_API_KEY={web_key}\nVITE_FIREBASE_AUTH_DOMAIN={project}.firebaseapp.com\nVITE_FIREBASE_PROJECT_ID={project}\nVITE_FIREBASE_APP_ID={web_app}\n')
+              env.write(f'VITE_FIREBASE_API_KEY={web_key}\nVITE_FIREBASE_AUTH_DOMAIN={project}.firebaseapp.com\nVITE_FIREBASE_PROJECT_ID={project}\nVITE_FIREBASE_APP_ID={web_app}\nVITE_FIREBASE_STORAGE_BUCKET={storage}\n')
               env.write('VITE_TUTOP_SCHEMA_V2=true\nVITE_TUTOP_ENVIRONMENT=staging\nVITE_TUTOP_APP_VERSION=0.9.2-beta.0\n')
-              # Play Integrity remains initialized and observable. The private
-              # sideloaded 0.9.2 physical-QA client treats attestation as
-              # best-effort because staging App Check is UNENFORCED; release/
-              # production code may still require App Check.
-              env.write('VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED=true\nVITE_TUTOP_TOPI_MODEL=gemini-3.8-flash\nVITE_TUTOP_AI_APP_CHECK_REQUIRED=false\n')
+              env.write('VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED=true\nVITE_TUTOP_TOPI_MODEL=gemini-3.8-flash\nVITE_TUTOP_AI_APP_CHECK_REQUIRED=false\nVITE_TUTOP_MEDIA_STORAGE_ENABLED=false\n')
           for value in (web_key,web_app,android_key,android_app): print('::add-mask::'+value)
           print('✅ Validated public Firebase client config recovered; privileged credentials were not copied.')
           PY
@@ -146,15 +191,14 @@ jobs:
           ! grep -q 'ACCESS_BACKGROUND_LOCATION' android/app/src/main/AndroidManifest.xml
           ! grep -q 'android.permission.CAMERA' android/app/src/main/AndroidManifest.xml
           ! grep -q 'READ_EXTERNAL_STORAGE' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'WRITE_EXTERNAL_STORAGE' android/app/src/main/AndroidManifest.xml
           grep -q 'photopicker_activity:0:required' android/app/src/main/AndroidManifest.xml
-          grep -q 'tools:ignore="MissingClass"' android/app/src/main/AndroidManifest.xml
           grep -q 'RECORD_AUDIO' android/app/src/main/AndroidManifest.xml
           grep -q 'class TuTopVoicePlugin' android/app/src/main/java/mx/tutop/app/TuTopVoicePlugin.java
           grep -q 'class TuTopAIPlugin' android/app/src/main/java/mx/tutop/app/TuTopAIPlugin.java
           grep -q 'usesCleartextTraffic="false"' android/app/src/main/AndroidManifest.xml
           grep -q 'allowBackup="false"' android/app/src/main/AndroidManifest.xml
           grep -q 'firebase-appcheck-playintegrity' node_modules/@capacitor-firebase/app-check/android/build.gradle
-          echo "✅ Android privacy/capability boundary + Play Integrity dependency verified."
 
       - name: Gradle setup
         uses: gradle/actions/setup-gradle@v6
@@ -190,15 +234,13 @@ jobs:
             'backend_rules_changed_since_base':False,
             'evidence_inheritance_scope':'backend/rules only; current client/native code rebuilt and tested separately',
             'app_check_provider_android':'play-integrity',
-            'firebase_ai_backend_previously_proven_with_app_check':True,
             'firebase_ai_physical_attestation_pending':True,
-            'apk_sha256':pathlib.Path(os.environ['TUTOP_APK_SHA256_PATH']).read_text().split()[0],
-            'physical_qa_candidate':True,'release_candidate':False,'production_ready':False,'play_ready':False
+            'physical_qa_candidate':True,'release_candidate':False,'production_ready':False,'play_ready':False,
+            'apk_sha256':pathlib.Path(os.environ['TUTOP_APK_SHA256_PATH']).read_text().split()[0]
           },indent=2)+'\n')
           PY
 
       - name: Upload APK + provenance
-        id: upload
         uses: actions/upload-artifact@v7
         with:
           name: TuTop-0.9.2-beta.0-hardened-client-${{ github.run_number }}
@@ -218,7 +260,7 @@ jobs:
           TAG="tutop-0.9.2-beta.0-hardened-client-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
             --title "TuTop 0.9.2 beta.0 Hardened Client — build ${GITHUB_RUN_NUMBER}" \
-            --notes "Private physical-QA client candidate. Current client/native SHA=${GITHUB_SHA}. Backend/rules unchanged from validated base ${TUTOP_VALIDATED_BASE_SHA} (run ${TUTOP_VALIDATED_BASE_RUN_ID}). Current client/native regression, TypeScript, Android lint/tests/build, permissions/privacy and Play Integrity shape passed. Firebase AI backend was previously proven with App Check; physical Play Integrity attestation remains observable but is not an enforcement gate for this sideloaded staging QA APK. Not production/Play-ready." \
+            --notes "Private physical-QA client candidate. Current client/native SHA=${GITHUB_SHA}; backend/rules unchanged from validated base ${TUTOP_VALIDATED_BASE_SHA}. Not production/Play-ready." \
             "$TUTOP_APK_PATH" "$TUTOP_APK_SHA256_PATH" CLIENT_QA_CANDIDATE_0.9.2.json
 
       - name: Remove recovered Firebase config
