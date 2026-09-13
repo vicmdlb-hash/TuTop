@@ -1,4 +1,5 @@
 import { getNativeAppCheckToken, initializeNativeAppCheck, nativeAppCheckStatus } from './nativeAppCheckToken';
+import { recordDiagnostic } from './localDiagnostics';
 
 type CapacitorPlugin = Record<string, (...args: any[]) => Promise<any>>;
 type CapacitorRuntime = {
@@ -12,6 +13,11 @@ export type NativeTopiAIReason = 'ready' | 'not-native' | 'disabled' | 'plugin-m
 const AI_REQUEST_TIMEOUT_MS = 12_000;
 let lastReason: NativeTopiAIReason = 'disabled';
 let lastModel = '';
+
+function setReason(reason: NativeTopiAIReason, context?: Record<string, unknown>) {
+  lastReason = reason;
+  recordDiagnostic('ai', reason, context);
+}
 
 function runtime(): CapacitorRuntime | null {
   if (typeof window === 'undefined') return null;
@@ -78,15 +84,18 @@ function timeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
  * downgrade Topi to the deterministic local assistant.
  */
 export async function generateNativeTopiText(prompt: string): Promise<{ text: string; model: string; provider: 'firebase-ai-logic' } | null> {
-  if (!nativeRuntime()) { lastReason = 'not-native'; return null; }
-  if (!firebaseAIEnabled()) { lastReason = 'disabled'; return null; }
+  if (!nativeRuntime()) { setReason('not-native'); return null; }
+  if (!firebaseAIEnabled()) { setReason('disabled'); return null; }
   const ai = plugin();
-  if (!ai?.generate) { lastReason = 'plugin-missing'; return null; }
+  if (!ai?.generate) { setReason('plugin-missing'); return null; }
   const clean = prompt.replace(/\u0000/g, '').trim().slice(0, 6000);
   if (clean.length < 3) return null;
 
   const preferred = String(import.meta.env.VITE_TUTOP_TOPI_MODEL || 'gemini-3.8-flash').trim();
-  if (!['gemini-3.8-flash', 'gemini-3.5-flash-lite'].includes(preferred)) return null;
+  if (!['gemini-3.8-flash', 'gemini-3.5-flash-lite'].includes(preferred)) {
+    setReason('request-failed', { configuration_valid: false });
+    return null;
+  }
 
   const required = appCheckRequired();
   let appCheckToken: string | null = null;
@@ -97,7 +106,7 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
     appCheckToken = null;
   }
   if (required && !appCheckToken) {
-    lastReason = 'app-check-unavailable';
+    setReason('app-check-unavailable', { app_check_required: true });
     return null;
   }
 
@@ -105,18 +114,18 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
     ? ['gemini-3.8-flash', 'gemini-3.5-flash-lite']
     : ['gemini-3.5-flash-lite'];
 
-  for (const model of models) {
+  for (const [index, model] of models.entries()) {
     try {
       const result = await timeout(ai.generate({ prompt: clean, model }), AI_REQUEST_TIMEOUT_MS);
       const text = String(result?.text || '').trim();
       if (text) {
-        lastReason = 'ready';
         lastModel = String(result?.model || model);
+        setReason('ready', { fallback_model: index > 0, app_check_token: Boolean(appCheckToken) });
         return { text, model: lastModel, provider: 'firebase-ai-logic' };
       }
-      lastReason = 'empty-response';
+      setReason('empty-response', { fallback_model: index > 0 });
     } catch {
-      lastReason = 'request-failed';
+      setReason('request-failed', { fallback_model: index > 0 });
     }
   }
   return null;
