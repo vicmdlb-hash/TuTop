@@ -1,0 +1,59 @@
+name: TuTop 0.9.2 diagnostics
+
+on:
+  push:
+    branches:
+      - feat/tutop-0.9.2-hardening
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-092-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnostics:
+    name: 0.9.2 typecheck + web build + modified native generators
+    if: github.ref_name == 'feat/tutop-0.9.2-hardening'
+    runs-on: [self-hosted, linux, x64, tutop-zero-cost-worker]
+    timeout-minutes: 20
+    env:
+      VITE_TUTOP_SCHEMA_V2: "true"
+      VITE_TUTOP_ENVIRONMENT: staging
+      VITE_TUTOP_APP_VERSION: 0.9.2-beta.0
+      VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED: "true"
+      VITE_TUTOP_TOPI_MODEL: gemini-3.8-flash
+      VITE_TUTOP_TOPI_REMOTE_ENABLED: "false"
+      VITE_TUTOP_AI_APP_CHECK_REQUIRED: "false"
+      VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: "false"
+      VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: "false"
+      VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: "false"
+    steps:
+      - name: Checkout exact 0.9.2 branch
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate modified generator syntax
+        run: |
+          node --check scripts/android-topi-voice-plugin.mjs
+          node --check scripts/export-staging-v2-build-env.mjs
+          node --check scripts/configure-android-beta-version.mjs
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build V2 staging web bundle
+        run: npm run build
+
+      - name: Verify source tree stayed clean
+        run: git diff --exit-code -- package.json package-lock.json src scripts
