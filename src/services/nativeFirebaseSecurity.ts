@@ -33,7 +33,7 @@ function capacitorPlugin(name: string): CapacitorPlugin | null {
 }
 
 function appVersion() {
-  return String(import.meta.env.VITE_TUTOP_APP_VERSION || '0.9.1-beta.0').trim().slice(0, 40);
+  return String(import.meta.env.VITE_TUTOP_APP_VERSION || '0.9.2-beta.0').trim().slice(0, 40);
 }
 
 function intentFromEvent(event: any, source: NativeNotificationIntent['source']): NativeNotificationIntent {
