@@ -1,6 +1,8 @@
 export type ThemePreference = 'light' | 'dark' | 'system';
 
-const THEME_KEY = 'tutop.theme.v1';
+// 0.9.2 starts dark by default. A new preference key avoids inheriting the old
+// 0.9.1 "system" default on upgrades while still respecting choices made in 0.9.2.
+const THEME_KEY = 'tutop.theme.v2';
 export const TUTOP_THEME_EVENT = 'tutop:theme-change';
 
 function systemTheme(): 'light' | 'dark' {
@@ -10,9 +12,9 @@ function systemTheme(): 'light' | 'dark' {
 export function getThemePreference(): ThemePreference {
   try {
     const value = localStorage.getItem(THEME_KEY);
-    return value === 'dark' || value === 'system' || value === 'light' ? value : 'system';
+    return value === 'dark' || value === 'system' || value === 'light' ? value : 'dark';
   } catch {
-    return 'system';
+    return 'dark';
   }
 }
 
