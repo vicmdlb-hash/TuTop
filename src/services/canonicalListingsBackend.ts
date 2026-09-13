@@ -205,14 +205,26 @@ export const canonicalListingsBackend = {
     const cells = [...new Set(input.geoCells.filter((cell) => /^g1:\d+:\d+$/.test(cell)))].slice(0, 9).sort();
     if (!cells.length) return [] as Product[];
     const limit = Math.max(4, Math.min(15, input.limitPerCell || 10));
-    const cacheKey = `${cells.join('|')}#${limit}`;
+    const client = getClient();
+    const uid = client.currentSession!.uid;
+    const cacheKey = `${uid}#${cells.join('|')}#${limit}`;
     const cached = nearbyCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.products;
 
-    const client = getClient();
-    const sets = await Promise.all(cells.map((cell) => queryApproved(client, 'attributes.geo_cell', cell, limit)));
+    const approvedPromise = Promise.all(cells.map((cell) => queryApproved(client, 'attributes.geo_cell', cell, limit)));
+    // The seller must be able to see their own freshly-created pending listing in
+    // Nearby immediately after publishing, without exposing that pending listing
+    // to any other account. `loadMine` is already seller-scoped by auth rules; we
+    // filter it again to active listings whose coarse geo cell is in this query.
+    const minePromise = this.loadMine(Math.min(50, Math.max(limit * 3, 20)));
+    const [sets, mine] = await Promise.all([approvedPromise, minePromise]);
+    const ownNearby = mine.filter((doc) => {
+      const cell = String(doc.data.attributes?.geo_cell || '');
+      return doc.data.seller_id === uid && doc.data.status === 'active' && cells.includes(cell);
+    });
+
     const byId = new Map<string, FirestoreDocument<CanonicalListingV2>>();
-    for (const doc of sets.flat()) byId.set(doc.id, doc);
+    for (const doc of [...sets.flat(), ...ownNearby]) byId.set(doc.id, doc);
     const products = await productsForDocuments(client, [...byId.values()]);
     nearbyCache.set(cacheKey, { products, expiresAt: Date.now() + NEARBY_CACHE_TTL_MS });
     return products;
