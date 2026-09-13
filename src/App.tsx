@@ -26,8 +26,6 @@ import UniversityNetworkSetup from './components/UniversityNetworkSetup';
 import DemandRequestComposer from './components/DemandRequestComposer';
 import NationalAccountControls from './components/NationalAccountControls';
 import OwnTrustedReputationCard from './components/OwnTrustedReputationCard';
-import RecoveryReadinessCard from './components/RecoveryReadinessCard';
-import PhysicalQaPanel from './components/PhysicalQaPanel';
 import TopiSupportAssistant from './components/TopiSupportAssistant';
 import './services/nationalBackendCanonicalBridge';
 import './services/rateLimitedOnlineBridge';
@@ -116,7 +114,7 @@ function MobileApp() {
       </main>
 
       {!v2 && activeTab === 'bot' && !activeChatId && !selectedProductId && <DraftShelf />}
-      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <><OwnTrustedReputationCard /><RecoveryReadinessCard /><PhysicalQaPanel /></>}</>}
+      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <OwnTrustedReputationCard />}</>}
       {!activeChatId && <TopiSupportAssistant />}
 
       {!activeChatId && (
