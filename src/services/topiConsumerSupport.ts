@@ -1,4 +1,5 @@
 import { classifySupportQuery, supportNode, supportTreeFacts, type SupportRouteId } from '../lib/supportDecisionTree';
+import { recordDiagnostic } from './localDiagnostics';
 import { generateNativeTopiText, nativeTopiAIStatus } from './nativeTopiAI';
 
 export type SupportAnswer = {
@@ -64,15 +65,19 @@ export async function answerConsumerSupport(question: string, routeHint: Support
   const route = resolveRoute(clean, routeHint);
   const generated = await generateNativeTopiText(aiPrompt(clean, route));
   const text = generated?.text?.replace(/^```(?:text)?\s*/i, '').replace(/\s*```$/i, '').trim().slice(0, 900);
-  if (text) return { text, source: 'firebase-ai', route };
+  if (text) {
+    recordDiagnostic('ai', 'support_real_ai_success');
+    return { text, source: 'firebase-ai', route };
+  }
 
   // In the private physical-QA build a typed free-form question is an AI test.
   // Never disguise a Firebase AI failure as a successful local assistant answer.
-  // The deterministic decision tree remains available through its explicit UI.
+  // Technical reasons are recorded locally but are not exposed in consumer UI.
   if (physicalQaRequiresRealAI()) {
     const reason = nativeTopiAIStatus().reason;
+    recordDiagnostic('ai', `support_${reason}`);
     return {
-      text: `La IA real de Topi no respondió (${reason}). Reintenta con conexión a internet. La guía local sigue disponible en las opciones, pero esta pregunta no se respondió con IA.`,
+      text: 'Topi no pudo conectarse con la IA en este momento. Revisa tu conexión e inténtalo de nuevo. La guía local sigue disponible en las opciones y se identifica por separado.',
       source: 'unavailable',
       route,
     };
