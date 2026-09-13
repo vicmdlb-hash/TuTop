@@ -184,11 +184,8 @@ export class FirebaseRestClient {
     const email = await phoneAliasEmail(phone);
     const data = await this.authRequest('accounts:signUp', { email, password, returnSecureToken: true });
     const session: AuthSession = {
-      uid: data.localId,
-      idToken: data.idToken,
-      refreshToken: data.refreshToken,
-      expiresAt: Date.now() + Number(data.expiresIn || 3600) * 1000,
-      phone,
+      uid: data.localId, idToken: data.idToken, refreshToken: data.refreshToken,
+      expiresAt: Date.now() + Number(data.expiresIn || 3600) * 1000, phone,
     };
     this.persistSession(session);
     return session;
@@ -199,11 +196,8 @@ export class FirebaseRestClient {
     const email = await phoneAliasEmail(phone);
     const data = await this.authRequest('accounts:signInWithPassword', { email, password, returnSecureToken: true });
     const session: AuthSession = {
-      uid: data.localId,
-      idToken: data.idToken,
-      refreshToken: data.refreshToken,
-      expiresAt: Date.now() + Number(data.expiresIn || 3600) * 1000,
-      phone,
+      uid: data.localId, idToken: data.idToken, refreshToken: data.refreshToken,
+      expiresAt: Date.now() + Number(data.expiresIn || 3600) * 1000, phone,
     };
     this.persistSession(session);
     return session;
@@ -220,17 +214,13 @@ export class FirebaseRestClient {
     if (this.session.expiresAt > Date.now() + 60_000) return this.session.idToken;
     const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded', ...(await appCheckHeader()) };
     const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(this.config.apiKey)}`, {
-      method: 'POST',
-      headers,
+      method: 'POST', headers,
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: this.session.refreshToken }),
     });
     const data = await readJson(response);
     const refreshed: AuthSession = {
-      ...this.session,
-      idToken: data.id_token,
-      refreshToken: data.refresh_token || this.session.refreshToken,
-      uid: data.user_id || this.session.uid,
-      expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
+      ...this.session, idToken: data.id_token, refreshToken: data.refresh_token || this.session.refreshToken,
+      uid: data.user_id || this.session.uid, expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
     };
     this.persistSession(refreshed);
     return refreshed.idToken;
@@ -269,9 +259,11 @@ export class FirebaseRestClient {
       const url = `${this.firestoreBase()}/${encodePath(parent)}?documentId=${encodeURIComponent(documentId)}`;
       return this.firestoreFetch(url, { method: 'POST', body: JSON.stringify({ fields: encodeFields(data) }) });
     }
-    const mask = options.merge ? Object.keys(data).map((field) => `updateMask.fieldPaths=${encodeURIComponent(field)}`).join('&') : '';
+    const encodedEntries = Object.entries(data).filter(([, value]) => value !== undefined);
+    const encodedData = Object.fromEntries(encodedEntries);
+    const mask = options.merge ? encodedEntries.map(([field]) => `updateMask.fieldPaths=${encodeURIComponent(field)}`).join('&') : '';
     const suffix = mask ? `?${mask}` : '';
-    return this.firestoreFetch(`${this.firestoreBase()}/${encodePath(path)}${suffix}`, { method: 'PATCH', body: JSON.stringify({ fields: encodeFields(data) }) });
+    return this.firestoreFetch(`${this.firestoreBase()}/${encodePath(path)}${suffix}`, { method: 'PATCH', body: JSON.stringify({ fields: encodeFields(encodedData) }) });
   }
 
   async deleteDocument(path: string) {
@@ -321,11 +313,8 @@ export class FirebaseRestClient {
   private decodeDocument<T>(doc: any): FirestoreDocument<T> {
     const path = String(doc.name || '').split('/documents/')[1] || '';
     return {
-      id: path.split('/').pop() || '',
-      path,
-      data: decodeFields(doc.fields || {}) as T,
-      createTime: doc.createTime,
-      updateTime: doc.updateTime,
+      id: path.split('/').pop() || '', path, data: decodeFields(doc.fields || {}) as T,
+      createTime: doc.createTime, updateTime: doc.updateTime,
     };
   }
 }
