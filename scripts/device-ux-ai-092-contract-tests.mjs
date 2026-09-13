@@ -9,6 +9,7 @@ const device = read('src/services/nativeDeviceCapabilities.ts');
 const nativeCaps = read('scripts/android-native-capabilities.mjs');
 const voicePlugin = read('scripts/android-topi-voice-plugin.mjs');
 const nativeAI = read('src/services/nativeTopiAI.ts');
+const nativeAppCheck = read('src/services/nativeAppCheckToken.ts');
 
 assert.match(theme, /return value === 'dark' \|\| value === 'system' \|\| value === 'light' \? value : 'dark'/);
 assert.match(index, /tutop\.theme\.v2/);
@@ -45,4 +46,11 @@ assert.match(nativeAI, /Promise\.race/);
 assert.match(nativeAI, /AI_REQUEST_TIMEOUT_MS/);
 assert.match(nativeAI, /if \(required && !appCheckToken\)/);
 
-console.log('✅ TuTop 0.9.2 device UX + camera/gallery + coarse-location + voice + real-AI hardening contract PASS');
+// 0.9.2 must not depend on a manually registered debug secret. The native
+// App Check plugin defaults to Play Integrity on Android when debugToken=false.
+assert.match(nativeAppCheck, /\^0\\\.9\\\.1-beta\\\./);
+assert.doesNotMatch(nativeAppCheck, /\^0\\\.9\\\.\(\?:1\|2\)-beta/);
+assert.match(nativeAppCheck, /play-integrity/);
+assert.match(nativeAppCheck, /debugToken: useStagingDebugProvider\(\)/);
+
+console.log('✅ TuTop 0.9.2 device UX + camera/gallery + coarse-location + voice + real-AI/App Check hardening contract PASS');
