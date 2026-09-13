@@ -9,6 +9,7 @@ type CapacitorRuntime = {
 };
 
 export type NativeTopiAIReason = 'ready' | 'not-native' | 'disabled' | 'plugin-missing' | 'app-check-unavailable' | 'request-failed' | 'empty-response';
+const AI_REQUEST_TIMEOUT_MS = 12_000;
 let lastReason: NativeTopiAIReason = 'disabled';
 let lastModel = '';
 
@@ -51,11 +52,19 @@ export function nativeTopiAIStatus() {
   return { available: lastReason === 'ready', reason: lastReason, model: lastModel, appCheck: nativeAppCheckStatus() };
 }
 
+function timeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer = 0;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error('TOPI_AI_TIMEOUT')), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => window.clearTimeout(timer));
+}
+
 /**
- * Native Firebase AI Logic only. When App Check is required, a valid token is
- * mandatory before the native SDK is called. Private physical-QA builds may
- * explicitly set VITE_TUTOP_AI_APP_CHECK_REQUIRED=false only while the staging
- * AI service is UNENFORCED; production must never inherit that exception.
+ * Native Firebase AI Logic only. A production build may require a valid App
+ * Check token before the SDK call. Private staging Physical-QA may explicitly
+ * leave App Check unenforced, in which case token initialization is best-effort
+ * and must not silently disable the real Firebase AI path.
  */
 export async function generateNativeTopiText(prompt: string): Promise<{ text: string; model: string; provider: 'firebase-ai-logic' } | null> {
   if (!nativeRuntime()) { lastReason = 'not-native'; return null; }
@@ -68,9 +77,15 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
   const preferred = String(import.meta.env.VITE_TUTOP_TOPI_MODEL || 'gemini-3.8-flash').trim();
   if (!['gemini-3.8-flash', 'gemini-3.5-flash-lite'].includes(preferred)) return null;
 
-  await initializeNativeAppCheck();
-  const appCheckToken = await getNativeAppCheckToken(false);
-  if (appCheckRequired() && !appCheckToken) {
+  const required = appCheckRequired();
+  let appCheckToken: string | null = null;
+  try {
+    await initializeNativeAppCheck();
+    appCheckToken = await getNativeAppCheckToken(false);
+  } catch {
+    appCheckToken = null;
+  }
+  if (required && !appCheckToken) {
     lastReason = 'app-check-unavailable';
     return null;
   }
@@ -78,9 +93,10 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
   const models = preferred === 'gemini-3.8-flash'
     ? ['gemini-3.8-flash', 'gemini-3.5-flash-lite']
     : ['gemini-3.5-flash-lite'];
+
   for (const model of models) {
     try {
-      const result = await ai.generate({ prompt: clean, model });
+      const result = await timeout(ai.generate({ prompt: clean, model }), AI_REQUEST_TIMEOUT_MS);
       const text = String(result?.text || '').trim();
       if (text) {
         lastReason = 'ready';
