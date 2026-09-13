@@ -243,15 +243,42 @@ jobs:
         run: |
           set -euo pipefail
           TAG="tutop-0.9.1-beta.0-physical-qa-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" \
-            TuTop-0.9.1-beta.0-physical-qa-staging.apk \
-            TuTop-0.9.1-beta.0-physical-qa-staging.apk.sha256 \
-            TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt \
-            PHYSICAL_QA_CANDIDATE_0.9.1.generated.json \
-            --target "$GITHUB_SHA" \
-            --title "TuTop 0.9.1 beta.0 Physical QA — build ${GITHUB_RUN_NUMBER}" \
-            --notes "0.9.1 staging candidate only. Not production-ready or Play-ready. Exact SHA=${GITHUB_SHA}; artifact=${{ steps.upload-staging.outputs.artifact-id }}; gate=${TUTOP_VALIDATED_GATE_RUN_ID}; staging=${TUTOP_VALIDATED_STAGING_RUN_ID}." \
-            --prerelease
+          TITLE="TuTop 0.9.1 beta.0 Physical QA — build ${GITHUB_RUN_NUMBER}"
+          NOTES="0.9.1 staging candidate only. Not production-ready or Play-ready. Exact SHA=${GITHUB_SHA}; artifact=${{ steps.upload-staging.outputs.artifact-id }}; gate=${TUTOP_VALIDATED_GATE_RUN_ID}; staging=${TUTOP_VALIDATED_STAGING_RUN_ID}."
+
+          publish_prerelease() {
+            if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release create "$TAG" \
+                --repo "$GITHUB_REPOSITORY" \
+                --target "$GITHUB_SHA" \
+                --title "$TITLE" \
+                --notes "$NOTES" \
+                --prerelease || return 1
+            fi
+
+            gh release upload "$TAG" \
+              TuTop-0.9.1-beta.0-physical-qa-staging.apk \
+              TuTop-0.9.1-beta.0-physical-qa-staging.apk.sha256 \
+              TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt \
+              PHYSICAL_QA_CANDIDATE_0.9.1.generated.json \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          }
+
+          for attempt in 1 2 3 4 5; do
+            if publish_prerelease; then
+              echo "✅ Physical QA prerelease durable publicado: ${TAG}."
+              exit 0
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              delay=$((attempt * 10))
+              echo "GitHub Releases temporalmente no disponible (intento ${attempt}/5); reintento en ${delay}s." >&2
+              sleep "$delay"
+            fi
+          done
+
+          echo "DETENIDO: GitHub Releases siguió fallando después de 5 intentos; APK y artifacts permanecen preservados." >&2
+          exit 1
 
       - name: Remove temporary Firebase configs
         if: always()
