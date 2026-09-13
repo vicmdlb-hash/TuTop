@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { CustomProvider, getToken as getAppCheckToken, initializeAppCheck } from 'firebase/app-check';
-import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
+import { getAI, getGenerativeModel, GoogleAIBackend, ThinkingLevel } from 'firebase/ai';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 
 const EXPECTED_PROJECT = 'tutop-beta-vicmdlb-1356585881';
@@ -168,7 +168,11 @@ try {
   const ai = getAI(app, { backend: new GoogleAIBackend() });
   const model = getGenerativeModel(ai, {
     model: modelName,
-    generationConfig: { temperature: 0, maxOutputTokens: 24 },
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: 128,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+    },
   });
 
   let passed = false;
@@ -177,7 +181,10 @@ try {
     try {
       const result = await generateWithTimeout(model);
       const text = result?.response?.text?.() || '';
-      if (!text.trim()) fail('STAGING_TOPI_AI_EMPTY_RESPONSE');
+      if (!text.trim()) {
+        const finishReason = String(result?.response?.candidates?.[0]?.finishReason || 'unknown');
+        fail(`STAGING_TOPI_AI_EMPTY_RESPONSE:finish_reason=${finishReason}`);
+      }
       if (!text.includes(EXPECTED_MARKER)) fail('STAGING_TOPI_AI_MARKER_MISMATCH');
       passed = true;
       break;
