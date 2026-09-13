@@ -43,11 +43,13 @@ function parseSha256File(file) {
 }
 
 const version = String(process.env.TUTOP_BETA_VERSION || '0.9.1-beta.0').trim();
-if (!/^0\.9\.1-beta\.\d+$/.test(version)) stop(`versión beta 0.9.1 inválida: ${version}`);
+const versionMatch = version.match(/^0\.9\.(1|2)-beta\.\d+$/);
+if (!versionMatch) stop(`versión beta TuTop inválida: ${version}`);
+const minor = versionMatch[1];
 const artifactStem = `TuTop-${version}-physical-qa-staging`;
 const apkPath = path.resolve(process.env.TUTOP_APK_PATH || `${artifactStem}.apk`);
 const checksumPath = path.resolve(process.env.TUTOP_APK_SHA256_PATH || `${apkPath}.sha256`);
-const outputPath = path.resolve(process.env.TUTOP_CANDIDATE_OUTPUT_PATH || 'PHYSICAL_QA_CANDIDATE_0.9.1.generated.json');
+const outputPath = path.resolve(process.env.TUTOP_CANDIDATE_OUTPUT_PATH || `PHYSICAL_QA_CANDIDATE_0.9.${minor}.generated.json`);
 if (!fs.existsSync(apkPath)) stop(`falta APK: ${apkPath}`);
 
 const headSha = required('GITHUB_SHA');
@@ -114,9 +116,9 @@ const candidate = {
   candidate_status: 'generated_exact_head_pending_repo_activation',
   replacement_required: false,
   generated_at: new Date().toISOString(),
-  notes: 'Generated from the exact TuTop 0.9.1 Android Actions build after same-SHA consolidated gate and staging smoke. This artifact is independent from the frozen 0.9.0 APK28 candidate; repo activation must use a separate docs/PHYSICAL_QA_CANDIDATE_0.9.1.json manifest.',
+  notes: `Generated from exact TuTop ${version} staging sources after same-SHA static and real-staging gates. This is a private Physical QA candidate, not production/Play readiness.`,
 };
 
 fs.writeFileSync(outputPath, `${JSON.stringify(candidate, null, 2)}\n`);
-console.log(`PASS generated TuTop 0.9.1 Physical QA candidate artifact: ${outputPath}`);
+console.log(`PASS generated TuTop ${version} Physical QA candidate artifact: ${outputPath}`);
 console.log(`head=${headSha} artifact=${artifactId} run=${buildRunId} apk_sha256=${apkSha256} size=${apkSizeBytes}`);
