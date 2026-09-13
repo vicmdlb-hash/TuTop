@@ -76,7 +76,10 @@ assert.match(aiRuntimeSmoke, /CustomProvider/);
 assert.match(aiRuntimeSmoke, /exchangeDebugToken/);
 assert.match(aiRuntimeSmoke, /deleteEphemeralDebugToken/);
 assert.match(aiRuntimeSmoke, /clearTimeout\(timeoutId\)/);
-assert.doesNotMatch(aiRuntimeSmoke, /authorization['"]?\s*:|GEMINI_API_KEY|PROVIDER_API_KEY/i);
+// Managed Google/Firebase OAuth is required for App Check debug-token lifecycle and project metadata.
+// Provider API keys/authorization must still never be embedded in this smoke path.
+assert.match(aiRuntimeSmoke, /Authorization:\s*`Bearer \$\{oauthToken\}`/);
+assert.doesNotMatch(aiRuntimeSmoke, /GEMINI_API_KEY|PROVIDER_API_KEY|x-goog-api-key|Bearer\s+AIza/i);
 assert.match(aiProvisioner, /firebasevertexai\.googleapis\.com/);
 assert.match(aiProvisioner, /generativelanguage\.googleapis\.com/);
 assert.match(aiProvisioner, /generateServiceIdentity/);
