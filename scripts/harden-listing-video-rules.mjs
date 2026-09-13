@@ -3,17 +3,33 @@ import fs from 'node:fs';
 const path = 'firebase/firestore.v2.generated.rules';
 let rules = fs.readFileSync(path, 'utf8');
 
-function replaceOnce(needle, replacement, label) {
-  const count = rules.split(needle).length - 1;
-  if (count !== 1) {
-    console.error(`DETENIDO: ${label} esperaba 1 coincidencia y encontró ${count}.`);
-    process.exit(2);
-  }
-  rules = rules.replace(needle, replacement);
+function stop(message) {
+  console.error(`DETENIDO: ${message}`);
+  process.exit(2);
 }
 
+function sectionBounds(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  if (start < 0) stop(`no se encontró ${startMarker}`);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  if (end < 0) stop(`no se encontró cierre de ${startMarker}`);
+  return { start, end };
+}
+
+function replaceOnceInSection(section, needle, replacement, label) {
+  const count = section.split(needle).length - 1;
+  if (count !== 1) stop(`${label} esperaba 1 coincidencia dentro de listings_v2 y encontró ${count}`);
+  return section.replace(needle, replacement);
+}
+
+const bounds = sectionBounds(rules, '    match /listings_v2/{listingId} {', '    match /offers_v2/{offerId} {');
+const before = rules.slice(0, bounds.start);
+const after = rules.slice(bounds.end);
+let listingRules = rules.slice(bounds.start, bounds.end);
+
 const keyNeedle = "          'delivery_methods','meeting_point_ids','shipping_available','photo_urls','status','moderation_status','visibility_scope',\n";
-replaceOnce(
+listingRules = replaceOnceInSection(
+  listingRules,
   keyNeedle,
   "          'delivery_methods','meeting_point_ids','shipping_available','photo_urls','video_urls','status','moderation_status','visibility_scope',\n",
   'listings_v2 allowlist video_urls',
@@ -22,11 +38,31 @@ replaceOnce(
 const videoValidation = `        && (!('video_urls' in request.resource.data) || (\n          request.resource.data.video_urls is list\n          && request.resource.data.video_urls.size() <= 1\n          && (request.resource.data.video_urls.size() == 0 || (\n            request.resource.data.video_urls[0] is string\n            && request.resource.data.video_urls[0].size() <= 1200\n            && request.resource.data.video_urls[0].matches('^firebase-storage://[^/]+/product-videos/[A-Za-z0-9_-]+/[A-Za-z0-9._~%-]+$')\n          ))\n        ))\n`;
 
 const createAnchor = "        && (request.resource.data.photo_urls.size() < 4 || (request.resource.data.photo_urls[3] is string && request.resource.data.photo_urls[3].size() <= 180000))\n";
-replaceOnce(createAnchor, `${createAnchor}${videoValidation}`, 'listings_v2 create video validation');
+listingRules = replaceOnceInSection(
+  listingRules,
+  createAnchor,
+  `${createAnchor}${videoValidation}`,
+  'listings_v2 create video validation',
+);
 
-const updateAnchor = "          && request.resource.data.status in ['draft','active','paused','sold_out','archived']\n";
+// Locate the seller-update branch by two adjacent invariants rather than by a
+// global status line. Other rule sections may legitimately use the same status
+// enum; video hardening must never mutate them.
+const updateAnchor = `          && request.resource.data.created_at == resource.data.created_at\n          && (\n            request.resource.data.moderation_status == resource.data.moderation_status\n            || (request.resource.data.moderation_status == 'pending' && resource.data.moderation_status in ['approved','rejected','flagged'])\n          )\n          && request.resource.data.status in ['draft','active','paused','sold_out','archived']\n`;
 const updateVideoValidation = videoValidation.replace(/^ {8}/gm, '          ');
-replaceOnce(updateAnchor, `${updateVideoValidation}${updateAnchor}`, 'listings_v2 update video validation');
+listingRules = replaceOnceInSection(
+  listingRules,
+  updateAnchor,
+  `          && request.resource.data.created_at == resource.data.created_at\n          && (\n            request.resource.data.moderation_status == resource.data.moderation_status\n            || (request.resource.data.moderation_status == 'pending' && resource.data.moderation_status in ['approved','rejected','flagged'])\n          )\n${updateVideoValidation}          && request.resource.data.status in ['draft','active','paused','sold_out','archived']\n`,
+  'listings_v2 update video validation',
+);
 
+const finalAllowlistCount = listingRules.split("'video_urls'").length - 1;
+const finalValidationCount = listingRules.split("request.resource.data.video_urls.size() <= 1").length - 1;
+if (finalAllowlistCount !== 1) stop(`video_urls debe existir exactamente una vez en allowlist; encontró ${finalAllowlistCount}`);
+if (finalValidationCount !== 2) stop(`video_urls debe validarse en create+seller update; encontró ${finalValidationCount}`);
+if (!listingRules.includes("firebase-storage://[^/]+/product-videos/")) stop('falta el prefijo canónico product-videos en validación');
+
+rules = `${before}${listingRules}${after}`;
 fs.writeFileSync(path, rules);
-console.log('✅ Rules 0.9.2: listings_v2 acepta máximo un firebase-storage:// product-video validado; create/update quedan fail-closed.');
+console.log('✅ Rules 0.9.2: listings_v2 acepta máximo un firebase-storage:// product-video; create/update quedan fail-closed y la transformación está aislada a listings_v2.');
