@@ -34,7 +34,16 @@ function plugin(name: string): CapacitorPlugin | null {
 function useStagingDebugProvider() {
   const environment = String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').trim().toLowerCase();
   const version = String(import.meta.env.VITE_TUTOP_APP_VERSION || '').trim();
-  return environment === 'staging' && /^0\.9\.(?:1|2)-beta\./.test(version);
+  // 0.9.1 used the Firebase debug provider and therefore needed a per-device
+  // debug secret to be registered manually. That is exactly why a physical APK
+  // could silently lose real AI. 0.9.2 deliberately uses the native default
+  // provider (Play Integrity on Android), which is the production-shaped path
+  // and never embeds or logs a reusable debug secret in the app.
+  return environment === 'staging' && /^0\.9\.1-beta\./.test(version);
+}
+
+export function nativeAppCheckProviderMode() {
+  return useStagingDebugProvider() ? 'debug' : 'play-integrity';
 }
 
 export async function initializeNativeAppCheck() {
@@ -46,8 +55,6 @@ export async function initializeNativeAppCheck() {
       lastFailure = 'plugin-unavailable';
       return null;
     }
-    // Private staging builds may use Firebase's debug provider; production builds
-    // never inherit it because both environment and beta-version checks must match.
     await appCheck.initialize({
       isTokenAutoRefreshEnabled: true,
       debugToken: useStagingDebugProvider(),
@@ -96,6 +103,7 @@ export async function getNativeAppCheckToken(forceRefresh = false): Promise<stri
 export function nativeAppCheckStatus() {
   return {
     native: isNativeFirebaseRuntime(),
+    provider: nativeAppCheckProviderMode(),
     debugProvider: useStagingDebugProvider(),
     tokenCached: Boolean(cached && cached.expiresAt > Date.now() + 60_000),
     lastFailure,
