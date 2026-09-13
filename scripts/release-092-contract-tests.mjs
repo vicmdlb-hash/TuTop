@@ -84,7 +84,7 @@ assert.match(theme, /return value === 'dark' \|\| value === 'system' \|\| value 
 assert.match(theme, /return 'dark'/);
 assert.match(nativeSecurity, /0\.9\.2-beta\.0/);
 assert.match(appCheck, /environment === 'staging'/);
-assert.match(appCheck, /\^0\\\.9\\\.\(\?:1\|2\\)-beta\\\./);
+assert(appCheck.includes('/^0\\.9\\.(?:1|2)-beta\\./.test(version)'), 'App Check staging debug provider must remain limited to 0.9.1/0.9.2 betas');
 assert.match(appCheck, /debugToken: useStagingDebugProvider\(\)/);
 assert.doesNotMatch(appCheck, /debugToken:\s*['"][A-Za-z0-9_-]{12,}['"]/);
 assert.match(nativeDevice, /permissions: \['coarseLocation'\]/);
@@ -123,8 +123,8 @@ assert.match(support, /Firebase AI real/);
 assert.match(support, /Guía local/);
 
 // Candidate generation is exact-head, same-SHA and version-aware for 0.9.2.
-assert.match(generator, /\^0\\\.9\\\.\(1\|2\)-beta\\\.\\d\+\$/);
-assert.match(generator, /PHYSICAL_QA_CANDIDATE_0\.9\.\$\{minor\}\.generated\.json/);
+assert(generator.includes('/^0\\.9\\.(1|2)-beta\\.\\d+$/'), 'candidate generator must accept only the 0.9.1/0.9.2 beta namespaces');
+assert(generator.includes('PHYSICAL_QA_CANDIDATE_0.9.${minor}.generated.json'));
 assert.match(generator, /gateCommitSha !== headSha/);
 assert.match(generator, /stagingSmokeCommitSha !== headSha/);
 assert.match(generator, /tutop-beta-vicmdlb-1356585881/);
