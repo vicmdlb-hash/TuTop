@@ -4,7 +4,8 @@ const configPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-s
 const githubEnv = String(process.env.GITHUB_ENV || '').trim();
 const expectedProject = 'tutop-beta-vicmdlb-1356585881';
 const historicalProject = 'tutop-3a4f7';
-const version = String(process.env.TUTOP_BETA_VERSION || '0.9.1-beta.0').trim();
+const packageVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+const version = String(process.env.TUTOP_BETA_VERSION || packageVersion).trim();
 
 function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
 if (!githubEnv) stop('GITHUB_ENV no está disponible; este export sólo debe correr dentro del build CI.');
