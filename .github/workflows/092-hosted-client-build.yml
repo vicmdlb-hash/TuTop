@@ -65,7 +65,7 @@ jobs:
           test "$(node -p "require('./package.json').version")" = "$TUTOP_BETA_VERSION"
           git cat-file -e "${TUTOP_VALIDATED_BASE_SHA}^{commit}"
           git diff --name-only "${TUTOP_VALIDATED_BASE_SHA}...${GITHUB_SHA}" > /tmp/changed.txt
-          BAD="$(grep -Ev '^(\.github/workflows/092-(hosted-rescue|hosted-client-build)\.yml|index\.html|scripts/(android-native-capabilities|android-topi-voice-plugin|check|device-ux-ai-092-contract-tests)\.mjs|src/components/AppearanceSettings\.tsx|src/services/(nativeDeviceCapabilities|nativeTopiAI|nativeAppCheckToken)\.ts)$' /tmp/changed.txt || true)"
+          BAD="$(grep -Ev '^(\.github/workflows/092-(hosted-rescue|hosted-client-build)\.yml|index\.html|scripts/(android-native-capabilities|android-topi-voice-plugin|check|device-ux-ai-092-contract-tests|release-092-contract-tests)\.mjs|src/components/AppearanceSettings\.tsx|src/services/(nativeDeviceCapabilities|nativeTopiAI|nativeAppCheckToken)\.ts)$' /tmp/changed.txt || true)"
           if [ -n "$BAD" ]; then
             echo "DETENIDO: backend/rules drift since validated 0.9.2 base:" >&2
             printf '%s\n' "$BAD" >&2
