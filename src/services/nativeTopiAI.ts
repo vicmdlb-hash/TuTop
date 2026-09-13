@@ -36,7 +36,18 @@ function firebaseAIEnabled() {
   return String(import.meta.env.VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED || '').toLowerCase() === 'true';
 }
 
+function isPrivatePhysicalQaBuild() {
+  const environment = String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').trim().toLowerCase();
+  const version = String(import.meta.env.VITE_TUTOP_APP_VERSION || '').trim();
+  return environment === 'staging' && /^0\.9\.2-beta\./.test(version);
+}
+
 function appCheckRequired() {
+  // Private 0.9.2 physical QA keeps Firebase AI App Check UNENFORCED on the
+  // staging backend. Play Integrity is still initialized and observed, but a
+  // sideloaded APK must not lose the real AI path only because attestation is
+  // unavailable. Production/release builds keep the configured strict default.
+  if (isPrivatePhysicalQaBuild()) return false;
   return String(import.meta.env.VITE_TUTOP_AI_APP_CHECK_REQUIRED || 'true').toLowerCase() !== 'false';
 }
 
@@ -61,10 +72,10 @@ function timeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 }
 
 /**
- * Native Firebase AI Logic only. A production build may require a valid App
- * Check token before the SDK call. Private staging Physical-QA may explicitly
- * leave App Check unenforced, in which case token initialization is best-effort
- * and must not silently disable the real Firebase AI path.
+ * Native Firebase AI Logic only. Production may require a valid App Check token
+ * before the SDK call. Private 0.9.2 staging Physical-QA deliberately leaves
+ * enforcement off, so token acquisition is best-effort and cannot silently
+ * downgrade Topi to the deterministic local assistant.
  */
 export async function generateNativeTopiText(prompt: string): Promise<{ text: string; model: string; provider: 'firebase-ai-logic' } | null> {
   if (!nativeRuntime()) { lastReason = 'not-native'; return null; }
