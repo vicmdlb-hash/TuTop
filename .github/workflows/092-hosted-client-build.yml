@@ -63,15 +63,9 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(node -p "require('./package.json').version")" = "$TUTOP_BETA_VERSION"
-          git cat-file -e "${TUTOP_VALIDATED_BASE_SHA}^{commit}"
-          git diff --name-only "${TUTOP_VALIDATED_BASE_SHA}...${GITHUB_SHA}" > /tmp/changed.txt
-          BAD="$(grep -Ev '^(\.github/workflows/092-(hosted-rescue|hosted-client-build)\.yml|index\.html|scripts/(android-native-capabilities|android-topi-voice-plugin|check|device-ux-ai-092-contract-tests|release-092-contract-tests)\.mjs|src/components/AppearanceSettings\.tsx|src/services/(nativeDeviceCapabilities|nativeTopiAI|nativeAppCheckToken)\.ts)$' /tmp/changed.txt || true)"
-          if [ -n "$BAD" ]; then
-            echo "DETENIDO: backend/rules drift since validated 0.9.2 base:" >&2
-            printf '%s\n' "$BAD" >&2
-            exit 43
-          fi
-          echo "✅ Backend/rules unchanged from fully validated base ${TUTOP_VALIDATED_BASE_SHA}."
+          test "$(node -p "require('./package-lock.json').version")" = "$TUTOP_BETA_VERSION"
+          test "$(node -p "require('./package-lock.json').packages[''].version")" = "$TUTOP_BETA_VERSION"
+          node scripts/assert-client-only-diff-092.mjs "$TUTOP_VALIDATED_BASE_SHA" "$GITHUB_SHA"
 
       - name: Install exact dependencies
         run: npm ci
@@ -190,6 +184,7 @@ jobs:
             'validated_backend_base_sha':os.environ['TUTOP_VALIDATED_BASE_SHA'],
             'validated_backend_base_run_id':int(os.environ['TUTOP_VALIDATED_BASE_RUN_ID']),
             'backend_rules_changed_since_base':False,
+            'evidence_inheritance_scope':'backend/rules only; current client/native code rebuilt and tested separately',
             'app_check_provider_android':'play-integrity',
             'firebase_ai_backend_previously_proven_with_app_check':True,
             'firebase_ai_physical_attestation_pending':True,
@@ -219,7 +214,7 @@ jobs:
           TAG="tutop-0.9.2-beta.0-hardened-client-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
             --title "TuTop 0.9.2 beta.0 Hardened Client — build ${GITHUB_RUN_NUMBER}" \
-            --notes "Private physical-QA client candidate. Current client/native SHA=${GITHUB_SHA}. Backend/rules unchanged from validated base ${TUTOP_VALIDATED_BASE_SHA} (run ${TUTOP_VALIDATED_BASE_RUN_ID}). Android App Check now uses Play Integrity rather than a manually registered debug secret. Firebase AI backend was previously proven with App Check; physical Play Integrity attestation remains a device QA gate. Not production/Play-ready." \
+            --notes "Private physical-QA client candidate. Current client/native SHA=${GITHUB_SHA}. Backend/rules unchanged from validated base ${TUTOP_VALIDATED_BASE_SHA} (run ${TUTOP_VALIDATED_BASE_RUN_ID}). Current client/native regression, TypeScript, Android lint/tests/build, permissions/privacy and Play Integrity shape passed. Firebase AI backend was previously proven with App Check; physical Play Integrity attestation remains a device QA gate. Not production/Play-ready." \
             "$TUTOP_APK_PATH" "$TUTOP_APK_SHA256_PATH" CLIENT_QA_CANDIDATE_0.9.2.json
 
       - name: Remove recovered Firebase config
