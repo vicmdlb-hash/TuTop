@@ -25,10 +25,12 @@ const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 if (!config.apiKey || !config.projectId || !config.appId) stop('config web Firebase incompleta.');
 if (config.projectId === historicalProject) stop('V2 build no puede apuntar al Firebase histórico.');
 if (config.projectId !== expectedProject) stop(`V2 staging project mismatch: ${config.projectId}`);
-if (!/^0\.9\.1-beta\./.test(version)) stop(`versión beta inesperada: ${version}`);
+if (!/^0\.9\.(?:1|2)-beta\.\d+$/.test(version)) stop(`versión beta inesperada: ${version}`);
 
-// apiKey/appId are Firebase client configuration, not provider secrets. Masking
-// them still reduces accidental copy/paste exposure in CI logs.
+const appCheckRequired = String(process.env.TUTOP_AI_APP_CHECK_REQUIRED || 'true').trim().toLowerCase() !== 'false';
+const is092 = /^0\.9\.2-beta\./.test(version);
+if (!appCheckRequired && !is092) stop('la excepción App Check del cliente sólo está autorizada para Physical QA 0.9.2.');
+
 for (const value of [config.apiKey, config.appId]) {
   const clean = String(value || '').trim();
   if (clean) process.stdout.write(`::add-mask::${clean}\n`);
@@ -42,14 +44,12 @@ const lines = [
   'VITE_TUTOP_SCHEMA_V2=true',
   'VITE_TUTOP_ENVIRONMENT=staging',
   `VITE_TUTOP_APP_VERSION=${version}`,
-  // Topi 0.9.1 uses the native Firebase AI Logic bridge on Android. There is
-  // no Gemini/provider API key in the Vite bundle; App Check is initialized by
-  // the native Firebase security bridge and local Topi remains the fallback.
   'VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED=true',
   'VITE_TUTOP_TOPI_MODEL=gemini-3.8-flash',
+  `VITE_TUTOP_AI_APP_CHECK_REQUIRED=${appCheckRequired ? 'true' : 'false'}`,
 ];
 fs.appendFileSync(githubEnv, `${lines.join('\n')}\n`);
 console.log(`✅ Ambiente V2 staging exportado para ${expectedProject} · ${version}.`);
-console.log('Topi Firebase AI Logic habilitado para Android 0.9.1 con fallback local; no se exporta API key de proveedor.');
+console.log(`Topi Firebase AI Logic habilitado; App Check requerido por el cliente=${appCheckRequired}. No se exporta API key de proveedor.`);
 console.log('Baseline Physical QA: reviews/wallet/favorites cutovers permanecen false hasta completar Device A+B.');
 console.log('Configuración cliente sensible a copia queda enmascarada en GitHub Actions.');
