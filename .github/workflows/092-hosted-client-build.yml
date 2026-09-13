@@ -10,7 +10,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: tutop-092-hosted-client-build-${{ github.ref }}
+  group: tutop-092-hosted-client-build-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 env:
