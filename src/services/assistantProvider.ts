@@ -34,9 +34,7 @@ export interface TopiComposeSuggestion {
   description?: string;
 }
 
-// UI intentionally keeps one generic connected-AI state. Provider details stay
-// internal so switching Firebase AI / private proxy never leaks into components.
-export type TopiSource = 'local' | 'topi-endpoint';
+export type TopiSource = 'local' | 'firebase-ai' | 'private-endpoint';
 
 export interface CopilotResult {
   category?: ProductCategory;
@@ -120,10 +118,10 @@ function sanitizeCompose(raw: unknown, context: CopilotContext): TopiComposeSugg
   return Object.values(suggestion).some((item) => item !== undefined) ? suggestion : undefined;
 }
 
-function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: CopilotContext): CopilotResult | null {
+function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: CopilotContext, source: Exclude<TopiSource, 'local'>): CopilotResult | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
-  const result: CopilotResult = { source: 'topi-endpoint' };
+  const result: CopilotResult = { source };
 
   const category = validCategory(value.category);
   if (category) result.category = category;
@@ -213,7 +211,7 @@ function parseModelJson(text: string) {
 async function askNativeFirebaseTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult | null> {
   const generated = await generateNativeTopiText(nativePrompt(action, context));
   if (!generated) return null;
-  return sanitizeRemoteResult(action, parseModelJson(generated.text), context);
+  return sanitizeRemoteResult(action, parseModelJson(generated.text), context, 'firebase-ai');
 }
 
 function topiEndpoint() {
@@ -228,8 +226,6 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 6500);
   try {
-    // No provider API key is sent by the client. This optional URL must be a
-    // TuTop-controlled HTTPS proxy with its own moderation/rate limits.
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -243,15 +239,15 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
       }),
     });
     if (!response.ok) return null;
-    return sanitizeRemoteResult(action, await response.json(), context);
+    return sanitizeRemoteResult(action, await response.json(), context, 'private-endpoint');
   } catch { return null; }
   finally { window.clearTimeout(timer); }
 }
 
 /**
- * Topi 0.9.1 cascade: native Firebase AI Logic when explicitly enabled,
- * optional private HTTPS proxy, then deterministic local Topi. Provider failure
- * never blocks publishing and no Gemini/provider secret exists in the JS bundle.
+ * Topi cascade: native Firebase AI Logic when explicitly enabled, optional
+ * private HTTPS endpoint, then deterministic local Topi. The source remains
+ * explicit so beta QA can tell real model output from the local safety fallback.
  */
 export async function askTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult> {
   const native = await askNativeFirebaseTopi(action, context);
