@@ -75,7 +75,7 @@ export default function TopiSupportAssistant() {
           <TopiMascot className="h-11 w-11 shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-black">Topi</h2>
-            <p className="mt-0.5 text-[9px] text-slate-500">Ayuda guiada siempre disponible · Firebase AI cuando responde de verdad.</p>
+            <p className="mt-0.5 text-[9px] text-slate-500">Tu amigo para resolver dudas y usar TuTop · guía local segura e IA sólo cuando responde de verdad.</p>
           </div>
           <button type="button" onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-xl bg-white/[0.05] text-slate-400" aria-label="Cerrar"><X className="h-4 w-4" /></button>
         </header>
