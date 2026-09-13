@@ -1,1 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7C4DFF"/><stop offset=".42" stop-color="#4B2EDB"/><stop offset="1" stop-color="#7C4DFF"/></linearGradient><linearGradient id="shine" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF" stop-opacity=".12"/><stop offset=".38" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient></defs><rect width="1024" height="1024" rx="220" fill="url(#bg)"/><path d="M-120 360 360-120h260L-40 540Zm340 450 760-760h190L410 810Z" fill="url(#shine)"/><g fill="#FFFFFF"><text x="112" y="625" font-family="Arial,Helvetica,sans-serif" font-size="360" font-weight="900" letter-spacing="-28">TuT</text><path d="M620 498c0-78 63-141 141-141s141 63 141 141c0 104-141 232-141 232S620 602 620 498Z"/><circle cx="761" cy="495" r="47" fill="#7C4DFF"/><text x="828" y="625" font-family="Arial,Helvetica,sans-serif" font-size="360" font-weight="900" letter-spacing="-28">p</text></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#B788FF"/><stop offset=".46" stop-color="#7C4DFF"/><stop offset="1" stop-color="#4B2EDB"/></linearGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9B72FF"/><stop offset="1" stop-color="#4B2EDB"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#2E167C" flood-opacity=".24"/></filter>
+  </defs>
+  <rect width="1024" height="1024" rx="228" fill="url(#frame)"/>
+  <circle cx="154" cy="125" r="190" fill="#EEDFFF" opacity=".23"/>
+  <circle cx="902" cy="900" r="260" fill="#241B3D" opacity=".18"/>
+  <rect x="104" y="260" width="816" height="504" rx="176" fill="#F5F6FB" filter="url(#shadow)"/>
+  <g aria-label="TuTop">
+    <text x="170" y="594" font-family="Arial,Helvetica,sans-serif" font-size="270" font-weight="900" letter-spacing="-22" fill="#211A47">Tu</text>
+    <text x="440" y="594" font-family="Arial,Helvetica,sans-serif" font-size="270" font-weight="900" letter-spacing="-22" fill="url(#top)">T</text>
+    <path d="M602 490c0-72 58-130 130-130s130 58 130 130c0 94-130 213-130 213S602 584 602 490Z" fill="url(#top)"/>
+    <circle cx="732" cy="486" r="43" fill="#F5F6FB"/>
+    <circle cx="732" cy="486" r="18" fill="#7C4DFF"/>
+    <text x="826" y="594" font-family="Arial,Helvetica,sans-serif" font-size="270" font-weight="900" letter-spacing="-22" fill="url(#top)">p</text>
+  </g>
+  <path d="M237 698h550" stroke="#7C4DFF" stroke-width="12" stroke-linecap="round" opacity=".16"/>
+</svg>
