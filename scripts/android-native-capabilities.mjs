@@ -11,8 +11,9 @@ function stop(message) {
 if (!fs.existsSync(manifestPath)) stop('AndroidManifest.xml no existe; ejecuta después de cap sync.');
 let manifest = fs.readFileSync(manifestPath, 'utf8');
 
-// TuTop only needs approximate foreground location. Capacitor Camera 8 uses a
-// system activity and requires no CAMERA/storage permission when saveToGallery=false.
+// TuTop 0.9.2 only needs approximate foreground location and microphone on tap.
+// Capacitor Camera 8 uses system camera/photo-picker activities, so no legacy
+// CAMERA/storage permission is requested while saveToGallery=false.
 const permissions = [
   '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
   '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
@@ -28,15 +29,12 @@ if (missing.length) {
   manifest = `${manifest.slice(0, manifestOpenEnd + 1)}\n    ${missing.join('\n    ')}${manifest.slice(manifestOpenEnd + 1)}`;
 }
 
-// Remove old 0.9.1 prototypes that asked for more privilege than the product needs.
 manifest = manifest
   .replace(/\s*<uses-permission android:name="android\.permission\.ACCESS_FINE_LOCATION"\s*\/>/g, '')
   .replace(/\s*<uses-permission android:name="android\.permission\.CAMERA"\s*\/>/g, '');
 
-// Harden the generated WebView container. Session material must never enter
-// Android Auto Backup, and release/staging traffic must stay HTTPS-only.
 const appStart = manifest.indexOf('<application');
-const appEnd = appStart >= 0 ? manifest.indexOf('>', appStart) : -1;
+let appEnd = appStart >= 0 ? manifest.indexOf('>', appStart) : -1;
 if (appEnd < 0) stop('no pude localizar <application> en AndroidManifest.xml.');
 let applicationOpen = manifest.slice(appStart, appEnd + 1);
 if (/android:allowBackup="[^"]*"/.test(applicationOpen)) applicationOpen = applicationOpen.replace(/android:allowBackup="[^"]*"/, 'android:allowBackup="false"');
@@ -45,15 +43,32 @@ if (/android:usesCleartextTraffic="[^"]*"/.test(applicationOpen)) applicationOpe
 else applicationOpen = applicationOpen.replace('<application', '<application android:usesCleartextTraffic="false"');
 manifest = `${manifest.slice(0, appStart)}${applicationOpen}${manifest.slice(appEnd + 1)}`;
 
-if (manifest.includes('ACCESS_FINE_LOCATION')) stop('TuTop 0.9.1 no debe pedir ubicación precisa.');
+// Android 11/12 devices without the modular Photo Picker can request the
+// backported picker through Google Play services. Newer devices ignore it.
+if (!manifest.includes('photopicker_activity:0:required')) {
+  appEnd = manifest.indexOf('>', manifest.indexOf('<application'));
+  const photoPickerBackport = `
+        <service
+            android:name="com.google.android.gms.metadata.ModuleDependencies"
+            android:enabled="false"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.android.gms.metadata.MODULE_DEPENDENCIES" />
+            </intent-filter>
+            <meta-data android:name="photopicker_activity:0:required" android:value="" />
+        </service>`;
+  manifest = `${manifest.slice(0, appEnd + 1)}${photoPickerBackport}${manifest.slice(appEnd + 1)}`;
+}
+
+if (manifest.includes('ACCESS_FINE_LOCATION')) stop('TuTop 0.9.2 no debe pedir ubicación precisa.');
 if (manifest.includes('ACCESS_BACKGROUND_LOCATION')) stop('TuTop no debe declarar ubicación en segundo plano.');
 if (manifest.includes('android.permission.CAMERA')) stop('Capacitor Camera 8 no necesita permiso CAMERA para el flujo de actividad del sistema.');
-if (manifest.includes('READ_EXTERNAL_STORAGE') || manifest.includes('WRITE_EXTERNAL_STORAGE')) {
-  stop('TuTop no debe recuperar permisos legacy de almacenamiento.');
-}
+if (manifest.includes('READ_EXTERNAL_STORAGE') || manifest.includes('WRITE_EXTERNAL_STORAGE')) stop('TuTop no debe recuperar permisos legacy de almacenamiento.');
 if (!manifest.includes('android.permission.ACCESS_COARSE_LOCATION')) stop('falta permiso de ubicación aproximada.');
+if (!manifest.includes('android.permission.RECORD_AUDIO')) stop('falta permiso de micrófono bajo demanda.');
+if (!manifest.includes('photopicker_activity:0:required')) stop('falta backport del Photo Picker para Android compatible.');
 if (!manifest.includes('android:allowBackup="false"')) stop('allowBackup debe quedar desactivado.');
 if (!manifest.includes('android:usesCleartextTraffic="false"')) stop('cleartext traffic debe quedar desactivado.');
 
 fs.writeFileSync(manifestPath, manifest);
-console.log('✅ Android 0.9.1: coarse location + mic only; system camera/gallery use no legacy camera/storage permission; background/fine location blocked.');
+console.log('✅ Android 0.9.2: coarse location + mic bajo demanda + camera/photo picker sin permisos legacy + backport Photo Picker.');
