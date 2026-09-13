@@ -1,1 +1,70 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732"><defs><linearGradient id="cap" x1="0" x2="1"><stop stop-color="#7C4DFF"/><stop offset="1" stop-color="#4B2EDB"/></linearGradient><linearGradient id="fur" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#8A553A"/><stop offset="1" stop-color="#4A2C20"/></linearGradient><linearGradient id="word" x1="0" x2="1"><stop stop-color="#7C4DFF"/><stop offset="1" stop-color="#B788FF"/></linearGradient></defs><rect width="2732" height="2732" fill="#F5F6FB"/><circle cx="2350" cy="330" r="420" fill="#EEDFFF"/><circle cx="210" cy="2420" r="360" fill="#EEDFFF"/><g transform="translate(1010 485) scale(1.42)"><ellipse cx="256" cy="343" rx="150" ry="164" fill="url(#fur)"/><ellipse cx="256" cy="374" rx="92" ry="72" fill="#E0A47D"/><circle cx="199" cy="302" r="37" fill="#111016"/><circle cx="313" cy="302" r="37" fill="#111016"/><circle cx="211" cy="289" r="10" fill="#fff"/><circle cx="325" cy="289" r="10" fill="#fff"/><ellipse cx="256" cy="353" rx="31" ry="24" fill="#161116"/><path d="M214 398c26 31 58 31 84 0" fill="none" stroke="#23150F" stroke-width="13" stroke-linecap="round"/><path d="M240 396v32h18v-32M258 396v32h18v-32" fill="#fff"/><path d="M148 227c20-115 197-138 230 1-72-31-159-32-230-1Z" fill="url(#cap)"/><rect x="154" y="211" width="208" height="55" rx="27" fill="#6E2EDB"/><circle cx="255" cy="164" r="34" fill="#6E2EDB"/><text x="256" y="233" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="76" font-weight="900" fill="#FFF8E9">T</text><path d="M164 366 78 343M166 390 72 395M346 366l86-23M344 390l94 5" stroke="#F2D5C4" stroke-width="9" stroke-linecap="round"/><ellipse cx="144" cy="462" rx="55" ry="72" fill="#5C3728"/><ellipse cx="368" cy="462" rx="55" ry="72" fill="#5C3728"/><ellipse cx="144" cy="473" rx="33" ry="42" fill="#F0A99A"/><ellipse cx="368" cy="473" rx="33" ry="42" fill="#F0A99A"/></g><text x="1366" y="1740" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="300" font-weight="900" letter-spacing="-18" fill="#211A47">TuT</text><path d="M1475 1618c0-65 52-117 117-117s117 52 117 117c0 87-117 194-117 194s-117-107-117-194Z" fill="url(#word)"/><circle cx="1592" cy="1616" r="38" fill="#F5F6FB"/><text x="1715" y="1740" font-family="Arial,Helvetica,sans-serif" font-size="300" font-weight="900" letter-spacing="-18" fill="url(#word)">p</text><text x="1366" y="1930" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="88" font-weight="700" fill="#4B2EDB">Descubre, conecta y encuentra cerca de ti.</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732">
+  <defs>
+    <linearGradient id="cap" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#B788FF"/><stop offset=".5" stop-color="#7C4DFF"/><stop offset="1" stop-color="#4B2EDB"/></linearGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#A87859"/><stop offset=".55" stop-color="#79503D"/><stop offset="1" stop-color="#4A2C20"/></linearGradient>
+    <linearGradient id="word" x1="0" x2="1"><stop stop-color="#9B72FF"/><stop offset="1" stop-color="#4B2EDB"/></linearGradient>
+    <pattern id="yarnBrown" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M-5 15C2 4 12 4 18 15S31 26 38 15" fill="none" stroke="#E1B498" stroke-opacity=".34" stroke-width="5" stroke-linecap="round"/>
+      <path d="M-5 30C2 19 12 19 18 30S31 41 38 30" fill="none" stroke="#321F18" stroke-opacity=".22" stroke-width="4" stroke-linecap="round"/>
+    </pattern>
+    <pattern id="yarnCream" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M-4 14C3 4 12 4 18 14S30 24 36 14" fill="none" stroke="#FFF3E4" stroke-opacity=".48" stroke-width="4" stroke-linecap="round"/>
+      <path d="M-4 28C3 18 12 18 18 28S30 38 36 28" fill="none" stroke="#B77E61" stroke-opacity=".20" stroke-width="3" stroke-linecap="round"/>
+    </pattern>
+    <pattern id="yarnPurple" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M-4 14C3 4 12 4 18 14S30 24 36 14" fill="none" stroke="#F0E4FF" stroke-opacity=".52" stroke-width="4" stroke-linecap="round"/>
+      <path d="M-4 28C3 18 12 18 18 28S30 38 36 28" fill="none" stroke="#2E167C" stroke-opacity=".25" stroke-width="3" stroke-linecap="round"/>
+    </pattern>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="170%"><feTurbulence type="fractalNoise" baseFrequency=".018" numOctaves="2" seed="9" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G" result="rough"/><feDropShadow in="rough" dx="0" dy="20" stdDeviation="18" flood-color="#180B2C" flood-opacity=".26"/></filter>
+  </defs>
+
+  <rect width="2732" height="2732" fill="#F5F6FB"/>
+  <circle cx="2390" cy="330" r="510" fill="#EEDFFF"/>
+  <circle cx="190" cy="2480" r="430" fill="#EEDFFF"/>
+  <circle cx="2240" cy="2310" r="300" fill="#B788FF" opacity=".10"/>
+
+  <g transform="translate(955 410) scale(1.62)" filter="url(#soft)">
+    <ellipse cx="256" cy="440" rx="170" ry="142" fill="url(#fur)" stroke="#3E271E" stroke-width="12"/>
+    <ellipse cx="256" cy="440" rx="170" ry="142" fill="url(#yarnBrown)"/>
+    <ellipse cx="256" cy="455" rx="92" ry="108" fill="#DDB18C" stroke="#B77E61" stroke-width="8"/>
+    <ellipse cx="256" cy="455" rx="92" ry="108" fill="url(#yarnCream)"/>
+
+    <ellipse cx="256" cy="290" rx="154" ry="150" fill="url(#fur)" stroke="#3E271E" stroke-width="12"/>
+    <ellipse cx="256" cy="290" rx="154" ry="150" fill="url(#yarnBrown)"/>
+    <ellipse cx="256" cy="338" rx="102" ry="78" fill="#E3AD86" stroke="#B77E61" stroke-width="8"/>
+    <ellipse cx="256" cy="338" rx="102" ry="78" fill="url(#yarnCream)"/>
+
+    <circle cx="198" cy="264" r="34" fill="#0F0F14"/><circle cx="314" cy="264" r="34" fill="#0F0F14"/>
+    <circle cx="209" cy="252" r="9" fill="#fff"/><circle cx="325" cy="252" r="9" fill="#fff"/>
+    <ellipse cx="256" cy="320" rx="31" ry="24" fill="#171116"/>
+    <path d="M211 367c28 31 62 31 90 0" fill="none" stroke="#2B1710" stroke-width="13" stroke-linecap="round"/>
+    <path d="M239 365v34h18v-34M257 365v34h18v-34" fill="#fff"/>
+
+    <ellipse cx="129" cy="444" rx="55" ry="78" fill="#684333" stroke="#3E271E" stroke-width="8"/>
+    <ellipse cx="129" cy="444" rx="55" ry="78" fill="url(#yarnBrown)"/>
+    <ellipse cx="383" cy="444" rx="55" ry="78" fill="#684333" stroke="#3E271E" stroke-width="8"/>
+    <ellipse cx="383" cy="444" rx="55" ry="78" fill="url(#yarnBrown)"/>
+    <ellipse cx="129" cy="470" rx="32" ry="43" fill="#F0A99A"/><ellipse cx="383" cy="470" rx="32" ry="43" fill="#F0A99A"/>
+
+    <path d="M145 185c18-112 75-176 112-184 82 15 119 76 132 184-82-31-166-31-244 0Z" fill="url(#cap)" stroke="#3D1C9E" stroke-width="11"/>
+    <path d="M145 185c18-112 75-176 112-184 82 15 119 76 132 184-82-31-166-31-244 0Z" fill="url(#yarnPurple)"/>
+    <rect x="143" y="168" width="246" height="66" rx="33" fill="#6D32E0" stroke="#3D1C9E" stroke-width="9"/>
+    <rect x="143" y="168" width="246" height="66" rx="33" fill="url(#yarnPurple)"/>
+    <circle cx="257" cy="15" r="36" fill="#7140E8" stroke="#3D1C9E" stroke-width="8"/>
+    <circle cx="257" cy="15" r="36" fill="url(#yarnPurple)"/>
+    <text x="256" y="216" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="88" font-weight="900" fill="#FFF8E9">T</text>
+
+    <path d="M154 331 56 304M156 360 49 365M358 331l98-27M356 360l108 5" stroke="#F5D6C0" stroke-width="9" stroke-linecap="round"/>
+  </g>
+
+  <g aria-label="TuTop">
+    <text x="760" y="1900" font-family="Arial,Helvetica,sans-serif" font-size="300" font-weight="900" letter-spacing="-20" fill="#211A47">Tu</text>
+    <text x="1110" y="1900" font-family="Arial,Helvetica,sans-serif" font-size="300" font-weight="900" letter-spacing="-20" fill="url(#word)">T</text>
+    <path d="M1460 1775c0-72 58-130 130-130s130 58 130 130c0 96-130 216-130 216s-130-120-130-216Z" fill="url(#word)"/>
+    <circle cx="1590" cy="1771" r="44" fill="#F5F6FB"/>
+    <circle cx="1590" cy="1771" r="18" fill="#7C4DFF"/>
+    <text x="1710" y="1900" font-family="Arial,Helvetica,sans-serif" font-size="300" font-weight="900" letter-spacing="-20" fill="url(#word)">p</text>
+  </g>
+  <text x="1366" y="2078" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="78" font-weight="700" fill="#4B2EDB">Descubre, conecta y encuentra cerca de ti.</text>
+  <text x="1366" y="2195" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="54" font-weight="600" fill="#71658A">Topi · Tu amigo de siempre.</text>
+</svg>
