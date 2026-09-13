@@ -80,69 +80,56 @@ export async function getNativeApproxPosition(options: { requestPermission?: boo
   }
 }
 
+/**
+ * Capacitor Camera 8 launches the Android system camera/photo picker. TuTop does
+ * not declare CAMERA or storage permissions, so availability is the permission
+ * signal that matters here; the system activity owns capture/gallery access.
+ */
 export async function nativeCameraPermission(): Promise<DevicePermissionState> {
   if (!isNativeDeviceRuntime()) return 'unavailable';
   const camera = plugin('Camera');
-  if (!camera?.checkPermissions) return 'unavailable';
-  try {
-    const status = await camera.checkPermissions();
-    return permission(status?.camera);
-  } catch {
-    return 'unavailable';
-  }
+  return camera?.getPhoto ? 'granted' : 'unavailable';
 }
 
 function mediaResult(result: any, source: NativePhoto['source']): NativePhoto | null {
   if (!result || typeof result !== 'object') return null;
-  const metadata = result.metadata && typeof result.metadata === 'object' ? result.metadata : {};
   const webPath = String(result.webPath || '').trim() || undefined;
-  const uri = String(result.uri || '').trim() || undefined;
-  const thumbnail = String(result.thumbnail || '').trim() || undefined;
-  const format = String(metadata.format || '').trim().toLowerCase() || undefined;
+  const uri = String(result.path || result.uri || '').trim() || undefined;
+  const thumbnail = String(result.base64String || result.thumbnail || '').trim() || undefined;
+  const format = String(result.format || result.metadata?.format || '').trim().toLowerCase() || undefined;
   if (!webPath && !uri && !thumbnail) return null;
   return { source, webPath, uri, thumbnail, format };
 }
 
-export async function takeNativePhoto(): Promise<NativePhoto | null> {
+async function getNativePhoto(source: 'CAMERA' | 'PHOTOS'): Promise<NativePhoto | null> {
   if (!isNativeDeviceRuntime()) return null;
   const camera = plugin('Camera');
-  if (!camera?.takePhoto) return null;
+  if (!camera?.getPhoto) return null;
   try {
-    // Capacitor Camera 8 uses a system camera activity on Android; no legacy
-    // storage permission is needed and saveToGallery remains false.
-    const result = await camera.takePhoto({
+    const result = await camera.getPhoto({
       quality: 82,
-      targetWidth: 1280,
-      targetHeight: 1280,
-      cameraDirection: 'REAR',
-      editable: 'no',
+      width: 1280,
+      height: 1280,
+      source,
+      resultType: 'uri',
+      direction: 'REAR',
+      allowEditing: false,
       saveToGallery: false,
-      includeMetadata: true,
+      correctOrientation: true,
+      presentationStyle: 'fullscreen',
     });
-    return mediaResult(result, 'camera');
+    return mediaResult(result, source === 'CAMERA' ? 'camera' : 'photos');
   } catch {
     return null;
   }
 }
 
-export async function pickNativePhoto(): Promise<NativePhoto | null> {
-  if (!isNativeDeviceRuntime()) return null;
-  const camera = plugin('Camera');
-  if (!camera?.chooseFromGallery) return null;
-  try {
-    const result = await camera.chooseFromGallery({
-      quality: 82,
-      targetWidth: 1280,
-      targetHeight: 1280,
-      allowMultipleSelection: false,
-      includeMetadata: true,
-      editable: 'no',
-      mediaType: 0,
-    });
-    return mediaResult(Array.isArray(result?.results) ? result.results[0] : null, 'photos');
-  } catch {
-    return null;
-  }
+export async function takeNativePhoto() {
+  return getNativePhoto('CAMERA');
+}
+
+export async function pickNativePhoto() {
+  return getNativePhoto('PHOTOS');
 }
 
 export async function nativePhotoToImageFile(photo: NativePhoto, filename = 'tutop-photo.jpg') {
@@ -150,6 +137,10 @@ export async function nativePhotoToImageFile(photo: NativePhoto, filename = 'tut
   if (!source && photo.thumbnail) {
     const format = photo.format && /^[a-z0-9.+-]+$/.test(photo.format) ? photo.format : 'jpeg';
     source = `data:image/${format};base64,${photo.thumbnail}`;
+  }
+  if (!source && photo.uri && typeof window !== 'undefined') {
+    const convertFileSrc = (window as unknown as { Capacitor?: { convertFileSrc?: (path: string) => string } }).Capacitor?.convertFileSrc;
+    source = convertFileSrc ? convertFileSrc(photo.uri) : photo.uri;
   }
   if (!source) throw new Error('No pudimos leer la foto seleccionada.');
   const response = await fetch(source);

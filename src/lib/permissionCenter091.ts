@@ -1,27 +1,47 @@
 import { getCachedApproxLocation, requestApproxLocation } from './nearbyMarketplace';
+import { queryTopiVoicePermission, requestTopiVoicePermission } from './topiVoice';
+import { isNativeDeviceRuntime, nativeCameraPermission, nativeLocationPermission } from '../services/nativeDeviceCapabilities';
+import { enableNativePushNotifications, nativePushPermission } from '../services/nativeFirebaseSecurity';
 
-export type CapabilityPermission = 'location' | 'camera' | 'microphone';
+export type CapabilityPermission = 'location' | 'camera' | 'microphone' | 'notifications';
 export type PermissionState091 = 'granted' | 'prompt' | 'denied' | 'unsupported' | 'unknown';
 
-const PERMISSION_NAMES: Record<CapabilityPermission, string> = {
-  location: 'geolocation',
-  camera: 'camera',
-  microphone: 'microphone',
+const PERMISSION_NAMES: Partial<Record<CapabilityPermission, string>> = {
+  location: 'geolocation', camera: 'camera', microphone: 'microphone', notifications: 'notifications',
 };
+
+function normalizeNativeState(value: string): PermissionState091 {
+  if (value === 'granted') return 'granted';
+  if (value === 'denied') return 'denied';
+  if (value === 'prompt' || value === 'prompt-with-rationale') return 'prompt';
+  if (value === 'unavailable' || value === 'unsupported') return 'unsupported';
+  return 'unknown';
+}
 
 export async function queryCapabilityPermission(capability: CapabilityPermission): Promise<PermissionState091> {
   if (capability === 'location' && getCachedApproxLocation()) return 'granted';
+  if (isNativeDeviceRuntime()) {
+    if (capability === 'location') return normalizeNativeState(await nativeLocationPermission(false));
+    if (capability === 'camera') return normalizeNativeState(await nativeCameraPermission());
+    if (capability === 'microphone') return normalizeNativeState(await queryTopiVoicePermission());
+    if (capability === 'notifications') return normalizeNativeState(await nativePushPermission());
+  }
+  if (capability === 'notifications') {
+    if (typeof Notification === 'undefined') return 'unsupported';
+    const state = Notification.permission;
+    return state === 'granted' ? 'granted' : state === 'denied' ? 'denied' : 'prompt';
+  }
   try {
     if (!navigator.permissions?.query) return 'unknown';
-    const result = await (navigator.permissions as any).query({ name: PERMISSION_NAMES[capability] });
+    const name = PERMISSION_NAMES[capability];
+    if (!name) return 'unknown';
+    const result = await (navigator.permissions as any).query({ name });
     const state = String(result?.state || 'unknown');
     return state === 'granted' || state === 'prompt' || state === 'denied' ? state : 'unknown';
-  } catch {
-    return 'unknown';
-  }
+  } catch { return 'unknown'; }
 }
 
-async function requestMedia(kind: 'camera' | 'microphone'): Promise<PermissionState091> {
+async function requestBrowserMedia(kind: 'camera' | 'microphone'): Promise<PermissionState091> {
   if (!navigator.mediaDevices?.getUserMedia) return 'unsupported';
   let stream: MediaStream | null = null;
   try {
@@ -39,16 +59,28 @@ async function requestMedia(kind: 'camera' | 'microphone'): Promise<PermissionSt
 
 export async function requestCapabilityPermission(capability: CapabilityPermission): Promise<PermissionState091> {
   if (capability === 'location') {
-    const location = await requestApproxLocation({ timeoutMs: 10_000, maximumAgeMs: 60_000 });
+    const location = await requestApproxLocation({ timeoutMs: 10_000, maximumAgeMs: 60_000, requestPermission: true });
     if (location) return 'granted';
     const state = await queryCapabilityPermission('location');
     return state === 'unknown' ? 'denied' : state;
   }
-  return requestMedia(capability);
+  if (capability === 'camera' && isNativeDeviceRuntime()) return normalizeNativeState(await nativeCameraPermission());
+  if (capability === 'microphone' && isNativeDeviceRuntime()) return normalizeNativeState(await requestTopiVoicePermission());
+  if (capability === 'notifications' && isNativeDeviceRuntime()) {
+    const result = await enableNativePushNotifications();
+    return normalizeNativeState(result.permission);
+  }
+  if (capability === 'notifications') {
+    if (typeof Notification === 'undefined' || !Notification.requestPermission) return 'unsupported';
+    const state = await Notification.requestPermission();
+    return state === 'granted' ? 'granted' : state === 'denied' ? 'denied' : 'prompt';
+  }
+  return requestBrowserMedia(capability);
 }
 
 export const PERMISSION_PRIVACY_COPY: Record<CapabilityPermission, string> = {
   location: 'Se usa sólo para calcular cercanía. TuTop guarda una ubicación aproximada (~1 km), no tu domicilio exacto.',
-  camera: 'Se solicita sólo cuando quieres tomar una foto para una publicación. La prueba no conserva imágenes.',
-  microphone: 'Se solicita sólo cuando usas dictado con Topi. La prueba no guarda ni sube audio.',
+  camera: 'La cámara del sistema se abre sólo cuando eliges tomar una foto para una publicación. TuTop no pide almacenamiento legacy.',
+  microphone: 'Se solicita sólo cuando tocas el micrófono de Topi. El audio no se guarda ni se sube por TuTop.',
+  notifications: 'Se usan para avisarte de mensajes y actividad relevante. Puedes desactivarlas desde Android cuando quieras.',
 };

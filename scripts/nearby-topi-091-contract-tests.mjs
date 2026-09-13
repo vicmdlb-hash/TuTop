@@ -14,6 +14,7 @@ const topi = read('src/services/assistantProvider.ts');
 const nativeAI = read('src/services/nativeTopiAI.ts');
 const nativeDevice = read('src/services/nativeDeviceCapabilities.ts');
 const aiPlugin = read('scripts/android-topi-ai-plugin.mjs');
+const voicePlugin = read('scripts/android-topi-voice-plugin.mjs');
 const mobileDeps = read('scripts/install-mobile-deps.mjs');
 const env = read('.env.example');
 const voice = read('src/lib/topiVoice.ts');
@@ -41,7 +42,7 @@ assert.match(card, /productDistanceKm\(viewerLocation, product\)/, 'every card m
 assert.match(card, /NEARBY_LOCATION_EVENT/, 'distance must react to updated approximate location');
 
 assert.match(publish, /askTopi\('compose'/, 'V2 publisher must call Topi compose');
-assert.match(publish, /result\.source === 'topi-endpoint'/, 'V2 publisher must expose connected-vs-local Topi state');
+assert.match(publish, /result\.source === 'topi-endpoint'/, 'publisher must distinguish connected AI from deterministic fallback');
 assert.match(publish, /respuesta remota sanitizada/i);
 assert.match(publish, /TopiMascot/);
 assert.match(publish, /takeNativePhoto\(\)/, 'publisher must expose real native camera');
@@ -65,6 +66,9 @@ assert.doesNotMatch(topi, /authorization['"]?\s*:/i, 'client Topi provider must 
 
 assert.match(nativeAI, /VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED/);
 assert.match(nativeAI, /gemini-3\.8-flash/);
+assert.match(nativeAI, /gemini-3\.5-flash-lite/);
+assert.match(nativeAI, /initializeNativeAppCheck\(\)/);
+assert.match(nativeAI, /getNativeAppCheckToken\(false\)/);
 assert.match(nativeAI, /TuTopAI/);
 assert.match(aiPlugin, /firebase-ai:17\.16\.0/);
 assert.match(aiPlugin, /GenerativeBackend\.googleAI\(\)/);
@@ -75,12 +79,21 @@ assert.match(env, /VITE_TUTOP_TOPI_MODEL=gemini-3\.8-flash/);
 
 assert.match(nativeDevice, /permissions: \['coarseLocation'\]/, 'native location must request approximate location only');
 assert.match(nativeDevice, /enableHighAccuracy: false/);
-assert.match(nativeDevice, /camera\.takePhoto/);
-assert.match(nativeDevice, /camera\.chooseFromGallery/);
+assert.match(nativeDevice, /camera\.getPhoto/);
+assert.match(nativeDevice, /source: 'CAMERA' \| 'PHOTOS'/);
 assert.match(nativeDevice, /saveToGallery: false/);
-assert.doesNotMatch(nativeDevice, /camera\.getPhoto\(/, 'deprecated Camera.getPhoto must not return');
+assert.doesNotMatch(nativeDevice, /camera\.takePhoto/);
+assert.doesNotMatch(nativeDevice, /camera\.chooseFromGallery/);
 assert.match(mobileDeps, /@capacitor\/geolocation@8\.2\.2/);
 assert.match(mobileDeps, /@capacitor\/camera@8\.2\.4/);
+
+assert.match(voice, /TuTopVoice/);
+assert.match(voice, /language: 'es-MX'/);
+assert.match(voice, /requestTopiVoicePermission/);
+assert.match(voicePlugin, /RECORD_AUDIO/);
+assert.match(voicePlugin, /SpeechRecognizer/);
+assert.match(voicePlugin, /RecognizerIntent\.EXTRA_LANGUAGE/);
+assert.match(voicePlugin, /requestPermissionForAlias/);
 
 assert.match(legacyPublish, /TuTop no hace envíos/);
 assert.match(legacyPublish, /Opcional\. Nunca es un servicio de TuTop/);
@@ -94,7 +107,7 @@ const permissionBlock = capabilities.match(/const permissions = \[([\s\S]*?)\];/
 assert.match(permissionBlock, /ACCESS_COARSE_LOCATION/);
 assert.match(permissionBlock, /RECORD_AUDIO/);
 assert.doesNotMatch(permissionBlock, /ACCESS_FINE_LOCATION/, '0.9.1 must not request precise location');
-assert.doesNotMatch(permissionBlock, /android\.permission\.CAMERA/, 'Capacitor 8 system-camera flow must not declare legacy CAMERA permission');
+assert.doesNotMatch(permissionBlock, /android\.permission\.CAMERA/, 'system-camera flow must not declare legacy CAMERA permission');
 assert.match(capabilities, /ACCESS_BACKGROUND_LOCATION/);
 assert.match(capabilities, /READ_EXTERNAL_STORAGE/);
 assert.match(capabilities, /WRITE_EXTERNAL_STORAGE/);
@@ -103,19 +116,23 @@ assert.match(capabilities, /android:usesCleartextTraffic="false"/);
 assert.match(bootstrap, /android-native-capabilities\.mjs/);
 assert.match(bootstrap, /android-secure-session-plugin\.mjs/);
 assert.match(bootstrap, /android-topi-ai-plugin\.mjs/);
+assert.match(bootstrap, /android-topi-voice-plugin\.mjs/);
 
-assert.match(appIcon, />TuTop<\/text>/, 'app icon must be TuTop branding, not the mascot');
-assert.match(appIcon, /6D28D9|8B5CF6|4B2EDB/);
-assert.match(adaptiveIcon, /6D28D9|8B5CF6|4B2EDB/, 'adaptive icon must stay inside the approved TuTop purple palette');
-assert.match(splash, /Tu comunidad, más cerca/);
+assert.match(appIcon, /#4B2EDB|#7C4DFF/);
+assert.match(appIcon, /fill="#FFFFFF"/);
+assert.match(adaptiveIcon, /#4B2EDB|#FFFFFF/, 'adaptive icon must stay inside approved TuTop purple/white palette');
+assert.match(splash, /Descubre, conecta y encuentra cerca de ti/);
+assert.match(splash, /#F5F6FB/);
+assert.match(splash, />T<\/text>/, 'approved Topi beanie must include the T mark');
 assert.match(androidAssets, /tutop-app-icon\.svg/);
 assert.match(androidAssets, /tutop-adaptive-foreground\.svg/);
 assert.match(androidAssets, /tutop-splash-091\.svg/);
+assert.match(androidAssets, /#F5F6FB/);
+assert.match(androidAssets, /#0F0F14/);
 assert.match(androidAssets, /require\('sharp'\)/);
 assert.match(mascot, /aria-label=\{title\}/);
+assert.match(mascot, /#7C4DFF/);
+assert.match(mascot, />T<\/text>/);
 
 assert.match(pkg.scripts['v2:rules:prepare'], /harden-nearby-v2-rules\.mjs/);
-assert.match(voice, /recognition\.lang = 'es-MX'/);
-assert.match(voice, /No audio bytes are persisted/);
-
-console.log('✅ TuTop 0.9.1 nearby/native-camera/Firebase-AI/privacy/branding/no-shipping contracts PASS');
+console.log('✅ TuTop 0.9.1 nearby/native-camera/native-voice/Firebase-AI/privacy/branding/no-shipping contracts PASS');

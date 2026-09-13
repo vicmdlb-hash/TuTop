@@ -21,17 +21,23 @@ const aiProvisioner = read('scripts/firebase-ai-staging-provision.mjs');
 const appCheckConfig = read('scripts/configure-app-check-staging.mjs');
 const webStagingSetup = read('scripts/prepare-staging-v2-auth.mjs');
 const androidStagingSetup = read('scripts/prepare-staging-android-app.mjs');
+const nativeAI = read('src/services/nativeTopiAI.ts');
 const oldCandidate = JSON.parse(read('docs/PHYSICAL_QA_CANDIDATE_0.9.json'));
 
 assert.equal(pkg.version, '0.9.1-beta.0');
 assert.match(main, /initializeTheme091\(\)/);
 assert.match(main, /import '\.\/brand091\.css'/);
 assert.match(theme, /ThemePreference = 'light' \| 'dark' \| 'system'/);
-assert.match(theme, /return value === 'dark' \|\| value === 'system' \|\| value === 'light' \? value : 'light'/);
+assert.match(theme, /\? value : 'system'/, 'new installs must follow system appearance by default');
 assert.match(appearance, /Blanco \+ morado/);
 assert.match(appearance, /Negro \+ morado/);
-assert.match(brand, /html\[data-theme="light"\]/);
-assert.match(brand, /html\[data-theme="dark"\]/);
+assert.match(brand, /html\[data-theme='light'\]/);
+assert.match(brand, /html\[data-theme='dark'\]/);
+assert.match(brand, /#4B2EDB/);
+assert.match(brand, /#7C4DFF/);
+assert.match(brand, /#F5F6FB/);
+assert.match(brand, /#0F0F14/);
+assert.match(brand, /padding-left:2\.75rem!important/, 'auth fields must reserve a non-overlapping icon gutter');
 
 for (const source of [quality, october, staging, android, guard]) {
   assert.match(source, /feat\/tutop-0\.9\.1-nearby-topi/);
@@ -50,7 +56,6 @@ assert.match(versioner, /90100/);
 assert.match(generator, /0\.9\.1-beta/);
 assert.match(generator, /PHYSICAL_QA_CANDIDATE_0\.9\.1\.generated\.json/);
 
-// Staging must isolate App Check enforcement to Firebase AI Logic, then prove the zero-billing Gemini Developer API path.
 assert.match(staging, /Configure App Check staging AI-only enforcement/);
 assert.match(staging, /TUTOP_ALLOW_AI_APP_CHECK_ENFORCEMENT: staging-ai-only/);
 assert.match(staging, /TUTOP_APP_CHECK_AI_MODE: ENFORCED/);
@@ -76,8 +81,6 @@ assert.match(aiRuntimeSmoke, /CustomProvider/);
 assert.match(aiRuntimeSmoke, /exchangeDebugToken/);
 assert.match(aiRuntimeSmoke, /deleteEphemeralDebugToken/);
 assert.match(aiRuntimeSmoke, /clearTimeout\(timeoutId\)/);
-// Managed Google/Firebase OAuth is required for App Check debug-token lifecycle and project metadata.
-// Provider API keys/authorization must still never be embedded in this smoke path.
 assert.match(aiRuntimeSmoke, /Authorization:\s*`Bearer \$\{oauthToken\}`/);
 assert.doesNotMatch(aiRuntimeSmoke, /GEMINI_API_KEY|PROVIDER_API_KEY|x-goog-api-key|Bearer\s+AIza/i);
 assert.match(aiProvisioner, /firebasevertexai\.googleapis\.com/);
@@ -89,8 +92,10 @@ assert.match(webStagingSetup, /ensureFirebaseAiServices/);
 assert.match(webStagingSetup, /ensureFirebaseAiApiKeyAllowlist/);
 assert.match(androidStagingSetup, /ensureFirebaseAiServices/);
 assert.match(androidStagingSetup, /ensureFirebaseAiApiKeyAllowlist/);
+assert.match(nativeAI, /initializeNativeAppCheck\(\)/);
+assert.match(nativeAI, /getNativeAppCheckToken\(false\)/);
+assert.match(nativeAI, /gemini-3\.5-flash-lite/);
 
-// Closeout must propagate child failures explicitly; command-substitution must never bypass fail-closed semantics.
 assert(closeout.includes('if OCTOBER_RUN_ID="$(dispatch_and_wait'));
 assert(closeout.includes('if STAGING_RUN_ID="$(dispatch_and_wait'));
 assert(closeout.includes('if ANDROID_RUN_ID="$(dispatch_and_wait'));
@@ -98,17 +103,16 @@ assert.match(closeout, /return 49/);
 assert.match(closeout, /exit "\$rc"/);
 assert.match(closeout, /faltan IDs de provenance/);
 
-// APK28 remains historical 0.9.0 evidence. 0.9.1 must never mutate or reuse it as its candidate.
 assert.equal(oldCandidate.app_version, '0.9.0-beta.0');
 assert.equal(oldCandidate.artifact_id, 10292454237);
 assert.equal(oldCandidate.apk_sha256, '2131007fb944b144d85eb8c5deb9ad80f93bd20c1515b7793f89278cd1a9f7e3');
 assert.doesNotMatch(android, /PHYSICAL_QA_CANDIDATE_0\.9\.json/);
 
 console.log('PASS TuTop 0.9.1 version and Android 90100 identity are isolated from APK28');
-console.log('PASS white-purple default, black-purple dark and system theme are wired before App render');
+console.log('PASS approved purple/white light, black/purple dark and system-default theme are wired before App render');
 console.log('PASS Quality, October, Staging and Android gates target the 0.9.1 branch');
 console.log('PASS staging export enables Topi Firebase AI without provider secrets');
 console.log('PASS staging isolates App Check enforcement to Firebase AI Logic and uses an ephemeral CI debug-token path');
-console.log('PASS staging provisions Gemini Developer API + Firebase AI Logic + P4SA/key allowlists before real generateContent proof');
+console.log('PASS device Topi requires App Check and retains approved Gemini Flash Lite fallback before deterministic local fallback');
 console.log('PASS closeout propagates child workflow failures fail-closed across command substitutions');
 console.log('TuTop 0.9.1 release/theme/AI isolation contract: PASS');

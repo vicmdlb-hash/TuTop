@@ -1,0 +1,169 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+const root = process.cwd();
+const config = JSON.parse(fs.readFileSync(path.join(root, 'capacitor.config.json'), 'utf8'));
+const packageName = String(config.appId || '').trim();
+if (!/^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$/.test(packageName)) {
+  console.error('DETENIDO: appId inválido para Topi Voice.');
+  process.exit(2);
+}
+
+const javaDir = path.join(root, 'android/app/src/main/java', ...packageName.split('.'));
+const mainActivityPath = path.join(javaDir, 'MainActivity.java');
+if (!fs.existsSync(mainActivityPath)) {
+  console.error('DETENIDO: MainActivity.java no existe para Topi Voice.');
+  process.exit(2);
+}
+
+const pluginPath = path.join(javaDir, 'TuTopVoicePlugin.java');
+const source = `package ${packageName};
+
+import android.Manifest;
+import android.content.Intent;
+import android.os.Bundle;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
+
+import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
+
+import java.util.ArrayList;
+import java.util.Locale;
+
+@CapacitorPlugin(
+    name = "TuTopVoice",
+    permissions = { @Permission(alias = "microphone", strings = { Manifest.permission.RECORD_AUDIO }) }
+)
+public class TuTopVoicePlugin extends Plugin {
+    private SpeechRecognizer recognizer;
+
+    private String state() {
+        return getPermissionState("microphone") == PermissionState.GRANTED ? "granted" :
+            getPermissionState("microphone") == PermissionState.DENIED ? "denied" : "prompt";
+    }
+
+    private void resolvePermission(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("state", state());
+        result.put("available", SpeechRecognizer.isRecognitionAvailable(getContext()));
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void checkPermission(PluginCall call) {
+        resolvePermission(call);
+    }
+
+    @PluginMethod
+    public void requestPermission(PluginCall call) {
+        if (getPermissionState("microphone") == PermissionState.GRANTED) {
+            resolvePermission(call);
+            return;
+        }
+        requestPermissionForAlias("microphone", call, "microphonePermissionCallback");
+    }
+
+    @PermissionCallback
+    private void microphonePermissionCallback(PluginCall call) {
+        resolvePermission(call);
+    }
+
+    @PluginMethod
+    public void listen(PluginCall call) {
+        if (getPermissionState("microphone") != PermissionState.GRANTED) {
+            call.reject("TOPI_VOICE_PERMISSION_REQUIRED");
+            return;
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(getContext())) {
+            call.reject("TOPI_VOICE_UNAVAILABLE");
+            return;
+        }
+        final String language = call.getString("language", "es-MX");
+        getActivity().runOnUiThread(() -> {
+            try {
+                stopRecognizer();
+                recognizer = SpeechRecognizer.createSpeechRecognizer(getContext());
+                recognizer.setRecognitionListener(new RecognitionListener() {
+                    @Override public void onReadyForSpeech(Bundle params) {}
+                    @Override public void onBeginningOfSpeech() {}
+                    @Override public void onRmsChanged(float rmsdB) {}
+                    @Override public void onBufferReceived(byte[] buffer) {}
+                    @Override public void onEndOfSpeech() {}
+                    @Override public void onPartialResults(Bundle partialResults) {}
+                    @Override public void onEvent(int eventType, Bundle params) {}
+                    @Override public void onError(int error) {
+                        stopRecognizer();
+                        call.reject("TOPI_VOICE_RECOGNITION_ERROR_" + error);
+                    }
+                    @Override public void onResults(Bundle results) {
+                        ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                        String text = matches == null || matches.isEmpty() ? "" : matches.get(0).trim();
+                        stopRecognizer();
+                        if (text.isEmpty()) {
+                            call.reject("TOPI_VOICE_EMPTY");
+                            return;
+                        }
+                        JSObject payload = new JSObject();
+                        payload.put("text", text);
+                        call.resolve(payload);
+                    }
+                });
+                Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language);
+                intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, language);
+                intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+                intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+                recognizer.startListening(intent);
+            } catch (Throwable error) {
+                stopRecognizer();
+                call.reject("TOPI_VOICE_START_FAILED", error instanceof Exception ? (Exception) error : new Exception(error));
+            }
+        });
+    }
+
+    @PluginMethod
+    public void stop(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            stopRecognizer();
+            call.resolve();
+        });
+    }
+
+    private void stopRecognizer() {
+        if (recognizer == null) return;
+        try { recognizer.stopListening(); } catch (Throwable ignored) {}
+        try { recognizer.cancel(); } catch (Throwable ignored) {}
+        try { recognizer.destroy(); } catch (Throwable ignored) {}
+        recognizer = null;
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        stopRecognizer();
+        super.handleOnDestroy();
+    }
+}
+`;
+fs.writeFileSync(pluginPath, source);
+
+let activity = fs.readFileSync(mainActivityPath, 'utf8');
+if (!activity.includes('registerPlugin(TuTopVoicePlugin.class)')) {
+  const onCreate = /void onCreate\s*\(Bundle savedInstanceState\)\s*\{/;
+  if (!onCreate.test(activity)) {
+    console.error('DETENIDO: MainActivity no tiene onCreate compatible para Topi Voice.');
+    process.exit(2);
+  }
+  activity = activity.replace(onCreate, (match) => `${match}\n        registerPlugin(TuTopVoicePlugin.class);`);
+  fs.writeFileSync(mainActivityPath, activity);
+}
+
+console.log('✅ TuTopVoice Android generado: permiso RECORD_AUDIO bajo demanda + dictado es-MX nativo.');
