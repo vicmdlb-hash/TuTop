@@ -109,7 +109,11 @@ jobs:
           with open(os.environ['GITHUB_ENV'],'a') as env:
               env.write(f'VITE_FIREBASE_API_KEY={web_key}\nVITE_FIREBASE_AUTH_DOMAIN={project}.firebaseapp.com\nVITE_FIREBASE_PROJECT_ID={project}\nVITE_FIREBASE_APP_ID={web_app}\n')
               env.write('VITE_TUTOP_SCHEMA_V2=true\nVITE_TUTOP_ENVIRONMENT=staging\nVITE_TUTOP_APP_VERSION=0.9.2-beta.0\n')
-              env.write('VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED=true\nVITE_TUTOP_TOPI_MODEL=gemini-3.8-flash\nVITE_TUTOP_AI_APP_CHECK_REQUIRED=true\n')
+              # Play Integrity remains initialized and observable. The private
+              # sideloaded 0.9.2 physical-QA client treats attestation as
+              # best-effort because staging App Check is UNENFORCED; release/
+              # production code may still require App Check.
+              env.write('VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED=true\nVITE_TUTOP_TOPI_MODEL=gemini-3.8-flash\nVITE_TUTOP_AI_APP_CHECK_REQUIRED=false\n')
           for value in (web_key,web_app,android_key,android_app): print('::add-mask::'+value)
           print('✅ Validated public Firebase client config recovered; privileged credentials were not copied.')
           PY
@@ -214,7 +218,7 @@ jobs:
           TAG="tutop-0.9.2-beta.0-hardened-client-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
             --title "TuTop 0.9.2 beta.0 Hardened Client — build ${GITHUB_RUN_NUMBER}" \
-            --notes "Private physical-QA client candidate. Current client/native SHA=${GITHUB_SHA}. Backend/rules unchanged from validated base ${TUTOP_VALIDATED_BASE_SHA} (run ${TUTOP_VALIDATED_BASE_RUN_ID}). Current client/native regression, TypeScript, Android lint/tests/build, permissions/privacy and Play Integrity shape passed. Firebase AI backend was previously proven with App Check; physical Play Integrity attestation remains a device QA gate. Not production/Play-ready." \
+            --notes "Private physical-QA client candidate. Current client/native SHA=${GITHUB_SHA}. Backend/rules unchanged from validated base ${TUTOP_VALIDATED_BASE_SHA} (run ${TUTOP_VALIDATED_BASE_RUN_ID}). Current client/native regression, TypeScript, Android lint/tests/build, permissions/privacy and Play Integrity shape passed. Firebase AI backend was previously proven with App Check; physical Play Integrity attestation remains observable but is not an enforcement gate for this sideloaded staging QA APK. Not production/Play-ready." \
             "$TUTOP_APK_PATH" "$TUTOP_APK_SHA256_PATH" CLIENT_QA_CANDIDATE_0.9.2.json
 
       - name: Remove recovered Firebase config
