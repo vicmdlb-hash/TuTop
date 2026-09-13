@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, BadgeCheck, Flag, Heart, MapPin, MessageCircle, Share2, ShieldCheck, Sparkles, Tag, TimerReset } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Flag, Heart, MapPin, MessageCircle, Share2, ShieldCheck, Sparkles, Tag, TimerReset, Video } from 'lucide-react';
 import { feedbackFavorite, feedbackTap } from '../lib/feedback';
 import { parseListingDescription } from '../lib/listingDetails';
 import { normalizeCategory } from '../lib/productAssistant';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
+import { firebaseMediaStorage, mediaStorageEnabled } from '../services/firebaseMediaStorage';
 import { onlineBackend } from '../services/onlineBackend';
 import { useAppStore } from '../store/useAppStore';
+import type { Product } from '../types';
 import SellerPublicProfile from './SellerPublicProfile';
 import SellerReputationInline from './SellerReputationInline';
 
@@ -27,6 +29,8 @@ export default function ProductDetail() {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [topiOpen, setTopiOpen] = useState(false);
   const [sellerProfileOpen, setSellerProfileOpen] = useState(false);
+  const [videoObjectUrl, setVideoObjectUrl] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
   useEffect(() => { setPhotoIndex(0); setSellerProfileOpen(false); }, [selectedProductId]);
   if (!selectedProductId) return null;
   const product = products.find((item) => item.id === selectedProductId);
@@ -35,6 +39,7 @@ export default function ProductDetail() {
   const ownProduct = product.vendedor_id === user.id;
   const photos = product.imagenes_url?.length ? product.imagenes_url : [product.imagen_url];
   const activePhoto = photos[Math.min(photoIndex, photos.length - 1)] || product.imagen_url;
+  const videoUri = (product as Product & { video_urls?: string[] }).video_urls?.[0];
   const parsed = parseListingDescription(product.descripcion);
   const detailEntries = Object.entries(parsed.details).slice(0, 12);
   const negotiable = parsed.details['Precio negociable']?.toLowerCase() === 'sí';
@@ -48,6 +53,31 @@ export default function ProductDetail() {
       localStorage.setItem(RECENT_KEY, JSON.stringify([product.id, ...previous.filter((id) => id !== product.id)].slice(0, 12)));
     } catch { /* local history is optional */ }
   }, [product.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setVideoObjectUrl(null);
+    setVideoError(null);
+    if (!videoUri) return () => undefined;
+    if (!mediaStorageEnabled()) {
+      setVideoError('Video disponible en el anuncio, pero Cloud Storage está desactivado en este build.');
+      return () => undefined;
+    }
+    void firebaseMediaStorage.loadVideoBlobUrl(videoUri)
+      .then((url) => {
+        if (cancelled) { URL.revokeObjectURL(url); return; }
+        objectUrl = url;
+        setVideoObjectUrl(url);
+      })
+      .catch((error) => {
+        if (!cancelled) setVideoError(error instanceof Error ? error.message : 'No pudimos cargar el video.');
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [videoUri]);
 
   const share = async () => {
     feedbackTap();
@@ -72,9 +102,6 @@ export default function ProductDetail() {
     if (ownProduct) return;
     feedbackTap();
     contactProduct(product.id);
-    // La oferta monetaria se registra dentro del chat, donde createOffer/counterOffer
-    // pueden mantener estado, roles, expiración y transacción atómica. Evitamos
-    // crear aquí un simple texto que parezca una oferta V2 sin serlo.
   };
 
   return (
@@ -85,13 +112,16 @@ export default function ProductDetail() {
           <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-black/55" />
           <button onClick={closeProduct} className="detail-floating left-3" aria-label="Regresar"><ArrowLeft /></button>
           <button onClick={share} className="detail-floating right-3" aria-label="Compartir"><Share2 /></button>
-          <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-3 py-1 text-[10px] font-semibold backdrop-blur">{product.categoria}</span><span className="rounded-full bg-emerald-500/85 px-3 py-1 text-[10px] font-black text-white">{product.estado === 'Activo' ? 'Disponible' : product.estado}</span></div>
+          <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-3 py-1 text-[10px] font-semibold backdrop-blur">{product.categoria}</span><span className="rounded-full bg-emerald-500/85 px-3 py-1 text-[10px] font-black text-white">{product.estado === 'Activo' ? 'Disponible' : product.estado}</span>{videoUri && <span className="inline-flex items-center gap-1 rounded-full bg-violet-600/85 px-2.5 py-1 text-[9px] font-black text-white"><Video className="h-3 w-3" />Video</span>}</div>
           {photos.length > 1 && <span className="absolute bottom-3 right-3 rounded-full bg-black/55 px-2.5 py-1 text-[9px] font-bold backdrop-blur">{photoIndex + 1}/{photos.length}</span>}
         </div>
         {photos.length > 1 && <div className="flex gap-2 overflow-x-auto border-b border-white/[0.05] bg-[#09111d] px-4 py-2.5">{photos.map((photo, index) => <button key={`${photo.slice(0, 24)}-${index}`} onClick={() => { setPhotoIndex(index); feedbackTap(); }} className={`detail-thumb ${photoIndex === index ? 'detail-thumb-active' : ''}`}><img src={photo} alt={`Foto ${index + 1}`} /></button>)}</div>}
         <div className="p-4 pb-[calc(22px+env(safe-area-inset-bottom))]">
           <div className="flex items-start justify-between gap-4"><div className="min-w-0"><h1 className="text-[21px] font-black leading-tight">{product.titulo}</h1><div className="mt-1 flex flex-wrap items-center gap-2 text-[9px] text-slate-500"><span>{relativeTime(product.updated_at || product.fecha_creacion)}</span>{negotiable && <span className="rounded-full bg-violet-500/10 px-2 py-1 font-bold text-violet-200">Precio negociable</span>}</div></div><strong className="shrink-0 text-[22px] text-success">${product.precio_mxn.toLocaleString('es-MX')}</strong></div>
           <p className="mt-3 text-[12px] leading-relaxed text-[#9ba6b8]">{parsed.body || 'Publicación de la comunidad TuTop.'}</p>
+
+          {videoObjectUrl && <section className="mt-4 overflow-hidden rounded-2xl border border-violet-400/10 bg-black/30"><video className="aspect-video w-full bg-black object-contain" src={videoObjectUrl} controls playsInline preload="metadata" /><div className="flex items-center gap-2 px-3 py-2 text-[9px] text-violet-200"><Video className="h-3.5 w-3.5" />Video del producto · cargado con sesión autenticada</div></section>}
+          {videoUri && !videoObjectUrl && videoError && <section className="mt-4 rounded-2xl border border-amber-400/10 bg-amber-500/[0.04] p-3 text-[9px] leading-4 text-amber-100/75"><div className="flex items-center gap-2 font-black"><Video className="h-3.5 w-3.5" />Video no disponible</div><p className="mt-1">{videoError}</p></section>}
 
           {detailEntries.length > 0 && <section className="mt-4 rounded-2xl border border-white/5 bg-[#0d1725] p-3"><div className="mb-2 flex items-center gap-2"><Tag className="h-4 w-4 text-violet-300" /><h2 className="text-[11px] font-black">Detalles</h2></div><div className="grid grid-cols-2 gap-2">{detailEntries.map(([label, value]) => <div key={label} className="rounded-xl bg-white/[0.025] p-2.5"><p className="text-[8px] font-bold uppercase tracking-wide text-slate-600">{label}</p><p className="mt-1 text-[10px] font-semibold text-slate-300">{value}</p></div>)}</div></section>}
 

@@ -15,6 +15,12 @@ const assistantProvider = read('src/services/assistantProvider.ts');
 const consumerSupport = read('src/services/topiConsumerSupport.ts');
 const supportUi = read('src/components/TopiSupportAssistant.tsx');
 const identityBridge = read('src/services/nationalIdentityHydrationBridge.ts');
+const publishUi = read('src/components/NationalPublishScreen.tsx');
+const detailUi = read('src/components/ProductDetail.tsx');
+const mediaStorage = read('src/services/firebaseMediaStorage.ts');
+const listingSchema = read('src/lib/listingSchemaV2.ts');
+const rulesHardener = read('scripts/harden-listing-video-rules.mjs');
+const packageJson = read('package.json');
 const topiMascot = read('src/components/TopiMascot.tsx');
 const brandCss = read('src/brand092.css');
 const appIcon = read('assets/branding/tutop-app-icon.svg');
@@ -80,6 +86,8 @@ assert.match(consumerSupport, /source: 'unavailable'/);
 assert.match(consumerSupport, /physicalQaRequiresRealAI/);
 assert.match(supportUi, /IA no disponible/);
 assert.match(supportUi, /no sustituye una falla de Firebase AI/);
+assert.match(publishUi, /La IA real de Topi no respondió/);
+assert.match(publishUi, /no lo disfraza con un asistente local/);
 
 // 0.9.2 must not depend on a manually registered debug secret. The native
 // App Check plugin defaults to Play Integrity on Android when debugToken=false.
@@ -88,8 +96,8 @@ assert.doesNotMatch(nativeAppCheck, /\^0\\\.9\\\.\(\?:1\|2\)-beta/);
 assert.match(nativeAppCheck, /play-integrity/);
 assert.match(nativeAppCheck, /debugToken: useStagingDebugProvider\(\)/);
 
-// Publication must validate selected community against the real Firestore
-// catalog, reconcile the profile, and re-read it before listings_v2 create.
+// Publication has one canonical authority path. It validates real institution
+// and campus catalog documents, reconciles the seller profile and re-reads it.
 assert.match(identityBridge, /validateResolvedIdentityInFirestore/);
 assert.match(identityBridge, /institutions\/\$\{resolved\.institution\.id\}/);
 assert.match(identityBridge, /campuses\/\$\{resolved\.campus\.id\}/);
@@ -101,14 +109,38 @@ assert.match(identityBridge, /await migrateLegacyIdentity/);
 assert.doesNotMatch(identityBridge, /profileCanonical \|\| listingCanonical/);
 assert.match(identityBridge, /institution_id: resolved\.institution\.id/);
 assert.match(identityBridge, /campus_id: resolved\.campus\.id/);
+assert.doesNotMatch(publishUi, /nationalBackend\.updateUniversityIdentity/);
+assert.doesNotMatch(publishUi, /identitySyncWarning/);
+assert.match(publishUi, /single publication authority/);
 
-// Video object-storage contract is software-ready but remains infrastructure
-// gated until Blaze is explicitly authorized. Rules preserve owner/MIME/size.
+// Video object-storage is implemented end to end but deliberately feature-gated
+// until Blaze/Cloud Storage is explicitly authorized.
 assert.match(storageRules, /validListingVideo/);
 assert.match(storageRules, /50 \* 1024 \* 1024/);
 assert.match(storageRules, /video\/\(mp4\|webm\|quicktime\)/);
 assert.match(storageRules, /product-videos\/\{uid\}/);
 assert.match(storageRules, /owner\(uid\) && validListingVideo\(\)/);
+assert.match(mediaStorage, /MAX_LISTING_VIDEO_BYTES = 50 \* 1024 \* 1024/);
+assert.match(mediaStorage, /VITE_TUTOP_MEDIA_STORAGE_ENABLED/);
+assert.match(mediaStorage, /Authorization: `Firebase \$\{idToken\}`/);
+assert.match(mediaStorage, /X-Firebase-AppCheck/);
+assert.match(mediaStorage, /X-Goog-Upload-Protocol/);
+assert.match(mediaStorage, /multipart/);
+assert.match(mediaStorage, /firebase-storage:\/\//);
+assert.match(mediaStorage, /product-videos\/\$\{uid\}/);
+assert.match(mediaStorage, /MEDIA_STORAGE_BILLING_REQUIRED/);
+assert.match(listingSchema, /video_urls\?: string\[\]/);
+assert.match(listingSchema, /validCanonicalVideoUri/);
+assert.match(rulesHardener, /video_urls/);
+assert.match(rulesHardener, /firebase-storage:\/\//);
+assert.match(packageJson, /harden-listing-video-rules\.mjs/);
+assert.match(publishUi, /firebaseMediaStorage\.uploadListingVideo/);
+assert.match(publishUi, /uploadedVideoUri/);
+assert.match(publishUi, /firebaseMediaStorage\.delete/);
+assert.match(publishUi, /accept="video\/mp4,video\/webm,video\/quicktime"/);
+assert.match(detailUi, /firebaseMediaStorage\.loadVideoBlobUrl/);
+assert.match(detailUi, /<video/);
+assert.match(detailUi, /URL\.revokeObjectURL/);
 
 // Branding is no longer a wordmark squeezed into the launcher icon. The icon is
 // a simple TuTop pin/T isotipo; Topi carries visible crochet/yarn stitches.
@@ -120,16 +152,12 @@ assert.match(topiMascot, /strokeDasharray="2 2"/);
 assert.match(topiMascot, /import '\.\.\/brand092\.css'/);
 assert.match(brandCss, /#211a47/i);
 assert.match(brandCss, /#7c4dff/i);
-assert.match(brandCss, /wordmark span:last-child::after/);
 assert.match(appIcon, /<path d="M512 202c-177 0-320 139-320 310/);
 assert.match(appIcon, /M390 393h244v78h-78v213h-88V471h-78Z/);
 assert.doesNotMatch(appIcon, /font-family="Arial/);
 assert.match(adaptiveIcon, /M392 385h240v76h-77v209h-86V461h-77Z/);
 assert.doesNotMatch(adaptiveIcon, /font-family="Arial/);
 
-// Main navigation now matches the approved consumer IA/marketplace direction:
-// Inicio / Explorar / Publicar / Mensajes / Perfil. Wallet remains available
-// from Perfil instead of occupying one of the five primary navigation slots.
 assert.match(app, /import ExploreScreen from '\.\/components\/ExploreScreen'/);
 const nav = app.match(/<nav className="bottom-nav"[\s\S]*?<\/nav>/)?.[0] || '';
 for (const label of ['Inicio', 'Explorar', 'Publicar', 'Mensajes', 'Perfil']) assert.match(nav, new RegExp(`label="${label}"`));
@@ -147,9 +175,6 @@ assert.match(explore, /Guardados/);
 assert.match(explore, /Consultando publicaciones cercanas/);
 assert.match(explore, /ProductCard/);
 
-// Nearby public reads stay approved-only, but the signed-in seller must see
-// their own active pending listing immediately. Cache isolation must include uid
-// so a session switch cannot leak a seller-only pending result to another user.
 assert.match(listings, /const cacheKey = `\$\{uid\}#\$\{cells\.join\('\|'\)\}#\$\{limit\}`/);
 assert.match(listings, /const minePromise = this\.loadMine/);
 assert.match(listings, /doc\.data\.seller_id === uid/);
@@ -157,4 +182,4 @@ assert.match(listings, /doc\.data\.status === 'active'/);
 assert.match(listings, /cells\.includes\(cell\)/);
 assert.match(listings, /\[\.\.\.sets\.flat\(\), \.\.\.ownNearby\]/);
 
-console.log('✅ TuTop 0.9.2 software hardening: canonical publication preflight + real-AI QA + media URI/video contract + coarse location + crochet branding + canonical Nearby PASS');
+console.log('✅ TuTop 0.9.2 software hardening: canonical publication preflight + mandatory real-AI QA + native photos + gated video pipeline + coarse location + crochet branding + canonical Nearby PASS');

@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Images, Loader2, MapPin, Mic, Plus, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Images, Loader2, MapPin, Mic, Plus, ShieldCheck, Sparkles, Video, X } from 'lucide-react';
 import { compressImageForFirestore } from '../lib/imageCompression';
 import { categorySafetyRequirements } from '../lib/marketplaceGovernance';
 import { getCachedApproxLocation, locationAttributes, nearbyLocationPermission, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
@@ -8,10 +8,10 @@ import type { CanonicalListingV2, ListingDeliveryMethod } from '../lib/listingSc
 import { smartPriceFromTuTop } from '../lib/smartPricing';
 import { startTopiDictation } from '../lib/topiVoice';
 import { isForbiddenProductText, MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
-import { defaultScopeForCategory, identityFor, safeMeetingPointsFor, VISIBILITY_SCOPES } from '../lib/universityNetwork';
+import { defaultScopeForCategory, safeMeetingPointsFor, VISIBILITY_SCOPES } from '../lib/universityNetwork';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { askTopi } from '../services/assistantProvider';
-import { nationalBackend } from '../services/nationalBackend';
+import { firebaseMediaStorage, mediaStorageEnabled, validateListingVideo } from '../services/firebaseMediaStorage';
 import { isNativeDeviceRuntime, nativePhotoToImageFile, pickNativePhoto, takeNativePhoto } from '../services/nativeDeviceCapabilities';
 import { nativeTopiAIStatus } from '../services/nativeTopiAI';
 import { useAppStore } from '../store/useAppStore';
@@ -40,12 +40,25 @@ function aiFailureLabel(reason: ReturnType<typeof nativeTopiAIStatus>['reason'])
   return 'Firebase AI todavía no confirmó una respuesta real';
 }
 
+function videoErrorMessage(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (raw === 'MEDIA_STORAGE_INFRASTRUCTURE_DISABLED' || raw === 'MEDIA_STORAGE_BILLING_REQUIRED') {
+    return 'El pipeline de video está listo, pero Cloud Storage no está habilitado en este proyecto. TuTop no activará billing por su cuenta.';
+  }
+  if (raw === 'MEDIA_STORAGE_PERMISSION_DENIED') return 'Firebase Storage rechazó el video por permisos; el anuncio no se creó.';
+  if (raw === 'MEDIA_STORAGE_AUTH_FAILED') return 'La sesión no pudo autorizar la subida del video. Vuelve a iniciar sesión.';
+  return raw;
+}
+
 export default function NationalPublishScreen() {
   const user = useAppStore((state) => state.user);
   const products = useAppStore((state) => state.products);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const fileRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
   const nativeDevice = isNativeDeviceRuntime();
+  const videoInfraEnabled = mediaStorageEnabled();
+
   const [assistantText, setAssistantText] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [title, setTitle] = useState('');
@@ -60,6 +73,7 @@ export default function NationalPublishScreen() {
   const [meetingPointId, setMeetingPointId] = useState('');
   const [attributes, setAttributes] = useState<Record<string, string | number | boolean>>({});
   const [images, setImages] = useState<string[]>([]);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [topiBusy, setTopiBusy] = useState(false);
   const [topiSource, setTopiSource] = useState<'local' | 'topi-endpoint' | null>(null);
@@ -88,6 +102,7 @@ export default function NationalPublishScreen() {
   if (!deliveryMethods.length) publishIssues.push('forma de entrega');
   if (prohibitedDraft) publishIssues.push('artículo o servicio no permitido');
   if (missing.length) publishIssues.push(`${missing.length} dato${missing.length === 1 ? '' : 's'} obligatorio${missing.length === 1 ? '' : 's'}`);
+  if (videoFile && !videoInfraEnabled) publishIssues.push('Storage de video no habilitado');
   const readyToPublish = publishIssues.length === 0;
 
   const pricingTarget = useMemo<Product | null>(() => {
@@ -125,10 +140,7 @@ export default function NationalPublishScreen() {
         },
       });
       const suggestion = result.compose;
-      if (!suggestion) {
-        setMessage('Topi no encontró datos seguros para completar. Puedes seguir manualmente.');
-        return;
-      }
+      if (!suggestion) return setMessage('Topi no encontró datos seguros para completar. Puedes seguir manualmente.');
 
       if (!title.trim() && suggestion.title) setTitle(suggestion.title);
       if (!price.trim() && suggestion.price) setPrice(String(suggestion.price));
@@ -145,16 +157,19 @@ export default function NationalPublishScreen() {
 
       setTopiSource(result.source);
       setTopiProvider(result.provider || null);
-      if (result.provider === 'firebase-ai-logic') {
-        setMessage('Topi IA real (Firebase AI) completó el borrador. Revisa los datos antes de publicar.');
-      } else if (result.provider === 'private-endpoint') {
-        setMessage('Topi conectado completó el borrador mediante el endpoint privado. Revisa los datos antes de publicar.');
+      if (result.provider === 'firebase-ai-logic') setMessage('Topi IA real (Firebase AI) completó el borrador. Revisa los datos antes de publicar.');
+      else if (result.provider === 'private-endpoint') setMessage('Topi conectado completó el borrador mediante el endpoint privado. Revisa los datos antes de publicar.');
+      else setMessage('Topi usó la guía local. Esta respuesta no se presenta como Firebase AI.');
+    } catch (error) {
+      setTopiSource(null);
+      setTopiProvider(null);
+      const status = nativeTopiAIStatus();
+      const raw = error instanceof Error ? error.message : String(error);
+      if (raw.startsWith('TOPI_REAL_AI_UNAVAILABLE:')) {
+        setMessage(`La IA real de Topi no respondió: ${aiFailureLabel(status.reason)}. Reintenta; esta beta no sustituye ese fallo con un asistente local silencioso.`);
       } else {
-        const status = nativeTopiAIStatus();
-        setMessage(`Topi usó el asistente local, no una IA remota: ${aiFailureLabel(status.reason)}. Puedes seguir publicando sin depender de la IA.`);
+        setMessage(`Topi no pudo completar el borrador: ${aiFailureLabel(status.reason)}.`);
       }
-    } catch {
-      setMessage('Topi no pudo completar el borrador esta vez. Puedes seguir publicando manualmente.');
     } finally {
       setTopiBusy(false);
     }
@@ -166,7 +181,7 @@ export default function NationalPublishScreen() {
       onStatus: (status) => {
         setVoiceStatus(status === 'listening' ? 'listening' : 'idle');
         if (status === 'unsupported') setMessage('El dictado por voz no está disponible en este dispositivo. Puedes seguir escribiendo.');
-        if (status === 'error') setMessage('No pudimos reconocer la voz. Mantén pulsado el teléfono cerca, habla después de que el micrófono se active y vuelve a intentarlo.');
+        if (status === 'error') setMessage('No pudimos reconocer la voz. Habla después de que el micrófono se active y vuelve a intentarlo.');
       },
     });
   };
@@ -225,11 +240,29 @@ export default function NationalPublishScreen() {
     }
   };
 
+  const selectVideo = (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    try {
+      validateListingVideo(file);
+      if (!videoInfraEnabled) {
+        setVideoFile(null);
+        setMessage('El software de video está preparado, pero Cloud Storage permanece desactivado hasta autorizar Blaze. No se adjuntó el archivo.');
+        return;
+      }
+      setVideoFile(file);
+      setMessage(`Video listo: ${file.name} · ${(file.size / (1024 * 1024)).toFixed(1)} MB.`);
+    } catch (error) {
+      setVideoFile(null);
+      setMessage(videoErrorMessage(error));
+    } finally {
+      if (videoRef.current) videoRef.current.value = '';
+    }
+  };
+
   const toggleDelivery = (method: ListingDeliveryMethod) => {
     setDeliveryMethods((current) => current.includes(method) ? current.filter((item) => item !== method) : [...current, method]);
   };
-
-  const selectScope = (nextScope: ListingVisibilityScope) => setScope(nextScope);
 
   const publish = async () => {
     setMessage(null);
@@ -241,45 +274,56 @@ export default function NationalPublishScreen() {
       setAdvancedOpen(true);
       return setMessage(`Faltan datos obligatorios: ${missing.join(', ')}.`);
     }
+    if (videoFile && !videoInfraEnabled) return setMessage('No se puede publicar con video hasta que Cloud Storage esté habilitado explícitamente.');
 
     setBusy(true);
-    let identitySyncWarning = false;
+    let uploadedVideoUri: string | null = null;
     try {
-      const identity = identityFor(
-        institutionId,
-        campusId,
-        user.faculty_id || user.university?.faculty_id,
-        user.career_id || user.university?.career_id,
-      );
-
-      // Legacy beta accounts can contain a profile shape that cannot be patched by
-      // the current identity rule. Do not abort the listing before trying its own
-      // canonical authorization; Firestore will still reject mismatched identity.
-      try {
-        await nationalBackend.updateUniversityIdentity(identity, user.facultad);
-      } catch {
-        identitySyncWarning = true;
-      }
-
       const location = approxLocation || await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000 });
       if (location && !approxLocation) setApproxLocation(location);
+
+      if (videoFile) {
+        const uploaded = await firebaseMediaStorage.uploadListingVideo(videoFile, user.id);
+        uploadedVideoUri = uploaded.uri;
+      }
+
       const now = new Date().toISOString();
       const listing: CanonicalListingV2 = {
-        schema_version: 2, seller_id: user.id, institution_id: institutionId, campus_id: campusId, city_id: cityId,
-        faculty_id: user.faculty_id || user.university?.faculty_id, career_id: user.career_id || user.university?.career_id,
-        category_id: slug(category), title: title.trim().slice(0, 120), description: description.trim().slice(0, 3000),
-        attributes: { ...normalizedAttributes, ...locationAttributes(location) }, price_mxn: Math.round(parsedPrice * 100) / 100, negotiable,
-        quantity: Math.max(1, Math.min(99, Number(quantity) || 1)), condition, delivery_methods: deliveryMethods,
-        meeting_point_ids: meetingPointId ? [meetingPointId] : [], shipping_available: shippingAvailable,
-        photo_urls: images.length ? images : [FALLBACK_IMAGE], status: 'active', moderation_status: 'pending', visibility_scope: scope,
-        published_at: now, created_at: now, updated_at: now,
+        schema_version: 2,
+        seller_id: user.id,
+        institution_id: institutionId,
+        campus_id: campusId,
+        city_id: cityId,
+        faculty_id: user.faculty_id || user.university?.faculty_id,
+        career_id: user.career_id || user.university?.career_id,
+        category_id: slug(category),
+        title: title.trim().slice(0, 120),
+        description: description.trim().slice(0, 3000),
+        attributes: { ...normalizedAttributes, ...locationAttributes(location) },
+        price_mxn: Math.round(parsedPrice * 100) / 100,
+        negotiable,
+        quantity: Math.max(1, Math.min(99, Number(quantity) || 1)),
+        condition,
+        delivery_methods: deliveryMethods,
+        meeting_point_ids: meetingPointId ? [meetingPointId] : [],
+        shipping_available: shippingAvailable,
+        photo_urls: images.length ? images : [FALLBACK_IMAGE],
+        ...(uploadedVideoUri ? { video_urls: [uploadedVideoUri] } : {}),
+        status: 'active',
+        moderation_status: 'pending',
+        visibility_scope: scope,
+        published_at: now,
+        created_at: now,
+        updated_at: now,
       };
 
+      // canonicalListingsBackend.create is wrapped by the V2 identity hydration
+      // bridge. That bridge is the single publication authority: it validates
+      // institution/campus documents, their relationship, reconciles the profile,
+      // re-reads it, then writes listings_v2. No UI catch-and-continue path remains.
       await canonicalListingsBackend.create(listing, category);
+      uploadedVideoUri = null;
 
-      // A post-create feed refresh is not part of the transaction. If discovery is
-      // temporarily unavailable, the listing is still created and must not be
-      // reported as a failed/duplicate publication.
       let refreshedFeed = true;
       try {
         const refreshed = await canonicalListingsBackend.loadMarketplaceProducts({ campusId, institutionId, cityId, limitPerScope: 30 });
@@ -288,19 +332,25 @@ export default function NationalPublishScreen() {
         refreshedFeed = false;
       }
 
-      const warnings = [identitySyncWarning ? 'la comunidad del perfil no pudo resincronizarse' : '', !refreshedFeed ? 'el feed tardará en refrescarse' : ''].filter(Boolean);
-      setMessage(warnings.length
-        ? `Publicación creada y enviada a revisión. Aviso: ${warnings.join(' y ')}. No vuelvas a publicarla para evitar duplicados.`
-        : 'Publicación creada y enviada a revisión. TuTop no gestiona envíos; cualquier entrega se acuerda directamente con el vendedor.');
-      window.setTimeout(() => setActiveTab('feed'), warnings.length ? 1500 : 850);
+      setMessage(refreshedFeed
+        ? 'Publicación creada y enviada a revisión. TuTop no gestiona envíos; cualquier entrega se acuerda directamente entre las personas.'
+        : 'Publicación creada y enviada a revisión. El feed tardará en refrescarse; no vuelvas a publicarla para evitar duplicados.');
+      window.setTimeout(() => setActiveTab('feed'), refreshedFeed ? 850 : 1500);
     } catch (error) {
+      if (uploadedVideoUri) await firebaseMediaStorage.delete(uploadedVideoUri).catch(() => undefined);
       const raw = error instanceof Error ? error.message : String(error);
       if (/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw)) {
-        setMessage('Firestore rechazó esta publicación. Revisa que tu universidad y campus coincidan con tu cuenta; TuTop no creó el anuncio.');
+        setMessage('Firestore rechazó la publicación después del preflight canónico. TuTop no creó el anuncio; revisa la causa de identidad/catálogo mostrada y reintenta.');
       } else if (/RESOURCE_EXHAUSTED|rate.?limit|too many/i.test(raw)) {
         setMessage('Alcanzaste temporalmente el límite de publicaciones de seguridad. Espera antes de volver a intentar.');
+      } else if (/MEDIA_STORAGE_/.test(raw)) {
+        setMessage(videoErrorMessage(error));
       } else {
-        setMessage(raw.startsWith('PROHIBITED_LISTING:') ? 'Ese artículo no está permitido en TuTop.' : raw.startsWith('PRIVATE_FIELD_EXPOSED:') ? 'Hay un dato privado que no debe publicarse.' : `No pudimos publicar: ${raw}`);
+        setMessage(raw.startsWith('PROHIBITED_LISTING:')
+          ? 'Ese artículo no está permitido en TuTop.'
+          : raw.startsWith('PRIVATE_FIELD_EXPOSED:')
+            ? 'Hay un dato privado que no debe publicarse.'
+            : `No pudimos publicar: ${raw}`);
       }
     } finally {
       setBusy(false);
@@ -312,7 +362,7 @@ export default function NationalPublishScreen() {
     : topiProvider === 'private-endpoint'
       ? { label: 'IA conectada', className: 'bg-sky-500/10 text-sky-300' }
       : topiSource === 'local'
-        ? { label: 'Modo local', className: 'bg-amber-500/10 text-amber-200' }
+        ? { label: 'Guía local', className: 'bg-amber-500/10 text-amber-200' }
         : null;
 
   return <div className="publish-screen pb-[calc(82px+env(safe-area-inset-bottom))]">
@@ -327,7 +377,7 @@ export default function NationalPublishScreen() {
           <TopiMascot className="h-12 w-12 shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2"><strong className="text-xs">Topi te ayuda a publicar</strong>{aiChip && <span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${aiChip.className}`}>{aiChip.label}</span>}</div>
-            <p className="mt-0.5 text-[9px] text-slate-500">Escribe o dicta una frase. Cuando Firebase AI responde, TuTop lo muestra explícitamente; si no, usa el asistente local sin fingir que es IA.</p>
+            <p className="mt-0.5 text-[9px] text-slate-500">Escribe o dicta una frase. Firebase AI real se identifica explícitamente; si falla en esta beta, TuTop lo muestra como fallo y no lo disfraza con un asistente local.</p>
           </div>
         </div>
         <div className="relative mt-3">
@@ -361,6 +411,15 @@ export default function NationalPublishScreen() {
         <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => void addPhotos(event.target.files)} />
       </section>
 
+      <section className="publish-card">
+        <div className="flex items-center gap-2"><Video className="h-4 w-4 text-violet-300" /><div className="min-w-0 flex-1"><strong className="text-xs">Video del producto</strong><p className="mt-1 text-[8px] text-slate-600">Máximo 1 · MP4/WebM/MOV · menos de 50 MB.</p></div></div>
+        {videoInfraEnabled ? <>
+          <button type="button" disabled={busy} onClick={() => videoRef.current?.click()} className="mt-3 w-full rounded-xl bg-violet-500/10 px-3 py-2.5 text-[9px] font-bold text-violet-200 disabled:opacity-40">{videoFile ? `Cambiar · ${videoFile.name}` : 'Elegir video'}</button>
+          {videoFile && <div className="mt-2 flex items-center justify-between rounded-xl bg-white/[0.03] p-2.5 text-[9px] text-slate-300"><span className="truncate">{videoFile.name} · {(videoFile.size / (1024 * 1024)).toFixed(1)} MB</span><button type="button" onClick={() => setVideoFile(null)} className="ml-2 text-rose-300">Quitar</button></div>}
+        </> : <div className="mt-3 rounded-xl border border-amber-400/10 bg-amber-500/[0.04] p-3 text-[9px] leading-4 text-amber-100/75">El pipeline de video ya está implementado y protegido por reglas, pero permanece desactivado hasta habilitar Cloud Storage/Blaze explícitamente. TuTop no activa billing por su cuenta.</div>}
+        <input ref={videoRef} type="file" accept="video/mp4,video/webm,video/quicktime" className="hidden" onChange={(event) => selectVideo(event.target.files)} />
+      </section>
+
       <section className="publish-card"><p className="eyebrow">REVISA LO ESENCIAL</p><label className="publish-label">Título</label><input className="publish-input" value={title} onChange={(e) => setTitle(e.target.value.slice(0, 120))} placeholder="¿Qué vendes?" /><label className="publish-label">Precio</label><input className="publish-input" type="number" min="0.01" step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Precio en MXN" /><label className="publish-label">Categoría</label><select className="publish-input" value={category} onChange={(e) => { const next = e.target.value as ProductCategory; setCategory(next); setAttributes({}); if (next) setScope(defaultScopeForCategory(next)); }}><option value="">Selecciona</option>{MARKETPLACE_CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select><label className="publish-label">Descripción</label><textarea className="publish-textarea" rows={3} maxLength={3000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Lo más importante del producto." /><p className="mt-1 text-right text-[8px] text-slate-600">{description.length.toLocaleString('es-MX')} / 3,000</p></section>
 
       {required.length > 0 && <section className="publish-card"><div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" /><strong className="text-xs">Datos necesarios para {category}</strong></div><p className="mt-1 text-[9px] text-slate-500">Sólo pedimos estos datos porque esta categoría necesita información adicional para publicarse con seguridad.</p><div className="mt-3 grid grid-cols-2 gap-2">{fields.filter((field) => field.required).map((field) => <label key={field.key} className="text-[9px] text-slate-500">{field.label} *{field.kind === 'boolean' ? <input className="ml-2" type="checkbox" checked={Boolean(attributes[field.key])} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.checked }))} /> : <input className="publish-input mt-1" type={field.kind === 'number' ? 'number' : 'text'} value={String(attributes[field.key] ?? '')} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.value.slice(0, 300) }))} placeholder={field.placeholder} />}</label>)}</div></section>}
@@ -370,7 +429,7 @@ export default function NationalPublishScreen() {
       {advancedOpen && <>
         <section className="publish-card"><p className="eyebrow">DETALLES</p><div className="mt-2 grid grid-cols-2 gap-2"><select className="publish-input" value={condition} onChange={(e) => setCondition(e.target.value)}><option>Nuevo</option><option>Como nuevo</option><option>Buen estado</option><option>Uso visible</option><option>Para reparar</option><option>No aplica</option></select><input className="publish-input" type="number" min="1" max="99" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="Cantidad" /></div><label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={negotiable} onChange={(e) => setNegotiable(e.target.checked)} />Precio negociable</label>{fields.some((field) => !field.required) && <div className="mt-3 grid grid-cols-2 gap-2">{fields.filter((field) => !field.required).map((field) => <label key={field.key} className="text-[9px] text-slate-500">{field.label}{field.kind === 'boolean' ? <input className="ml-2" type="checkbox" checked={Boolean(attributes[field.key])} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.checked }))} /> : <input className="publish-input mt-1" type={field.kind === 'number' ? 'number' : 'text'} value={String(attributes[field.key] ?? '')} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.value.slice(0, 300) }))} placeholder={field.placeholder} />}</label>)}</div>}{category === 'Cuartos & Renta' && <p className="mt-2 text-[9px] text-amber-200/70">Nunca publiques la dirección exacta; sólo zona aproximada.</p>}</section>
 
-        <section className="publish-card"><p className="eyebrow">ALCANCE Y ENTREGA</p><div className="mt-2 grid gap-2">{VISIBILITY_SCOPES.map((item) => <button key={item.id} type="button" onClick={() => selectScope(item.id)} className={`rounded-xl p-3 text-left ${scope === item.id ? 'bg-violet-500/10 ring-1 ring-violet-400/20' : 'bg-white/[0.02]'}`}><strong className="text-[10px]">{item.label}</strong><p className="text-[9px] text-slate-600">{item.hint}</p></button>)}</div><div className="mt-3 flex flex-wrap gap-2">{DELIVERY.map((item) => <button key={item.id} type="button" onClick={() => toggleDelivery(item.id)} className={`filter-chip ${deliveryMethods.includes(item.id) ? 'filter-chip-active' : ''}`}>{item.label}</button>)}</div><p className="mt-2 rounded-xl bg-sky-500/[0.05] px-3 py-2 text-[9px] text-sky-200/80"><strong>TuTop no hace envíos.</strong> Si vendedor y comprador acuerdan mensajería o paquetería, se coordina directamente entre ellos. El alcance nacional no obliga a usarla.</p>{safePoints.length > 0 && <select className="publish-input mt-3" value={meetingPointId} onChange={(e) => setMeetingPointId(e.target.value)}><option value="">Punto a coordinar</option>{safePoints.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select>}</section>
+        <section className="publish-card"><p className="eyebrow">ALCANCE Y ENTREGA</p><div className="mt-2 grid gap-2">{VISIBILITY_SCOPES.map((item) => <button key={item.id} type="button" onClick={() => setScope(item.id)} className={`rounded-xl p-3 text-left ${scope === item.id ? 'bg-violet-500/10 ring-1 ring-violet-400/20' : 'bg-white/[0.02]'}`}><strong className="text-[10px]">{item.label}</strong><p className="text-[9px] text-slate-600">{item.hint}</p></button>)}</div><div className="mt-3 flex flex-wrap gap-2">{DELIVERY.map((item) => <button key={item.id} type="button" onClick={() => toggleDelivery(item.id)} className={`filter-chip ${deliveryMethods.includes(item.id) ? 'filter-chip-active' : ''}`}>{item.label}</button>)}</div><p className="mt-2 rounded-xl bg-sky-500/[0.05] px-3 py-2 text-[9px] text-sky-200/80"><strong>TuTop no hace envíos.</strong> Si vendedor y comprador acuerdan mensajería o paquetería, se coordina directamente entre ellos.</p>{safePoints.length > 0 && <select className="publish-input mt-3" value={meetingPointId} onChange={(e) => setMeetingPointId(e.target.value)}><option value="">Punto a coordinar</option>{safePoints.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select>}</section>
       </>}
 
       {category && <section className="publish-card"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-300" /><strong className="text-xs">Precio inteligente</strong></div>{pricing ? <><p className="mt-2 text-[10px] leading-5 text-slate-400">{pricing.sample_size} comparables · mediana ${pricing.median_mxn.toLocaleString('es-MX')} · vender rápido ${pricing.sell_fast_mxn.toLocaleString('es-MX')} · recomendado <strong className="text-violet-200">${pricing.recommended_mxn.toLocaleString('es-MX')}</strong> · probar alto ${pricing.try_high_mxn.toLocaleString('es-MX')}</p><button type="button" onClick={() => setPrice(String(pricing.recommended_mxn))} className="mt-2 rounded-xl bg-violet-500/10 px-3 py-2 text-[10px] font-bold text-violet-200">Usar precio recomendado</button></> : <p className="mt-2 text-[9px] text-slate-500">Aún no hay suficientes comparables reales. Topi no inventará un precio.</p>}</section>}

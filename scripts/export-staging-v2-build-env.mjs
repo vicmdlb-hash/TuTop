@@ -21,6 +21,10 @@ for (const name of cutoverFlags) {
   }
 }
 
+if (String(process.env.VITE_TUTOP_MEDIA_STORAGE_ENABLED || 'false').trim().toLowerCase() === 'true') {
+  stop('VITE_TUTOP_MEDIA_STORAGE_ENABLED=true requiere autorización explícita de Blaze/Cloud Storage; este build de QA no puede activarlo.');
+}
+
 if (!fs.existsSync(configPath)) stop(`falta config web staging: ${configPath}`);
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 if (!config.apiKey || !config.projectId || !config.appId) stop('config web Firebase incompleta.');
@@ -37,20 +41,24 @@ for (const value of [config.apiKey, config.appId]) {
   if (clean) process.stdout.write(`::add-mask::${clean}\n`);
 }
 
+const storageBucket = String(config.storageBucket || `${expectedProject}.firebasestorage.app`).trim();
 const lines = [
   `VITE_FIREBASE_API_KEY=${config.apiKey}`,
   `VITE_FIREBASE_AUTH_DOMAIN=${config.authDomain || `${expectedProject}.firebaseapp.com`}`,
   `VITE_FIREBASE_PROJECT_ID=${config.projectId}`,
   `VITE_FIREBASE_APP_ID=${config.appId}`,
+  `VITE_FIREBASE_STORAGE_BUCKET=${storageBucket}`,
   'VITE_TUTOP_SCHEMA_V2=true',
   'VITE_TUTOP_ENVIRONMENT=staging',
   `VITE_TUTOP_APP_VERSION=${version}`,
   'VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED=true',
   'VITE_TUTOP_TOPI_MODEL=gemini-3.8-flash',
   `VITE_TUTOP_AI_APP_CHECK_REQUIRED=${appCheckRequired ? 'true' : 'false'}`,
+  'VITE_TUTOP_MEDIA_STORAGE_ENABLED=false',
 ];
 fs.appendFileSync(githubEnv, `${lines.join('\n')}\n`);
 console.log(`✅ Ambiente V2 staging exportado para ${expectedProject} · ${version}.`);
 console.log(`Topi Firebase AI Logic habilitado; App Check requerido por el cliente=${appCheckRequired}. No se exporta API key de proveedor.`);
+console.log('Video/media Storage está compilado pero desactivado; habilitarlo requiere autorización explícita de Blaze/Storage.');
 console.log('Baseline Physical QA: reviews/wallet/favorites cutovers permanecen false hasta completar Device A+B.');
 console.log('Configuración cliente sensible a copia queda enmascarada en GitHub Actions.');

@@ -1,5 +1,5 @@
 import { categorySafetyRequirements, classifyMarketplaceItem } from '../lib/marketplaceGovernance.ts';
-import { listingV2HasNoLegacyDescriptionPacking, type CanonicalListingV2, type ListingDeliveryMethod } from '../lib/listingSchemaV2.ts';
+import { listingV2HasNoLegacyDescriptionPacking, validCanonicalVideoUri, type CanonicalListingV2, type ListingDeliveryMethod } from '../lib/listingSchemaV2.ts';
 import { CAMPUSES, FACULTIES, INSTITUTIONS } from '../lib/universityNetwork.ts';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant.ts';
 import type { DeliveryMethod, MeetingPoint, Product, ProductCategory, ProductStatus } from '../types/index.ts';
@@ -90,7 +90,8 @@ async function sellerNameFor(client: FirebaseRestClient, uid: string) {
 export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListingV2>, sellerName = 'Estudiante'): Product {
   const data = doc.data;
   const photos = Array.isArray(data.photo_urls) ? data.photo_urls.filter(Boolean).slice(0, 4) : [];
-  return {
+  const videos = Array.isArray(data.video_urls) ? data.video_urls.filter(validCanonicalVideoUri).slice(0, 1) : [];
+  const product: Product & { video_urls?: string[] } = {
     id: doc.id,
     vendedor_id: data.seller_id,
     vendedor_nombre: sellerName,
@@ -118,6 +119,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     shipping_available: data.shipping_available,
     imagen_url: photos[0] || '',
     imagenes_url: photos,
+    ...(videos.length ? { video_urls: videos } : {}),
     estado: legacyStatus(data.status),
     es_top: false,
     jerarquia_top: 0,
@@ -126,10 +128,14 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     fecha_creacion: data.published_at || data.created_at,
     updated_at: data.updated_at,
   };
+  return product;
 }
 
 export function validateCanonicalListingPolicy(listing: CanonicalListingV2, category: ProductCategory) {
   if (!listingV2HasNoLegacyDescriptionPacking(listing)) throw new Error('LISTING_V2_SCHEMA_INCOMPLETE');
+  if (listing.video_urls && (listing.video_urls.length > 1 || !listing.video_urls.every(validCanonicalVideoUri))) {
+    throw new Error('LISTING_VIDEO_REFERENCE_INVALID');
+  }
   const policy = classifyMarketplaceItem({ category, title: listing.title, description: listing.description });
   if (policy.classification === 'prohibited') throw new Error(`PROHIBITED_LISTING:${policy.reasons.join(',')}`);
   const requirements = categorySafetyRequirements(category);
@@ -212,10 +218,6 @@ export const canonicalListingsBackend = {
     if (cached && cached.expiresAt > Date.now()) return cached.products;
 
     const approvedPromise = Promise.all(cells.map((cell) => queryApproved(client, 'attributes.geo_cell', cell, limit)));
-    // The seller must be able to see their own freshly-created pending listing in
-    // Nearby immediately after publishing, without exposing that pending listing
-    // to any other account. `loadMine` is already seller-scoped by auth rules; we
-    // filter it again to active listings whose coarse geo cell is in this query.
     const minePromise = this.loadMine(Math.min(50, Math.max(limit * 3, 20)));
     const [sets, mine] = await Promise.all([approvedPromise, minePromise]);
     const ownNearby = mine.filter((doc) => {

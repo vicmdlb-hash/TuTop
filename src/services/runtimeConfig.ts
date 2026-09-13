@@ -3,6 +3,7 @@ export interface FirebaseRuntimeConfig {
   projectId: string;
   authDomain?: string;
   appId?: string;
+  storageBucket?: string;
 }
 
 const STORAGE_KEY = 'tutop.firebase.config.v1';
@@ -16,6 +17,7 @@ const BUILT_IN_CONFIG: FirebaseRuntimeConfig = {
   authDomain: 'tutop-3a4f7.firebaseapp.com',
   projectId: HISTORICAL_PROJECT_ID,
   appId: '1:418411650162:web:5e435d81fb1e7880a9b6eb',
+  storageBucket: 'tutop-3a4f7.appspot.com',
 };
 
 function envConfig(): FirebaseRuntimeConfig | null {
@@ -27,6 +29,7 @@ function envConfig(): FirebaseRuntimeConfig | null {
     projectId,
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN?.trim() || undefined,
     appId: import.meta.env.VITE_FIREBASE_APP_ID?.trim() || undefined,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET?.trim() || undefined,
   };
 }
 
@@ -41,6 +44,7 @@ function storedConfig(): FirebaseRuntimeConfig | null {
       projectId: parsed.projectId.trim(),
       authDomain: parsed.authDomain?.trim() || undefined,
       appId: parsed.appId?.trim() || undefined,
+      storageBucket: parsed.storageBucket?.trim() || undefined,
     };
   } catch {
     return null;
@@ -77,6 +81,7 @@ export function saveFirebaseConfig(config: FirebaseRuntimeConfig) {
     projectId: config.projectId.trim(),
     authDomain: config.authDomain?.trim() || undefined,
     appId: config.appId?.trim() || undefined,
+    storageBucket: config.storageBucket?.trim() || undefined,
   };
   if (!clean.apiKey || !clean.projectId) throw new Error('Configuración incompleta.');
   assertRuntimeEnvironment(clean);
@@ -113,5 +118,6 @@ export function parseFirebaseConfig(input: string): FirebaseRuntimeConfig {
     projectId,
     authDomain: parsed.authDomain ? String(parsed.authDomain) : undefined,
     appId: parsed.appId ? String(parsed.appId) : undefined,
+    storageBucket: parsed.storageBucket ? String(parsed.storageBucket) : undefined,
   });
 }

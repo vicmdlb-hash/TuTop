@@ -25,6 +25,7 @@ export type CanonicalListingV2 = {
   meeting_point_ids: string[];
   shipping_available: boolean;
   photo_urls: string[];
+  video_urls?: string[];
   status: CanonicalListingStatus;
   moderation_status: 'pending' | 'approved' | 'rejected' | 'flagged';
   visibility_scope: ListingVisibilityScope;
@@ -61,6 +62,12 @@ function canonicalModeration(product: Product): CanonicalListingV2['moderation_s
   return 'approved';
 }
 
+export function validCanonicalVideoUri(value: unknown) {
+  return typeof value === 'string'
+    && value.length <= 1200
+    && /^firebase-storage:\/\/[^/]+\/product-videos\/[A-Za-z0-9_-]+\/[A-Za-z0-9._~%-]+$/.test(value);
+}
+
 export function legacyProductToListingV2(product: Product, now = new Date().toISOString()): ListingMigrationResult {
   const blockers: string[] = [];
   const warnings: string[] = [];
@@ -74,6 +81,7 @@ export function legacyProductToListingV2(product: Product, now = new Date().toIS
 
   const photos = (product.imagenes_url?.length ? product.imagenes_url : [product.imagen_url]).filter(Boolean).slice(0, 4);
   if (!photos.length) blockers.push('missing_photo');
+  const legacyVideos = ((product as Product & { video_urls?: string[] }).video_urls || []).filter(validCanonicalVideoUri).slice(0, 1);
   if (!product.faculty_id && product.facultad) warnings.push('legacy_faculty_name_without_faculty_id');
   if (product.estado === 'Reservado') warnings.push('legacy_reserved_mapped_to_active_listing_transaction_owns_reservation');
   if (product.moderation_status === 'review') warnings.push('legacy_review_mapped_to_flagged');
@@ -106,6 +114,7 @@ export function legacyProductToListingV2(product: Product, now = new Date().toIS
       meeting_point_ids: product.meeting_point_id ? [product.meeting_point_id] : [],
       shipping_available: shipping,
       photo_urls: photos,
+      ...(legacyVideos.length ? { video_urls: legacyVideos } : {}),
       status: canonicalListingStatusFromLegacy(product.estado),
       moderation_status: canonicalModeration(product),
       visibility_scope: product.visibility_scope || 'institution',
@@ -125,6 +134,7 @@ export function listingV2HasNoLegacyDescriptionPacking(listing: CanonicalListing
     && listing.category_id
     && listing.delivery_methods.length
     && typeof listing.attributes === 'object'
+    && (!listing.video_urls || (listing.video_urls.length <= 1 && listing.video_urls.every(validCanonicalVideoUri)))
     && !('facultad' in listing)
     && !('punto_encuentro' in listing)
   );
