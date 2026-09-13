@@ -1,1 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><g fill="#FFFFFF"><text x="112" y="625" font-family="Arial,Helvetica,sans-serif" font-size="360" font-weight="900" letter-spacing="-28">TuT</text><path d="M620 498c0-78 63-141 141-141s141 63 141 141c0 104-141 232-141 232S620 602 620 498Z"/><circle cx="761" cy="495" r="47" fill="#4B2EDB"/><text x="828" y="625" font-family="Arial,Helvetica,sans-serif" font-size="360" font-weight="900" letter-spacing="-28">p</text></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs><linearGradient id="top" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#B788FF"/><stop offset=".5" stop-color="#7C4DFF"/><stop offset="1" stop-color="#4B2EDB"/></linearGradient></defs>
+  <g aria-label="TuTop">
+    <text x="180" y="594" font-family="Arial,Helvetica,sans-serif" font-size="250" font-weight="900" letter-spacing="-21" fill="#211A47">Tu</text>
+    <text x="430" y="594" font-family="Arial,Helvetica,sans-serif" font-size="250" font-weight="900" letter-spacing="-21" fill="#FFFFFF">T</text>
+    <path d="M574 492c0-68 55-123 123-123s123 55 123 123c0 90-123 202-123 202S574 582 574 492Z" fill="#FFFFFF"/>
+    <circle cx="697" cy="488" r="41" fill="#6D3EF0"/>
+    <text x="785" y="594" font-family="Arial,Helvetica,sans-serif" font-size="250" font-weight="900" letter-spacing="-21" fill="#FFFFFF">p</text>
+  </g>
+</svg>
