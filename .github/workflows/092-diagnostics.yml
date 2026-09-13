@@ -15,10 +15,10 @@ concurrency:
 
 jobs:
   diagnostics:
-    name: 0.9.2 typecheck + web build + modified native generators
+    name: 0.9.2 focused diagnostics
     if: github.ref_name == 'feat/tutop-0.9.2-hardening'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       VITE_TUTOP_SCHEMA_V2: "true"
       VITE_TUTOP_ENVIRONMENT: staging
@@ -51,11 +51,26 @@ jobs:
           node --check scripts/configure-android-beta-version.mjs
           node --check scripts/harden-listing-video-rules.mjs
 
-      - name: Full software contracts
-        run: |
-          npm run check
-          node scripts/device-ux-ai-092-contract-tests.mjs
-          npm run listing-schema-v2:test
+      - name: Release identity and real-AI contract
+        run: node scripts/release-092-contract-tests.mjs
+
+      - name: Device, media, location and branding contract
+        run: node scripts/device-ux-ai-092-contract-tests.mjs
+
+      - name: Canonical listing and video schema contract
+        run: npm run listing-schema-v2:test
+
+      - name: Staging mutation/freeze surface contract
+        run: node scripts/staging-mutation-surface-contract-tests.mjs
+
+      - name: Secondary workflow freeze contract
+        run: node scripts/secondary-workflow-freeze-contract-tests.mjs
+
+      - name: Actions budget policy contract
+        run: node scripts/actions-budget-policy-tests.mjs
+
+      - name: Full remaining regression
+        run: npm run check
 
       - name: Typecheck
         run: npm run typecheck
