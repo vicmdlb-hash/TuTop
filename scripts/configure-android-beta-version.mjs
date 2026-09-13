@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 
 const gradlePath = 'android/app/build.gradle';
-const expectedVersionName = String(process.env.TUTOP_BETA_VERSION || '0.9.1-beta.0').trim();
-const versionCode = Number(process.env.TUTOP_ANDROID_VERSION_CODE || 90100);
+const packageVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+const expectedVersionName = String(process.env.TUTOP_BETA_VERSION || packageVersion).trim();
 
 function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
 const versionMatch = expectedVersionName.match(/^0\.9\.(1|2)-beta\.(\d+)$/);
 if (!versionMatch) stop(`versionName inesperado: ${expectedVersionName}`);
 const minor = Number(versionMatch[1]);
+const defaultCode = minor === 1 ? 90100 : 90200;
+const versionCode = Number(process.env.TUTOP_ANDROID_VERSION_CODE || defaultCode);
 const minCode = minor === 1 ? 90100 : 90200;
 const maxCode = minor === 1 ? 90199 : 90299;
 if (!Number.isInteger(versionCode) || versionCode < minCode || versionCode > maxCode) stop(`versionCode fuera del rango 0.9.${minor} beta: ${versionCode}`);
