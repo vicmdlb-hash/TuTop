@@ -34,7 +34,9 @@ export interface TopiComposeSuggestion {
   description?: string;
 }
 
-export type TopiSource = 'local' | 'firebase-ai' | 'private-endpoint';
+// Keep component compatibility while exposing which connected provider actually answered.
+export type TopiSource = 'local' | 'topi-endpoint';
+export type TopiProvider = 'firebase-ai-logic' | 'private-endpoint';
 
 export interface CopilotResult {
   category?: ProductCategory;
@@ -43,6 +45,7 @@ export interface CopilotResult {
   issues?: string[];
   compose?: TopiComposeSuggestion;
   source: TopiSource;
+  provider?: TopiProvider;
 }
 
 export type TopiAction = 'category' | 'description' | 'price' | 'review' | 'compose';
@@ -118,10 +121,10 @@ function sanitizeCompose(raw: unknown, context: CopilotContext): TopiComposeSugg
   return Object.values(suggestion).some((item) => item !== undefined) ? suggestion : undefined;
 }
 
-function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: CopilotContext, source: Exclude<TopiSource, 'local'>): CopilotResult | null {
+function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: CopilotContext, provider: TopiProvider): CopilotResult | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
-  const result: CopilotResult = { source };
+  const result: CopilotResult = { source: 'topi-endpoint', provider };
 
   const category = validCategory(value.category);
   if (category) result.category = category;
@@ -211,7 +214,7 @@ function parseModelJson(text: string) {
 async function askNativeFirebaseTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult | null> {
   const generated = await generateNativeTopiText(nativePrompt(action, context));
   if (!generated) return null;
-  return sanitizeRemoteResult(action, parseModelJson(generated.text), context, 'firebase-ai');
+  return sanitizeRemoteResult(action, parseModelJson(generated.text), context, 'firebase-ai-logic');
 }
 
 function topiEndpoint() {
@@ -246,8 +249,8 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
 
 /**
  * Topi cascade: native Firebase AI Logic when explicitly enabled, optional
- * private HTTPS endpoint, then deterministic local Topi. The source remains
- * explicit so beta QA can tell real model output from the local safety fallback.
+ * private HTTPS endpoint, then deterministic local Topi. Beta UI can inspect
+ * `provider` to distinguish real model output from the local safety fallback.
  */
 export async function askTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult> {
   const native = await askNativeFirebaseTopi(action, context);
