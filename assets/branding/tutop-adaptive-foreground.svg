@@ -1,10 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <defs><linearGradient id="top" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#B788FF"/><stop offset=".5" stop-color="#7C4DFF"/><stop offset="1" stop-color="#4B2EDB"/></linearGradient></defs>
-  <g aria-label="TuTop">
-    <text x="180" y="594" font-family="Arial,Helvetica,sans-serif" font-size="250" font-weight="900" letter-spacing="-21" fill="#211A47">Tu</text>
-    <text x="430" y="594" font-family="Arial,Helvetica,sans-serif" font-size="250" font-weight="900" letter-spacing="-21" fill="#FFFFFF">T</text>
-    <path d="M574 492c0-68 55-123 123-123s123 55 123 123c0 90-123 202-123 202S574 582 574 492Z" fill="#FFFFFF"/>
-    <circle cx="697" cy="488" r="41" fill="#6D3EF0"/>
-    <text x="785" y="594" font-family="Arial,Helvetica,sans-serif" font-size="250" font-weight="900" letter-spacing="-21" fill="#FFFFFF">p</text>
+  <defs>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%"><feDropShadow dx="0" dy="22" stdDeviation="26" flood-color="#211A47" flood-opacity=".32"/></filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <path d="M512 196c-174 0-314 137-314 305 0 218 314 429 314 429s314-211 314-429c0-168-140-305-314-305Z" fill="#FFFFFF"/>
+    <circle cx="512" cy="496" r="170" fill="#211A47"/>
+    <path d="M392 385h240v76h-77v209h-86V461h-77Z" fill="#FFFFFF"/>
+    <circle cx="512" cy="496" r="134" fill="none" stroke="#B788FF" stroke-width="15" opacity=".58"/>
   </g>
 </svg>

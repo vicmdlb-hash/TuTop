@@ -1,9 +1,9 @@
 import { classifySupportQuery, supportNode, supportTreeFacts, type SupportRouteId } from '../lib/supportDecisionTree';
-import { generateNativeTopiText } from './nativeTopiAI';
+import { generateNativeTopiText, nativeTopiAIStatus } from './nativeTopiAI';
 
 export type SupportAnswer = {
   text: string;
-  source: 'guided' | 'firebase-ai';
+  source: 'guided' | 'firebase-ai' | 'unavailable';
   route: SupportRouteId;
 };
 
@@ -14,6 +14,12 @@ function safeQuestion(value: string) {
 function resolveRoute(question: string, routeHint: SupportRouteId) {
   const detected = classifySupportQuery(question);
   return detected !== 'root' ? detected : routeHint;
+}
+
+function physicalQaRequiresRealAI() {
+  const environment = String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').trim().toLowerCase();
+  const version = String(import.meta.env.VITE_TUTOP_APP_VERSION || '').trim();
+  return environment === 'staging' && /^0\.9\.2-beta\./.test(version);
 }
 
 function deterministicAnswer(question: string, routeHint: SupportRouteId = 'root'): SupportAnswer {
@@ -59,5 +65,18 @@ export async function answerConsumerSupport(question: string, routeHint: Support
   const generated = await generateNativeTopiText(aiPrompt(clean, route));
   const text = generated?.text?.replace(/^```(?:text)?\s*/i, '').replace(/\s*```$/i, '').trim().slice(0, 900);
   if (text) return { text, source: 'firebase-ai', route };
+
+  // In the private physical-QA build a typed free-form question is an AI test.
+  // Never disguise a Firebase AI failure as a successful local assistant answer.
+  // The deterministic decision tree remains available through its explicit UI.
+  if (physicalQaRequiresRealAI()) {
+    const reason = nativeTopiAIStatus().reason;
+    return {
+      text: `La IA real de Topi no respondió (${reason}). Reintenta con conexión a internet. La guía local sigue disponible en las opciones, pero esta pregunta no se respondió con IA.`,
+      source: 'unavailable',
+      route,
+    };
+  }
+
   return deterministicAnswer(clean, route);
 }

@@ -11,9 +11,15 @@ const mobileDeps = read('scripts/install-mobile-deps.mjs');
 const voicePlugin = read('scripts/android-topi-voice-plugin.mjs');
 const nativeAI = read('src/services/nativeTopiAI.ts');
 const nativeAppCheck = read('src/services/nativeAppCheckToken.ts');
+const assistantProvider = read('src/services/assistantProvider.ts');
+const consumerSupport = read('src/services/topiConsumerSupport.ts');
+const supportUi = read('src/components/TopiSupportAssistant.tsx');
 const identityBridge = read('src/services/nationalIdentityHydrationBridge.ts');
 const topiMascot = read('src/components/TopiMascot.tsx');
 const brandCss = read('src/brand092.css');
+const appIcon = read('assets/branding/tutop-app-icon.svg');
+const adaptiveIcon = read('assets/branding/tutop-adaptive-foreground.svg');
+const storageRules = read('firebase/storage.rules');
 const app = read('src/App.tsx');
 const explore = read('src/components/ExploreScreen.tsx');
 const listings = read('src/services/canonicalListingsBackend.ts');
@@ -65,6 +71,16 @@ assert.match(nativeAI, /environment === 'staging'/);
 assert.match(nativeAI, /\^0\\\.9\\\.2-beta\\\./);
 assert.match(nativeAI, /if \(isPrivatePhysicalQaBuild\(\)\) return false/);
 
+// Physical QA must prove real Firebase AI. A model outage cannot be disguised
+// by automatically returning the deterministic local assistant.
+assert.match(assistantProvider, /physicalQaRequiresRealAI/);
+assert.match(assistantProvider, /TOPI_REAL_AI_UNAVAILABLE/);
+assert.match(assistantProvider, /nativeTopiAIStatus\(\)\.reason/);
+assert.match(consumerSupport, /source: 'unavailable'/);
+assert.match(consumerSupport, /physicalQaRequiresRealAI/);
+assert.match(supportUi, /IA no disponible/);
+assert.match(supportUi, /no sustituye una falla de Firebase AI/);
+
 // 0.9.2 must not depend on a manually registered debug secret. The native
 // App Check plugin defaults to Play Integrity on Android when debugToken=false.
 assert.match(nativeAppCheck, /\^0\\\.9\\\.1-beta\\\./);
@@ -72,24 +88,44 @@ assert.doesNotMatch(nativeAppCheck, /\^0\\\.9\\\.\(\?:1\|2\)-beta/);
 assert.match(nativeAppCheck, /play-integrity/);
 assert.match(nativeAppCheck, /debugToken: useStagingDebugProvider\(\)/);
 
-// Legacy beta accounts must self-heal university/campus metadata before a V2
-// listing create instead of repeatedly sending a known Firestore mismatch.
-assert.match(identityBridge, /resolveCanonicalIdentity/);
-assert.match(identityBridge, /migrateLegacyIdentity/);
-assert.match(identityBridge, /originalCreateListing/);
-assert.match(identityBridge, /profileCanonical \|\| listingCanonical/);
+// Publication must validate selected community against the real Firestore
+// catalog, reconcile the profile, and re-read it before listings_v2 create.
+assert.match(identityBridge, /validateResolvedIdentityInFirestore/);
+assert.match(identityBridge, /institutions\/\$\{resolved\.institution\.id\}/);
+assert.match(identityBridge, /campuses\/\$\{resolved\.campus\.id\}/);
+assert.match(identityBridge, /CAMPUS_INSTITUTION_MISMATCH/);
+assert.match(identityBridge, /profileMatchesResolved/);
+assert.match(identityBridge, /PROFILE_IDENTITY_RECHECK_FAILED/);
+assert.match(identityBridge, /const selected = resolveCanonicalIdentity/);
+assert.match(identityBridge, /await migrateLegacyIdentity/);
+assert.doesNotMatch(identityBridge, /profileCanonical \|\| listingCanonical/);
 assert.match(identityBridge, /institution_id: resolved\.institution\.id/);
 assert.match(identityBridge, /campus_id: resolved\.campus\.id/);
 
-// Branding is no longer a smooth placeholder: Topi carries visible crochet/yarn
-// patterns and the wordmark gets the approved navy/purple + pin treatment.
+// Video object-storage contract is software-ready but remains infrastructure
+// gated until Blaze is explicitly authorized. Rules preserve owner/MIME/size.
+assert.match(storageRules, /validListingVideo/);
+assert.match(storageRules, /50 \* 1024 \* 1024/);
+assert.match(storageRules, /video\/\(mp4\|webm\|quicktime\)/);
+assert.match(storageRules, /product-videos\/\{uid\}/);
+assert.match(storageRules, /owner\(uid\) && validListingVideo\(\)/);
+
+// Branding is no longer a wordmark squeezed into the launcher icon. The icon is
+// a simple TuTop pin/T isotipo; Topi carries visible crochet/yarn stitches.
 assert.match(topiMascot, /topi-yarn-brown/);
 assert.match(topiMascot, /topi-yarn-purple/);
 assert.match(topiMascot, /topi-soft-yarn/);
+assert.match(topiMascot, /topi-crochet-stitches/);
+assert.match(topiMascot, /strokeDasharray="2 2"/);
 assert.match(topiMascot, /import '\.\.\/brand092\.css'/);
 assert.match(brandCss, /#211a47/i);
 assert.match(brandCss, /#7c4dff/i);
 assert.match(brandCss, /wordmark span:last-child::after/);
+assert.match(appIcon, /<path d="M512 202c-177 0-320 139-320 310/);
+assert.match(appIcon, /M390 393h244v78h-78v213h-88V471h-78Z/);
+assert.doesNotMatch(appIcon, /font-family="Arial/);
+assert.match(adaptiveIcon, /M392 385h240v76h-77v209h-86V461h-77Z/);
+assert.doesNotMatch(adaptiveIcon, /font-family="Arial/);
 
 // Main navigation now matches the approved consumer IA/marketplace direction:
 // Inicio / Explorar / Publicar / Mensajes / Perfil. Wallet remains available
@@ -121,4 +157,4 @@ assert.match(listings, /doc\.data\.status === 'active'/);
 assert.match(listings, /cells\.includes\(cell\)/);
 assert.match(listings, /\[\.\.\.sets\.flat\(\), \.\.\.ownNearby\]/);
 
-console.log('✅ TuTop 0.9.2 physical-device repairs: media URI + coarse location + Firebase AI QA + legacy identity + crochet branding + canonical Nearby PASS');
+console.log('✅ TuTop 0.9.2 software hardening: canonical publication preflight + real-AI QA + media URI/video contract + coarse location + crochet branding + canonical Nearby PASS');

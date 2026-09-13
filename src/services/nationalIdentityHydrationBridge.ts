@@ -9,6 +9,13 @@ import { getFirebaseConfig } from './runtimeConfig';
 const IDENTITY_CACHE_TTL_MS = 5 * 60_000;
 const identityCache = new Map<string, { identity: UniversityIdentity; level: VerificationLevel; expiresAt: number }>();
 
+type ResolvedIdentity = {
+  institution: (typeof INSTITUTIONS)[number];
+  campus: (typeof CAMPUSES)[number];
+  faculty?: (typeof FACULTIES)[number];
+  career?: NonNullable<(typeof FACULTIES)[number]['careers']>[number];
+};
+
 function normalized(value: unknown) {
   return String(value || '')
     .normalize('NFD')
@@ -50,7 +57,7 @@ function canonicalCareer(faculty: (typeof FACULTIES)[number] | undefined, ...val
   return faculty.careers.find((career) => needles.some((needle) => [career.id, career.name].map(normalized).includes(needle)));
 }
 
-function resolveCanonicalIdentity(input: Record<string, unknown>, fallback: Record<string, unknown> = {}) {
+function resolveCanonicalIdentity(input: Record<string, unknown>, fallback: Record<string, unknown> = {}): ResolvedIdentity | null {
   const institution = canonicalInstitution(
     input.institution_id, input.institution_name,
     fallback.institution_id, fallback.institution_name,
@@ -76,7 +83,40 @@ function resolveCanonicalIdentity(input: Record<string, unknown>, fallback: Reco
   return { institution, campus, faculty, career };
 }
 
-async function migrateLegacyIdentity(firebase: FirebaseRestClient, uid: string, profileData: Record<string, unknown>, resolved: NonNullable<ReturnType<typeof resolveCanonicalIdentity>>) {
+async function validateResolvedIdentityInFirestore(firebase: FirebaseRestClient, resolved: ResolvedIdentity): Promise<ResolvedIdentity> {
+  const [institutionDoc, campusDoc] = await Promise.all([
+    firebase.getDocument<Record<string, unknown>>(`institutions/${resolved.institution.id}`),
+    firebase.getDocument<Record<string, unknown>>(`campuses/${resolved.campus.id}`),
+  ]);
+  if (!institutionDoc) throw new Error('INSTITUTION_CATALOG_MISSING');
+  if (!campusDoc) throw new Error('CAMPUS_CATALOG_MISSING');
+  if (String(campusDoc.data.institution_id || '') !== resolved.institution.id) {
+    throw new Error('CAMPUS_INSTITUTION_MISMATCH');
+  }
+
+  let faculty = resolved.faculty;
+  if (faculty) {
+    const facultyDoc = await firebase.getDocument<Record<string, unknown>>(`faculties/${faculty.id}`);
+    if (!facultyDoc) faculty = undefined;
+  }
+
+  let career = faculty ? resolved.career : undefined;
+  if (career) {
+    const careerDoc = await firebase.getDocument<Record<string, unknown>>(`careers/${career.id}`);
+    if (!careerDoc) career = undefined;
+  }
+
+  return { institution: resolved.institution, campus: resolved.campus, faculty, career };
+}
+
+function profileMatchesResolved(profileData: Record<string, unknown>, resolved: ResolvedIdentity) {
+  return String(profileData.institution_id || '') === resolved.institution.id
+    && String(profileData.campus_id || '') === resolved.campus.id
+    && (!resolved.faculty || String(profileData.faculty_id || '') === resolved.faculty.id)
+    && (!resolved.career || String(profileData.career_id || '') === resolved.career.id);
+}
+
+async function migrateLegacyIdentity(firebase: FirebaseRestClient, uid: string, profileData: Record<string, unknown>, resolved: ResolvedIdentity) {
   const identity = identityFor(resolved.institution.id, resolved.campus.id, resolved.faculty?.id, resolved.career?.id);
   const next: Record<string, unknown> = {
     ...profileData,
@@ -101,15 +141,18 @@ async function migrateLegacyIdentity(firebase: FirebaseRestClient, uid: string, 
   if (identity.career_name) next.career_name = identity.career_name;
 
   await firebase.setDocument(`users/${uid}`, next);
+  const verified = await firebase.getDocument<Record<string, unknown>>(`users/${uid}`);
+  if (!verified || !profileMatchesResolved(verified.data, resolved)) throw new Error('PROFILE_IDENTITY_RECHECK_FAILED');
   identityCache.delete(uid);
   return identity;
 }
 
 if (nationalSchemaEnabled()) {
-  // Repair legacy beta identity before canonical listing creation. The V2 rules
-  // intentionally require listing institution/campus to match the seller profile;
-  // old beta profiles may contain names or obsolete IDs. A valid canonical
-  // profile remains authoritative; only non-canonical legacy profiles migrate.
+  // Canonical publication has one authority path. Before creating listings_v2,
+  // prove the selected institution/campus against the real Firestore catalog,
+  // reconcile the owner profile, then re-read it. Never swallow an identity
+  // error and "try the listing anyway" because that only moves the failure into
+  // Firestore rules and creates a confusing physical-device loop.
   const originalCreateListing = canonicalListingsBackend.create.bind(canonicalListingsBackend);
   canonicalListingsBackend.create = async (listing, category) => {
     const firebase = new FirebaseRestClient(getFirebaseConfig());
@@ -119,32 +162,43 @@ if (nationalSchemaEnabled()) {
     const profile = await firebase.getDocument<Record<string, unknown>>(`users/${uid}`);
     if (!profile) throw new Error('Tu perfil de TuTop no está disponible. Cierra sesión, vuelve a entrar e intenta publicar de nuevo.');
 
-    const profileCanonical = resolveCanonicalIdentity(profile.data);
-    const listingCanonical = resolveCanonicalIdentity({
+    // The listing reflects the community currently selected by the user. It must
+    // resolve independently; a stale profile is not allowed to silently replace
+    // the selection. Firestore catalog documents are then the final authority.
+    const selected = resolveCanonicalIdentity({
       institution_id: listing.institution_id,
       campus_id: listing.campus_id,
       faculty_id: listing.faculty_id,
       career_id: listing.career_id,
-    }, profile.data);
-
-    let resolved = profileCanonical || listingCanonical;
-    if (!resolved) {
-      throw new Error('Tu cuenta beta conserva una universidad o campus antiguo que TuTop no puede mapear con seguridad. Abre Perfil > Red universitaria, elige de nuevo tu universidad y campus y vuelve a publicar.');
+    });
+    if (!selected) {
+      throw new Error('La universidad o campus seleccionado ya no pertenece al catálogo vigente. Vuelve a elegir tu comunidad desde Perfil y reintenta.');
     }
 
-    if (!profileCanonical) {
+    let resolved: ResolvedIdentity;
+    try {
+      resolved = await validateResolvedIdentityInFirestore(firebase, selected);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`No pudimos validar tu universidad/campus contra el catálogo de TuTop (${reason}). El anuncio no se creó.`);
+    }
+
+    if (!profileMatchesResolved(profile.data, resolved)) {
       try {
         await migrateLegacyIdentity(firebase, uid, profile.data, resolved);
       } catch (error) {
         const raw = error instanceof Error ? error.message : String(error);
-        throw new Error(`No pudimos migrar la universidad/campus de tu cuenta beta (${raw}). Vuelve a elegir tu comunidad desde Perfil y reintenta.`);
+        throw new Error(`No pudimos sincronizar la universidad/campus de tu cuenta antes de publicar (${raw}). El anuncio no se creó.`);
+      }
+    } else {
+      // Even an apparently canonical profile is re-read immediately before the
+      // listing write, so another stale in-memory copy cannot race this invariant.
+      const verified = await firebase.getDocument<Record<string, unknown>>(`users/${uid}`);
+      if (!verified || !profileMatchesResolved(verified.data, resolved)) {
+        throw new Error('Tu perfil cambió mientras preparábamos la publicación. Vuelve a intentarlo; el anuncio no se creó.');
       }
     }
 
-    // A canonical remote profile wins over stale in-memory values. This keeps
-    // the client aligned with the Firestore identity invariant instead of
-    // repeatedly sending a listing that the server must reject.
-    resolved = profileCanonical || resolved;
     const canonicalIdentity = identityFor(resolved.institution.id, resolved.campus.id, resolved.faculty?.id, resolved.career?.id);
     return originalCreateListing({
       ...listing,

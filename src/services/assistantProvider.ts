@@ -2,7 +2,7 @@ import { cleanTitle, detectCategory, extractPrice, improveDescription, isForbidd
 import { detectDeliveryIntent, detectListingCondition, detectNegotiableIntent, detectVisibilityIntent } from '../lib/publishAssistant';
 import type { ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import type { ListingVisibilityScope, Product, ProductCategory, ProductCondition, ProductFormData } from '../types';
-import { generateNativeTopiText } from './nativeTopiAI';
+import { generateNativeTopiText, nativeTopiAIStatus } from './nativeTopiAI';
 
 export const TOPI_PERSONA = {
   name: 'Topi',
@@ -53,6 +53,12 @@ export type TopiAction = 'category' | 'description' | 'price' | 'review' | 'comp
 const VALID_CONDITIONS: ProductCondition[] = ['Nuevo', 'Como nuevo', 'Buen estado', 'Uso visible', 'Para reparar', 'No aplica'];
 const VALID_SCOPES: ListingVisibilityScope[] = ['campus', 'institution', 'university-zone', 'city', 'national'];
 const VALID_DELIVERY: ListingDeliveryMethod[] = ['campus_meetup', 'pickup', 'local_delivery', 'shipping'];
+
+function physicalQaRequiresRealAI() {
+  const environment = String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').trim().toLowerCase();
+  const version = String(import.meta.env.VITE_TUTOP_APP_VERSION || '').trim();
+  return environment === 'staging' && /^0\.9\.2-beta\./.test(version);
+}
 
 function safeText(value: unknown, max: number) {
   if (typeof value !== 'string') return undefined;
@@ -249,12 +255,17 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
 
 /**
  * Topi cascade: native Firebase AI Logic when explicitly enabled, optional
- * private HTTPS endpoint, then deterministic local Topi. Beta UI can inspect
- * `provider` to distinguish real model output from the local safety fallback.
+ * private HTTPS endpoint, then deterministic local Topi outside physical QA.
+ * The 0.9.2 staging APK deliberately refuses to disguise an AI outage as a
+ * successful local answer: physical QA must prove Firebase AI itself.
  */
 export async function askTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult> {
   const native = await askNativeFirebaseTopi(action, context);
   if (native) return native;
   const remote = await askConfiguredTopi(action, context);
-  return remote || localTopi(action, context);
+  if (remote) return remote;
+  if (physicalQaRequiresRealAI()) {
+    throw new Error(`TOPI_REAL_AI_UNAVAILABLE:${nativeTopiAIStatus().reason}`);
+  }
+  return localTopi(action, context);
 }

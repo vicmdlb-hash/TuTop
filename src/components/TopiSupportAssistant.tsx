@@ -60,6 +60,12 @@ export default function TopiSupportAssistant() {
     });
   };
 
+  const sourceChip = answer?.source === 'firebase-ai'
+    ? { label: 'Firebase AI real', className: 'bg-emerald-500/10 text-emerald-300' }
+    : answer?.source === 'unavailable'
+      ? { label: 'IA no disponible', className: 'bg-rose-500/10 text-rose-200' }
+      : { label: 'Guía local', className: 'bg-amber-500/10 text-amber-200' };
+
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="fixed bottom-[calc(84px+env(safe-area-inset-bottom))] right-4 z-[65] flex items-center gap-2 rounded-2xl border border-violet-300/20 bg-violet-600 px-3 py-2.5 text-[10px] font-black text-white shadow-2xl shadow-violet-950/40" aria-label="Abrir Topi">
@@ -75,7 +81,7 @@ export default function TopiSupportAssistant() {
           <TopiMascot className="h-11 w-11 shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-black">Topi</h2>
-            <p className="mt-0.5 text-[9px] text-slate-500">Tu amigo para resolver dudas y usar TuTop · guía local segura e IA sólo cuando responde de verdad.</p>
+            <p className="mt-0.5 text-[9px] text-slate-500">Tu amigo para resolver dudas y usar TuTop · guía segura e IA real claramente identificada.</p>
           </div>
           <button type="button" onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-xl bg-white/[0.05] text-slate-400" aria-label="Cerrar"><X className="h-4 w-4" /></button>
         </header>
@@ -99,10 +105,11 @@ export default function TopiSupportAssistant() {
           )}
 
           {answer && (
-            <div className="mt-3 rounded-2xl border border-emerald-300/10 bg-emerald-500/[0.04] p-4">
-              <div className="flex flex-wrap items-center gap-2"><Sparkles className="h-4 w-4 text-emerald-300" /><strong className="text-[10px] text-emerald-200">Topi</strong><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${answer.source === 'firebase-ai' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-200'}`}>{answer.source === 'firebase-ai' ? 'Firebase AI real' : 'Guía local'}</span></div>
+            <div className={`mt-3 rounded-2xl border p-4 ${answer.source === 'unavailable' ? 'border-rose-300/10 bg-rose-500/[0.04]' : 'border-emerald-300/10 bg-emerald-500/[0.04]'}`}>
+              <div className="flex flex-wrap items-center gap-2"><Sparkles className={`h-4 w-4 ${answer.source === 'unavailable' ? 'text-rose-300' : 'text-emerald-300'}`} /><strong className="text-[10px] text-emerald-200">Topi</strong><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${sourceChip.className}`}>{sourceChip.label}</span></div>
               <p className="mt-2 whitespace-pre-wrap text-[10px] leading-5 text-slate-300">{answer.text}</p>
               {answer.source === 'guided' && <p className="mt-2 text-[8px] leading-4 text-slate-600">Esta respuesta viene del árbol seguro de TuTop; no se presenta como respuesta generada por IA.</p>}
+              {answer.source === 'unavailable' && <p className="mt-2 text-[8px] leading-4 text-rose-200/70">Esta beta no sustituye una falla de Firebase AI con una respuesta local silenciosa.</p>}
             </div>
           )}
 

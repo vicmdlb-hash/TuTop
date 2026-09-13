@@ -8,10 +8,25 @@ service firebase.storage {
         && request.resource.size < 8 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp|heic|heif)');
     }
+    function validListingVideo() {
+      return request.resource != null
+        && request.resource.size < 50 * 1024 * 1024
+        && request.resource.contentType.matches('video/(mp4|webm|quicktime)');
+    }
 
     match /product-images/{uid}/{allPaths=**} {
       allow read: if signedIn();
       allow create, update: if owner(uid) && validImage();
+      allow delete: if owner(uid);
+    }
+
+    // Software-ready video surface. This remains unreachable in the private
+    // Spark staging project until Cloud Storage is explicitly enabled on Blaze;
+    // keeping the rule here lets the client/backend contract be tested without
+    // weakening ownership, MIME or size boundaries when infrastructure is approved.
+    match /product-videos/{uid}/{allPaths=**} {
+      allow read: if signedIn();
+      allow create, update: if owner(uid) && validListingVideo();
       allow delete: if owner(uid);
     }
 
