@@ -26,8 +26,13 @@ assert.match(device, /enableHighAccuracy: false/);
 assert.match(device, /photo\.thumbnail/);
 assert.match(device, /convertFileSrc/);
 assert.match(nativeCaps, /photopicker_activity:0:required/);
-assert.doesNotMatch(nativeCaps, /android\.permission\.CAMERA/);
-assert.doesNotMatch(nativeCaps, /ACCESS_FINE_LOCATION/);
+const permissionBlock = nativeCaps.match(/const permissions = \[([\s\S]*?)\];/)?.[1] || '';
+assert.match(permissionBlock, /ACCESS_COARSE_LOCATION/);
+assert.match(permissionBlock, /RECORD_AUDIO/);
+assert.doesNotMatch(permissionBlock, /ACCESS_FINE_LOCATION/);
+assert.doesNotMatch(permissionBlock, /ACCESS_BACKGROUND_LOCATION/);
+assert.doesNotMatch(permissionBlock, /android\.permission\.CAMERA/);
+assert.doesNotMatch(permissionBlock, /READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE/);
 
 assert.match(voicePlugin, /MAX_RECOGNITION_ATTEMPTS/);
 assert.match(voicePlugin, /EXTRA_PARTIAL_RESULTS, true/);
