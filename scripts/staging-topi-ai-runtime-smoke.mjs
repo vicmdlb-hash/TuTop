@@ -82,12 +82,12 @@ async function deleteEphemeralDebugToken({ name, oauthToken }) {
   );
 }
 
-async function exchangeDebugToken({ projectNumber, appId, secret }) {
+async function exchangeDebugToken({ projectNumber, appId, secret, apiKey }) {
   let lastError = null;
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     try {
       const exchanged = await jsonRequest(
-        `https://firebaseappcheck.googleapis.com/v1/projects/${projectNumber}/apps/${appId}:exchangeDebugToken`,
+        `https://firebaseappcheck.googleapis.com/v1/projects/${projectNumber}/apps/${appId}:exchangeDebugToken?key=${encodeURIComponent(apiKey)}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -153,7 +153,12 @@ try {
   app = initializeApp(config, `tutop-ai-runtime-smoke-${Date.now()}`);
   const appCheck = initializeAppCheck(app, {
     provider: new CustomProvider({
-      getToken: () => exchangeDebugToken({ projectNumber, appId: config.appId, secret: ephemeral.secret }),
+      getToken: () => exchangeDebugToken({
+        projectNumber,
+        appId: config.appId,
+        secret: ephemeral.secret,
+        apiKey: config.apiKey,
+      }),
     }),
     isTokenAutoRefreshEnabled: false,
   });
