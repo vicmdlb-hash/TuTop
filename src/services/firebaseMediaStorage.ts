@@ -1,5 +1,6 @@
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
 import { FirebaseRestClient } from './firebaseRest';
+import { recordDiagnostic } from './localDiagnostics';
 import { getFirebaseConfig } from './runtimeConfig';
 
 export const MAX_LISTING_VIDEO_BYTES = 50 * 1024 * 1024;
@@ -66,6 +67,18 @@ export function validateListingVideo(file: File) {
   return file.type as ListingVideoMime;
 }
 
+export function userFacingMediaError(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error || '');
+  if (raw === 'MEDIA_STORAGE_INFRASTRUCTURE_DISABLED' || raw === 'MEDIA_STORAGE_BILLING_REQUIRED') {
+    return 'Los videos todavía no están disponibles en esta beta. Puedes publicar el anuncio con fotos.';
+  }
+  if (raw === 'MEDIA_STORAGE_AUTH_FAILED') return 'Tu sesión necesita renovarse antes de subir el video. Vuelve a iniciar sesión e inténtalo otra vez.';
+  if (raw === 'MEDIA_STORAGE_PERMISSION_DENIED') return 'No pudimos guardar el video con esta cuenta. Inténtalo otra vez después de revisar tu sesión.';
+  if (raw === 'MEDIA_STORAGE_OWNER_MISMATCH') return 'No pudimos asociar el video con tu cuenta. Vuelve a iniciar sesión.';
+  if (raw === 'MEDIA_STORAGE_URI_INVALID' || raw === 'MEDIA_STORAGE_NOT_VIDEO') return 'Este video no se puede abrir. Prueba con otro archivo.';
+  return 'No pudimos procesar el video en este momento. Inténtalo de nuevo.';
+}
+
 async function authHeaders(contentType?: string) {
   const config = getFirebaseConfig();
   const client = new FirebaseRestClient(config);
@@ -90,26 +103,31 @@ function objectUrl(bucket: string, path: string, media = false) {
 
 async function assertOk(response: Response) {
   if (response.ok) return response;
-  const text = await response.text().catch(() => '');
+  const statusClass = Math.floor(response.status / 100) * 100;
+  recordDiagnostic('media', 'storage_http_error', { status_class: statusClass });
   if (response.status === 402) throw new Error('MEDIA_STORAGE_BILLING_REQUIRED');
   if (response.status === 401) throw new Error('MEDIA_STORAGE_AUTH_FAILED');
   if (response.status === 403) throw new Error('MEDIA_STORAGE_PERMISSION_DENIED');
-  throw new Error(`MEDIA_STORAGE_HTTP_${response.status}:${text.slice(0, 240)}`);
+  throw new Error(`MEDIA_STORAGE_HTTP_${response.status}`);
 }
 
 export const firebaseMediaStorage = {
   enabled: mediaStorageEnabled,
 
   async uploadListingVideo(file: File, expectedUid?: string): Promise<FirebaseMediaReference> {
-    if (!featureFlag()) throw new Error('MEDIA_STORAGE_INFRASTRUCTURE_DISABLED');
+    if (!featureFlag()) {
+      recordDiagnostic('media', 'video_infrastructure_disabled');
+      throw new Error('MEDIA_STORAGE_INFRASTRUCTURE_DISABLED');
+    }
     const mime = validateListingVideo(file);
     const bucket = storageBucket();
     const { headers: baseHeaders, uid } = await authHeaders();
-    if (expectedUid && expectedUid !== uid) throw new Error('MEDIA_STORAGE_OWNER_MISMATCH');
+    if (expectedUid && expectedUid !== uid) {
+      recordDiagnostic('media', 'video_owner_mismatch');
+      throw new Error('MEDIA_STORAGE_OWNER_MISMATCH');
+    }
     const path = `product-videos/${uid}/${randomId()}.${extensionFor(mime)}`;
 
-    // Mirrors the Firebase Web Storage client's non-resumable multipart shape:
-    // Firebase auth token + optional App Check + X-Goog-Upload-Protocol.
     const boundary = `tutop-${randomId().replace(/[^A-Za-z0-9]/g, '')}`;
     const metadata = JSON.stringify({ name: path, contentType: mime });
     const body = new Blob([
@@ -129,18 +147,26 @@ export const firebaseMediaStorage = {
       body,
     });
     await assertOk(response);
+    recordDiagnostic('media', 'video_upload_success', { mime: mime.replace('video/', '') });
     return { bucket, path, uri: encodeMediaUri(bucket, path) };
   },
 
   async loadVideoBlobUrl(uri: string) {
-    if (!featureFlag()) throw new Error('MEDIA_STORAGE_INFRASTRUCTURE_DISABLED');
-    const reference = parseFirebaseMediaUri(uri);
-    if (!reference) throw new Error('MEDIA_STORAGE_URI_INVALID');
-    const { headers } = await authHeaders();
-    const response = await assertOk(await fetch(objectUrl(reference.bucket, reference.path, true), { headers }));
-    const blob = await response.blob();
-    if (!blob.type.startsWith('video/')) throw new Error('MEDIA_STORAGE_NOT_VIDEO');
-    return URL.createObjectURL(blob);
+    try {
+      if (!featureFlag()) throw new Error('MEDIA_STORAGE_INFRASTRUCTURE_DISABLED');
+      const reference = parseFirebaseMediaUri(uri);
+      if (!reference) throw new Error('MEDIA_STORAGE_URI_INVALID');
+      const { headers } = await authHeaders();
+      const response = await assertOk(await fetch(objectUrl(reference.bucket, reference.path, true), { headers }));
+      const blob = await response.blob();
+      if (!blob.type.startsWith('video/')) throw new Error('MEDIA_STORAGE_NOT_VIDEO');
+      recordDiagnostic('media', 'video_load_success');
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : 'MEDIA_STORAGE_UNKNOWN';
+      recordDiagnostic('media', raw.replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 80));
+      throw new Error(userFacingMediaError(error));
+    }
   },
 
   async delete(uri: string) {
@@ -151,5 +177,6 @@ export const firebaseMediaStorage = {
     const response = await fetch(objectUrl(reference.bucket, reference.path), { method: 'DELETE', headers });
     if (response.status === 404) return;
     await assertOk(response);
+    recordDiagnostic('media', 'video_delete_success');
   },
 };
