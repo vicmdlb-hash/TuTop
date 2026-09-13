@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const candidatePath = path.resolve(process.argv[2] || 'PHYSICAL_QA_CANDIDATE.generated.json');
-const metadataPath = path.resolve(process.argv[3] || 'TuTop-0.9.0-beta.0-physical-qa-staging.metadata.txt');
+const candidatePath = path.resolve(process.argv[2] || 'PHYSICAL_QA_CANDIDATE_0.9.1.generated.json');
+const metadataPath = path.resolve(process.argv[3] || 'TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt');
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -55,5 +55,5 @@ if (!['true', 'false'].includes(metadata.reviews_lazy_cutover)) stop('reviews_la
 if (!['true', 'false'].includes(metadata.wallet_lazy_cutover)) stop('wallet_lazy_cutover inválido');
 if (!['true', 'false'].includes(metadata.favorites_visible_cutover)) stop('favorites_visible_cutover inválido');
 
-console.log('PASS Android metadata matches generated Physical QA candidate including gate/staging SHA bindings');
+console.log('PASS Android metadata matches generated TuTop 0.9.1 Physical QA candidate including gate/staging SHA bindings');
 console.log(`head=${metadata.head_sha} artifact=${metadata.artifact_id} apk_sha256=${metadata.apk_sha256}`);

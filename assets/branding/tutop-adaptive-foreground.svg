@@ -1,8 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 432 432">
-  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a855f7"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs>
-  <g transform="translate(36 38)">
-    <path d="M44 66h226v66h-76v194h-75V132H44z" fill="#fff"/>
-    <path d="M212 154h126v62h-49v110h-74V216h-3z" fill="url(#g)"/>
-    <path d="M316 18l9 24 25 9-25 9-9 25-9-25-25-9 25-9z" fill="#d946ef"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><g fill="#FFFFFF"><text x="112" y="625" font-family="Arial,Helvetica,sans-serif" font-size="360" font-weight="900" letter-spacing="-28">TuT</text><path d="M620 498c0-78 63-141 141-141s141 63 141 141c0 104-141 232-141 232S620 602 620 498Z"/><circle cx="761" cy="495" r="47" fill="#4B2EDB"/><text x="828" y="625" font-family="Arial,Helvetica,sans-serif" font-size="360" font-weight="900" letter-spacing="-28">p</text></g></svg>

@@ -9,8 +9,10 @@ import { commitWithRateLimit } from './rateLimit.ts';
 import { getFirebaseConfig } from './runtimeConfig.ts';
 
 const SELLER_NAME_CACHE_TTL_MS = 10 * 60_000;
+const NEARBY_CACHE_TTL_MS = 60_000;
 const sellerNameCache = new Map<string, { name: string; expiresAt: number }>();
 const sellerNameInflight = new Map<string, Promise<string>>();
+const nearbyCache = new Map<string, { products: Product[]; expiresAt: number }>();
 
 function localId() {
   const random = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -135,7 +137,6 @@ export function validateCanonicalListingPolicy(listing: CanonicalListingV2, cate
   if (missing.length) throw new Error(`RESTRICTED_FLOW_MISSING:${missing.join(',')}`);
   const exposed = requirements.forbiddenPublic.filter((key) => hasValue(listing.attributes[key]));
   if (exposed.length) throw new Error(`PRIVATE_FIELD_EXPOSED:${exposed.join(',')}`);
-  if (listing.visibility_scope === 'national' && !listing.shipping_available) throw new Error('NATIONAL_SHIPPING_REQUIRED');
   if (listing.status === 'active' && !listing.published_at) throw new Error('PUBLISHED_AT_REQUIRED');
   return policy;
 }
@@ -147,6 +148,15 @@ async function queryApproved(client: FirebaseRestClient, field: string, value: s
     { field, op: 'EQUAL', value },
   ];
   return client.runQuery<CanonicalListingV2>('listings_v2', filters, [{ field: 'updated_at', direction: 'DESCENDING' }], limit);
+}
+
+async function productsForDocuments(client: FirebaseRestClient, docs: FirestoreDocument<CanonicalListingV2>[]) {
+  const sellerIds = [...new Set(docs.map((doc) => doc.data.seller_id).filter(Boolean))];
+  const names = new Map<string, string>();
+  await Promise.all(sellerIds.map(async (uid) => names.set(uid, await sellerNameFor(client, uid))));
+  return docs
+    .map((doc) => canonicalListingToProduct(doc, names.get(doc.data.seller_id) || 'Estudiante'))
+    .sort((a, b) => Date.parse(b.updated_at || b.fecha_creacion) - Date.parse(a.updated_at || a.fecha_creacion));
 }
 
 export const canonicalListingsBackend = {
@@ -166,6 +176,7 @@ export const canonicalListingsBackend = {
     await commitWithRateLimit(client, 'listing_create', [
       { update: client.encodeDocumentForWrite(`listings_v2/${id}`, payload), currentDocument: { exists: false } },
     ]);
+    nearbyCache.clear();
     return { id, ...listing, moderation_status: 'pending' as const };
   },
 
@@ -187,13 +198,24 @@ export const canonicalListingsBackend = {
     const [sets, mine] = await Promise.all([Promise.all(queries), minePromise]);
     const byId = new Map<string, FirestoreDocument<CanonicalListingV2>>();
     for (const doc of [...sets.flat(), ...mine]) byId.set(doc.id, doc);
-    const docs = [...byId.values()];
-    const sellerIds = [...new Set(docs.map((doc) => doc.data.seller_id).filter(Boolean))];
-    const names = new Map<string, string>();
-    await Promise.all(sellerIds.map(async (uid) => names.set(uid, await sellerNameFor(client, uid))));
-    return docs
-      .map((doc) => canonicalListingToProduct(doc, names.get(doc.data.seller_id) || 'Estudiante'))
-      .sort((a, b) => Date.parse(b.updated_at || b.fecha_creacion) - Date.parse(a.updated_at || a.fecha_creacion));
+    return productsForDocuments(client, [...byId.values()]);
+  },
+
+  async loadNearbyProducts(input: { geoCells: string[]; limitPerCell?: number }) {
+    const cells = [...new Set(input.geoCells.filter((cell) => /^g1:\d+:\d+$/.test(cell)))].slice(0, 9).sort();
+    if (!cells.length) return [] as Product[];
+    const limit = Math.max(4, Math.min(15, input.limitPerCell || 10));
+    const cacheKey = `${cells.join('|')}#${limit}`;
+    const cached = nearbyCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.products;
+
+    const client = getClient();
+    const sets = await Promise.all(cells.map((cell) => queryApproved(client, 'attributes.geo_cell', cell, limit)));
+    const byId = new Map<string, FirestoreDocument<CanonicalListingV2>>();
+    for (const doc of sets.flat()) byId.set(doc.id, doc);
+    const products = await productsForDocuments(client, [...byId.values()]);
+    nearbyCache.set(cacheKey, { products, expiresAt: Date.now() + NEARBY_CACHE_TTL_MS });
+    return products;
   },
 
   async updateProduct(listingId: string, updates: Partial<Product>) {
@@ -219,10 +241,12 @@ export const canonicalListingsBackend = {
     const next = { ...current.data, ...patch, updated_at: new Date().toISOString() } as CanonicalListingV2;
     validateCanonicalListingPolicy(next, updates.categoria || categoryLabel(current.data.category_id));
     await client.setDocument(`listings_v2/${listingId}`, patch, { merge: true });
+    nearbyCache.clear();
   },
 
   async setStatus(listingId: string, status: CanonicalListingV2['status']) {
     const client = getClient();
     await client.setDocument(`listings_v2/${listingId}`, { status, updated_at: new Date() }, { merge: true });
+    nearbyCache.clear();
   },
 };

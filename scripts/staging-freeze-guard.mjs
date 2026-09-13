@@ -1,5 +1,5 @@
 export const TUTOP_V2_STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
-export const TUTOP_V2_FREEZE_BRANCH = 'feat/tutop-0.8-p0';
+export const TUTOP_V2_FREEZE_BRANCH = 'feat/tutop-0.9.1-nearby-topi';
 
 function stop(message) {
   throw new Error(`STAGING_FREEZE_BLOCKED:${message}`);
@@ -46,7 +46,18 @@ export function assertStagingFreezeContext({
 export function assertAppCheckFreezeMode(mode) {
   const normalized = String(mode || '').trim().toUpperCase();
   if (!['OFF', 'UNENFORCED'].includes(normalized)) {
-    stop('app_check_enforcement_forbidden_during_runtime_freeze');
+    stop('general_app_check_enforcement_forbidden_during_runtime_freeze');
+  }
+  return normalized;
+}
+
+export function assertAiAppCheckFreezeMode(mode) {
+  const normalized = String(mode || '').trim().toUpperCase();
+  if (!['UNENFORCED', 'ENFORCED'].includes(normalized)) {
+    stop('ai_app_check_mode_must_be_UNENFORCED_or_ENFORCED');
+  }
+  if (normalized === 'ENFORCED' && String(process.env.TUTOP_ALLOW_AI_APP_CHECK_ENFORCEMENT || '').trim() !== 'staging-ai-only') {
+    stop('ai_app_check_enforcement_requires_staging_ai_only_opt_in');
   }
   return normalized;
 }

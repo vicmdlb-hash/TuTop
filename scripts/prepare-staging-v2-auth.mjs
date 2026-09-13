@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
+import { ensureFirebaseAiApiKeyAllowlist, ensureFirebaseAiServices } from './firebase-ai-staging-provision.mjs';
 
 const projectId = assertStagingFreezeContext();
 const outputPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-staging-web-config.json').trim();
@@ -40,6 +41,7 @@ async function enableService(serviceName) {
 // that endpoint upgrades the project and can require billing.
 await enableService('identitytoolkit.googleapis.com');
 await enableService('firebase.googleapis.com');
+await ensureFirebaseAiServices({ projectId, token });
 
 const webAppsUrl = `https://firebase.googleapis.com/v1beta1/projects/${encodeURIComponent(projectId)}/webApps`;
 const listed = await jsonRequest(webAppsUrl);
@@ -65,6 +67,8 @@ const appConfig = await jsonRequest(`https://firebase.googleapis.com/v1beta1/${a
 const config = appConfig.data || {};
 if (!config.apiKey || !config.projectId || !config.appId) throw new Error('Firebase Web App no devolvió configuración completa.');
 if (config.projectId !== projectId) throw new Error(`Firebase Web App project mismatch: ${config.projectId}`);
+
+await ensureFirebaseAiApiKeyAllowlist({ projectId, token, apiKey: config.apiKey });
 
 fs.writeFileSync(outputPath, JSON.stringify({
   apiKey: config.apiKey,

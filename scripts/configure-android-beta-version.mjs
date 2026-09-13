@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 
 const gradlePath = 'android/app/build.gradle';
-const expectedVersionName = String(process.env.TUTOP_BETA_VERSION || '0.9.0-beta.0').trim();
-const versionCode = Number(process.env.TUTOP_ANDROID_VERSION_CODE || 90000);
+const expectedVersionName = String(process.env.TUTOP_BETA_VERSION || '0.9.1-beta.0').trim();
+const versionCode = Number(process.env.TUTOP_ANDROID_VERSION_CODE || 90100);
 
 function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
-if (!/^0\.9\.0-beta\.\d+$/.test(expectedVersionName)) stop(`versionName inesperado: ${expectedVersionName}`);
-if (!Number.isInteger(versionCode) || versionCode < 90000 || versionCode > 90099) stop(`versionCode fuera del rango 0.9 beta: ${versionCode}`);
+if (!/^0\.9\.1-beta\.\d+$/.test(expectedVersionName)) stop(`versionName inesperado: ${expectedVersionName}`);
+if (!Number.isInteger(versionCode) || versionCode < 90100 || versionCode > 90199) stop(`versionCode fuera del rango 0.9.1 beta: ${versionCode}`);
 if (!fs.existsSync(gradlePath)) stop(`falta ${gradlePath}; ejecuta android:bootstrap primero.`);
 
 let source = fs.readFileSync(gradlePath, 'utf8');

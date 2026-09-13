@@ -2,7 +2,7 @@
   "applicationId": "mx.tutop.app",
   "applicationIdConfirmed": true,
   "confirmedAt": "2026-09-03",
-  "currentBetaVersion": "0.9.0-beta.0",
+  "currentBetaVersion": "0.9.1-beta.0",
   "distributionTarget": "github-actions-debug-apk-first",
   "productionPublishingAllowed": false,
   "futureDistributionTarget": "google-play-internal-app-sharing",

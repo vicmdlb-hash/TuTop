@@ -25,6 +25,22 @@ export function candidateExactHeadIdentityValid(candidate) {
     && Number.isSafeInteger(candidate?.artifact_id) && candidate.artifact_id > 0;
 }
 
+function versionCore(value) {
+  const match = String(value || '').match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  return match ? match.slice(1).map(Number) : null;
+}
+
+export function compareVersionCore(left, right) {
+  const a = versionCore(left);
+  const b = versionCore(right);
+  if (!a || !b) return null;
+  for (let index = 0; index < 3; index += 1) {
+    if (a[index] > b[index]) return 1;
+    if (a[index] < b[index]) return -1;
+  }
+  return 0;
+}
+
 export function evaluateCandidateRuntimeDrift(candidate, resolveRef) {
   const mismatches = [];
   for (const [repoPath, expectedSha] of Object.entries(candidate.client_runtime_refs || {})) {
@@ -64,15 +80,34 @@ export function verifyCurrentCandidateRuntime() {
   return evaluateCandidateRuntimeDrift(candidate, resolveGitObject);
 }
 
-export function evaluatePrebuildCandidateState(candidate, drift) {
+/**
+ * Prebuild semantics are version-aware:
+ * - same-version active candidate must still be exact-head/fresh;
+ * - explicitly obsolete same-version candidate may be replaced;
+ * - a valid active candidate from an older semantic version is preserved as
+ *   historical evidence and must not block a strictly newer app version from
+ *   generating its own namespaced candidate.
+ */
+export function evaluatePrebuildCandidateState(candidate, drift, currentVersion = candidate?.app_version) {
   const activeExactHead = drift.fresh
     && drift.identity_valid === true
     && candidate.physical_release_candidate === true
     && candidate.candidate_status === 'active_exact_head'
     && candidate.replacement_required === false;
-  if (activeExactHead) {
+  if (activeExactHead && compareVersionCore(currentVersion, candidate.app_version) === 0) {
     return { pass: true, reason: 'current_candidate_still_fresh' };
   }
+
+  const versionOrder = compareVersionCore(currentVersion, candidate.app_version);
+  const preservedPriorVersion = versionOrder === 1
+    && drift.identity_valid === true
+    && candidate.physical_release_candidate === true
+    && candidate.candidate_status === 'active_exact_head'
+    && candidate.replacement_required === false;
+  if (preservedPriorVersion) {
+    return { pass: true, reason: 'prior_version_candidate_preserved' };
+  }
+
   const explicitlyObsolete = candidate.physical_release_candidate === false
     && candidate.candidate_status === 'obsolete_runtime_drift'
     && candidate.replacement_required === true;
@@ -82,18 +117,26 @@ export function evaluatePrebuildCandidateState(candidate, drift) {
   return { pass: false, reason: 'candidate_state_inconsistent_with_runtime_drift' };
 }
 
+function currentPackageVersion() {
+  const pkg = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
+  return String(pkg.version || '');
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
   const candidate = loadPhysicalQaCandidateManifest();
   const result = verifyCurrentCandidateRuntime();
   const prebuild = process.argv.includes('--prebuild');
 
   if (prebuild) {
-    const state = evaluatePrebuildCandidateState(candidate, result);
+    const currentVersion = currentPackageVersion();
+    const state = evaluatePrebuildCandidateState(candidate, result, currentVersion);
     if (!state.pass) {
       console.error(`DETENIDO: estado de candidato Physical QA inconsistente (${state.reason}).`);
       process.exit(2);
     }
-    if (candidate.physical_release_candidate === true) {
+    if (state.reason === 'prior_version_candidate_preserved') {
+      console.log(`PASS prebuild: prior-version candidate ${candidate.app_version} artifact=${result.artifact_id} remains historical; ${currentVersion} may generate a new namespaced candidate.`);
+    } else if (candidate.physical_release_candidate === true) {
       console.log(`PASS prebuild: current exact-head Physical QA candidate remains fresh: artifact=${result.artifact_id}`);
     } else {
       console.log(`PASS prebuild: historical candidate ${result.artifact_id} is explicitly obsolete; replacement build is required and allowed.`);
@@ -101,13 +144,18 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(im
     process.exit(0);
   }
 
-  const reusable = result.fresh
+  // Non-prebuild reuse remains intentionally strict: an older-version APK may
+  // never be treated as the current Physical QA candidate for a newer runtime.
+  const sameVersion = compareVersionCore(currentPackageVersion(), candidate.app_version) === 0;
+  const reusable = sameVersion
+    && result.fresh
     && result.identity_valid === true
     && candidate.physical_release_candidate === true
     && candidate.candidate_status === 'active_exact_head'
     && candidate.replacement_required === false;
   if (!reusable) {
     console.error(`DETENIDO: APK candidate ${result.artifact_id} no es reutilizable para Physical QA actual.`);
+    if (!sameVersion) console.error(`DRIFT version namespace: candidate=${candidate.app_version} current=${currentPackageVersion()}.`);
     if (!result.identity_valid) console.error('DRIFT candidate exact-head identity invalid: gate/staging/build SHA or run identity mismatch.');
     for (const mismatch of result.mismatches) {
       console.error(`DRIFT ${mismatch.path} expected=${mismatch.expected_sha} actual=${mismatch.actual_sha || 'MISSING'}`);

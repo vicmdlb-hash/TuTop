@@ -1,7 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 260" role="img" aria-label="TuTop">
-  <defs><linearGradient id="p" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#a855f7"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs>
-  <rect width="920" height="260" fill="none"/>
-  <text x="28" y="190" font-family="Inter, Arial, sans-serif" font-size="180" font-weight="900" letter-spacing="-12" fill="#f8fafc">Tu</text>
-  <text x="245" y="190" font-family="Inter, Arial, sans-serif" font-size="180" font-weight="900" letter-spacing="-12" fill="url(#p)">Top</text>
-  <path d="M760 30l12 31 31 12-31 12-12 31-12-31-31-12 31-12z" fill="#d946ef"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 240"><defs><linearGradient id="v" x1="0" x2="1"><stop stop-color="#7C4DFF"/><stop offset="1" stop-color="#B788FF"/></linearGradient></defs><text x="45" y="174" font-family="Arial,Helvetica,sans-serif" font-size="158" font-weight="900" letter-spacing="-10" fill="#211A47">TuT</text><path d="M478 103c0-39 31-70 70-70s70 31 70 70c0 52-70 116-70 116s-70-64-70-116Z" fill="url(#v)"/><circle cx="548" cy="101" r="23" fill="#F5F6FB"/><text x="630" y="174" font-family="Arial,Helvetica,sans-serif" font-size="158" font-weight="900" letter-spacing="-10" fill="url(#v)">p</text></svg>

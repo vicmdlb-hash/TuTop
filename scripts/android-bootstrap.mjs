@@ -23,7 +23,7 @@ if (!fs.existsSync(path.join(root, 'node_modules/@capacitor/core'))) {
   stop('faltan dependencias Capacitor. Ejecuta primero: npm run deps:mobile');
 }
 if (v2) {
-  for (const dependency of ['@capacitor-firebase/messaging', '@capacitor-firebase/app-check', 'firebase']) {
+  for (const dependency of ['@capacitor/geolocation', '@capacitor/camera', '@capacitor-firebase/messaging', '@capacitor-firebase/app-check', 'firebase']) {
     if (!fs.existsSync(path.join(root, 'node_modules', dependency))) stop(`falta dependencia Android V2: ${dependency}`);
   }
   if (!fs.existsSync(googleServicesSource)) stop(`V2 Android requiere google-services.json validado en ${googleServicesSource}`);
@@ -42,6 +42,12 @@ const run = (command, args) => {
 if (!fs.existsSync(path.join(root, 'android'))) run('npx', ['cap', 'add', 'android']);
 run('npx', ['cap', 'sync', 'android']);
 run('node', ['scripts/android-assets.mjs']);
+run('node', ['scripts/android-native-capabilities.mjs']);
+run('node', ['scripts/android-secure-session-plugin.mjs']);
+if (v2) {
+  run('node', ['scripts/android-topi-ai-plugin.mjs']);
+  run('node', ['scripts/android-topi-voice-plugin.mjs']);
+}
 
 const variables = path.join(root, 'android/variables.gradle');
 if (fs.existsSync(variables)) {
@@ -52,9 +58,6 @@ if (fs.existsSync(variables)) {
   fs.writeFileSync(variables, source);
 }
 
-// Firebase Datastore ships a native shared counter library that is already packaged
-// with the symbols it needs. Mark it explicitly so AGP does not attempt a futile strip
-// pass and emit a misleading warning on every APK build.
 const appGradle = path.join(root, 'android/app/build.gradle');
 if (fs.existsSync(appGradle)) {
   let source = fs.readFileSync(appGradle, 'utf8');
@@ -73,8 +76,6 @@ if (v2) {
   const destination = path.join(root, 'android/app/google-services.json');
   fs.copyFileSync(googleServicesSource, destination);
 
-  // FCM token generation is opt-in. The profile control calls getToken() only after the
-  // user explicitly enables device notifications; getToken() re-enables FCM auto-init.
   const manifestPath = path.join(root, 'android/app/src/main/AndroidManifest.xml');
   if (fs.existsSync(manifestPath)) {
     let manifest = fs.readFileSync(manifestPath, 'utf8');
@@ -91,4 +92,4 @@ if (v2) {
   console.log(`Firebase Android V2 validado y copiado: ${expectedStagingProject} / ${config.appId}`);
 }
 
-console.log('Android bootstrap preparado. No se generó APK en este paso.');
+console.log('Android bootstrap 0.9.1 preparado: cámara, ubicación aproximada, Topi AI, Topi Voice, FCM y App Check. No se generó APK en este paso.');

@@ -67,6 +67,16 @@
       "collectionGroup": "listings_v2",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "attributes.geo_cell", "order": "ASCENDING" },
+        { "fieldPath": "moderation_status", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "updated_at", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "listings_v2",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "moderation_status", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "visibility_scope", "order": "ASCENDING" },

@@ -5,6 +5,7 @@ import Feed from './components/Feed';
 import Chatbot from './components/Chatbot';
 import NationalPublishScreen from './components/NationalPublishScreen';
 import V2ListingsHydrator from './components/V2ListingsHydrator';
+import V2NearbyListingsHydrator from './components/V2NearbyListingsHydrator';
 import V2ChatHistoryHydrator from './components/V2ChatHistoryHydrator';
 import V2ReviewStatusHydrator from './components/V2ReviewStatusHydrator';
 import V2ReviewStrikeHydrator from './components/V2ReviewStrikeHydrator';
@@ -12,6 +13,8 @@ import V2VisibleFavoritesHydrator from './components/V2VisibleFavoritesHydrator'
 import WalletView from './components/WalletView';
 import Inbox from './components/Inbox';
 import Profile from './components/Profile';
+import AppearanceSettings from './components/AppearanceSettings';
+import PermissionSettings from './components/PermissionSettings';
 import ProductDetail from './components/ProductDetail';
 import OfflineBanner from './components/OfflineBanner';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -23,8 +26,7 @@ import UniversityNetworkSetup from './components/UniversityNetworkSetup';
 import DemandRequestComposer from './components/DemandRequestComposer';
 import NationalAccountControls from './components/NationalAccountControls';
 import OwnTrustedReputationCard from './components/OwnTrustedReputationCard';
-import RecoveryReadinessCard from './components/RecoveryReadinessCard';
-import PhysicalQaPanel from './components/PhysicalQaPanel';
+import TopiSupportAssistant from './components/TopiSupportAssistant';
 import './services/nationalBackendCanonicalBridge';
 import './services/rateLimitedOnlineBridge';
 import './services/canonicalStoreBridge';
@@ -82,7 +84,7 @@ function MobileApp() {
     bot: v2 ? <NationalPublishScreen /> : <Chatbot />,
     wallet: <WalletView />,
     inbox: <Inbox />,
-    profile: <Profile />,
+    profile: <><Profile /><AppearanceSettings /><PermissionSettings /></>,
   };
 
   return (
@@ -98,6 +100,7 @@ function MobileApp() {
         </div>
       )}
       {v2 && <V2ListingsHydrator />}
+      {v2 && <V2NearbyListingsHydrator />}
       {v2 && <V2VisibleFavoritesHydrator />}
       {v2 && <V2ChatHistoryHydrator />}
       {v2 && <V2ReviewStatusHydrator />}
@@ -111,7 +114,8 @@ function MobileApp() {
       </main>
 
       {!v2 && activeTab === 'bot' && !activeChatId && !selectedProductId && <DraftShelf />}
-      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <><OwnTrustedReputationCard /><RecoveryReadinessCard /><PhysicalQaPanel /></>}</>}
+      {activeTab === 'profile' && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <OwnTrustedReputationCard />}</>}
+      {!activeChatId && <TopiSupportAssistant />}
 
       {!activeChatId && (
         <nav className="bottom-nav" aria-label="Navegación principal">

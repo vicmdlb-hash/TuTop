@@ -34,7 +34,7 @@ const packageJson = JSON.parse(read('package.json'));
 const project = JSON.parse(read('config/project.json'));
 
 assert.match(guard, /TUTOP_V2_STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881'/);
-assert.match(guard, /TUTOP_V2_FREEZE_BRANCH = 'feat\/tutop-0\.8-p0'/);
+assert.match(guard, /TUTOP_V2_FREEZE_BRANCH = 'feat\/tutop-0\.9\.1-nearby-topi'/);
 assert.match(guard, /process\.env\.GITHUB_ACTIONS !== 'true'/);
 assert.match(guard, /invalid_or_missing_GITHUB_SHA/);
 assert.match(guard, /TUTOP_VALIDATED_GATE_RUN_ID/);
@@ -44,7 +44,10 @@ assert.match(guard, /TUTOP_VALIDATED_STAGING_RUN_ID/);
 assert.match(guard, /TUTOP_VALIDATED_STAGING_SHA/);
 assert.match(guard, /stagingSha !== githubSha/);
 assert.match(guard, /\['OFF', 'UNENFORCED'\]/);
-assert.match(guard, /app_check_enforcement_forbidden_during_runtime_freeze/);
+assert.match(guard, /general_app_check_enforcement_forbidden_during_runtime_freeze/);
+assert.match(guard, /assertAiAppCheckFreezeMode/);
+assert.match(guard, /TUTOP_ALLOW_AI_APP_CHECK_ENFORCEMENT/);
+assert.match(guard, /staging-ai-only/);
 
 for (const [name, source] of [
   ['rules deploy', deployRules],
@@ -86,6 +89,8 @@ assert(e2eStep > indexStep, 'real E2E must wait for composite-index readiness');
 assert.match(stagingWorkflow, /node scripts\/staging-index-readiness-smoke\.mjs/);
 
 assert.match(appCheck, /assertAppCheckFreezeMode/);
+assert.match(appCheck, /assertAiAppCheckFreezeMode/);
+assert.match(appCheck, /firebaseml\.googleapis\.com/);
 assert.doesNotMatch(appCheck, /staging-v2-client-ready/);
 assert.doesNotMatch(appCheck, /requireAppCheckPhysicalEvidence/);
 
@@ -185,12 +190,12 @@ assert.match(firebaseAuth, /TUTOP_FIREBASE_OAUTH_CLIENT_SECRET/);
 assert.doesNotMatch(firebaseAuth, /const FIREBASE_OAUTH_CLIENT_ID\s*=\s*['"][^'"]+['"]/);
 assert.doesNotMatch(firebaseAuth, /const FIREBASE_OAUTH_CLIENT_SECRET\s*=\s*['"][^'"]+['"]/);
 
-console.log('PASS remote staging entrypoints require exact project, branch, GitHub Actions and October SHA binding');
+console.log('PASS remote staging entrypoints require exact project, TuTop 0.9.1 branch, GitHub Actions and October SHA binding');
 console.log('PASS real two-user E2E is independently pinned to the exact staging project with no alternate-project escape hatch');
 console.log('PASS Firestore service enablement is covered by the same central freeze guard');
 console.log('PASS staging deploy must prove real read-only composite-index readiness before catalog/E2E');
 console.log('PASS review/favorites/geography index probes cannot mutate staging data');
-console.log('PASS App Check ENFORCED is physically unavailable during Runtime Freeze Candidate');
+console.log('PASS general App Check ENFORCED remains blocked while the explicit staging AI-only exception is narrowly guarded');
 console.log('PASS Google Play/Internal App Sharing remains blocked by zero-investment project policy');
 console.log('PASS legacy firebase:link and direct Spark deploy are blocked while local emulators remain available');
 console.log('PASS Firebase doctor reports PREPARED / NOT VALIDATED and treats .firebaserc as non-authoritative');

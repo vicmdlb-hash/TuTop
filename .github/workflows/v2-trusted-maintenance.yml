@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   maintain-staging:
-    if: github.ref_name == 'feat/tutop-0.8-p0'
+    if: github.ref_name == 'feat/tutop-0.9.1-nearby-topi'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -34,19 +34,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
+          test "$GITHUB_REF_NAME" = "feat/tutop-0.9.1-nearby-topi"
           GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
             -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
             --jq '.workflow_runs[0].id // empty')"
           if [ -z "$GATE_RUN_ID" ]; then
-            echo "DETENIDO: trusted maintenance requiere october-01-validation exitoso sobre la misma rama y SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
+            echo "DETENIDO: trusted maintenance requiere October exitoso same-SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
             exit 43
           fi
           STAGING_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/staging-v2-smoke.yml/runs" \
             -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
             --jq '.workflow_runs[0].id // empty')"
           if [ -z "$STAGING_RUN_ID" ]; then
-            echo "DETENIDO: trusted maintenance requiere staging-v2-smoke exitoso sobre la misma rama y SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
+            echo "DETENIDO: trusted maintenance requiere Staging exitoso same-SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
             exit 44
           fi
           {
@@ -55,7 +55,7 @@ jobs:
             echo "TUTOP_VALIDATED_STAGING_RUN_ID=$STAGING_RUN_ID"
             echo "TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA"
           } >> "$GITHUB_ENV"
-          echo "✅ Trusted maintenance autorizada para ${GITHUB_REF_NAME}@${GITHUB_SHA}: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
+          echo "✅ Trusted maintenance 0.9.1 autorizada: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
 
       - name: Require managed staging credentials before dependency setup
         shell: bash

@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   smoke:
-    if: github.ref_name == 'feat/tutop-0.8-p0'
+    if: github.ref_name == 'feat/tutop-0.9.1-nearby-topi'
     runs-on: [self-hosted, linux, x64, tutop-zero-cost-worker]
     timeout-minutes: 30
     env:
@@ -25,6 +25,7 @@ jobs:
       TUTOP_ANDROID_GOOGLE_SERVICES_PATH: .tutop-staging-google-services.json
       TUTOP_ALLOW_APP_CHECK: staging-v2
       TUTOP_APP_CHECK_MODE: UNENFORCED
+      TUTOP_APP_CHECK_AI_MODE: UNENFORCED
       TUTOP_STAGING_WEB_CONFIG_PATH: .tutop-staging-web-config.json
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
@@ -39,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "feat/tutop-0.8-p0"
+          test "$GITHUB_REF_NAME" = "feat/tutop-0.9.1-nearby-topi"
           GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
             -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
             --jq '.workflow_runs[0].id // empty')"
@@ -112,6 +113,17 @@ jobs:
       - name: Prepare staging Web App runtime config
         run: node scripts/prepare-staging-v2-auth.mjs
 
+      - name: Configure App Check staging AI-only enforcement
+        env:
+          TUTOP_ALLOW_AI_APP_CHECK_ENFORCEMENT: staging-ai-only
+          TUTOP_APP_CHECK_AI_MODE: ENFORCED
+        run: node scripts/configure-app-check-staging.mjs
+
+      - name: Prove Firebase AI Logic generateContent runtime
+        env:
+          TUTOP_TOPI_AI_MODEL: gemini-3.8-flash
+        run: node scripts/staging-topi-ai-runtime-smoke.mjs
+
       - name: Provision and validate staging Android Firebase app
         run: node scripts/prepare-staging-android-app.mjs
 
@@ -123,7 +135,10 @@ jobs:
           TUTOP_ALLOW_ACCOUNT_ERASURE: staging-reviewed
         run: node scripts/staging-account-erasure-smoke.mjs
 
-      - name: Enable App Check monitoring only
+      - name: Verify final App Check service isolation
+        env:
+          TUTOP_ALLOW_AI_APP_CHECK_ENFORCEMENT: staging-ai-only
+          TUTOP_APP_CHECK_AI_MODE: ENFORCED
         run: node scripts/configure-app-check-staging.mjs
 
       - name: Remove temporary Firebase client configs

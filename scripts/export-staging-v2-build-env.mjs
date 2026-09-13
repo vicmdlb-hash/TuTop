@@ -4,7 +4,7 @@ const configPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-s
 const githubEnv = String(process.env.GITHUB_ENV || '').trim();
 const expectedProject = 'tutop-beta-vicmdlb-1356585881';
 const historicalProject = 'tutop-3a4f7';
-const version = String(process.env.TUTOP_BETA_VERSION || '0.9.0-beta.0').trim();
+const version = String(process.env.TUTOP_BETA_VERSION || '0.9.1-beta.0').trim();
 
 function stop(message) { console.error(`DETENIDO: ${message}`); process.exit(2); }
 if (!githubEnv) stop('GITHUB_ENV no está disponible; este export sólo debe correr dentro del build CI.');
@@ -25,10 +25,10 @@ const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 if (!config.apiKey || !config.projectId || !config.appId) stop('config web Firebase incompleta.');
 if (config.projectId === historicalProject) stop('V2 build no puede apuntar al Firebase histórico.');
 if (config.projectId !== expectedProject) stop(`V2 staging project mismatch: ${config.projectId}`);
-if (!/^0\.9\.0-beta\./.test(version)) stop(`versión beta inesperada: ${version}`);
+if (!/^0\.9\.1-beta\./.test(version)) stop(`versión beta inesperada: ${version}`);
 
-// apiKey/appId are client configuration rather than private server credentials, but
-// masking them keeps CI logs minimal and prevents accidental copy/paste exposure.
+// apiKey/appId are Firebase client configuration, not provider secrets. Masking
+// them still reduces accidental copy/paste exposure in CI logs.
 for (const value of [config.apiKey, config.appId]) {
   const clean = String(value || '').trim();
   if (clean) process.stdout.write(`::add-mask::${clean}\n`);
@@ -42,8 +42,14 @@ const lines = [
   'VITE_TUTOP_SCHEMA_V2=true',
   'VITE_TUTOP_ENVIRONMENT=staging',
   `VITE_TUTOP_APP_VERSION=${version}`,
+  // Topi 0.9.1 uses the native Firebase AI Logic bridge on Android. There is
+  // no Gemini/provider API key in the Vite bundle; App Check is initialized by
+  // the native Firebase security bridge and local Topi remains the fallback.
+  'VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED=true',
+  'VITE_TUTOP_TOPI_MODEL=gemini-3.8-flash',
 ];
 fs.appendFileSync(githubEnv, `${lines.join('\n')}\n`);
 console.log(`✅ Ambiente V2 staging exportado para ${expectedProject} · ${version}.`);
+console.log('Topi Firebase AI Logic habilitado para Android 0.9.1 con fallback local; no se exporta API key de proveedor.');
 console.log('Baseline Physical QA: reviews/wallet/favorites cutovers permanecen false hasta completar Device A+B.');
 console.log('Configuración cliente sensible a copia queda enmascarada en GitHub Actions.');

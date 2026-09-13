@@ -35,6 +35,12 @@ const hardener = read('scripts/harden-canonical-v2-rules.mjs');
 const accountHardener = read('scripts/harden-account-operations-rules.mjs');
 const notificationHardener = read('scripts/harden-notification-receipts-rules.mjs');
 const smoke = read('scripts/staging-v2-e2e-smoke.mjs');
+const permissions = read('src/lib/permissionCenter091.ts');
+const voice = read('src/lib/topiVoice.ts');
+const nativeDevice = read('src/services/nativeDeviceCapabilities.ts');
+const topiSupport = read('src/components/TopiSupportAssistant.tsx');
+const brand = read('src/brand091.css');
+const firebaseRest = read('src/services/firebaseRest.ts');
 const pkg = JSON.parse(read('package.json'));
 const lock = JSON.parse(read('package-lock.json'));
 const project = JSON.parse(read('config/project.json'));
@@ -46,8 +52,10 @@ assert.match(app, /notificationReceiptStoreBridge/);
 assert.match(app, /nativeNotificationRouter/);
 assert.match(app, /physicalQaTelemetry/);
 assert.match(app, /handleTutopPopState/);
-assert.match(app, /<PhysicalQaPanel/);
-assert.match(app, /<RecoveryReadinessCard/);
+// Internal diagnostics remain source-controlled for test/audit use but are no
+// longer rendered into the ordinary customer profile.
+assert.doesNotMatch(app, /<PhysicalQaPanel/);
+assert.doesNotMatch(app, /<RecoveryReadinessCard/);
 assert.match(app, /PendingListingModeration/);
 assert.match(app, /AccountDeletionQueue/);
 assert.match(profile, /sellerReputationEvidence/);
@@ -74,7 +82,7 @@ assert.match(onboarding, /session\.phone !== pending\.phone/);
 assert.match(onboarding, /updateUniversityIdentity/);
 assert.match(backendGate, /rememberPendingUniversityIdentity/);
 assert.match(backendGate, /completePendingUniversityIdentity/);
-assert.match(nativeSecurity, /0\.9\.0-beta\.0/);
+assert.match(nativeSecurity, /0\.9\.1-beta\.0/);
 assert.match(nativeSecurity, /notificationReceived/);
 assert.match(nativeSecurity, /notificationActionPerformed/);
 assert.match(nativeRouter, /intent\.chat_id/);
@@ -109,7 +117,22 @@ assert.match(smoke, /favorito real apunta a listing canónico/);
 assert.match(smoke, /autoaprobación del vendedor bloqueada/);
 assert.match(smoke, /re-aprobación devuelve listing editado al marketplace/);
 
-// Physical QA 0.9 diagnostics must remain privacy-safe and useful on a real phone.
+// The physical-QA repair must address exactly the regressions observed on device.
+for (const capability of ['location', 'camera', 'microphone', 'notifications']) assert.match(permissions, new RegExp(capability));
+assert.match(permissions, /isNativeDeviceRuntime/);
+assert.match(permissions, /enableNativePushNotifications/);
+assert.match(voice, /TuTopVoice/);
+assert.match(nativeDevice, /camera\.getPhoto/);
+assert.doesNotMatch(nativeDevice, /camera\.takePhoto|camera\.chooseFromGallery/);
+assert.match(topiSupport, /Pregúntale a Topi/);
+assert.doesNotMatch(topiSupport, /Árbol de decisiones \+ IA|Soporte guiado|Ruta guiada/);
+assert.match(brand, /padding-left:2\.75rem!important/);
+assert.match(brand, /#F5F6FB/);
+assert.match(brand, /#0F0F14/);
+assert.match(firebaseRest, /Object\.entries\(data\)\.filter\(\(\[, value\]\) => value !== undefined\)/);
+assert.match(firebaseRest, /encodedEntries\.map\(\(\[field\]\)/);
+
+// Physical QA diagnostics remain privacy-safe and available to internal tooling.
 assert.match(qaTelemetry, /tutop\.physical-qa\.events\.v1/);
 assert.match(qaTelemetry, /replace\(\/\\b\\d\{10,13\}\\b\/g, '\[redacted-number\]'\)/);
 assert.match(qaTelemetry, /\[redacted-token\]/);
@@ -134,7 +157,6 @@ assert.match(qaProtocol, /0 P0 abiertos/);
 assert.match(qaProtocol, /foreground\/background\/cold-start/);
 assert.match(qaProtocol, /App Check seguirá UNENFORCED/);
 
-// Recovery architecture must never imply fake SMS/email or account enumeration.
 assert.match(recoveryPolicy, /max_attempts_per_window: 3/);
 assert.match(recoveryPolicy, /temporary_lock_ms/);
 assert.match(recoveryPolicy, /no confirma si una cuenta existe/);
@@ -144,7 +166,6 @@ assert.match(recoveryOrchestrator, /no se enviará un SMS o correo ficticio/i);
 assert.match(recoveryCard, /canal verificado/);
 assert.match(recoveryCard, /Nunca se usará conocer un número como prueba de identidad/);
 
-// Product/chat overlays must create browser-history entries so Android Back can close them.
 assert.match(navigationHistory, /history\.pushState/);
 assert.match(navigationHistory, /history\.replaceState/);
 assert.match(navigationHistory, /history\.back\(\)/);
@@ -155,27 +176,19 @@ assert.match(navigationHistory, /openProduct:/);
 assert.match(navigationHistory, /openChat:/);
 assert.match(navigationHistory, /contactProduct:/);
 
-// Release freeze prevents the oversized PR from accumulating unrelated product scope.
 assert.match(releaseFreeze, /Correcciones P0\/P1/);
 assert.match(releaseFreeze, /Nuevas features de marketplace no relacionadas con bugs/);
 assert.match(releaseFreeze, /0 P0 abiertos/);
 assert.match(releaseFreeze, /no activar proveedores externos|sin activar proveedores externos/i);
 
-assert.equal(pkg.version, '0.9.0-beta.0');
-assert.equal(lock.version, '0.9.0-beta.0');
-assert.equal(lock.packages?.['']?.version, '0.9.0-beta.0');
-assert.equal(project.currentBetaVersion, '0.9.0-beta.0');
+assert.equal(pkg.version, '0.9.1-beta.0');
+assert.equal(lock.version, '0.9.1-beta.0');
+assert.equal(lock.packages?.['']?.version, '0.9.1-beta.0');
+assert.equal(project.currentBetaVersion, '0.9.1-beta.0');
 
-console.log('PASS feed controls and canonical V2 marketplace authority');
-console.log('PASS shipping derives only from delivery methods and description is visibly bounded');
-console.log('PASS onboarding can recover university identity after partial registration');
-console.log('PASS reputation requires evidence instead of fake default percentage');
-console.log('PASS V2 seller actions and structured offers stay canonical');
-console.log('PASS native push has receive/action routing and persistent read receipts');
-console.log('PASS account deletion has shared planner, dry-run safety and synthetic scenarios');
-console.log('PASS account recovery has provider-neutral policy without fake verification');
-console.log('PASS Physical QA 0.9 diagnostics auto-classify sanitized device evidence');
-console.log('PASS Android Back has deterministic product/chat browser-history contract');
-console.log('PASS release freeze blocks unrelated scope expansion');
-console.log('PASS root/lock/project metadata matches TuTop 0.9 beta');
+console.log('PASS customer UI no longer exposes internal Physical QA / recovery diagnostics');
+console.log('PASS native permissions, Camera 8, Topi voice, readable brand and Firestore merge-mask repairs are contract-protected');
+console.log('PASS onboarding, canonical marketplace, reputation, push, erasure, recovery and navigation protections remain covered');
+console.log('PASS internal Physical QA diagnostics remain privacy-safe and available outside normal customer UI');
+console.log('PASS root/lock/project metadata matches TuTop 0.9.1 beta');
 console.log('Physical QA regression contract: PASS');
