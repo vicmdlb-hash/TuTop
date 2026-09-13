@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Compass, Heart, MapPin, Search, SlidersHorizontal, TriangleAlert } from 'lucide-react';
+import { Compass, Heart, Loader2, MapPin, Search, SlidersHorizontal, TriangleAlert } from 'lucide-react';
 import { MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
-import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, nearbyLocationPermission, productDistanceKm, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, nearbyGeoCells, nearbyLocationPermission, productDistanceKm, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { useAppStore } from '../store/useAppStore';
-import type { ProductCategory } from '../types';
+import type { Product, ProductCategory } from '../types';
 import ProductCard from './ProductCard';
 
 type ExploreScope = 'all' | 'nearby' | 'favorites';
@@ -23,6 +24,9 @@ export default function ExploreScreen() {
   const [location, setLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const [nearbyProducts, setNearbyProducts] = useState<Product[]>([]);
+  const [nearbyBusy, setNearbyBusy] = useState(false);
+  const [nearbyError, setNearbyError] = useState<string | null>(null);
 
   useEffect(() => {
     const onLocation = (event: Event) => {
@@ -35,14 +39,33 @@ export default function ExploreScreen() {
     return () => window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
   }, []);
 
+  useEffect(() => {
+    if (scope !== 'nearby' || !location) return;
+    let active = true;
+    setNearbyBusy(true);
+    setNearbyError(null);
+    const cells = nearbyGeoCells(location);
+    canonicalListingsBackend.loadNearbyProducts({ geoCells: cells, limitPerCell: 15 })
+      .then((items) => { if (active) setNearbyProducts(items); })
+      .catch(() => {
+        if (!active) return;
+        setNearbyProducts([]);
+        setNearbyError('No pudimos actualizar las publicaciones cercanas. Revisa tu conexión o vuelve a intentarlo.');
+      })
+      .finally(() => { if (active) setNearbyBusy(false); });
+    return () => { active = false; };
+  }, [scope, location?.latitude, location?.longitude, location?.captured_at]);
+
+  const sourceProducts = scope === 'nearby' ? nearbyProducts : products;
+
   const visibleCategories = useMemo(() => {
-    const present = new Set(products.map((product) => product.categoria));
+    const present = new Set(sourceProducts.map((product) => product.categoria));
     return MARKETPLACE_CATEGORIES.filter((item) => present.has(item)).slice(0, 10);
-  }, [products]);
+  }, [sourceProducts]);
 
   const filtered = useMemo(() => {
     const cleanQuery = normalized(query.trim());
-    return products
+    return sourceProducts
       .filter((product) => product.estado === 'Activo')
       .filter((product) => category === 'Todas' || product.categoria === category)
       .filter((product) => {
@@ -59,7 +82,7 @@ export default function ExploreScreen() {
         return true;
       })
       .sort((a, b) => Date.parse(b.fecha_creacion) - Date.parse(a.fecha_creacion));
-  }, [products, category, query, scope, favorites, location, radiusKm]);
+  }, [sourceProducts, category, query, scope, favorites, location, radiusKm]);
 
   const activateNearby = async () => {
     if (locationBusy) return;
@@ -92,9 +115,16 @@ export default function ExploreScreen() {
     }
   };
 
+  const refreshNearby = async () => {
+    setLocation(null);
+    setNearbyProducts([]);
+    await activateNearby();
+  };
+
   const selectAll = () => {
     setScope('all');
     setLocationMessage(null);
+    setNearbyError(null);
   };
 
   return (
@@ -105,19 +135,13 @@ export default function ExploreScreen() {
           <div className="min-w-0 flex-1">
             <p className="eyebrow">EXPLORAR</p>
             <h1 className="mt-1 text-xl font-black tracking-tight">Encuentra algo cerca de ti</h1>
-            <p className="mt-1 text-[10px] text-slate-500">Busca por producto, categoría o vendedor. La cercanía usa sólo ubicación aproximada.</p>
+            <p className="mt-1 text-[10px] text-slate-500">Busca por producto, categoría o vendedor. La cercanía consulta publicaciones reales usando sólo ubicación aproximada.</p>
           </div>
         </div>
 
         <div className="relative mt-4">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value.slice(0, 120))}
-            className="publish-input pl-10"
-            placeholder="Buscar en TuTop"
-            aria-label="Buscar productos"
-          />
+          <input value={query} onChange={(event) => setQuery(event.target.value.slice(0, 120))} className="publish-input pl-10" placeholder="Buscar en TuTop" aria-label="Buscar productos" />
         </div>
 
         <div className="mt-3 grid grid-cols-3 gap-2" aria-label="Filtros rápidos">
@@ -140,7 +164,7 @@ export default function ExploreScreen() {
 
       <section className="page-pad">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <strong className="text-xs">{filtered.length.toLocaleString('es-MX')} resultado{filtered.length === 1 ? '' : 's'}</strong>
+          <strong className="text-xs">{nearbyBusy && scope === 'nearby' ? 'Buscando publicaciones…' : `${filtered.length.toLocaleString('es-MX')} resultado${filtered.length === 1 ? '' : 's'}`}</strong>
           {scope === 'nearby' && <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[8px] font-black text-emerald-300">≤ {radiusKm} km</span>}
         </div>
 
@@ -160,7 +184,16 @@ export default function ExploreScreen() {
           </div>
         )}
 
-        {scope === 'nearby' && !location ? null : filtered.length === 0 ? (
+        {scope === 'nearby' && location && nearbyBusy && <div className="empty-card mb-3 flex items-center justify-center gap-2"><Loader2 className="h-4 w-4 animate-spin text-violet-300" /><p className="text-[10px] text-slate-400">Consultando publicaciones cercanas…</p></div>}
+
+        {scope === 'nearby' && nearbyError && (
+          <div className="empty-card mb-3">
+            <div className="flex items-start gap-2"><TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" /><div><p className="font-bold">No pudimos actualizar Cerca de ti</p><p className="mt-1 text-[9px] leading-4 text-slate-500">{nearbyError}</p></div></div>
+            <button type="button" onClick={() => void refreshNearby()} className="mt-3 rounded-xl bg-violet-600 px-3 py-2 text-[9px] font-black text-white">Reintentar</button>
+          </div>
+        )}
+
+        {scope === 'nearby' && (!location || nearbyBusy || nearbyError) ? null : filtered.length === 0 ? (
           <div className="empty-card">
             <p className="font-bold">No encontramos publicaciones con estos filtros.</p>
             <p className="mt-1 text-[9px] text-slate-500">Prueba otra categoría, aumenta la distancia o vuelve a “Todo”.</p>
