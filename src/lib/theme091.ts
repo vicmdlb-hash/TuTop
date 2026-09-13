@@ -10,9 +10,9 @@ function systemTheme(): 'light' | 'dark' {
 export function getThemePreference(): ThemePreference {
   try {
     const value = localStorage.getItem(THEME_KEY);
-    return value === 'dark' || value === 'system' || value === 'light' ? value : 'light';
+    return value === 'dark' || value === 'system' || value === 'light' ? value : 'system';
   } catch {
-    return 'light';
+    return 'system';
   }
 }
 
