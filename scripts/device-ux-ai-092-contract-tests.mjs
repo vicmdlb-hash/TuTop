@@ -12,6 +12,7 @@ const nativeAI = read('src/services/nativeTopiAI.ts');
 const nativeAppCheck = read('src/services/nativeAppCheckToken.ts');
 const app = read('src/App.tsx');
 const explore = read('src/components/ExploreScreen.tsx');
+const listings = read('src/services/canonicalListingsBackend.ts');
 
 assert.match(theme, /return value === 'dark' \|\| value === 'system' \|\| value === 'light' \? value : 'dark'/);
 assert.match(index, /tutop\.theme\.v2/);
@@ -72,4 +73,14 @@ assert.match(explore, /Ver todo/);
 assert.match(explore, /Guardados/);
 assert.match(explore, /ProductCard/);
 
-console.log('✅ TuTop 0.9.2 device UX + navigation + explore recovery + camera/gallery + coarse-location + voice + real-AI/App Check hardening contract PASS');
+// Nearby public reads stay approved-only, but the signed-in seller must see
+// their own active pending listing immediately. Cache isolation must include uid
+// so a session switch cannot leak a seller-only pending result to another user.
+assert.match(listings, /const cacheKey = `\$\{uid\}#\$\{cells\.join\('\|'\)\}#\$\{limit\}`/);
+assert.match(listings, /const minePromise = this\.loadMine/);
+assert.match(listings, /doc\.data\.seller_id === uid/);
+assert.match(listings, /doc\.data\.status === 'active'/);
+assert.match(listings, /cells\.includes\(cell\)/);
+assert.match(listings, /\[\.\.\.sets\.flat\(\), \.\.\.ownNearby\]/);
+
+console.log('✅ TuTop 0.9.2 device UX + navigation + Nearby seller visibility + explore recovery + camera/gallery + coarse-location + voice + real-AI/App Check hardening contract PASS');
