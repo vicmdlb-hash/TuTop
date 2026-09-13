@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Images, Loader2, MapPin, Mic, Plus, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { compressImageForFirestore } from '../lib/imageCompression';
 import { categorySafetyRequirements } from '../lib/marketplaceGovernance';
-import { getCachedApproxLocation, locationAttributes, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { getCachedApproxLocation, locationAttributes, nearbyLocationPermission, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
 import { nationalFieldsFor, normalizeNationalAttributes } from '../lib/nationalListingFields';
 import type { CanonicalListingV2, ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import { smartPriceFromTuTop } from '../lib/smartPricing';
@@ -13,6 +13,7 @@ import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { askTopi } from '../services/assistantProvider';
 import { nationalBackend } from '../services/nationalBackend';
 import { isNativeDeviceRuntime, nativePhotoToImageFile, pickNativePhoto, takeNativePhoto } from '../services/nativeDeviceCapabilities';
+import { nativeTopiAIStatus } from '../services/nativeTopiAI';
 import { useAppStore } from '../store/useAppStore';
 import type { ListingVisibilityScope, Product, ProductCategory } from '../types';
 import TopiMascot from './TopiMascot';
@@ -27,6 +28,16 @@ const DELIVERY: Array<{ id: ListingDeliveryMethod; label: string }> = [
 
 function slug(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function aiFailureLabel(reason: ReturnType<typeof nativeTopiAIStatus>['reason']) {
+  if (reason === 'app-check-unavailable') return 'App Check no entregó una credencial válida a este dispositivo';
+  if (reason === 'plugin-missing') return 'el módulo nativo de IA no está disponible';
+  if (reason === 'request-failed') return 'Firebase AI no respondió correctamente';
+  if (reason === 'empty-response') return 'Firebase AI respondió sin contenido utilizable';
+  if (reason === 'disabled') return 'la IA está desactivada en este build';
+  if (reason === 'not-native') return 'este entorno no es Android nativo';
+  return 'Firebase AI todavía no confirmó una respuesta real';
 }
 
 export default function NationalPublishScreen() {
@@ -52,6 +63,7 @@ export default function NationalPublishScreen() {
   const [busy, setBusy] = useState(false);
   const [topiBusy, setTopiBusy] = useState(false);
   const [topiSource, setTopiSource] = useState<'local' | 'topi-endpoint' | null>(null);
+  const [topiProvider, setTopiProvider] = useState<'firebase-ai-logic' | 'private-endpoint' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening'>('idle');
   const [approxLocation, setApproxLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
@@ -132,9 +144,15 @@ export default function NationalPublishScreen() {
       if (suggestion.deliveryMethods?.length) setDeliveryMethods(suggestion.deliveryMethods);
 
       setTopiSource(result.source);
-      setMessage(result.source === 'topi-endpoint'
-        ? 'Topi IA completó el borrador con una respuesta remota sanitizada. Revisa todo antes de publicar.'
-        : 'Topi local completó el borrador sin costo. Revisa todo antes de publicar.');
+      setTopiProvider(result.provider || null);
+      if (result.provider === 'firebase-ai-logic') {
+        setMessage('Topi IA real (Firebase AI) completó el borrador. Revisa los datos antes de publicar.');
+      } else if (result.provider === 'private-endpoint') {
+        setMessage('Topi conectado completó el borrador mediante el endpoint privado. Revisa los datos antes de publicar.');
+      } else {
+        const status = nativeTopiAIStatus();
+        setMessage(`Topi usó el asistente local, no una IA remota: ${aiFailureLabel(status.reason)}. Puedes seguir publicando sin depender de la IA.`);
+      }
     } catch {
       setMessage('Topi no pudo completar el borrador esta vez. Puedes seguir publicando manualmente.');
     } finally {
@@ -148,18 +166,23 @@ export default function NationalPublishScreen() {
       onStatus: (status) => {
         setVoiceStatus(status === 'listening' ? 'listening' : 'idle');
         if (status === 'unsupported') setMessage('El dictado por voz no está disponible en este dispositivo. Puedes seguir escribiendo.');
-        if (status === 'error') setMessage('No pudimos usar el micrófono. Revisa el permiso y vuelve a intentarlo.');
+        if (status === 'error') setMessage('No pudimos reconocer la voz. Mantén pulsado el teléfono cerca, habla después de que el micrófono se active y vuelve a intentarlo.');
       },
     });
   };
 
   const refreshLocation = async () => {
     setMessage('Obteniendo una ubicación aproximada…');
-    const location = await requestApproxLocation({ requestPermission: true });
+    const location = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000 });
     setApproxLocation(location);
-    setMessage(location
-      ? 'Ubicación aproximada activada. TuTop guardará sólo precisión cercana a 1 km, nunca tu domicilio exacto.'
-      : 'No se obtuvo ubicación. Tu anuncio seguirá funcionando por campus y ciudad.');
+    if (location) {
+      setMessage('Ubicación aproximada activada. TuTop guardará sólo precisión cercana a 1 km, nunca tu domicilio exacto.');
+      return;
+    }
+    const permission = await nearbyLocationPermission();
+    if (permission === 'denied') setMessage('Android tiene bloqueada la ubicación para TuTop. Activa ubicación aproximada para la app y vuelve a intentarlo.');
+    else if (permission === 'unavailable') setMessage('No pudimos obtener ubicación del dispositivo. Comprueba que los servicios de ubicación de Android estén encendidos.');
+    else setMessage('Android concedió el permiso, pero todavía no entregó una posición. Tu anuncio seguirá funcionando por campus y ciudad; vuelve a intentar ubicación en unos segundos.');
   };
 
   const addPhotos = async (files: FileList | null) => {
@@ -172,6 +195,7 @@ export default function NationalPublishScreen() {
         next.push(await compressImageForFirestore(file, { maxDimension: 960, maxBytes: 82_000 }));
       }
       setImages((current) => [...current, ...next].slice(0, 4));
+      setMessage(`${next.length} foto${next.length === 1 ? '' : 's'} lista${next.length === 1 ? '' : 's'} para el anuncio.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No pudimos procesar las fotos.');
     } finally {
@@ -183,16 +207,17 @@ export default function NationalPublishScreen() {
   const addNativePhoto = async (source: 'camera' | 'photos') => {
     if (busy || images.length >= 4) return;
     setBusy(true);
-    setMessage(null);
+    setMessage(source === 'camera' ? 'Abriendo cámara…' : 'Abriendo tus fotos…');
     try {
       const selected = source === 'camera' ? await takeNativePhoto() : await pickNativePhoto();
       if (!selected) {
-        setMessage(source === 'camera' ? 'No se tomó ninguna foto.' : 'No se seleccionó ninguna foto.');
+        setMessage(source === 'camera' ? 'Cámara cerrada sin tomar foto.' : 'Selector cerrado sin elegir foto.');
         return;
       }
       const file = await nativePhotoToImageFile(selected, `tutop-${source}-${Date.now()}.jpg`);
       const compressed = await compressImageForFirestore(file, { maxDimension: 960, maxBytes: 82_000 });
       setImages((current) => [...current, compressed].slice(0, 4));
+      setMessage(source === 'camera' ? 'Foto de cámara agregada.' : 'Foto de galería agregada.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No pudimos procesar la foto.');
     } finally {
@@ -216,7 +241,9 @@ export default function NationalPublishScreen() {
       setAdvancedOpen(true);
       return setMessage(`Faltan datos obligatorios: ${missing.join(', ')}.`);
     }
+
     setBusy(true);
+    let identitySyncWarning = false;
     try {
       const identity = identityFor(
         institutionId,
@@ -224,9 +251,17 @@ export default function NationalPublishScreen() {
         user.faculty_id || user.university?.faculty_id,
         user.career_id || user.university?.career_id,
       );
-      await nationalBackend.updateUniversityIdentity(identity, user.facultad);
 
-      const location = approxLocation || await requestApproxLocation({ requestPermission: true });
+      // Legacy beta accounts can contain a profile shape that cannot be patched by
+      // the current identity rule. Do not abort the listing before trying its own
+      // canonical authorization; Firestore will still reject mismatched identity.
+      try {
+        await nationalBackend.updateUniversityIdentity(identity, user.facultad);
+      } catch {
+        identitySyncWarning = true;
+      }
+
+      const location = approxLocation || await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000 });
       if (location && !approxLocation) setApproxLocation(location);
       const now = new Date().toISOString();
       const listing: CanonicalListingV2 = {
@@ -239,15 +274,31 @@ export default function NationalPublishScreen() {
         photo_urls: images.length ? images : [FALLBACK_IMAGE], status: 'active', moderation_status: 'pending', visibility_scope: scope,
         published_at: now, created_at: now, updated_at: now,
       };
+
       await canonicalListingsBackend.create(listing, category);
-      const refreshed = await canonicalListingsBackend.loadMarketplaceProducts({ campusId, institutionId, cityId, limitPerScope: 30 });
-      useAppStore.setState({ products: refreshed });
-      setMessage('Publicación creada y enviada a revisión. TuTop no gestiona envíos; cualquier entrega se acuerda directamente con el vendedor.');
-      window.setTimeout(() => setActiveTab('feed'), 700);
+
+      // A post-create feed refresh is not part of the transaction. If discovery is
+      // temporarily unavailable, the listing is still created and must not be
+      // reported as a failed/duplicate publication.
+      let refreshedFeed = true;
+      try {
+        const refreshed = await canonicalListingsBackend.loadMarketplaceProducts({ campusId, institutionId, cityId, limitPerScope: 30 });
+        useAppStore.setState({ products: refreshed });
+      } catch {
+        refreshedFeed = false;
+      }
+
+      const warnings = [identitySyncWarning ? 'la comunidad del perfil no pudo resincronizarse' : '', !refreshedFeed ? 'el feed tardará en refrescarse' : ''].filter(Boolean);
+      setMessage(warnings.length
+        ? `Publicación creada y enviada a revisión. Aviso: ${warnings.join(' y ')}. No vuelvas a publicarla para evitar duplicados.`
+        : 'Publicación creada y enviada a revisión. TuTop no gestiona envíos; cualquier entrega se acuerda directamente con el vendedor.');
+      window.setTimeout(() => setActiveTab('feed'), warnings.length ? 1500 : 850);
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
       if (/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw)) {
-        setMessage('No pudimos validar los permisos de tu cuenta para publicar. Tu universidad/campus se intentaron resincronizar; vuelve a intentarlo o reinicia sesión si persiste.');
+        setMessage('Firestore rechazó esta publicación. Revisa que tu universidad y campus coincidan con tu cuenta; TuTop no creó el anuncio.');
+      } else if (/RESOURCE_EXHAUSTED|rate.?limit|too many/i.test(raw)) {
+        setMessage('Alcanzaste temporalmente el límite de publicaciones de seguridad. Espera antes de volver a intentar.');
       } else {
         setMessage(raw.startsWith('PROHIBITED_LISTING:') ? 'Ese artículo no está permitido en TuTop.' : raw.startsWith('PRIVATE_FIELD_EXPOSED:') ? 'Hay un dato privado que no debe publicarse.' : `No pudimos publicar: ${raw}`);
       }
@@ -255,6 +306,14 @@ export default function NationalPublishScreen() {
       setBusy(false);
     }
   };
+
+  const aiChip = topiProvider === 'firebase-ai-logic'
+    ? { label: 'Firebase AI real', className: 'bg-emerald-500/10 text-emerald-300' }
+    : topiProvider === 'private-endpoint'
+      ? { label: 'IA conectada', className: 'bg-sky-500/10 text-sky-300' }
+      : topiSource === 'local'
+        ? { label: 'Modo local', className: 'bg-amber-500/10 text-amber-200' }
+        : null;
 
   return <div className="publish-screen pb-[calc(82px+env(safe-area-inset-bottom))]">
     <header className="publish-header pt-safe">
@@ -267,8 +326,8 @@ export default function NationalPublishScreen() {
         <div className="flex items-center gap-3">
           <TopiMascot className="h-12 w-12 shrink-0" />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2"><strong className="text-xs">Topi te ayuda a publicar</strong>{topiSource && <span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${topiSource === 'topi-endpoint' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-violet-500/10 text-violet-300'}`}>{topiSource === 'topi-endpoint' ? 'IA conectada' : 'Local $0'}</span>}</div>
-            <p className="mt-0.5 text-[9px] text-slate-500">Escribe o dicta una frase. Topi reconoce producto, precio, estado, encuentro y alcance.</p>
+            <div className="flex flex-wrap items-center gap-2"><strong className="text-xs">Topi te ayuda a publicar</strong>{aiChip && <span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${aiChip.className}`}>{aiChip.label}</span>}</div>
+            <p className="mt-0.5 text-[9px] text-slate-500">Escribe o dicta una frase. Cuando Firebase AI responde, TuTop lo muestra explícitamente; si no, usa el asistente local sin fingir que es IA.</p>
           </div>
         </div>
         <div className="relative mt-3">
@@ -276,7 +335,7 @@ export default function NationalPublishScreen() {
           <button type="button" onClick={startVoice} className={`absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-xl ${voiceStatus === 'listening' ? 'bg-fuchsia-500 text-white' : 'bg-white/[0.06] text-violet-200'}`} aria-label="Dictar a Topi"><Mic className="h-4 w-4" /></button>
         </div>
         <button disabled={topiBusy} type="button" onClick={() => void applyTopi()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-xs font-black text-white disabled:opacity-60">{topiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{topiBusy ? 'Topi está preparando…' : 'Topi, prepara mi anuncio'}</button>
-        <p className="mt-2 text-[8px] leading-4 text-slate-600">Las respuestas de IA se validan en el teléfono antes de modificar el formulario. Topi no recibe fotos, tokens ni ubicación exacta.</p>
+        <p className="mt-2 text-[8px] leading-4 text-slate-600">Topi no recibe fotos, tokens ni ubicación exacta. La IA nunca publica por ti: sólo propone y tú confirmas.</p>
       </section>
 
       <section className="publish-card">
@@ -317,7 +376,7 @@ export default function NationalPublishScreen() {
       {category && <section className="publish-card"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-300" /><strong className="text-xs">Precio inteligente</strong></div>{pricing ? <><p className="mt-2 text-[10px] leading-5 text-slate-400">{pricing.sample_size} comparables · mediana ${pricing.median_mxn.toLocaleString('es-MX')} · vender rápido ${pricing.sell_fast_mxn.toLocaleString('es-MX')} · recomendado <strong className="text-violet-200">${pricing.recommended_mxn.toLocaleString('es-MX')}</strong> · probar alto ${pricing.try_high_mxn.toLocaleString('es-MX')}</p><button type="button" onClick={() => setPrice(String(pricing.recommended_mxn))} className="mt-2 rounded-xl bg-violet-500/10 px-3 py-2 text-[10px] font-bold text-violet-200">Usar precio recomendado</button></> : <p className="mt-2 text-[9px] text-slate-500">Aún no hay suficientes comparables reales. Topi no inventará un precio.</p>}</section>}
 
       <section className={`publish-card ${readyToPublish ? 'border-emerald-400/20 bg-emerald-500/[0.05]' : 'border-amber-400/15 bg-amber-500/[0.04]'}`}><div className="flex items-center gap-2"><CheckCircle2 className={`h-4 w-4 ${readyToPublish ? 'text-emerald-300' : 'text-amber-300'}`} /><strong className="text-xs">{readyToPublish ? 'Listo para publicar' : 'Completa lo mínimo'}</strong></div><p className="mt-1 text-[9px] text-slate-400">{readyToPublish ? 'Tu anuncio tiene lo necesario. Los campos avanzados siguen siendo opcionales salvo los marcados con *.' : `Falta: ${publishIssues.join(' · ')}`}</p></section>
-      {message && <div className="rounded-2xl bg-white/[0.04] p-3 text-xs text-slate-300">{message}</div>}
+      {message && <div className="rounded-2xl bg-white/[0.04] p-3 text-xs leading-5 text-slate-300">{message}</div>}
       <button disabled={busy || !readyToPublish} onClick={() => void publish()} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-4 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{busy ? 'Publicando…' : readyToPublish ? 'Publicar en TuTop' : 'Completa lo mínimo para publicar'}</button>
     </main>
   </div>;
