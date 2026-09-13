@@ -44,7 +44,10 @@ run('npx', ['cap', 'sync', 'android']);
 run('node', ['scripts/android-assets.mjs']);
 run('node', ['scripts/android-native-capabilities.mjs']);
 run('node', ['scripts/android-secure-session-plugin.mjs']);
-if (v2) run('node', ['scripts/android-topi-ai-plugin.mjs']);
+if (v2) {
+  run('node', ['scripts/android-topi-ai-plugin.mjs']);
+  run('node', ['scripts/android-topi-voice-plugin.mjs']);
+}
 
 const variables = path.join(root, 'android/variables.gradle');
 if (fs.existsSync(variables)) {
@@ -89,4 +92,4 @@ if (v2) {
   console.log(`Firebase Android V2 validado y copiado: ${expectedStagingProject} / ${config.appId}`);
 }
 
-console.log('Android bootstrap 0.9.1 preparado: cámara, ubicación aproximada, Topi AI, FCM y App Check. No se generó APK en este paso.');
+console.log('Android bootstrap 0.9.1 preparado: cámara, ubicación aproximada, Topi AI, Topi Voice, FCM y App Check. No se generó APK en este paso.');
