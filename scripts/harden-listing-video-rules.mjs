@@ -17,9 +17,9 @@ function canonicalListingBounds(source) {
   return { start, end: nextMatch + 1 };
 }
 
-function replaceOnceInSection(section, needle, replacement, label) {
+function replaceOnce(section, needle, replacement, label) {
   const count = section.split(needle).length - 1;
-  if (count !== 1) stop(`${label} esperaba 1 coincidencia dentro de listings_v2 y encontró ${count}`);
+  if (count !== 1) stop(`${label} esperaba 1 coincidencia y encontró ${count}`);
   return section.replace(needle, replacement);
 }
 
@@ -28,42 +28,58 @@ const before = rules.slice(0, bounds.start);
 const after = rules.slice(bounds.end);
 let listingRules = rules.slice(bounds.start, bounds.end);
 
+const allowCreateMarker = '      allow create: if signedIn() && notSuspended()';
+const allowUpdateMarker = '      allow update: if signedIn() && notSuspended() && (';
+const allowDeleteMarker = '      allow delete: if false;';
+const createStart = listingRules.indexOf(allowCreateMarker);
+const updateStart = listingRules.indexOf(allowUpdateMarker, createStart + allowCreateMarker.length);
+const deleteStart = listingRules.lastIndexOf(allowDeleteMarker);
+if (createStart < 0 || updateStart <= createStart || deleteStart <= updateStart) {
+  stop(`estructura listings_v2 inesperada create=${createStart} update=${updateStart} delete=${deleteStart}`);
+}
+
+let prefix = listingRules.slice(0, createStart);
+let createRules = listingRules.slice(createStart, updateStart);
+let updateRules = listingRules.slice(updateStart, deleteStart);
+const suffix = listingRules.slice(deleteStart);
+
 const keyNeedle = "          'delivery_methods','meeting_point_ids','shipping_available','photo_urls','status','moderation_status','visibility_scope',\n";
-listingRules = replaceOnceInSection(
-  listingRules,
+createRules = replaceOnce(
+  createRules,
   keyNeedle,
   "          'delivery_methods','meeting_point_ids','shipping_available','photo_urls','video_urls','status','moderation_status','visibility_scope',\n",
-  'listings_v2 allowlist video_urls',
+  'create allowlist video_urls',
 );
 
 const videoValidation = `        && (!('video_urls' in request.resource.data) || (\n          request.resource.data.video_urls is list\n          && request.resource.data.video_urls.size() <= 1\n          && (request.resource.data.video_urls.size() == 0 || (\n            request.resource.data.video_urls[0] is string\n            && request.resource.data.video_urls[0].size() <= 1200\n            && request.resource.data.video_urls[0].matches('^firebase-storage://[^/]+/product-videos/[A-Za-z0-9_-]+/[A-Za-z0-9._~%-]+$')\n          ))\n        ))\n`;
 
-const createAnchor = "        && (request.resource.data.photo_urls.size() < 4 || (request.resource.data.photo_urls[3] is string && request.resource.data.photo_urls[3].size() <= 180000))\n";
-listingRules = replaceOnceInSection(
-  listingRules,
-  createAnchor,
-  `${createAnchor}${videoValidation}`,
-  'listings_v2 create video validation',
+const createStatus = "        && request.resource.data.status in ['draft','active']\n";
+createRules = replaceOnce(
+  createRules,
+  createStatus,
+  `${videoValidation}${createStatus}`,
+  'create video validation before listing status',
 );
 
-// R2 expands the moderation invariant before R9 runs. Anchor the seller branch
-// on that exact post-R2 structure and the status transition that follows it.
-const updateAnchor = `          && request.resource.data.created_at == resource.data.created_at\n          && (\n            request.resource.data.moderation_status == resource.data.moderation_status\n            || (request.resource.data.moderation_status == 'pending' && resource.data.moderation_status in ['approved','rejected','flagged'])\n          )\n          && request.resource.data.status in ['draft','active','paused','sold_out','archived']\n`;
+const updateStatus = "          && request.resource.data.status in ['draft','active','paused','sold_out','archived']\n";
 const updateVideoValidation = videoValidation.replace(/^ {8}/gm, '          ');
-listingRules = replaceOnceInSection(
-  listingRules,
-  updateAnchor,
-  `          && request.resource.data.created_at == resource.data.created_at\n          && (\n            request.resource.data.moderation_status == resource.data.moderation_status\n            || (request.resource.data.moderation_status == 'pending' && resource.data.moderation_status in ['approved','rejected','flagged'])\n          )\n${updateVideoValidation}          && request.resource.data.status in ['draft','active','paused','sold_out','archived']\n`,
-  'listings_v2 update video validation',
+updateRules = replaceOnce(
+  updateRules,
+  updateStatus,
+  `${updateVideoValidation}${updateStatus}`,
+  'seller update video validation before listing status',
 );
+
+listingRules = `${prefix}${createRules}${updateRules}${suffix}`;
 
 const finalAllowlistCount = listingRules.split("'video_urls'").length - 1;
 const finalValidationCount = listingRules.split('request.resource.data.video_urls.size() <= 1').length - 1;
+const canonicalPrefixCount = listingRules.split('firebase-storage://[^/]+/product-videos/').length - 1;
 if (finalAllowlistCount !== 1) stop(`video_urls debe existir exactamente una vez en allowlist; encontró ${finalAllowlistCount}`);
 if (finalValidationCount !== 2) stop(`video_urls debe validarse en create+seller update; encontró ${finalValidationCount}`);
-if (!listingRules.includes('firebase-storage://[^/]+/product-videos/')) stop('falta el prefijo canónico product-videos en validación');
+if (canonicalPrefixCount !== 2) stop(`prefijo product-videos debe aparecer en create+update; encontró ${canonicalPrefixCount}`);
 if (!after.startsWith('    match /')) stop('el límite dinámico de listings_v2 no terminó justo antes del siguiente match');
 
 rules = `${before}${listingRules}${after}`;
 fs.writeFileSync(path, rules);
-console.log('✅ Rules 0.9.2: listings_v2 acepta máximo un firebase-storage:// product-video; create/update quedan fail-closed y la transformación está aislada dinámicamente al bloque canónico.');
+console.log('✅ Rules 0.9.2: video_urls queda permitido sólo en listings_v2 y validado fail-closed en create + seller update, sin depender de la forma interna del bloque de moderación.');
