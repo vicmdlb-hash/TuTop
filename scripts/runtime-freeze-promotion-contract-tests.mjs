@@ -75,20 +75,25 @@ assert.match(staging, /event=workflow_dispatch/);
 assert.match(staging, /TUTOP_VALIDATED_GATE_RUN_ID=\$GATE_RUN_ID/);
 assert.match(staging, /TUTOP_VALIDATED_GATE_SHA=\$GITHUB_SHA/);
 assert.match(staging, /npm run v2:catalog:seed/);
+assert.match(staging, /TUTOP_ALLOW_AI_APP_CHECK_ENFORCEMENT: staging-ai-only/);
+assert.match(staging, /TUTOP_APP_CHECK_AI_MODE: ENFORCED/);
 const stagingGateIndex = staging.indexOf('Require same-SHA green October gate before any staging mutation');
 for (const step of [
   'Deploy current strict V2 rules and indexes',
   'Verify canonical catalog without overwriting',
   'Enable base Firebase Authentication without Identity Platform upgrade',
   'Prepare staging Web App runtime config',
+  'Configure App Check staging AI-only enforcement',
+  'Prove Firebase AI Logic generateContent runtime',
   'Provision and validate staging Android Firebase app',
   'Real two-user marketplace smoke',
   'Real controlled account erasure smoke',
-  'Enable App Check monitoring only',
+  'Verify final App Check service isolation',
 ]) {
   const index = staging.indexOf(step);
   assert(stagingGateIndex >= 0 && index > stagingGateIndex, `${step} must occur after October same-SHA gate`);
 }
+assert(staging.indexOf('Configure App Check staging AI-only enforcement') < staging.indexOf('Prove Firebase AI Logic generateContent runtime'));
 
 assert.match(android, /if: github\.ref_name == 'feat\/tutop-0\.9\.1-nearby-topi'/);
 assert.match(android, /october-01-validation\.yml\/runs/);
@@ -137,6 +142,7 @@ console.log('PASS TuTop 0.9.1 runtime freeze manifest is independent from histor
 console.log('PASS October, staging and Android remain manual-only and exact-branch bound');
 console.log('PASS October owns static/typecheck/Rules/emulator evidence once per SHA');
 console.log('PASS staging exports October run+SHA authority before any remote mutation');
+console.log('PASS staging permits only the explicit AI Logic App Check enforcement exception before runtime proof');
 console.log('PASS Android binds October + staging to exact SHA and does not repeat upstream static gates');
 console.log('PASS 0.9.1 candidate identity/version are isolated from 0.9.0');
 console.log('Runtime freeze promotion contract 0.9.1: PASS');

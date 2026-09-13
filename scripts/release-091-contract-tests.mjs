@@ -18,6 +18,7 @@ const versioner = read('scripts/configure-android-beta-version.mjs');
 const generator = read('scripts/generate-physical-qa-candidate.mjs');
 const aiRuntimeSmoke = read('scripts/staging-topi-ai-runtime-smoke.mjs');
 const aiProvisioner = read('scripts/firebase-ai-staging-provision.mjs');
+const appCheckConfig = read('scripts/configure-app-check-staging.mjs');
 const webStagingSetup = read('scripts/prepare-staging-v2-auth.mjs');
 const androidStagingSetup = read('scripts/prepare-staging-android-app.mjs');
 const oldCandidate = JSON.parse(read('docs/PHYSICAL_QA_CANDIDATE_0.9.json'));
@@ -49,19 +50,32 @@ assert.match(versioner, /90100/);
 assert.match(generator, /0\.9\.1-beta/);
 assert.match(generator, /PHYSICAL_QA_CANDIDATE_0\.9\.1\.generated\.json/);
 
-// Staging must provision and prove the zero-billing Gemini Developer API path before Android can promote.
+// Staging must isolate App Check enforcement to Firebase AI Logic, then prove the zero-billing Gemini Developer API path.
+assert.match(staging, /Configure App Check staging AI-only enforcement/);
+assert.match(staging, /TUTOP_ALLOW_AI_APP_CHECK_ENFORCEMENT: staging-ai-only/);
+assert.match(staging, /TUTOP_APP_CHECK_AI_MODE: ENFORCED/);
 assert.match(staging, /Prove Firebase AI Logic generateContent runtime/);
 assert.match(staging, /node scripts\/staging-topi-ai-runtime-smoke\.mjs/);
 assert.match(staging, /TUTOP_TOPI_AI_MODEL: gemini-3\.8-flash/);
-assert(staging.indexOf('Prepare staging Web App runtime config') < staging.indexOf('Prove Firebase AI Logic generateContent runtime'));
+assert(staging.indexOf('Prepare staging Web App runtime config') < staging.indexOf('Configure App Check staging AI-only enforcement'));
+assert(staging.indexOf('Configure App Check staging AI-only enforcement') < staging.indexOf('Prove Firebase AI Logic generateContent runtime'));
 assert(staging.indexOf('Prove Firebase AI Logic generateContent runtime') < staging.indexOf('Provision and validate staging Android Firebase app'));
+assert.match(appCheckConfig, /firebaseml\.googleapis\.com/);
+assert.match(appCheckConfig, /assertAiAppCheckFreezeMode/);
+assert.match(guard, /staging-ai-only/);
+assert.match(guard, /general_app_check_enforcement_forbidden_during_runtime_freeze/);
+
 assert.match(aiRuntimeSmoke, /getAI\(app, \{ backend: new GoogleAIBackend\(\) \}\)/);
 assert.match(aiRuntimeSmoke, /getGenerativeModel/);
 assert.match(aiRuntimeSmoke, /model\.generateContent/);
 assert.match(aiRuntimeSmoke, /gemini-3\.8-flash/);
 assert.match(aiRuntimeSmoke, /TUTOP_AI_RUNTIME_OK_091/);
 assert.match(aiRuntimeSmoke, /STAGING_TOPI_AI_TIMEOUT/);
-assert.match(aiRuntimeSmoke, /MAX_ATTEMPTS = 8/);
+assert.match(aiRuntimeSmoke, /MAX_ATTEMPTS = 12/);
+assert.match(aiRuntimeSmoke, /CustomProvider/);
+assert.match(aiRuntimeSmoke, /exchangeDebugToken/);
+assert.match(aiRuntimeSmoke, /deleteEphemeralDebugToken/);
+assert.match(aiRuntimeSmoke, /clearTimeout\(timeoutId\)/);
 assert.doesNotMatch(aiRuntimeSmoke, /authorization['"]?\s*:|GEMINI_API_KEY|PROVIDER_API_KEY/i);
 assert.match(aiProvisioner, /firebasevertexai\.googleapis\.com/);
 assert.match(aiProvisioner, /generativelanguage\.googleapis\.com/);
@@ -91,6 +105,7 @@ console.log('PASS TuTop 0.9.1 version and Android 90100 identity are isolated fr
 console.log('PASS white-purple default, black-purple dark and system theme are wired before App render');
 console.log('PASS Quality, October, Staging and Android gates target the 0.9.1 branch');
 console.log('PASS staging export enables Topi Firebase AI without provider secrets');
+console.log('PASS staging isolates App Check enforcement to Firebase AI Logic and uses an ephemeral CI debug-token path');
 console.log('PASS staging provisions Gemini Developer API + Firebase AI Logic + P4SA/key allowlists before real generateContent proof');
 console.log('PASS closeout propagates child workflow failures fail-closed across command substitutions');
 console.log('TuTop 0.9.1 release/theme/AI isolation contract: PASS');

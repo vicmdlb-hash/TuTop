@@ -1,11 +1,12 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { assertAppCheckFreezeMode, assertStagingFreezeContext } from './staging-freeze-guard.mjs';
+import { assertAiAppCheckFreezeMode, assertAppCheckFreezeMode, assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
 const projectId = assertStagingFreezeContext({
   allowEnv: 'TUTOP_ALLOW_APP_CHECK',
   allowValue: 'staging-v2',
 });
 const mode = assertAppCheckFreezeMode(process.env.TUTOP_APP_CHECK_MODE || 'UNENFORCED');
+const aiMode = assertAiAppCheckFreezeMode(process.env.TUTOP_APP_CHECK_AI_MODE || 'UNENFORCED');
 
 const token = await firebaseCiAccessToken();
 const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Goog-User-Project': projectId };
@@ -36,22 +37,29 @@ async function enableService(serviceName) {
   }
 }
 
+async function setEnforcement(projectNumber, serviceId, enforcementMode) {
+  const name = `projects/${projectNumber}/services/${serviceId}`;
+  await request(`https://firebaseappcheck.googleapis.com/v1/${name}?updateMask=enforcementMode`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name, enforcementMode }),
+  });
+  const current = await request(`https://firebaseappcheck.googleapis.com/v1/${name}`);
+  if (current?.enforcementMode !== enforcementMode) throw new Error(`${serviceId} no quedó en ${enforcementMode}.`);
+  console.log(`✅ App Check ${serviceId}: ${current.enforcementMode}`);
+}
+
 await enableService('firebaseappcheck.googleapis.com');
 const project = await request(`https://cloudresourcemanager.googleapis.com/v1/projects/${encodeURIComponent(projectId)}`);
 const projectNumber = String(project.projectNumber || '').trim();
 if (!projectNumber) throw new Error('Cloud Resource Manager no devolvió projectNumber.');
 
 for (const serviceId of ['firestore.googleapis.com', 'identitytoolkit.googleapis.com']) {
-  const name = `projects/${projectNumber}/services/${serviceId}`;
-  await request(`https://firebaseappcheck.googleapis.com/v1/${name}?updateMask=enforcementMode`, {
-    method: 'PATCH',
-    body: JSON.stringify({ name, enforcementMode: mode }),
-  });
-  const current = await request(`https://firebaseappcheck.googleapis.com/v1/${name}`);
-  if (current?.enforcementMode !== mode) throw new Error(`${serviceId} no quedó en ${mode}.`);
-  console.log(`✅ App Check ${serviceId}: ${current.enforcementMode}`);
+  await setEnforcement(projectNumber, serviceId, mode);
 }
+await setEnforcement(projectNumber, 'firebaseml.googleapis.com', aiMode);
 
-console.log(`✅ App Check staging configurado en ${mode}.`);
+console.log(`✅ App Check staging aislado: Firestore/Auth=${mode}; Firebase AI Logic=${aiMode}.`);
 console.log(`October gate run: ${process.env.TUTOP_VALIDATED_GATE_RUN_ID}`);
-if (mode === 'UNENFORCED') console.log('Se recopilan métricas sin bloquear clientes; ENFORCED permanece bloqueado durante Runtime Freeze Candidate.');
+if (mode === 'UNENFORCED' && aiMode === 'ENFORCED') {
+  console.log('✅ Freeze conservado: enforcement sólo para Firebase AI Logic en staging 0.9.1.');
+}
