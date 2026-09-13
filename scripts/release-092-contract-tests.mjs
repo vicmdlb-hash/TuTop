@@ -70,8 +70,9 @@ assert.match(workflow, /test "\$EXPECTED" = "\$ACTUAL"/);
 assert.match(workflow, /tutop-0\.9\.2-beta\.0-physical-qa-/);
 assert.match(workflow, /--prerelease/);
 
-// Private sideload QA may temporarily leave App Check unenforced, but only as
-// an explicit 0.9.2 staging exception. No production or provider secret is implied.
+// The canonical privileged staging pipeline may temporarily leave App Check
+// unenforced for private QA while proving the backend independently. This does
+// not authorize embedding provider/debug secrets in the Android client.
 assert.match(workflow, /TUTOP_AI_APP_CHECK_REQUIRED: "false"/);
 assert.equal((workflow.match(/TUTOP_APP_CHECK_MODE: UNENFORCED/g) || []).length >= 2, true);
 assert.equal((workflow.match(/TUTOP_APP_CHECK_AI_MODE: UNENFORCED/g) || []).length >= 2, true);
@@ -84,7 +85,12 @@ assert.match(theme, /return value === 'dark' \|\| value === 'system' \|\| value 
 assert.match(theme, /return 'dark'/);
 assert.match(nativeSecurity, /0\.9\.2-beta\.0/);
 assert.match(appCheck, /environment === 'staging'/);
-assert(appCheck.includes('/^0\\.9\\.(?:1|2)-beta\\./.test(version)'), 'App Check staging debug provider must remain limited to 0.9.1/0.9.2 betas');
+// 0.9.1 historical staging can still use Firebase's debug provider. 0.9.2
+// physical QA must use the Android-native default (Play Integrity) so real AI
+// does not depend on a manually registered per-device debug secret.
+assert(appCheck.includes('/^0\\.9\\.1-beta\\./.test(version)'), '0.9.2 must leave the debug provider behind and restrict it to historical 0.9.1 staging');
+assert(!appCheck.includes('/^0\\.9\\.(?:1|2)-beta\\./.test(version)'), '0.9.2 must not re-enable the staging debug provider');
+assert.match(appCheck, /play-integrity/);
 assert.match(appCheck, /debugToken: useStagingDebugProvider\(\)/);
 assert.doesNotMatch(appCheck, /debugToken:\s*['"][A-Za-z0-9_-]{12,}['"]/);
 assert.match(nativeDevice, /permissions: \['coarseLocation'\]/);
@@ -132,4 +138,4 @@ assert.match(verifier, /build_commit_sha/);
 assert.match(verifier, /gate_commit_sha/);
 assert.match(verifier, /staging_smoke_commit_sha/);
 
-console.log('✅ TuTop 0.9.2 canonical release identity / UX / native / Topi / exact-SHA Physical QA contract PASS');
+console.log('✅ TuTop 0.9.2 canonical release identity / UX / native / Topi / Play Integrity / exact-SHA Physical QA contract PASS');
