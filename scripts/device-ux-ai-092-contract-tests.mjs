@@ -7,9 +7,13 @@ const index = read('index.html');
 const appearance = read('src/components/AppearanceSettings.tsx');
 const device = read('src/services/nativeDeviceCapabilities.ts');
 const nativeCaps = read('scripts/android-native-capabilities.mjs');
+const mobileDeps = read('scripts/install-mobile-deps.mjs');
 const voicePlugin = read('scripts/android-topi-voice-plugin.mjs');
 const nativeAI = read('src/services/nativeTopiAI.ts');
 const nativeAppCheck = read('src/services/nativeAppCheckToken.ts');
+const identityBridge = read('src/services/nationalIdentityHydrationBridge.ts');
+const topiMascot = read('src/components/TopiMascot.tsx');
+const brandCss = read('src/brand092.css');
 const app = read('src/App.tsx');
 const explore = read('src/components/ExploreScreen.tsx');
 const listings = read('src/services/canonicalListingsBackend.ts');
@@ -24,9 +28,17 @@ assert.match(appearance, /Automático/);
 assert.match(device, /camera\.takePhoto/);
 assert.match(device, /camera\.chooseFromGallery/);
 assert.match(device, /camera\.getPhoto/);
+assert.match(device, /plugin\('Filesystem'\)/);
+assert.match(device, /filesystem\.readFile/);
+assert.match(device, /imageBlobFromFilesystem/);
+assert.match(mobileDeps, /@capacitor\/filesystem@/);
 assert.match(device, /watchPosition/);
 assert.match(device, /clearWatch/);
 assert.match(device, /enableHighAccuracy: false/);
+assert.match(device, /enableLocationManagerFallback: true/);
+assert.doesNotMatch(device, /enableLocationFallback: true/);
+assert.match(device, /OS-PLUG-GLOC-0007/);
+assert.match(device, /OS-PLUG-GLOC-0010/);
 assert.match(device, /photo\.thumbnail/);
 assert.match(device, /convertFileSrc/);
 assert.match(nativeCaps, /photopicker_activity:0:required/);
@@ -48,6 +60,10 @@ assert.match(nativeAI, /appCheckRequired\(\)/);
 assert.match(nativeAI, /Promise\.race/);
 assert.match(nativeAI, /AI_REQUEST_TIMEOUT_MS/);
 assert.match(nativeAI, /if \(required && !appCheckToken\)/);
+assert.match(nativeAI, /isPrivatePhysicalQaBuild/);
+assert.match(nativeAI, /environment === 'staging'/);
+assert.match(nativeAI, /\^0\\\.9\\\.2-beta\\\./);
+assert.match(nativeAI, /if \(isPrivatePhysicalQaBuild\(\)\) return false/);
 
 // 0.9.2 must not depend on a manually registered debug secret. The native
 // App Check plugin defaults to Play Integrity on Android when debugToken=false.
@@ -55,6 +71,25 @@ assert.match(nativeAppCheck, /\^0\\\.9\\\.1-beta\\\./);
 assert.doesNotMatch(nativeAppCheck, /\^0\\\.9\\\.\(\?:1\|2\)-beta/);
 assert.match(nativeAppCheck, /play-integrity/);
 assert.match(nativeAppCheck, /debugToken: useStagingDebugProvider\(\)/);
+
+// Legacy beta accounts must self-heal university/campus metadata before a V2
+// listing create instead of repeatedly sending a known Firestore mismatch.
+assert.match(identityBridge, /resolveCanonicalIdentity/);
+assert.match(identityBridge, /migrateLegacyIdentity/);
+assert.match(identityBridge, /originalCreateListing/);
+assert.match(identityBridge, /profileCanonical \|\| listingCanonical/);
+assert.match(identityBridge, /institution_id: resolved\.institution\.id/);
+assert.match(identityBridge, /campus_id: resolved\.campus\.id/);
+
+// Branding is no longer a smooth placeholder: Topi carries visible crochet/yarn
+// patterns and the wordmark gets the approved navy/purple + pin treatment.
+assert.match(topiMascot, /topi-yarn-brown/);
+assert.match(topiMascot, /topi-yarn-purple/);
+assert.match(topiMascot, /topi-soft-yarn/);
+assert.match(topiMascot, /import '\.\.\/brand092\.css'/);
+assert.match(brandCss, /#211a47/i);
+assert.match(brandCss, /#7c4dff/i);
+assert.match(brandCss, /wordmark span:last-child::after/);
 
 // Main navigation now matches the approved consumer IA/marketplace direction:
 // Inicio / Explorar / Publicar / Mensajes / Perfil. Wallet remains available
@@ -86,4 +121,4 @@ assert.match(listings, /doc\.data\.status === 'active'/);
 assert.match(listings, /cells\.includes\(cell\)/);
 assert.match(listings, /\[\.\.\.sets\.flat\(\), \.\.\.ownNearby\]/);
 
-console.log('✅ TuTop 0.9.2 device UX + navigation + canonical Nearby query/seller visibility + explore recovery + camera/gallery + coarse-location + voice + real-AI/App Check hardening contract PASS');
+console.log('✅ TuTop 0.9.2 physical-device repairs: media URI + coarse location + Firebase AI QA + legacy identity + crochet branding + canonical Nearby PASS');
