@@ -76,7 +76,7 @@ public class TuTopSecureStorePlugin extends Plugin {
     }
 
     private String decrypt(String payload) throws Exception {
-        String[] parts = payload.split("\\.", 2);
+        String[] parts = payload.split("\\\\.", 2);
         if (parts.length != 2) throw new IllegalArgumentException("INVALID_SECURE_PAYLOAD");
         byte[] iv = Base64.decode(parts[0], Base64.NO_WRAP);
         byte[] encrypted = Base64.decode(parts[1], Base64.NO_WRAP);
