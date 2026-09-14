@@ -30,8 +30,8 @@ if (existingMarker) {
   process.exit(0);
 }
 
-// Preserve infrastructure/catalog collections deliberately. Only beta account,
-// marketplace, messaging and user-generated state is in this allowlist.
+// Preserve canonical catalog/infrastructure and administrative evidence. Wipe
+// beta accounts plus user-generated marketplace/messaging state only.
 const ROOT_COLLECTIONS_TO_WIPE = [
   'notification_receipts',
   'device_tokens',
@@ -60,32 +60,51 @@ const ROOT_COLLECTIONS_TO_WIPE = [
   'users',
 ];
 
+// Firestore parent deletion never cascades. These three chat subcollections are
+// part of the V2 contract and must be explicitly deleted and re-verified or a
+// supposedly clean beta can retain old messages/read state/confirmations.
+const CHAT_SUBCOLLECTIONS = ['messages', 'confirmations', 'reads'];
+
 const discovered = new Map();
 for (const collection of ROOT_COLLECTIONS_TO_WIPE) {
   const docs = await adminListDocuments(collection);
   discovered.set(collection, docs);
 }
 
-// Firestore does not cascade-delete subcollections. Delete chat messages before
-// deleting the parent chat documents so stale conversations cannot survive.
-const nestedMessagePaths = [];
-for (const chat of discovered.get('chats') || []) {
-  const chatId = chat.path.split('/').pop();
-  if (!chatId) continue;
-  for (const message of await adminListDocuments(`chats/${chatId}/messages`)) nestedMessagePaths.push(message.path);
+const chatIds = (discovered.get('chats') || [])
+  .map((chat) => chat.path.split('/').pop())
+  .filter(Boolean);
+const nestedChatDocuments = new Map();
+for (const subcollection of CHAT_SUBCOLLECTIONS) nestedChatDocuments.set(subcollection, []);
+for (const chatId of chatIds) {
+  for (const subcollection of CHAT_SUBCOLLECTIONS) {
+    const docs = await adminListDocuments(`chats/${chatId}/${subcollection}`);
+    nestedChatDocuments.get(subcollection).push(...docs);
+  }
 }
 
 const authUsers = await adminListAuthUsers();
-const totalDocs = [...discovered.values()].reduce((sum, docs) => sum + docs.length, 0) + nestedMessagePaths.length;
+const nestedCounts = Object.fromEntries(
+  CHAT_SUBCOLLECTIONS.map((name) => [name, nestedChatDocuments.get(name).length]),
+);
+const nestedTotal = Object.values(nestedCounts).reduce((sum, count) => sum + count, 0);
+const rootTotal = [...discovered.values()].reduce((sum, docs) => sum + docs.length, 0);
+const totalDocs = rootTotal + nestedTotal;
+
 console.log(JSON.stringify({
   reset_id: resetId,
   project_id: projectId,
   apply,
   auth_users: authUsers.length,
   firestore_documents: totalDocs,
-  preserved: ['institutions', 'campuses', 'faculties', 'careers', 'institution_domains', 'approved_meeting_points', 'catalog', 'admins', 'staging_maintenance'],
+  root_documents: rootTotal,
+  nested_chat_documents: nestedCounts,
+  preserved: [
+    'institutions', 'campuses', 'faculties', 'careers', 'institution_domains',
+    'approved_meeting_points', 'catalog', 'admins', 'audit_log', 'moderation_cases',
+    'staging_maintenance',
+  ],
   collection_counts: Object.fromEntries([...discovered.entries()].map(([name, docs]) => [name, docs.length])),
-  nested_chat_messages: nestedMessagePaths.length,
 }, null, 2));
 
 if (!apply) {
@@ -93,7 +112,10 @@ if (!apply) {
   process.exit(0);
 }
 
-for (const path of nestedMessagePaths) await adminDeleteDocument(path);
+// Children first, then parents/root data.
+for (const subcollection of CHAT_SUBCOLLECTIONS) {
+  for (const document of nestedChatDocuments.get(subcollection)) await adminDeleteDocument(document.path);
+}
 for (const collection of ROOT_COLLECTIONS_TO_WIPE) {
   for (const document of discovered.get(collection) || []) await adminDeleteDocument(document.path);
 }
@@ -103,11 +125,19 @@ for (let offset = 0; offset < uids.length; offset += 1000) {
   await adminDeleteTestUsers(uids.slice(offset, offset + 1000));
 }
 
+// Fail closed: do not write the one-shot marker until Auth, every root collection,
+// and every known nested chat collection are independently verified empty.
 const remainingUsers = await adminListAuthUsers();
 if (remainingUsers.length) throw new Error(`STAGING_RESET_AUTH_NOT_EMPTY:${remainingUsers.length}`);
 for (const collection of ROOT_COLLECTIONS_TO_WIPE) {
   const left = await adminListDocuments(collection);
   if (left.length) throw new Error(`STAGING_RESET_COLLECTION_NOT_EMPTY:${collection}:${left.length}`);
+}
+for (const chatId of chatIds) {
+  for (const subcollection of CHAT_SUBCOLLECTIONS) {
+    const left = await adminListDocuments(`chats/${chatId}/${subcollection}`);
+    if (left.length) throw new Error(`STAGING_RESET_CHAT_SUBCOLLECTION_NOT_EMPTY:${chatId}:${subcollection}:${left.length}`);
+  }
 }
 
 await adminPatchDocument(markerPath, {
@@ -119,4 +149,4 @@ await adminPatchDocument(markerPath, {
   reason: String(config.reason || 'staging reset').slice(0, 300),
 });
 
-console.log(`✅ LAVADO STAGING COMPLETO · auth=${uids.length} · docs=${totalDocs} · catálogo/infra preservados.`);
+console.log(`✅ LAVADO STAGING COMPLETO · auth=${uids.length} · docs=${totalDocs} · chat messages/confirmations/reads=0 · catálogo/infra/auditoría preservados.`);

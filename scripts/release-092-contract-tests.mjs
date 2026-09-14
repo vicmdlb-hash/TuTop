@@ -7,6 +7,7 @@ const lock = JSON.parse(read('package-lock.json'));
 const project = JSON.parse(read('config/project.json'));
 const env = read('.env.example');
 const workflow = read('.github/workflows/092-release-candidate-v2.yml');
+const hostedStagingWorkflow = read('.github/workflows/092-real-staging-software-proof.yml');
 const resetConfig = JSON.parse(read('config/staging-reset-once.json'));
 const resetScript = read('scripts/reset-staging-accounts.mjs');
 const nativeDevice = read('src/services/nativeDeviceCapabilities.ts');
@@ -54,9 +55,16 @@ assert.match(workflow, /TuTop-0\.9\.2-beta\.0-physical-qa-staging\.apk/);
 assert.match(workflow, /PHYSICAL_QA_CANDIDATE_0\.9\.2\.generated\.json/);
 assert.match(workflow, /--prerelease/);
 
-// Regression for build-91: before Android assembly, the staging preparation must
+// The GitHub-hosted real-staging helper cannot use the local ADC credential that
+// owns the authoritative 0.9.2 path. Keep it available for explicit diagnostics,
+// but do not create a predictable red status/email on every push.
+assert.match(hostedStagingWorkflow, /workflow_dispatch:/);
+assert.doesNotMatch(hostedStagingWorkflow, /\n\s+push:/);
+assert.match(hostedStagingWorkflow, /runs-on: ubuntu-24\.04/);
+
+// Regression for build-91: before Android assembly, staging preparation must
 // prove an app-like new account can publish immediately and then wipe old beta
-// users/data exactly once. This runs in the existing authoritative pipeline.
+// users/data exactly once. This runs in the authoritative self-hosted pipeline.
 assert.match(prepareAndroid, /staging-app-registration-smoke\.mjs/);
 assert.match(prepareAndroid, /reset-staging-accounts\.mjs/);
 assert.match(prepareAndroid, /DELETE_ALL_BETA_ACCOUNTS/);
@@ -89,8 +97,13 @@ assert.match(resetScript, /EXPECTED_PROJECT = 'tutop-beta-vicmdlb-1356585881'/);
 assert.match(resetScript, /DELETE_ALL_BETA_ACCOUNTS/);
 assert.match(resetScript, /adminListAuthUsers/);
 assert.match(resetScript, /adminDeleteTestUsers/);
+assert.match(resetScript, /const CHAT_SUBCOLLECTIONS = \['messages', 'confirmations', 'reads'\]/);
+assert.match(resetScript, /STAGING_RESET_CHAT_SUBCOLLECTION_NOT_EMPTY/);
+assert.match(resetScript, /chat messages\/confirmations\/reads=0/);
 assert.match(resetScript, /institutions/);
 assert.match(resetScript, /approved_meeting_points/);
+assert.match(resetScript, /audit_log/);
+assert.match(resetScript, /moderation_cases/);
 
 assert.match(generator, /gateCommitSha !== headSha/);
 assert.match(generator, /stagingSmokeCommitSha !== headSha/);
@@ -99,4 +112,4 @@ assert.match(verifier, /build_commit_sha/);
 assert.match(verifier, /gate_commit_sha/);
 assert.match(verifier, /staging_smoke_commit_sha/);
 
-console.log('✅ TuTop 0.9.2 release contract: exact-SHA candidate + app-like registration/publication proof + Capacitor 8 native APIs + one-shot staging reset PASS');
+console.log('✅ TuTop 0.9.2 release contract: exact-SHA candidate + app-like registration/publication proof + complete chat-state wipe + Capacitor 8 native APIs + one-shot staging reset PASS');
