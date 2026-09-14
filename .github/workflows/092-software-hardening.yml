@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: tutop-092-software-${{ github.sha }}
@@ -16,6 +17,10 @@ concurrency:
 env:
   TUTOP_BETA_VERSION: 0.9.2-beta.0
   TUTOP_ANDROID_VERSION_CODE: 90200
+  TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+  TUTOP_ANDROID_PACKAGE_NAME: mx.tutop.app
+  TUTOP_VALIDATED_BASE_RUN_ID: "34772848879"
+  TUTOP_VALIDATED_BASE_ARTIFACT: TuTop-0.9.2-beta.0-physical-qa-staging-12
   VITE_TUTOP_SCHEMA_V2: "true"
   VITE_TUTOP_ENVIRONMENT: staging
   VITE_TUTOP_APP_VERSION: 0.9.2-beta.0
@@ -90,6 +95,53 @@ jobs:
           grep -q "firebase-storage://" firebase/firestore.v2.generated.rules
           grep -q "product-videos" firebase/storage.rules
 
+      - name: Recover validated public Firebase Android configuration
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tutop-validated-base
+          gh run download "$TUTOP_VALIDATED_BASE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "$TUTOP_VALIDATED_BASE_ARTIFACT" --dir /tmp/tutop-validated-base
+          python3 - <<'PY'
+          import json, re, zipfile, pathlib
+          apk = pathlib.Path('/tmp/tutop-validated-base/TuTop-0.9.2-beta.0-physical-qa-staging.apk')
+          if not apk.is_file():
+              raise SystemExit('VALIDATED_BASE_APK_MISSING')
+          project = 'tutop-beta-vicmdlb-1356585881'
+          package = 'mx.tutop.app'
+          raw = apk.read_bytes()
+          def one(pattern, data, label):
+              m = re.search(pattern, data)
+              if not m:
+                  raise SystemExit('MISSING_VALIDATED_CLIENT_VALUE:' + label)
+              value = m.group(1)
+              return value.decode() if isinstance(value, bytes) else value
+          android_app = one(rb'(1:900056291310:android:[0-9a-f]+)', raw, 'android_app_id')
+          android_key = one(rb'(AIza[0-9A-Za-z_-]{30,50})', raw, 'android_api_key')
+          storage = one(rb'(tutop-beta-vicmdlb-1356585881(?:\.firebasestorage\.app|\.appspot\.com))', raw, 'storage_bucket')
+          pathlib.Path('.tutop-staging-google-services.json').write_text(json.dumps({
+              'project_info': {
+                  'project_number': '900056291310',
+                  'project_id': project,
+                  'storage_bucket': storage,
+              },
+              'client': [{
+                  'client_info': {
+                      'mobilesdk_app_id': android_app,
+                      'android_client_info': {'package_name': package},
+                  },
+                  'oauth_client': [],
+                  'api_key': [{'current_key': android_key}],
+                  'services': {'appinvite_service': {'other_platform_oauth_client': []}},
+              }],
+              'configuration_version': '1',
+          }))
+          print('::add-mask::' + android_key)
+          print('::add-mask::' + android_app)
+          print('✅ Configuración pública Android Firebase recuperada de evidencia validada; no se copiaron credenciales privilegiadas.')
+          PY
+
       - name: Build web bundle
         run: npm run build
 
@@ -100,6 +152,8 @@ jobs:
         run: git diff --exit-code -- package.json package-lock.json
 
       - name: Generate hardened Android project
+        env:
+          TUTOP_ANDROID_GOOGLE_SERVICES_PATH: .tutop-staging-google-services.json
         run: |
           npm run android:bootstrap
           node scripts/configure-android-beta-version.mjs
@@ -109,6 +163,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test -s android/app/google-services.json
+          grep -q 'tutop-beta-vicmdlb-1356585881' android/app/google-services.json
           grep -q 'versionCode 90200' android/app/build.gradle
           grep -q 'versionName "0.9.2-beta.0"' android/app/build.gradle
           grep -q 'ACCESS_COARSE_LOCATION' android/app/src/main/AndroidManifest.xml
@@ -137,3 +193,7 @@ jobs:
         run: |
           test -s android/app/build/outputs/apk/debug/app-debug.apk
           echo "✅ Software hardening gates complete. APK was compiled only as proof and was not uploaded/promoted."
+
+      - name: Remove recovered Firebase config
+        if: always()
+        run: rm -f .tutop-staging-google-services.json android/app/google-services.json
