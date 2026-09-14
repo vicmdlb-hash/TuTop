@@ -65,11 +65,15 @@ assert.match(nearby, /legacyShippingRequirement/);
 
 // 0.9.2 video references are appended after nearby semantics so the final
 // generated listing allowlist and create/update validators include only the
-// canonical firebase-storage:// product-video surface. The hardener itself must
-// fail closed if any expected marker drifts.
-assert.match(video, /listings_v2 allowlist video_urls/);
-assert.match(video, /listings_v2 create video validation/);
-assert.match(video, /listings_v2 update video validation/);
+// canonical firebase-storage:// product-video surface. The hardener must
+// discover the listings_v2 boundary dynamically and fail closed on any drift.
+assert.match(video, /canonicalListingBounds/);
+assert.match(video, /create allowlist video_urls/);
+assert.match(video, /create video validation before listing status/);
+assert.match(video, /seller update video validation before listing status/);
+assert.match(video, /finalAllowlistCount !== 1/);
+assert.match(video, /finalValidationCount !== 2/);
+assert.match(video, /canonicalPrefixCount !== 2/);
 assert.match(video, /firebase-storage:\/\//);
 assert.match(video, /product-videos/);
 assert.match(video, /video_urls\.size\(\) <= 1/);
