@@ -11,7 +11,8 @@ import { isForbiddenProductText, MARKETPLACE_CATEGORIES } from '../lib/productAs
 import { defaultScopeForCategory, safeMeetingPointsFor, VISIBILITY_SCOPES } from '../lib/universityNetwork';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { askTopi } from '../services/assistantProvider';
-import { firebaseMediaStorage, mediaStorageEnabled, validateListingVideo } from '../services/firebaseMediaStorage';
+import { firebaseMediaStorage, mediaStorageEnabled, userFacingMediaError, validateListingVideo } from '../services/firebaseMediaStorage';
+import { recordDiagnostic } from '../services/localDiagnostics';
 import { isNativeDeviceRuntime, nativePhotoToImageFile, pickNativePhoto, takeNativePhoto } from '../services/nativeDeviceCapabilities';
 import { nativeTopiAIStatus } from '../services/nativeTopiAI';
 import { useAppStore } from '../store/useAppStore';
@@ -31,23 +32,28 @@ function slug(value: string) {
 }
 
 function aiFailureLabel(reason: ReturnType<typeof nativeTopiAIStatus>['reason']) {
-  if (reason === 'app-check-unavailable') return 'App Check no entregó una credencial válida a este dispositivo';
-  if (reason === 'plugin-missing') return 'el módulo nativo de IA no está disponible';
-  if (reason === 'request-failed') return 'Firebase AI no respondió correctamente';
-  if (reason === 'empty-response') return 'Firebase AI respondió sin contenido utilizable';
-  if (reason === 'disabled') return 'la IA está desactivada en este build';
-  if (reason === 'not-native') return 'este entorno no es Android nativo';
-  return 'Firebase AI todavía no confirmó una respuesta real';
+  if (reason === 'app-check-unavailable') return 'no pudimos verificar esta sesión';
+  if (reason === 'plugin-missing') return 'la función de IA no está disponible en este dispositivo';
+  if (reason === 'request-failed') return 'el servicio de IA no respondió';
+  if (reason === 'empty-response') return 'el servicio de IA respondió sin contenido utilizable';
+  if (reason === 'disabled') return 'la función de IA no está disponible en esta versión';
+  if (reason === 'not-native') return 'esta función sólo está disponible en la app móvil';
+  return 'no pudimos confirmar una respuesta del servicio de IA';
 }
 
 function videoErrorMessage(error: unknown) {
-  const raw = error instanceof Error ? error.message : String(error);
-  if (raw === 'MEDIA_STORAGE_INFRASTRUCTURE_DISABLED' || raw === 'MEDIA_STORAGE_BILLING_REQUIRED') {
-    return 'El pipeline de video está listo, pero Cloud Storage no está habilitado en este proyecto. TuTop no activará billing por su cuenta.';
-  }
-  if (raw === 'MEDIA_STORAGE_PERMISSION_DENIED') return 'Firebase Storage rechazó el video por permisos; el anuncio no se creó.';
-  if (raw === 'MEDIA_STORAGE_AUTH_FAILED') return 'La sesión no pudo autorizar la subida del video. Vuelve a iniciar sesión.';
-  return raw;
+  const raw = error instanceof Error ? error.message : String(error || '');
+  if (raw === 'El video debe ser MP4, WebM o MOV.' || raw === 'El archivo de video está vacío.' || raw === 'El video debe pesar menos de 50 MB.') return raw;
+  return userFacingMediaError(error);
+}
+
+function publicationFailureCode(raw: string) {
+  if (/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw)) return 'publish_permission_denied';
+  if (/RESOURCE_EXHAUSTED|rate.?limit|too many/i.test(raw)) return 'publish_rate_limited';
+  if (/MEDIA_STORAGE_/.test(raw)) return 'publish_media_failed';
+  if (raw.startsWith('PROHIBITED_LISTING:')) return 'publish_prohibited';
+  if (raw.startsWith('PRIVATE_FIELD_EXPOSED:')) return 'publish_private_field_blocked';
+  return 'publish_unknown_failed';
 }
 
 export default function NationalPublishScreen() {
@@ -102,7 +108,7 @@ export default function NationalPublishScreen() {
   if (!deliveryMethods.length) publishIssues.push('forma de entrega');
   if (prohibitedDraft) publishIssues.push('artículo o servicio no permitido');
   if (missing.length) publishIssues.push(`${missing.length} dato${missing.length === 1 ? '' : 's'} obligatorio${missing.length === 1 ? '' : 's'}`);
-  if (videoFile && !videoInfraEnabled) publishIssues.push('Storage de video no habilitado');
+  if (videoFile && !videoInfraEnabled) publishIssues.push('video no disponible en esta beta');
   const readyToPublish = publishIssues.length === 0;
 
   const pricingTarget = useMemo<Product | null>(() => {
@@ -211,8 +217,9 @@ export default function NationalPublishScreen() {
       }
       setImages((current) => [...current, ...next].slice(0, 4));
       setMessage(`${next.length} foto${next.length === 1 ? '' : 's'} lista${next.length === 1 ? '' : 's'} para el anuncio.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'No pudimos procesar las fotos.');
+    } catch {
+      recordDiagnostic('media', 'photo_processing_failed', { source: 'picker' });
+      setMessage('No pudimos procesar una de las fotos. Prueba con otra imagen.');
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -233,8 +240,9 @@ export default function NationalPublishScreen() {
       const compressed = await compressImageForFirestore(file, { maxDimension: 960, maxBytes: 82_000 });
       setImages((current) => [...current, compressed].slice(0, 4));
       setMessage(source === 'camera' ? 'Foto de cámara agregada.' : 'Foto de galería agregada.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'No pudimos procesar la foto.');
+    } catch {
+      recordDiagnostic('media', 'photo_processing_failed', { source });
+      setMessage('No pudimos procesar la foto. Prueba de nuevo o elige otra imagen.');
     } finally {
       setBusy(false);
     }
@@ -247,7 +255,7 @@ export default function NationalPublishScreen() {
       validateListingVideo(file);
       if (!videoInfraEnabled) {
         setVideoFile(null);
-        setMessage('El software de video está preparado, pero Cloud Storage permanece desactivado hasta autorizar Blaze. No se adjuntó el archivo.');
+        setMessage('Los videos todavía no están disponibles en esta beta. Puedes publicar el anuncio con fotos.');
         return;
       }
       setVideoFile(file);
@@ -272,9 +280,9 @@ export default function NationalPublishScreen() {
     if (!deliveryMethods.length) return setMessage('Selecciona al menos una forma de entrega.');
     if (missing.length) {
       setAdvancedOpen(true);
-      return setMessage(`Faltan datos obligatorios: ${missing.join(', ')}.`);
+      return setMessage('Completa los campos obligatorios marcados con * antes de publicar.');
     }
-    if (videoFile && !videoInfraEnabled) return setMessage('No se puede publicar con video hasta que Cloud Storage esté habilitado explícitamente.');
+    if (videoFile && !videoInfraEnabled) return setMessage('Los videos todavía no están disponibles en esta beta. Puedes publicar el anuncio con fotos.');
 
     setBusy(true);
     let uploadedVideoUri: string | null = null;
@@ -339,18 +347,20 @@ export default function NationalPublishScreen() {
     } catch (error) {
       if (uploadedVideoUri) await firebaseMediaStorage.delete(uploadedVideoUri).catch(() => undefined);
       const raw = error instanceof Error ? error.message : String(error);
-      if (/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw)) {
-        setMessage('Firestore rechazó la publicación después del preflight canónico. TuTop no creó el anuncio; revisa la causa de identidad/catálogo mostrada y reintenta.');
-      } else if (/RESOURCE_EXHAUSTED|rate.?limit|too many/i.test(raw)) {
+      const failureCode = publicationFailureCode(raw);
+      recordDiagnostic('publication', failureCode);
+      if (failureCode === 'publish_permission_denied') {
+        setMessage('No pudimos publicar con esta cuenta. Verifica tu universidad, campus y sesión, y vuelve a intentarlo.');
+      } else if (failureCode === 'publish_rate_limited') {
         setMessage('Alcanzaste temporalmente el límite de publicaciones de seguridad. Espera antes de volver a intentar.');
-      } else if (/MEDIA_STORAGE_/.test(raw)) {
+      } else if (failureCode === 'publish_media_failed') {
         setMessage(videoErrorMessage(error));
+      } else if (failureCode === 'publish_prohibited') {
+        setMessage('Ese artículo no está permitido en TuTop.');
+      } else if (failureCode === 'publish_private_field_blocked') {
+        setMessage('Hay información privada que no debe publicarse. Revisa el anuncio y vuelve a intentarlo.');
       } else {
-        setMessage(raw.startsWith('PROHIBITED_LISTING:')
-          ? 'Ese artículo no está permitido en TuTop.'
-          : raw.startsWith('PRIVATE_FIELD_EXPOSED:')
-            ? 'Hay un dato privado que no debe publicarse.'
-            : `No pudimos publicar: ${raw}`);
+        setMessage('No pudimos publicar el anuncio en este momento. Revisa tu conexión e inténtalo de nuevo.');
       }
     } finally {
       setBusy(false);
@@ -367,7 +377,7 @@ export default function NationalPublishScreen() {
 
   return <div className="publish-screen pb-[calc(82px+env(safe-area-inset-bottom))]">
     <header className="publish-header pt-safe">
-      <button onClick={() => setActiveTab('feed')} className="icon-button-lg"><ArrowLeft className="h-5 w-5" /></button>
+      <button onClick={() => setActiveTab('feed')} className="icon-button-lg" aria-label="Volver al inicio"><ArrowLeft className="h-5 w-5" /></button>
       <div><h1 className="text-lg font-black">Publica fácil con Topi</h1><p className="text-[10px] text-slate-500">Topi entiende TuTop: venta local, campus y acuerdos directos.</p></div>
     </header>
 
@@ -405,8 +415,8 @@ export default function NationalPublishScreen() {
           </div>
         </div>
         <div className="mt-2 grid grid-cols-4 gap-2">
-          {images.map((image, index) => <div key={index} className="publish-photo relative"><img src={image} alt={`Foto ${index + 1}`} /><button type="button" onClick={() => setImages((current) => current.filter((_, i) => i !== index))}><X /></button></div>)}
-          {images.length < 4 && <button type="button" onClick={() => nativeDevice ? void addNativePhoto('photos') : fileRef.current?.click()} className="publish-photo-add"><Plus /><small>Agregar</small></button>}
+          {images.map((image, index) => <div key={index} className="publish-photo relative"><img src={image} alt={`Foto ${index + 1}`} /><button type="button" aria-label={`Quitar foto ${index + 1}`} onClick={() => setImages((current) => current.filter((_, i) => i !== index))}><X /></button></div>)}
+          {images.length < 4 && <button type="button" aria-label="Agregar foto" onClick={() => nativeDevice ? void addNativePhoto('photos') : fileRef.current?.click()} className="publish-photo-add"><Plus /><small>Agregar</small></button>}
         </div>
         <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => void addPhotos(event.target.files)} />
       </section>
@@ -415,8 +425,8 @@ export default function NationalPublishScreen() {
         <div className="flex items-center gap-2"><Video className="h-4 w-4 text-violet-300" /><div className="min-w-0 flex-1"><strong className="text-xs">Video del producto</strong><p className="mt-1 text-[8px] text-slate-600">Máximo 1 · MP4/WebM/MOV · menos de 50 MB.</p></div></div>
         {videoInfraEnabled ? <>
           <button type="button" disabled={busy} onClick={() => videoRef.current?.click()} className="mt-3 w-full rounded-xl bg-violet-500/10 px-3 py-2.5 text-[9px] font-bold text-violet-200 disabled:opacity-40">{videoFile ? `Cambiar · ${videoFile.name}` : 'Elegir video'}</button>
-          {videoFile && <div className="mt-2 flex items-center justify-between rounded-xl bg-white/[0.03] p-2.5 text-[9px] text-slate-300"><span className="truncate">{videoFile.name} · {(videoFile.size / (1024 * 1024)).toFixed(1)} MB</span><button type="button" onClick={() => setVideoFile(null)} className="ml-2 text-rose-300">Quitar</button></div>}
-        </> : <div className="mt-3 rounded-xl border border-amber-400/10 bg-amber-500/[0.04] p-3 text-[9px] leading-4 text-amber-100/75">El pipeline de video ya está implementado y protegido por reglas, pero permanece desactivado hasta habilitar Cloud Storage/Blaze explícitamente. TuTop no activa billing por su cuenta.</div>}
+          {videoFile && <div className="mt-2 flex items-center justify-between rounded-xl bg-white/[0.03] p-2.5 text-[9px] text-slate-300"><span className="truncate">{videoFile.name} · {(videoFile.size / (1024 * 1024)).toFixed(1)} MB</span><button type="button" aria-label="Quitar video del anuncio" onClick={() => setVideoFile(null)} className="ml-2 text-rose-300">Quitar</button></div>}
+        </> : <div className="mt-3 rounded-xl border border-amber-400/10 bg-amber-500/[0.04] p-3 text-[9px] leading-4 text-amber-100/75">Los videos todavía no están disponibles en esta beta. Puedes publicar tu anuncio con fotos.</div>}
         <input ref={videoRef} type="file" accept="video/mp4,video/webm,video/quicktime" className="hidden" onChange={(event) => selectVideo(event.target.files)} />
       </section>
 
@@ -424,7 +434,7 @@ export default function NationalPublishScreen() {
 
       {required.length > 0 && <section className="publish-card"><div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" /><strong className="text-xs">Datos necesarios para {category}</strong></div><p className="mt-1 text-[9px] text-slate-500">Sólo pedimos estos datos porque esta categoría necesita información adicional para publicarse con seguridad.</p><div className="mt-3 grid grid-cols-2 gap-2">{fields.filter((field) => field.required).map((field) => <label key={field.key} className="text-[9px] text-slate-500">{field.label} *{field.kind === 'boolean' ? <input className="ml-2" type="checkbox" checked={Boolean(attributes[field.key])} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.checked }))} /> : <input className="publish-input mt-1" type={field.kind === 'number' ? 'number' : 'text'} value={String(attributes[field.key] ?? '')} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.value.slice(0, 300) }))} placeholder={field.placeholder} />}</label>)}</div></section>}
 
-      <button type="button" onClick={() => setAdvancedOpen((open) => !open)} className="flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.025] px-4 py-3 text-left"><span><strong className="block text-xs">Más opciones</strong><small className="mt-0.5 block text-[9px] text-slate-500">Condición, cantidad, alcance, entrega y datos opcionales.</small></span><ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} /></button>
+      <button type="button" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((open) => !open)} className="flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.025] px-4 py-3 text-left"><span><strong className="block text-xs">Más opciones</strong><small className="mt-0.5 block text-[9px] text-slate-500">Condición, cantidad, alcance, entrega y datos opcionales.</small></span><ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} /></button>
 
       {advancedOpen && <>
         <section className="publish-card"><p className="eyebrow">DETALLES</p><div className="mt-2 grid grid-cols-2 gap-2"><select className="publish-input" value={condition} onChange={(e) => setCondition(e.target.value)}><option>Nuevo</option><option>Como nuevo</option><option>Buen estado</option><option>Uso visible</option><option>Para reparar</option><option>No aplica</option></select><input className="publish-input" type="number" min="1" max="99" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="Cantidad" /></div><label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={negotiable} onChange={(e) => setNegotiable(e.target.checked)} />Precio negociable</label>{fields.some((field) => !field.required) && <div className="mt-3 grid grid-cols-2 gap-2">{fields.filter((field) => !field.required).map((field) => <label key={field.key} className="text-[9px] text-slate-500">{field.label}{field.kind === 'boolean' ? <input className="ml-2" type="checkbox" checked={Boolean(attributes[field.key])} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.checked }))} /> : <input className="publish-input mt-1" type={field.kind === 'number' ? 'number' : 'text'} value={String(attributes[field.key] ?? '')} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.value.slice(0, 300) }))} placeholder={field.placeholder} />}</label>)}</div>}{category === 'Cuartos & Renta' && <p className="mt-2 text-[9px] text-amber-200/70">Nunca publiques la dirección exacta; sólo zona aproximada.</p>}</section>
@@ -435,7 +445,7 @@ export default function NationalPublishScreen() {
       {category && <section className="publish-card"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-300" /><strong className="text-xs">Precio inteligente</strong></div>{pricing ? <><p className="mt-2 text-[10px] leading-5 text-slate-400">{pricing.sample_size} comparables · mediana ${pricing.median_mxn.toLocaleString('es-MX')} · vender rápido ${pricing.sell_fast_mxn.toLocaleString('es-MX')} · recomendado <strong className="text-violet-200">${pricing.recommended_mxn.toLocaleString('es-MX')}</strong> · probar alto ${pricing.try_high_mxn.toLocaleString('es-MX')}</p><button type="button" onClick={() => setPrice(String(pricing.recommended_mxn))} className="mt-2 rounded-xl bg-violet-500/10 px-3 py-2 text-[10px] font-bold text-violet-200">Usar precio recomendado</button></> : <p className="mt-2 text-[9px] text-slate-500">Aún no hay suficientes comparables reales. Topi no inventará un precio.</p>}</section>}
 
       <section className={`publish-card ${readyToPublish ? 'border-emerald-400/20 bg-emerald-500/[0.05]' : 'border-amber-400/15 bg-amber-500/[0.04]'}`}><div className="flex items-center gap-2"><CheckCircle2 className={`h-4 w-4 ${readyToPublish ? 'text-emerald-300' : 'text-amber-300'}`} /><strong className="text-xs">{readyToPublish ? 'Listo para publicar' : 'Completa lo mínimo'}</strong></div><p className="mt-1 text-[9px] text-slate-400">{readyToPublish ? 'Tu anuncio tiene lo necesario. Los campos avanzados siguen siendo opcionales salvo los marcados con *.' : `Falta: ${publishIssues.join(' · ')}`}</p></section>
-      {message && <div className="rounded-2xl bg-white/[0.04] p-3 text-xs leading-5 text-slate-300">{message}</div>}
+      {message && <div role="status" aria-live="polite" aria-atomic="true" className="rounded-2xl bg-white/[0.04] p-3 text-xs leading-5 text-slate-300">{message}</div>}
       <button disabled={busy || !readyToPublish} onClick={() => void publish()} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-4 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{busy ? 'Publicando…' : readyToPublish ? 'Publicar en TuTop' : 'Completa lo mínimo para publicar'}</button>
     </main>
   </div>;

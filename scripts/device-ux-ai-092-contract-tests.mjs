@@ -113,6 +113,21 @@ assert.doesNotMatch(publishUi, /nationalBackend\.updateUniversityIdentity/);
 assert.doesNotMatch(publishUi, /identitySyncWarning/);
 assert.match(publishUi, /single publication authority/);
 
+// User-facing publication UX must not leak raw backend/storage/billing internals.
+assert.match(publishUi, /userFacingMediaError/);
+assert.match(publishUi, /recordDiagnostic\('publication', failureCode\)/);
+assert.doesNotMatch(publishUi, /setMessage\(error instanceof Error \? error\.message/);
+assert.doesNotMatch(publishUi, /`No pudimos publicar: \$\{raw\}`/);
+assert.doesNotMatch(publishUi, /Firestore rechazó la publicación/);
+assert.doesNotMatch(publishUi, /Cloud Storage permanece desactivado/);
+assert.doesNotMatch(publishUi, /Cloud Storage\/Blaze/);
+assert.doesNotMatch(publishUi, /Storage de video no habilitado/);
+assert.match(publishUi, /role="status"/);
+assert.match(publishUi, /aria-live="polite"/);
+assert.match(publishUi, /aria-label=\{`Quitar foto \$\{index \+ 1\}`\}/);
+assert.match(publishUi, /aria-label="Quitar video del anuncio"/);
+assert.match(publishUi, /aria-expanded=\{advancedOpen\}/);
+
 // Video object-storage is implemented end to end but deliberately feature-gated
 // until Blaze/Cloud Storage is explicitly authorized.
 assert.match(storageRules, /validListingVideo/);
@@ -182,4 +197,4 @@ assert.match(listings, /doc\.data\.status === 'active'/);
 assert.match(listings, /cells\.includes\(cell\)/);
 assert.match(listings, /\[\.\.\.sets\.flat\(\), \.\.\.ownNearby\]/);
 
-console.log('✅ TuTop 0.9.2 software hardening: canonical publication preflight + mandatory real-AI QA + native photos + gated video pipeline + coarse location + crochet branding + canonical Nearby PASS');
+console.log('✅ TuTop 0.9.2 software hardening: canonical publication preflight + mandatory real-AI QA + native photos + gated video pipeline + safe user copy + accessibility + coarse location + crochet branding + canonical Nearby PASS');
