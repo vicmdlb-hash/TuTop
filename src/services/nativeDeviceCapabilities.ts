@@ -2,20 +2,21 @@ type CapacitorPlugin = Record<string, (...args: any[]) => Promise<any>>;
 type CapacitorRuntime = {
   isNativePlatform?: () => boolean;
   getPlatform?: () => string;
+  isPluginAvailable?: (name: string) => boolean;
   registerPlugin?: (name: string) => CapacitorPlugin;
   Plugins?: Record<string, CapacitorPlugin>;
   convertFileSrc?: (path: string) => string;
 };
 
-export type DevicePermissionState = 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' | 'limited' | 'unavailable';
+export type DevicePermissionState = 'granted' | 'denied' | 'prompt' | 'unavailable';
+export type NativeLocationFailure = 'none' | 'permission-denied' | 'services-disabled' | 'timeout' | 'plugin-unavailable' | 'position-unavailable' | 'unknown';
 export type NativeApproxPosition = { latitude: number; longitude: number; accuracy?: number };
-export type NativeLocationFailure = 'none' | 'plugin-unavailable' | 'permission-denied' | 'services-disabled' | 'position-unavailable' | 'timeout' | 'unknown';
 export type NativePhoto = {
-  source: 'camera' | 'photos';
-  webPath?: string;
   uri?: string;
+  webPath?: string;
   thumbnail?: string;
   format?: string;
+  source: 'camera' | 'photos';
 };
 
 let lastLocationFailure: NativeLocationFailure = 'none';
@@ -35,348 +36,239 @@ export function isNativeDeviceRuntime() {
 function plugin(name: string): CapacitorPlugin | null {
   const capacitor = runtime();
   if (!capacitor) return null;
+  if (typeof capacitor.isPluginAvailable === 'function' && !capacitor.isPluginAvailable(name)) return null;
   if (typeof capacitor.registerPlugin === 'function') return capacitor.registerPlugin(name);
   return capacitor.Plugins?.[name] || null;
 }
 
-function permission(value: unknown): DevicePermissionState {
-  const normalized = String(value || 'prompt') as DevicePermissionState;
-  return ['granted', 'denied', 'prompt', 'prompt-with-rationale', 'limited'].includes(normalized) ? normalized : 'unavailable';
+function permissionState(value: unknown): DevicePermissionState {
+  const clean = String(value || '').toLowerCase();
+  if (clean === 'granted' || clean === 'limited') return 'granted';
+  if (clean === 'denied') return 'denied';
+  if (clean === 'prompt' || clean === 'prompt-with-rationale') return 'prompt';
+  return 'unavailable';
 }
 
 function locationFailure(error: unknown): NativeLocationFailure {
-  const value = error as { code?: string; message?: string } | null;
-  const code = String(value?.code || '').trim();
-  const message = String(value?.message || '').toLowerCase();
-  if (code === 'OS-PLUG-GLOC-0003' || /permission.*denied|denied.*permission/.test(message)) return 'permission-denied';
-  if (code === 'OS-PLUG-GLOC-0007' || code === 'OS-PLUG-GLOC-0017' || /location.*(disabled|off)|services.*(disabled|off)/.test(message)) return 'services-disabled';
-  if (code === 'OS-PLUG-GLOC-0010' || /timeout/.test(message)) return 'timeout';
-  if (code === 'OS-PLUG-GLOC-0002' || code === 'OS-PLUG-GLOC-0004' || code === 'OS-PLUG-GLOC-0011') return 'position-unavailable';
+  const code = String((error as { code?: unknown })?.code || '');
+  const message = String((error as { message?: unknown })?.message || error || '');
+  if (/OS-PLUG-GLOC-0003|permission/i.test(`${code} ${message}`)) return 'permission-denied';
+  if (/OS-PLUG-GLOC-0007|location services|settings/i.test(`${code} ${message}`)) return 'services-disabled';
+  if (/OS-PLUG-GLOC-0010|timeout/i.test(`${code} ${message}`)) return 'timeout';
+  if (/not implemented|unavailable|missing plugin/i.test(`${code} ${message}`)) return 'plugin-unavailable';
+  if (/OS-PLUG-GLOC-0002|position unavailable/i.test(`${code} ${message}`)) return 'position-unavailable';
   return 'unknown';
 }
 
 export function nativeLocationDiagnostic() {
-  return { failure: lastLocationFailure } as const;
+  return lastLocationFailure;
 }
 
 export async function nativeLocationPermission(request = false): Promise<DevicePermissionState> {
   if (!isNativeDeviceRuntime()) return 'unavailable';
   const geolocation = plugin('Geolocation');
-  if (!geolocation?.checkPermissions) {
-    lastLocationFailure = 'plugin-unavailable';
-    return 'unavailable';
-  }
+  if (!geolocation?.checkPermissions) return 'unavailable';
   try {
-    let status = await geolocation.checkPermissions();
-    let coarse = permission(status?.coarseLocation ?? status?.location);
-    if (request && coarse !== 'granted' && geolocation.requestPermissions) {
-      status = await geolocation.requestPermissions({ permissions: ['coarseLocation'] });
-      coarse = permission(status?.coarseLocation ?? status?.location);
+    let result = await geolocation.checkPermissions();
+    let state = permissionState(result?.coarseLocation ?? result?.location);
+    if (request && state !== 'granted' && geolocation.requestPermissions) {
+      result = await geolocation.requestPermissions({ permissions: ['coarseLocation'] });
+      state = permissionState(result?.coarseLocation ?? result?.location);
     }
-    lastLocationFailure = coarse === 'denied' ? 'permission-denied' : 'none';
-    return coarse;
+    lastLocationFailure = state === 'denied' ? 'permission-denied' : 'none';
+    return state;
   } catch (error) {
     lastLocationFailure = locationFailure(error);
     return lastLocationFailure === 'permission-denied' ? 'denied' : 'unavailable';
   }
 }
 
-function normalizePosition(position: any): NativeApproxPosition | null {
-  const latitude = Number(position?.coords?.latitude);
-  const longitude = Number(position?.coords?.longitude);
+function positionFromResult(result: any): NativeApproxPosition | null {
+  const latitude = Number(result?.coords?.latitude);
+  const longitude = Number(result?.coords?.longitude);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  const accuracy = Number(position?.coords?.accuracy);
+  const accuracy = Number(result?.coords?.accuracy);
   return { latitude, longitude, ...(Number.isFinite(accuracy) ? { accuracy } : {}) };
 }
 
-async function readNativePosition(geolocation: CapacitorPlugin, timeoutMs: number, maximumAgeMs: number) {
+export async function getNativeApproxPosition(options: { requestPermission?: boolean; timeoutMs?: number; maximumAgeMs?: number } = {}): Promise<NativeApproxPosition | null> {
+  if (!isNativeDeviceRuntime()) { lastLocationFailure = 'plugin-unavailable'; return null; }
+  const geolocation = plugin('Geolocation');
+  if (!geolocation?.getCurrentPosition) { lastLocationFailure = 'plugin-unavailable'; return null; }
+  const permission = await nativeLocationPermission(options.requestPermission !== false);
+  if (permission !== 'granted') return null;
+
+  const requestOptions = {
+    enableHighAccuracy: false,
+    timeout: Math.max(3_000, options.timeoutMs ?? 15_000),
+    maximumAge: Math.max(0, options.maximumAgeMs ?? 10 * 60_000),
+    enableLocationFallback: true,
+  };
+
   try {
-    const position = await geolocation.getCurrentPosition({
-      enableHighAccuracy: false,
-      timeout: timeoutMs,
-      maximumAge: maximumAgeMs,
-      // Capacitor Geolocation 8 uses this Android fallback when Play Services or
-      // the network provider cannot deliver a fix. The previous option name was
-      // ignored by the native plugin on real devices.
-      enableLocationManagerFallback: true,
-    });
-    const normalized = normalizePosition(position);
-    lastLocationFailure = normalized ? 'none' : 'position-unavailable';
-    return normalized;
+    const direct = positionFromResult(await geolocation.getCurrentPosition(requestOptions));
+    if (direct) { lastLocationFailure = 'none'; return direct; }
   } catch (error) {
     lastLocationFailure = locationFailure(error);
-    throw error;
   }
-}
 
-async function watchNativePositionOnce(geolocation: CapacitorPlugin, timeoutMs: number, maximumAgeMs: number): Promise<NativeApproxPosition | null> {
-  if (!geolocation.watchPosition) return null;
-  return await new Promise((resolve) => {
+  if (!geolocation.watchPosition || !geolocation.clearWatch) return null;
+  return new Promise<NativeApproxPosition | null>((resolve) => {
     let settled = false;
     let watchId = '';
-    const finish = async (value: NativeApproxPosition | null) => {
+    const finish = async (value: NativeApproxPosition | null, failure: NativeLocationFailure = 'none') => {
       if (settled) return;
       settled = true;
-      window.clearTimeout(timer);
-      if (watchId && geolocation.clearWatch) {
-        try { await geolocation.clearWatch({ id: watchId }); } catch { /* best effort */ }
-      }
-      if (!value && lastLocationFailure === 'none') lastLocationFailure = 'timeout';
+      lastLocationFailure = value ? 'none' : failure;
+      if (watchId) await geolocation.clearWatch({ id: watchId }).catch(() => undefined);
       resolve(value);
     };
-    const timer = window.setTimeout(() => { void finish(null); }, Math.max(timeoutMs, 20_000));
-    void geolocation.watchPosition({
-      enableHighAccuracy: false,
-      timeout: Math.max(timeoutMs, 20_000),
-      maximumAge: maximumAgeMs,
-      minimumUpdateInterval: 1_000,
-      interval: 2_000,
-      enableLocationManagerFallback: true,
-    }, (position: any, error: unknown) => {
-      if (error) {
-        lastLocationFailure = locationFailure(error);
-        return;
-      }
-      const normalized = normalizePosition(position);
-      if (normalized) {
-        lastLocationFailure = 'none';
-        void finish(normalized);
-      }
-    }).then((id: unknown) => {
-      watchId = String(id || '');
-      if (settled && watchId && geolocation.clearWatch) void geolocation.clearWatch({ id: watchId }).catch(() => undefined);
-    }).catch((error: unknown) => {
-      lastLocationFailure = locationFailure(error);
-      void finish(null);
+    const timer = window.setTimeout(() => void finish(null, 'timeout'), Math.max(5_000, options.timeoutMs ?? 15_000));
+    geolocation.watchPosition(
+      { ...requestOptions, interval: 2_500, minimumUpdateInterval: 1_500 },
+      (position: any, error: unknown) => {
+        const parsed = positionFromResult(position);
+        if (parsed) {
+          window.clearTimeout(timer);
+          void finish(parsed);
+        } else if (error) {
+          const failure = locationFailure(error);
+          if (failure === 'permission-denied' || failure === 'services-disabled') {
+            window.clearTimeout(timer);
+            void finish(null, failure);
+          }
+        }
+      },
+    ).then((id: string) => { watchId = String(id || ''); }).catch((error: unknown) => {
+      window.clearTimeout(timer);
+      void finish(null, locationFailure(error));
     });
   });
 }
 
-export async function getNativeApproxPosition(options: { requestPermission?: boolean; timeoutMs?: number; maximumAgeMs?: number } = {}): Promise<NativeApproxPosition | null> {
-  if (!isNativeDeviceRuntime()) return null;
-  const geolocation = plugin('Geolocation');
-  if (!geolocation?.getCurrentPosition) {
-    lastLocationFailure = 'plugin-unavailable';
-    return null;
-  }
-  const state = await nativeLocationPermission(options.requestPermission !== false);
-  if (state !== 'granted') return null;
-
-  const timeoutMs = options.timeoutMs ?? 15_000;
-  const maximumAgeMs = options.maximumAgeMs ?? 10 * 60_000;
-  try {
-    const first = await readNativePosition(geolocation, timeoutMs, maximumAgeMs);
-    if (first) return first;
-  } catch { /* retry below */ }
-
-  try {
-    await new Promise((resolve) => window.setTimeout(resolve, 450));
-    const second = await readNativePosition(geolocation, Math.max(timeoutMs, 20_000), Math.max(maximumAgeMs, 30 * 60_000));
-    if (second) return second;
-  } catch { /* one-shot watch fallback below */ }
-
-  return watchNativePositionOnce(geolocation, Math.max(timeoutMs, 20_000), Math.max(maximumAgeMs, 30 * 60_000));
-}
-
-/**
- * Capacitor Camera 8.1+ exposes takePhoto/chooseFromGallery. Android uses the
- * system camera/photo picker, so TuTop does not request legacy camera/storage
- * permissions while saveToGallery=false.
- */
 export async function nativeCameraPermission(): Promise<DevicePermissionState> {
   if (!isNativeDeviceRuntime()) return 'unavailable';
   const camera = plugin('Camera');
-  return camera?.takePhoto || camera?.chooseFromGallery || camera?.getPhoto ? 'granted' : 'unavailable';
+  if (!camera) return 'unavailable';
+  // Android Camera 8.1+ launches system activities / Photo Picker and needs no
+  // manifest CAMERA/storage permission when saveToGallery=false.
+  return 'granted';
 }
 
-function mediaResult(result: any, source: NativePhoto['source']): NativePhoto | null {
-  if (!result || typeof result !== 'object') return null;
-  const webPath = String(result.webPath || '').trim() || undefined;
-  const uri = String(result.uri || result.path || '').trim() || undefined;
-  const thumbnail = String(result.thumbnail || result.base64String || '').trim() || undefined;
-  const format = String(result.metadata?.format || result.format || '').trim().toLowerCase() || undefined;
-  if (!webPath && !uri && !thumbnail) return null;
-  return { source, webPath, uri, thumbnail, format };
+function mediaResultPhoto(result: any, source: NativePhoto['source']): NativePhoto | null {
+  if (!result) return null;
+  const format = String(result?.metadata?.format || result?.format || 'jpeg').toLowerCase().replace('jpg', 'jpeg');
+  const uri = String(result?.uri || result?.path || '').trim() || undefined;
+  const webPath = String(result?.webPath || '').trim() || undefined;
+  const thumbnail = String(result?.thumbnail || result?.base64String || '').trim() || undefined;
+  if (!uri && !webPath && !thumbnail) return null;
+  return { uri, webPath, thumbnail, format, source };
 }
 
-function nativeMediaError(error: unknown, source: 'camera' | 'photos') {
-  const value = error as { code?: string; message?: string } | null;
-  const code = String(value?.code || '').trim();
-  if (code === 'OS-PLUG-CAMR-0006' || code === 'OS-PLUG-CAMR-0020') return null;
-  if (code === 'OS-PLUG-CAMR-0003' || code === 'OS-PLUG-CAMR-0007') return new Error('No pudimos abrir la cámara del teléfono. Revisa que otra app no la esté usando e inténtalo otra vez.');
-  if (code === 'OS-PLUG-CAMR-0005' || code === 'OS-PLUG-CAMR-0018' || code === 'OS-PLUG-CAMR-0021') return new Error('No pudimos abrir tus fotos. Revisa el selector de fotos de Android e inténtalo otra vez.');
-  if (code === 'OS-PLUG-CAMR-0027' || code === 'OS-PLUG-CAMR-0028') return new Error('Android devolvió una foto que ya no está disponible. Elige otra imagen.');
-  const message = String(value?.message || '').trim();
-  if (/cancel/i.test(message)) return null;
-  return new Error(source === 'camera' ? 'No pudimos tomar la foto. Inténtalo otra vez.' : 'No pudimos seleccionar la foto. Inténtalo otra vez.');
-}
-
-async function legacyGetPhoto(camera: CapacitorPlugin, source: 'camera' | 'photos') {
-  if (!camera.getPhoto) return null;
-  const result = await camera.getPhoto({
-    quality: 82,
-    width: 1280,
-    height: 1280,
-    source: source === 'camera' ? 'CAMERA' : 'PHOTOS',
-    resultType: 'uri',
-    direction: 'REAR',
-    allowEditing: false,
-    saveToGallery: false,
-    correctOrientation: true,
-    presentationStyle: 'fullscreen',
-  });
-  return mediaResult(result, source);
-}
-
-async function getNativePhoto(source: 'camera' | 'photos'): Promise<NativePhoto | null> {
-  if (!isNativeDeviceRuntime()) return null;
+async function captureWithCamera(source: NativePhoto['source']): Promise<NativePhoto | null> {
   const camera = plugin('Camera');
-  if (!camera) return null;
+  if (!camera) throw new Error('NATIVE_CAMERA_PLUGIN_UNAVAILABLE');
 
-  try {
-    if (source === 'camera' && camera.takePhoto) {
-      try {
-        const result = await camera.takePhoto({
-          quality: 82,
-          targetWidth: 1280,
-          targetHeight: 1280,
-          correctOrientation: true,
-          saveToGallery: false,
-          cameraDirection: 'REAR',
-          editable: 'no',
-          includeMetadata: true,
-        });
-        const selected = mediaResult(result, 'camera');
-        if (selected) return selected;
-      } catch (error) {
-        const mapped = nativeMediaError(error, source);
-        if (!mapped) return null;
-        if (!camera.getPhoto) throw mapped;
-      }
-      return await legacyGetPhoto(camera, 'camera');
-    }
-
-    if (source === 'photos' && camera.chooseFromGallery) {
-      try {
-        const result = await camera.chooseFromGallery({
-          mediaType: 0,
-          allowMultipleSelection: false,
-          limit: 1,
-          quality: 82,
-          targetWidth: 1280,
-          targetHeight: 1280,
-          correctOrientation: true,
-          editable: 'no',
-          includeMetadata: true,
-        });
-        const selected = Array.isArray(result?.results) ? result.results[0] : null;
-        const normalized = mediaResult(selected, 'photos');
-        if (normalized) return normalized;
-      } catch (error) {
-        const mapped = nativeMediaError(error, source);
-        if (!mapped) return null;
-        if (!camera.getPhoto) throw mapped;
-      }
-      return await legacyGetPhoto(camera, 'photos');
-    }
-
-    return await legacyGetPhoto(camera, source);
-  } catch (error) {
-    const mapped = nativeMediaError(error, source);
-    if (mapped) throw mapped;
-    return null;
+  if (source === 'camera' && camera.takePhoto) {
+    const result = await camera.takePhoto({
+      quality: 86,
+      targetWidth: 1600,
+      targetHeight: 1600,
+      correctOrientation: true,
+      saveToGallery: false,
+      includeMetadata: true,
+    });
+    return mediaResultPhoto(result, source);
   }
-}
 
-export async function takeNativePhoto() {
-  return getNativePhoto('camera');
-}
-
-export async function pickNativePhoto() {
-  return getNativePhoto('photos');
-}
-
-function dataUrlFromThumbnail(photo: NativePhoto) {
-  if (!photo.thumbnail) return '';
-  const rawFormat = photo.format && /^[a-z0-9.+-]+$/.test(photo.format) ? photo.format : 'jpeg';
-  const format = rawFormat === 'jpg' ? 'jpeg' : rawFormat;
-  return `data:image/${format};base64,${photo.thumbnail}`;
-}
-
-function mimeForFormat(format?: string) {
-  const normalized = String(format || 'jpeg').toLowerCase();
-  if (normalized === 'jpg' || normalized === 'jpeg') return 'image/jpeg';
-  if (normalized === 'png') return 'image/png';
-  if (normalized === 'webp') return 'image/webp';
-  if (normalized === 'heic' || normalized === 'heif') return 'image/heic';
-  return `image/${normalized.replace(/[^a-z0-9.+-]/g, '') || 'jpeg'}`;
-}
-
-function blobFromBase64(data: string, mime: string) {
-  const clean = data.includes(',') ? data.slice(data.indexOf(',') + 1) : data;
-  try {
-    const binary = window.atob(clean.replace(/\s+/g, ''));
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-    return new Blob([bytes], { type: mime });
-  } catch {
-    return null;
+  if (source === 'photos' && camera.chooseFromGallery) {
+    // mediaType is intentionally omitted: Camera 8 defaults to Photo. A numeric
+    // magic value here previously made the native contract brittle.
+    const result = await camera.chooseFromGallery({
+      allowMultipleSelection: false,
+      quality: 86,
+      targetWidth: 1600,
+      targetHeight: 1600,
+      includeMetadata: true,
+    });
+    return mediaResultPhoto(result?.results?.[0], source);
   }
+
+  // Compatibility only for devices/plugins that still expose the pre-8.1 API.
+  if (camera.getPhoto) {
+    const result = await camera.getPhoto({
+      source: source === 'camera' ? 'CAMERA' : 'PHOTOS',
+      quality: 86,
+      width: 1600,
+      height: 1600,
+      correctOrientation: true,
+      saveToGallery: false,
+      resultType: 'uri',
+    });
+    return mediaResultPhoto(result, source);
+  }
+  throw new Error('NATIVE_CAMERA_METHOD_UNAVAILABLE');
 }
 
-async function imageBlobFromFilesystem(photo: NativePhoto) {
-  if (!photo.uri || !isNativeDeviceRuntime()) return null;
+export function takeNativePhoto() {
+  return captureWithCamera('camera');
+}
+
+export function pickNativePhoto() {
+  return captureWithCamera('photos');
+}
+
+function base64ToBlob(base64: string, mime: string) {
+  const clean = base64.replace(/^data:[^;]+;base64,/, '').replace(/\s+/g, '');
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+function mimeFor(photo: NativePhoto) {
+  const format = String(photo.format || 'jpeg').toLowerCase();
+  if (format === 'png') return 'image/png';
+  if (format === 'webp') return 'image/webp';
+  if (format === 'heic' || format === 'heif') return `image/${format}`;
+  return 'image/jpeg';
+}
+
+async function imageBlobFromFilesystem(photo: NativePhoto): Promise<Blob | null> {
+  if (!photo.uri) return null;
   const filesystem = plugin('Filesystem');
   if (!filesystem?.readFile) return null;
   try {
     const result = await filesystem.readFile({ path: photo.uri });
-    const data = result?.data;
-    if (typeof Blob !== 'undefined' && data instanceof Blob) {
-      return data.type.startsWith('image/') ? data : new Blob([data], { type: mimeForFormat(photo.format) });
-    }
-    if (typeof data !== 'string' || !data.trim()) return null;
-    if (data.startsWith('data:image/')) {
-      const response = await fetch(data);
-      return await response.blob();
-    }
-    return blobFromBase64(data, mimeForFormat(photo.format));
+    if (result?.data instanceof Blob) return result.data;
+    if (typeof result?.data === 'string' && result.data.trim()) return base64ToBlob(result.data, mimeFor(photo));
   } catch {
     return null;
   }
+  return null;
 }
 
-async function imageBlobFromSource(source: string, format?: string) {
-  if (!source) return null;
+async function imageBlobFromUrl(url?: string): Promise<Blob | null> {
+  if (!url) return null;
   try {
-    const response = await fetch(source);
-    if (!response.ok && !source.startsWith('data:') && !source.startsWith('blob:')) return null;
+    const response = await fetch(url);
+    if (!response.ok) return null;
     const blob = await response.blob();
-    if (blob.type.startsWith('image/')) return blob;
-    if (blob.size > 0 && format) return new Blob([blob], { type: mimeForFormat(format) });
-    return null;
+    return blob.size > 0 ? blob : null;
   } catch {
     return null;
   }
 }
 
-export async function nativePhotoToImageFile(photo: NativePhoto, filename = 'tutop-photo.jpg') {
-  // On Android the Camera plugin can return content:// or file:// URIs that a
-  // WebView fetch cannot read reliably. Prefer Capacitor Filesystem first, then
-  // use webPath/convertFileSrc/thumbnail as compatibility fallbacks.
-  const nativeBlob = await imageBlobFromFilesystem(photo);
-  if (nativeBlob?.type.startsWith('image/')) return new File([nativeBlob], filename, { type: nativeBlob.type });
-
-  const capacitor = runtime();
-  const candidates = [
-    photo.webPath || '',
-    photo.uri && capacitor?.convertFileSrc ? capacitor.convertFileSrc(photo.uri) : '',
-    photo.uri || '',
-    dataUrlFromThumbnail(photo),
-  ].filter(Boolean);
-
-  for (const source of [...new Set(candidates)]) {
-    const blob = await imageBlobFromSource(source, photo.format);
-    if (blob?.type.startsWith('image/')) return new File([blob], filename, { type: blob.type });
+export async function nativePhotoToImageFile(photo: NativePhoto, fileName = `tutop-photo-${Date.now()}.jpg`) {
+  let blob = await imageBlobFromFilesystem(photo);
+  if (!blob && photo.thumbnail) blob = base64ToBlob(photo.thumbnail, mimeFor(photo));
+  if (!blob) blob = await imageBlobFromUrl(photo.webPath);
+  if (!blob && photo.uri) {
+    const converted = runtime()?.convertFileSrc?.(photo.uri);
+    blob = await imageBlobFromUrl(converted);
   }
-  throw new Error('Android sí devolvió la foto, pero TuTop no pudo leer sus bytes. Vuelve a elegirla o toma una nueva.');
+  if (!blob || blob.size <= 0) throw new Error('NATIVE_PHOTO_READ_FAILED');
+  const type = blob.type.startsWith('image/') ? blob.type : mimeFor(photo);
+  return new File([blob], fileName, { type, lastModified: Date.now() });
 }

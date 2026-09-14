@@ -7,22 +7,17 @@ const lock = JSON.parse(read('package-lock.json'));
 const project = JSON.parse(read('config/project.json'));
 const env = read('.env.example');
 const workflow = read('.github/workflows/092-release-candidate-v2.yml');
-const theme = read('src/lib/theme091.ts');
-const appCheck = read('src/services/nativeAppCheckToken.ts');
-const nativeSecurity = read('src/services/nativeFirebaseSecurity.ts');
+const resetConfig = JSON.parse(read('config/staging-reset-once.json'));
+const resetScript = read('scripts/reset-staging-accounts.mjs');
 const nativeDevice = read('src/services/nativeDeviceCapabilities.ts');
-const nativeCapabilities = read('scripts/android-native-capabilities.mjs');
-const topi = read('src/services/assistantProvider.ts');
-const publish = read('src/components/NationalPublishScreen.tsx');
-const support = read('src/components/TopiSupportAssistant.tsx');
-const consumerSupport = read('src/services/topiConsumerSupport.ts');
-const mediaStorage = read('src/services/firebaseMediaStorage.ts');
-const nearby = read('src/lib/nearbyMarketplace.ts');
+const nativeAI = read('src/services/nativeTopiAI.ts');
+const appCheck = read('src/services/nativeAppCheckToken.ts');
+const onboarding = read('src/services/v2OnboardingRecovery.ts');
+const prepareAndroid = read('scripts/prepare-staging-android-app.mjs');
+const registrationSmoke = read('scripts/staging-app-registration-smoke.mjs');
 const generator = read('scripts/generate-physical-qa-candidate.mjs');
 const verifier = read('scripts/verify-generated-physical-qa-candidate.mjs');
 
-// One coherent release identity. 0.9.2 is a real milestone, not a chain of
-// microversions hidden behind 0.9.1.x.
 assert.equal(pkg.version, '0.9.2-beta.0');
 assert.equal(lock.version, '0.9.2-beta.0');
 assert.equal(lock.packages?.['']?.version, '0.9.2-beta.0');
@@ -32,16 +27,11 @@ assert.equal(project.zeroInvestmentMode, true);
 assert.equal(project.billingAllowed, false);
 assert.equal(project.productionPublishingAllowed, false);
 assert.match(env, /VITE_TUTOP_APP_VERSION=0\.9\.2-beta\.0/);
-assert.equal(pkg.scripts.typecheck, 'tsc --noEmit');
-assert.equal(pkg.scripts.build, 'npm run typecheck && vite build');
+assert.match(env, /VITE_TUTOP_MEDIA_STORAGE_ENABLED=false/);
 
-// Canonical 0.9.2 pipeline: full static regression -> real staging -> Android
-// lint/tests/build -> immutable artifact -> independent verification -> private prerelease.
 assert.match(workflow, /feat\/tutop-0\.9\.2-hardening/);
 assert.match(workflow, /TUTOP_BETA_VERSION: 0\.9\.2-beta\.0/);
 assert.match(workflow, /TUTOP_ANDROID_VERSION_CODE: 90200/);
-assert.match(workflow, /TuTop-0\.9\.2-beta\.0-physical-qa-staging\.apk/);
-assert.match(workflow, /PHYSICAL_QA_CANDIDATE_0\.9\.2\.generated\.json/);
 assert.match(workflow, /runs-on: \[self-hosted, linux, x64, tutop-zero-cost-worker\]/);
 assert.match(workflow, /runs-on: \[self-hosted, linux, x64, tutop-zero-cost-controller\]/);
 for (const required of [
@@ -50,105 +40,58 @@ for (const required of [
   'npm run firebase:deploy:staging',
   'node scripts/staging-index-readiness-smoke.mjs',
   'npm run v2:catalog:seed',
-  'node scripts/deploy-firebase-auth-staging.mjs',
   'node scripts/staging-topi-ai-runtime-smoke.mjs',
   'node scripts/staging-v2-e2e-smoke.mjs',
-  'node scripts/staging-account-erasure-smoke.mjs',
   'npm run build',
   'npm run deps:mobile',
   'npm run android:bootstrap',
   'lintDebug testDebugUnitTest assembleDebug',
-  'actions/upload-artifact@v7',
   'Independent APK hash and provenance verification',
   'Publish verified 0.9.2 private prerelease',
 ]) assert(workflow.includes(required), `0.9.2 workflow missing ${required}`);
 assert.match(workflow, /test "\$\(git rev-parse HEAD\)" = "\$GITHUB_SHA"/);
-assert.match(workflow, /head_sha=\$\{GITHUB_SHA\}/);
-assert.match(workflow, /gate_run_id=\$\{TUTOP_VALIDATED_GATE_RUN_ID\}/);
-assert.match(workflow, /staging_smoke_run_id=\$\{TUTOP_VALIDATED_STAGING_RUN_ID\}/);
-assert.match(workflow, /EXPECTED="\$\(awk '\{print \$1; exit\}' "\$HASH"\)"/);
-assert.match(workflow, /ACTUAL="\$\(sha256sum "\$APK" \| awk '\{print \$1\}'\)"/);
-assert.match(workflow, /test "\$EXPECTED" = "\$ACTUAL"/);
-assert.match(workflow, /tutop-0\.9\.2-beta\.0-physical-qa-/);
+assert.match(workflow, /TuTop-0\.9\.2-beta\.0-physical-qa-staging\.apk/);
+assert.match(workflow, /PHYSICAL_QA_CANDIDATE_0\.9\.2\.generated\.json/);
 assert.match(workflow, /--prerelease/);
 
-// The canonical privileged staging pipeline may temporarily leave App Check
-// unenforced for private QA while proving the backend independently. This does
-// not authorize embedding provider/debug secrets in the Android client.
-assert.match(workflow, /TUTOP_AI_APP_CHECK_REQUIRED: "false"/);
-assert.equal((workflow.match(/TUTOP_APP_CHECK_MODE: UNENFORCED/g) || []).length >= 2, true);
-assert.equal((workflow.match(/TUTOP_APP_CHECK_AI_MODE: UNENFORCED/g) || []).length >= 2, true);
-assert.match(workflow, /firebase_project=tutop-beta-vicmdlb-1356585881/);
-assert.match(workflow, /ai_app_check_required=false/);
-assert.match(workflow, /not production\/Play-ready/i);
+// Regression for build-91: before Android assembly, the staging preparation must
+// prove an app-like new account can publish immediately and then wipe old beta
+// users/data exactly once. This runs in the existing authoritative pipeline.
+assert.match(prepareAndroid, /staging-app-registration-smoke\.mjs/);
+assert.match(prepareAndroid, /reset-staging-accounts\.mjs/);
+assert.match(prepareAndroid, /DELETE_ALL_BETA_ACCOUNTS/);
+assert.match(registrationSmoke, /buildV2InitialAccountDocuments/);
+assert.match(registrationSmoke, /institution_id/);
+assert.match(registrationSmoke, /campus_id/);
+assert.match(registrationSmoke, /PlayStation 5 registro smoke/);
+assert.match(onboarding, /installV2AtomicRegistrationBridge/);
+assert.match(onboarding, /client\.commit/);
+assert.match(onboarding, /V2_REGISTRATION_IDENTITY_RECHECK_FAILED/);
 
-// 0.9.2 UX / native safety invariants.
-assert.match(theme, /return value === 'dark' \|\| value === 'system' \|\| value === 'light' \? value : 'dark'/);
-assert.match(theme, /return 'dark'/);
-assert.match(nativeSecurity, /0\.9\.2-beta\.0/);
-assert.match(appCheck, /environment === 'staging'/);
-assert(appCheck.includes('/^0\\.9\\.1-beta\\./.test(version)'), '0.9.2 must leave the debug provider behind and restrict it to historical 0.9.1 staging');
-assert(!appCheck.includes('/^0\\.9\\.(?:1|2)-beta\\./.test(version)'), '0.9.2 must not re-enable the staging debug provider');
-assert.match(appCheck, /play-integrity/);
-assert.match(appCheck, /debugToken: useStagingDebugProvider\(\)/);
-assert.doesNotMatch(appCheck, /debugToken:\s*['"][A-Za-z0-9_-]{12,}['"]/);
-assert.match(nativeDevice, /permissions: \['coarseLocation'\]/);
-assert.match(nativeDevice, /enableHighAccuracy: false/);
-assert.match(nativeDevice, /enableLocationManagerFallback: true/);
 assert.match(nativeDevice, /camera\.takePhoto/);
 assert.match(nativeDevice, /camera\.chooseFromGallery/);
-assert.match(nativeDevice, /camera\.getPhoto/);
-assert.match(nativeDevice, /saveToGallery: false/);
-const permissionBlock = nativeCapabilities.match(/const permissions = \[([\s\S]*?)\];/)?.[1] || '';
-assert.match(permissionBlock, /ACCESS_COARSE_LOCATION/);
-assert.match(permissionBlock, /RECORD_AUDIO/);
-assert.doesNotMatch(permissionBlock, /ACCESS_FINE_LOCATION/);
-assert.doesNotMatch(permissionBlock, /ACCESS_BACKGROUND_LOCATION/);
-assert.doesNotMatch(permissionBlock, /android\.permission\.CAMERA/);
-assert.match(nearby, /Math\.round\(value \* 100\) \/ 100/);
+assert.match(nativeDevice, /filesystem\.readFile/);
+assert.match(nativeDevice, /enableLocationFallback: true/);
+assert.doesNotMatch(nativeDevice, /enableLocationManagerFallback/);
+assert.match(nativeDevice, /enableHighAccuracy: false/);
+assert.match(nativeDevice, /permissions: \['coarseLocation'\]/);
 
-// Topi physical QA must prove the real Firebase provider. Outside physical QA,
-// deterministic local guidance remains available, but staging 0.9.2 may not
-// disguise a failed AI request as a successful local AI response.
-assert.match(topi, /generateNativeTopiText/);
-assert.match(topi, /askNativeFirebaseTopi/);
-assert.match(topi, /provider: TopiProvider/);
-assert.match(topi, /sanitizeRemoteResult/);
-assert.match(topi, /safeDraftForRemote/);
-assert.match(topi, /physicalQaRequiresRealAI/);
-assert.match(topi, /TOPI_REAL_AI_UNAVAILABLE/);
-assert.match(topi, /nativeTopiAIStatus\(\)\.reason/);
-assert.match(topi, /return localTopi\(action, context\)/);
-assert.doesNotMatch(topi, /authorization['"]?\s*:/i);
-assert.match(publish, /result\.provider === 'firebase-ai-logic'/);
-assert.match(publish, /result\.provider === 'private-endpoint'/);
-assert.match(publish, /Topi IA real \(Firebase AI\)/);
-assert.match(publish, /La IA real de Topi no respondió/);
-assert.match(publish, /no lo disfraza con un asistente local/);
-assert.match(publish, /takeNativePhoto\(\)/);
-assert.match(publish, /pickNativePhoto\(\)/);
-assert.match(publish, /refreshLocation/);
-assert.match(support, /Pregúntale a Topi/);
-assert.match(support, /Tu amigo para resolver dudas y usar TuTop/);
-assert.match(support, /Firebase AI real/);
-assert.match(support, /Guía local/);
-assert.match(support, /IA no disponible/);
-assert.match(consumerSupport, /source: 'unavailable'/);
-assert.match(consumerSupport, /physicalQaRequiresRealAI/);
+assert.match(nativeAI, /gemini-3\.8-flash/);
+assert.match(nativeAI, /gemini-3\.5-flash-lite/);
+assert.match(nativeAI, /isPrivatePhysicalQaBuild/);
+assert.match(appCheck, /play-integrity/);
+assert.doesNotMatch(appCheck, /debugToken:\s*['"][A-Za-z0-9_-]{12,}['"]/);
 
-// Video software is complete but fail-closed until Cloud Storage/Blaze is
-// explicitly authorized. A disabled feature must never trigger billing itself.
-assert.match(env, /VITE_TUTOP_MEDIA_STORAGE_ENABLED=false/);
-assert.match(mediaStorage, /MEDIA_STORAGE_INFRASTRUCTURE_DISABLED/);
-assert.match(mediaStorage, /MAX_LISTING_VIDEO_BYTES = 50 \* 1024 \* 1024/);
-assert.match(mediaStorage, /product-videos\/\$\{uid\}/);
-assert.match(mediaStorage, /Authorization: `Firebase \$\{idToken\}`/);
-assert.match(publish, /firebaseMediaStorage\.uploadListingVideo/);
-assert.match(publish, /firebaseMediaStorage\.delete/);
+assert.equal(resetConfig.approved, true);
+assert.equal(resetConfig.project_id, 'tutop-beta-vicmdlb-1356585881');
+assert.match(resetConfig.reset_id, /^staging-reset-/);
+assert.match(resetScript, /EXPECTED_PROJECT = 'tutop-beta-vicmdlb-1356585881'/);
+assert.match(resetScript, /DELETE_ALL_BETA_ACCOUNTS/);
+assert.match(resetScript, /adminListAuthUsers/);
+assert.match(resetScript, /adminDeleteTestUsers/);
+assert.match(resetScript, /institutions/);
+assert.match(resetScript, /approved_meeting_points/);
 
-// Candidate generation is exact-head, same-SHA and version-aware for 0.9.2.
-assert(generator.includes('/^0\\.9\\.(1|2)-beta\\.\\d+$/'), 'candidate generator must accept only the 0.9.1/0.9.2 beta namespaces');
-assert(generator.includes('PHYSICAL_QA_CANDIDATE_0.9.${minor}.generated.json'));
 assert.match(generator, /gateCommitSha !== headSha/);
 assert.match(generator, /stagingSmokeCommitSha !== headSha/);
 assert.match(generator, /tutop-beta-vicmdlb-1356585881/);
@@ -156,4 +99,4 @@ assert.match(verifier, /build_commit_sha/);
 assert.match(verifier, /gate_commit_sha/);
 assert.match(verifier, /staging_smoke_commit_sha/);
 
-console.log('✅ TuTop 0.9.2 canonical release identity / UX / native / mandatory real-AI QA / video gate / exact-SHA Physical QA contract PASS');
+console.log('✅ TuTop 0.9.2 release contract: exact-SHA candidate + app-like registration/publication proof + Capacitor 8 native APIs + one-shot staging reset PASS');

@@ -53,6 +53,43 @@ export async function adminRunQuery(collectionId, filters = [], limit = 500) {
   }));
 }
 
+export async function adminListDocuments(collectionPath, pageSize = 300) {
+  const results = [];
+  let pageToken = '';
+  do {
+    const query = new URLSearchParams({ pageSize: String(Math.max(1, Math.min(1000, Number(pageSize) || 300))) });
+    if (pageToken) query.set('pageToken', pageToken);
+    const raw = await request(`${firestoreBase}/${collectionPath.split('/').map(encodeURIComponent).join('/')}?${query}`);
+    for (const document of raw?.documents || []) {
+      results.push({
+        name: String(document.name || ''),
+        path: String(document.name || '').split('/documents/')[1] || '',
+        fields: document.fields || {},
+      });
+    }
+    pageToken = String(raw?.nextPageToken || '');
+  } while (pageToken);
+  return results;
+}
+
+export async function adminListAuthUsers(pageSize = 500) {
+  const users = [];
+  let nextPageToken = '';
+  do {
+    const body = { maxResults: Math.max(1, Math.min(1000, Number(pageSize) || 500)), ...(nextPageToken ? { nextPageToken } : {}) };
+    const raw = await request(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:query`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    for (const user of raw?.users || []) {
+      const localId = String(user?.localId || '').trim();
+      if (localId) users.push({ localId, email: String(user?.email || '') });
+    }
+    nextPageToken = String(raw?.nextPageToken || '');
+  } while (nextPageToken);
+  return users;
+}
+
 export async function adminDeleteTestUsers(localIds) {
   if (!Array.isArray(localIds) || localIds.some((uid) => !String(uid).trim())) throw new Error('UIDs de cleanup inválidos.');
   if (!localIds.length) return null;
