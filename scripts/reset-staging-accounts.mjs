@@ -4,6 +4,7 @@ import {
   adminDeleteTestUsers,
   adminGetDocument,
   adminListAuthUsers,
+  adminListCollectionGroupDocuments,
   adminListDocuments,
   adminPatchDocument,
 } from './staging-v2-admin.mjs';
@@ -60,9 +61,8 @@ const ROOT_COLLECTIONS_TO_WIPE = [
   'users',
 ];
 
-// Firestore parent deletion never cascades. These three chat subcollections are
-// part of the V2 contract and must be explicitly deleted and re-verified or a
-// supposedly clean beta can retain old messages/read state/confirmations.
+// Firestore parent deletion never cascades. Scan these as collection groups so
+// even orphan descendants from already-deleted chats are discovered and wiped.
 const CHAT_SUBCOLLECTIONS = ['messages', 'confirmations', 'reads'];
 
 const discovered = new Map();
@@ -71,16 +71,9 @@ for (const collection of ROOT_COLLECTIONS_TO_WIPE) {
   discovered.set(collection, docs);
 }
 
-const chatIds = (discovered.get('chats') || [])
-  .map((chat) => chat.path.split('/').pop())
-  .filter(Boolean);
 const nestedChatDocuments = new Map();
-for (const subcollection of CHAT_SUBCOLLECTIONS) nestedChatDocuments.set(subcollection, []);
-for (const chatId of chatIds) {
-  for (const subcollection of CHAT_SUBCOLLECTIONS) {
-    const docs = await adminListDocuments(`chats/${chatId}/${subcollection}`);
-    nestedChatDocuments.get(subcollection).push(...docs);
-  }
+for (const subcollection of CHAT_SUBCOLLECTIONS) {
+  nestedChatDocuments.set(subcollection, await adminListCollectionGroupDocuments(subcollection));
 }
 
 const authUsers = await adminListAuthUsers();
@@ -126,18 +119,16 @@ for (let offset = 0; offset < uids.length; offset += 1000) {
 }
 
 // Fail closed: do not write the one-shot marker until Auth, every root collection,
-// and every known nested chat collection are independently verified empty.
+// and every known chat collection group are independently verified empty.
 const remainingUsers = await adminListAuthUsers();
 if (remainingUsers.length) throw new Error(`STAGING_RESET_AUTH_NOT_EMPTY:${remainingUsers.length}`);
 for (const collection of ROOT_COLLECTIONS_TO_WIPE) {
   const left = await adminListDocuments(collection);
   if (left.length) throw new Error(`STAGING_RESET_COLLECTION_NOT_EMPTY:${collection}:${left.length}`);
 }
-for (const chatId of chatIds) {
-  for (const subcollection of CHAT_SUBCOLLECTIONS) {
-    const left = await adminListDocuments(`chats/${chatId}/${subcollection}`);
-    if (left.length) throw new Error(`STAGING_RESET_CHAT_SUBCOLLECTION_NOT_EMPTY:${chatId}:${subcollection}:${left.length}`);
-  }
+for (const subcollection of CHAT_SUBCOLLECTIONS) {
+  const left = await adminListCollectionGroupDocuments(subcollection);
+  if (left.length) throw new Error(`STAGING_RESET_CHAT_COLLECTION_GROUP_NOT_EMPTY:${subcollection}:${left.length}`);
 }
 
 await adminPatchDocument(markerPath, {
@@ -149,4 +140,4 @@ await adminPatchDocument(markerPath, {
   reason: String(config.reason || 'staging reset').slice(0, 300),
 });
 
-console.log(`✅ LAVADO STAGING COMPLETO · auth=${uids.length} · docs=${totalDocs} · chat messages/confirmations/reads=0 · catálogo/infra/auditoría preservados.`);
+console.log(`✅ LAVADO STAGING COMPLETO · auth=${uids.length} · docs=${totalDocs} · collection-groups messages/confirmations/reads=0 · catálogo/infra/auditoría preservados.`);
