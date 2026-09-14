@@ -167,7 +167,8 @@ export async function completePendingUniversityIdentity() {
 
   const identity = identityFor(pending.institution_id, pending.campus_id, pending.faculty_id, pending.career_id);
   if (!identity.institution_id || !identity.campus_id) throw new Error('V2_REGISTRATION_IDENTITY_REQUIRED');
-  await nationalBackend.updateUniversityIdentity(identity, pending.legacy_facultad_adapter || pending.legacy_adapter);
+  const legacyFaculty = pending.legacy_facultad_adapter || pending.legacy_adapter || identity.faculty_name || identity.campus_name || 'Comunidad universitaria';
+  await nationalBackend.updateUniversityIdentity(identity, legacyFaculty);
   const client = onlineBackend.configureFromRuntime();
   const profile = client ? await client.getDocument<Record<string, unknown>>(`users/${session.uid}`) : null;
   if (profile?.data?.institution_id !== identity.institution_id || profile?.data?.campus_id !== identity.campus_id) {
