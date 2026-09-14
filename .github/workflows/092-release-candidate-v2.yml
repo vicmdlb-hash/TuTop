@@ -175,6 +175,14 @@ jobs:
           TUTOP_ALLOW_ACCOUNT_ERASURE: staging-reviewed
         run: node scripts/staging-account-erasure-smoke.mjs
 
+      - name: Apply approved one-shot full beta account reset
+        env:
+          TUTOP_STAGING_RESET_ACK: DELETE_ALL_BETA_ACCOUNTS
+        run: node scripts/reset-staging-accounts.mjs --apply
+
+      - name: Prove fresh registration and immediate publication after reset
+        run: node scripts/staging-app-registration-smoke.mjs
+
       - name: Re-verify App Check isolation after real smoke
         env:
           TUTOP_APP_CHECK_MODE: UNENFORCED
