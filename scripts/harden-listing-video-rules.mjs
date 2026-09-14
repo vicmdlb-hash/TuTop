@@ -44,10 +44,11 @@ let updateRules = listingRules.slice(updateStart, deleteStart);
 const suffix = listingRules.slice(deleteStart);
 
 const keyNeedle = "          'delivery_methods','meeting_point_ids','shipping_available','photo_urls','status','moderation_status','visibility_scope',\n";
+const videoAllowlistNeedle = "          'delivery_methods','meeting_point_ids','shipping_available','photo_urls','video_urls','status','moderation_status','visibility_scope',\n";
 createRules = replaceOnce(
   createRules,
   keyNeedle,
-  "          'delivery_methods','meeting_point_ids','shipping_available','photo_urls','video_urls','status','moderation_status','visibility_scope',\n",
+  videoAllowlistNeedle,
   'create allowlist video_urls',
 );
 
@@ -72,7 +73,9 @@ updateRules = replaceOnce(
 
 listingRules = `${prefix}${createRules}${updateRules}${suffix}`;
 
-const finalAllowlistCount = listingRules.split("'video_urls'").length - 1;
+// Count the exact allowlist entry, not every legitimate occurrence of the
+// string key inside create/update validators.
+const finalAllowlistCount = listingRules.split(videoAllowlistNeedle.trim()).length - 1;
 const finalValidationCount = listingRules.split('request.resource.data.video_urls.size() <= 1').length - 1;
 const canonicalPrefixCount = listingRules.split('firebase-storage://[^/]+/product-videos/').length - 1;
 if (finalAllowlistCount !== 1) stop(`video_urls debe existir exactamente una vez en allowlist; encontró ${finalAllowlistCount}`);
