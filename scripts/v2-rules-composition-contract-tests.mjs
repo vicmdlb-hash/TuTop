@@ -63,17 +63,19 @@ assert.match(nearby, /canonicalCount !== 2/);
 assert.match(nearby, /legacyCount !== 1/);
 assert.match(nearby, /legacyShippingRequirement/);
 
-// 0.9.2 video references are appended after nearby semantics so the final
-// generated listing allowlist and create/update validators include only the
-// canonical firebase-storage:// product-video surface. The hardener must
-// discover the listings_v2 boundary dynamically and fail closed on any drift.
+// 0.9.2 video references are appended after nearby semantics. Keep one helper
+// definition outside the match and call it exactly from create + seller update.
+// This avoids fragile nested-expression injection while preserving the same
+// fail-closed canonical firebase-storage:// product-video surface.
 assert.match(video, /canonicalListingBounds/);
 assert.match(video, /create allowlist video_urls/);
 assert.match(video, /create video validation before listing status/);
 assert.match(video, /seller update video validation before listing status/);
+assert.match(video, /validListingVideoUrls/);
 assert.match(video, /finalAllowlistCount !== 1/);
-assert.match(video, /finalValidationCount !== 2/);
-assert.match(video, /canonicalPrefixCount !== 2/);
+assert.match(video, /finalHelperDefinitionCount !== 1/);
+assert.match(video, /finalValidationCallCount !== 2/);
+assert.match(video, /canonicalPrefixCount !== 1/);
 assert.match(video, /firebase-storage:\/\//);
 assert.match(video, /product-videos/);
 assert.match(video, /video_urls\.size\(\) <= 1/);
@@ -89,6 +91,6 @@ console.log('PASS V2 Rules pipeline order is explicit and frozen, including near
 console.log('PASS canonical listing conversion precedes runtime rules that depend on listingDoc');
 console.log('PASS runtime markers precede listing optimization, notification receipts and reservation-lock hardeners');
 console.log('PASS nearby hardener removes canonical and legacy shipping mandates fail-closed');
-console.log('PASS video hardener appends a fail-closed canonical Storage reference contract');
+console.log('PASS video hardener uses one helper and two fail-closed create/update calls');
 console.log('PASS duplicate favorites hardener is absent; canonical conversion owns V2 listing identity');
 console.log('V2 Rules composition contract: PASS');
