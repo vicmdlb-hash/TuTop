@@ -25,10 +25,34 @@ export interface V2InitialAccountInput {
   now: unknown;
 }
 
+// This allowlist MUST mirror /users/{uid} create keys in firestore.v2.rules.
+// Do not spread UniversityIdentity wholesale: it also contains presentation-only
+// metadata such as state_name (and may gain future fields) that Firestore Rules
+// intentionally reject on the public account document.
+const PROFILE_IDENTITY_KEYS = [
+  'country_code',
+  'state_code',
+  'city_id',
+  'city_name',
+  'institution_id',
+  'institution_name',
+  'campus_id',
+  'campus_name',
+  'faculty_id',
+  'faculty_name',
+  'career_id',
+  'career_name',
+] as const;
+
+type ProfileIdentityKey = (typeof PROFILE_IDENTITY_KEYS)[number];
+
 function compactIdentity(identity: V2RegistrationIdentity) {
-  return Object.fromEntries(
-    Object.entries(identity).filter(([, value]) => value !== undefined && value !== null && value !== ''),
-  );
+  const projected: Partial<Record<ProfileIdentityKey, string>> = {};
+  for (const key of PROFILE_IDENTITY_KEYS) {
+    const value = identity[key];
+    if (value !== undefined && value !== null && value !== '') projected[key] = String(value);
+  }
+  return projected;
 }
 
 export function buildV2InitialAccountDocuments(input: V2InitialAccountInput) {

@@ -79,6 +79,11 @@ assert.match(publishUi, /La IA real de Topi no respondió/);
 assert.match(initialAccount, /V2_REGISTRATION_IDENTITY_REQUIRED/);
 assert.match(initialAccount, /institution_id/);
 assert.match(initialAccount, /campus_id/);
+const profileIdentityAllowlist = initialAccount.match(/const PROFILE_IDENTITY_KEYS = \[([\s\S]*?)\] as const;/)?.[1] || '';
+for (const requiredIdentityKey of ['country_code', 'state_code', 'city_id', 'city_name', 'institution_id', 'institution_name', 'campus_id', 'campus_name']) {
+  assert.match(profileIdentityAllowlist, new RegExp(`['\"]${requiredIdentityKey}['\"]`));
+}
+assert.doesNotMatch(profileIdentityAllowlist, /state_name|community_id|community_name/);
 assert.match(onboarding, /buildV2InitialAccountDocuments/);
 assert.match(onboarding, /client\.commit/);
 assert.match(onboarding, /V2_REGISTRATION_IDENTITY_RECHECK_FAILED/);
@@ -128,4 +133,4 @@ assert.match(explore, /RADII = \[5, 10, 25, 50\]/);
 assert.match(explore, /requestApproxLocation/);
 assert.match(listings, /loadNearbyProducts/);
 
-console.log('✅ TuTop 0.9.2 device contract: atomic registration/publication + Camera 8 photos + correct coarse-location fallback + real AI + one-shot staging reset + generated DD pin branding PASS');
+console.log('✅ TuTop 0.9.2 device contract: atomic registration/publication + exact Firestore identity allowlist + Camera 8 photos + correct coarse-location fallback + real AI + one-shot staging reset + generated DD pin branding PASS');
