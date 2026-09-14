@@ -23,7 +23,7 @@ if (!fs.existsSync(path.join(root, 'node_modules/@capacitor/core'))) {
   stop('faltan dependencias Capacitor. Ejecuta primero: npm run deps:mobile');
 }
 if (v2) {
-  for (const dependency of ['@capacitor/geolocation', '@capacitor/camera', '@capacitor-firebase/messaging', '@capacitor-firebase/app-check', 'firebase']) {
+  for (const dependency of ['@capacitor/geolocation', '@capacitor/camera', '@capacitor/filesystem', '@capacitor-firebase/messaging', '@capacitor-firebase/app-check', 'firebase']) {
     if (!fs.existsSync(path.join(root, 'node_modules', dependency))) stop(`falta dependencia Android V2: ${dependency}`);
   }
   if (!fs.existsSync(googleServicesSource)) stop(`V2 Android requiere google-services.json validado en ${googleServicesSource}`);
@@ -92,4 +92,4 @@ if (v2) {
   console.log(`Firebase Android V2 validado y copiado: ${expectedStagingProject} / ${config.appId}`);
 }
 
-console.log('Android bootstrap 0.9.1 preparado: cámara, ubicación aproximada, Topi AI, Topi Voice, FCM y App Check. No se generó APK en este paso.');
+console.log('Android bootstrap 0.9.2 preparado: cámara/Photo Picker + Filesystem, ubicación aproximada, Topi AI, Topi Voice, FCM y App Check. No se generó APK en este paso.');

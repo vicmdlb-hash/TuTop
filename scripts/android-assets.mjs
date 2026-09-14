@@ -22,28 +22,22 @@ try {
 const brand = {
   icon: path.join(root, 'assets/branding/tutop-app-icon.svg'),
   foreground: path.join(root, 'assets/branding/tutop-adaptive-foreground.svg'),
-  splash: path.join(root, 'assets/branding/tutop-splash-091.svg'),
+  splash: path.join(root, 'assets/branding/tutop-splash-092.svg'),
 };
 for (const source of Object.values(brand)) {
   if (!fs.existsSync(source)) stop(`Falta fuente de branding TuTop: ${path.relative(root, source)}`);
 }
 
 async function renderBrandAssets() {
-  const backgroundSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><defs><radialGradient id="r" cx="38%" cy="28%" r="82%"><stop stop-color="#9B72FF"/><stop offset=".42" stop-color="#6D3EF0"/><stop offset="1" stop-color="#34206F"/></radialGradient></defs><rect width="1024" height="1024" rx="224" fill="url(#r)"/></svg>');
-  const splashSource = fs.readFileSync(brand.splash, 'utf8');
-  const splashDarkSource = splashSource
-    .replaceAll('#F5F6FB', '#090A10')
-    .replaceAll('#211A47', '#F8F7FF')
-    .replaceAll('#EEDFFF', '#241B3D')
-    .replaceAll('#4B2EDB', '#9B72FF');
+  // User-rejected purple/black launcher backgrounds are forbidden in 0.9.2.
+  // Adaptive icon background stays visibly purple in both light and dark launcher modes.
+  const backgroundSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><defs><linearGradient id="r" x1="120" y1="80" x2="900" y2="950" gradientUnits="userSpaceOnUse"><stop stop-color="#B99BFF"/><stop offset=".45" stop-color="#7C4DFF"/><stop offset="1" stop-color="#653AD9"/></linearGradient></defs><rect width="1024" height="1024" rx="224" fill="url(#r)"/></svg>');
 
   await sharp(brand.icon, { density: 240 }).resize(1024, 1024).png().toFile(path.join(root, 'assets/icon-only.png'));
   await sharp(brand.foreground, { density: 240 }).resize(1024, 1024).png().toFile(path.join(root, 'assets/icon-foreground.png'));
   await sharp(backgroundSvg, { density: 240 }).resize(1024, 1024).png().toFile(path.join(root, 'assets/icon-background.png'));
-  // 0.9.2 launches dark even when Android itself is in light mode, matching the
-  // app's new default and avoiding a bright flash before React mounts.
-  await sharp(Buffer.from(splashDarkSource), { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash.png'));
-  await sharp(Buffer.from(splashDarkSource), { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash-dark.png'));
+  await sharp(brand.splash, { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash.png'));
+  await sharp(brand.splash, { density: 180 }).resize(2732, 2732).png().toFile(path.join(root, 'assets/splash-dark.png'));
 }
 
 await renderBrandAssets();
@@ -78,10 +72,10 @@ for (const [relative, width, height] of required) {
 
 const args = [
   '@capacitor/assets', 'generate', '--android',
-  '--iconBackgroundColor', '#4B2EDB',
-  '--iconBackgroundColorDark', '#34206F',
-  '--splashBackgroundColor', '#090A10',
-  '--splashBackgroundColorDark', '#090A10',
+  '--iconBackgroundColor', '#7C4DFF',
+  '--iconBackgroundColorDark', '#7C4DFF',
+  '--splashBackgroundColor', '#7C4DFF',
+  '--splashBackgroundColorDark', '#7C4DFF',
 ];
 const result = spawnSync('npx', args, {
   cwd: root,
@@ -89,4 +83,4 @@ const result = spawnSync('npx', args, {
   shell: process.platform === 'win32',
 });
 if (result.status !== 0) process.exit(result.status || 1);
-console.log(`✅ Branding Android ${appVersion} generado: icono TuTop morado refinado + splash Topi oscuro consistente con el tema predeterminado.`);
+console.log(`✅ Branding Android ${appVersion} generado desde DD + pin: morado/blanco sin fondo negro heredado, splash 0.9.2 coherente.`);
