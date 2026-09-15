@@ -1,14 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const candidatePath = path.resolve(process.argv[2] || 'PHYSICAL_QA_CANDIDATE_0.9.1.generated.json');
-const metadataPath = path.resolve(process.argv[3] || 'TuTop-0.9.1-beta.0-physical-qa-staging.metadata.txt');
+const version = String(process.env.TUTOP_BETA_VERSION || '0.9.1-beta.0').trim();
+const versionMatch = version.match(/^0\.9\.(1|2)-beta\.\d+$/);
+const minor = versionMatch?.[1] || '1';
+const candidatePath = path.resolve(process.argv[2] || `PHYSICAL_QA_CANDIDATE_0.9.${minor}.generated.json`);
+const metadataPath = path.resolve(process.argv[3] || `TuTop-${version}-physical-qa-staging.metadata.txt`);
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
   process.exit(2);
 }
 
+if (!versionMatch) stop(`TUTOP_BETA_VERSION inválida: ${version}`);
 if (!fs.existsSync(candidatePath)) stop(`falta candidate: ${candidatePath}`);
 if (!fs.existsSync(metadataPath)) stop(`falta metadata: ${metadataPath}`);
 const candidate = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
@@ -55,5 +59,5 @@ if (!['true', 'false'].includes(metadata.reviews_lazy_cutover)) stop('reviews_la
 if (!['true', 'false'].includes(metadata.wallet_lazy_cutover)) stop('wallet_lazy_cutover inválido');
 if (!['true', 'false'].includes(metadata.favorites_visible_cutover)) stop('favorites_visible_cutover inválido');
 
-console.log('PASS Android metadata matches generated TuTop 0.9.1 Physical QA candidate including gate/staging SHA bindings');
+console.log(`PASS Android metadata matches generated TuTop ${version} Physical QA candidate including gate/staging SHA bindings`);
 console.log(`head=${metadata.head_sha} artifact=${metadata.artifact_id} apk_sha256=${metadata.apk_sha256}`);

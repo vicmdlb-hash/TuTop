@@ -1,0 +1,88 @@
+/* TuTop 0.9.2 approved wordmark treatment.
+   The existing semantic markup stays text-readable while the visual treatment
+   adds the navy/purple split and a small location-pin accent over the Top mark. */
+.wordmark {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  font-size: 26px;
+  line-height: .94;
+  font-weight: 950;
+  letter-spacing: -1.7px;
+  filter: drop-shadow(0 7px 18px rgba(76, 46, 219, .16));
+}
+
+.wordmark span:first-child {
+  color: #f5f6fb;
+  letter-spacing: -1.9px;
+}
+
+.wordmark span:last-child {
+  position: relative;
+  background: linear-gradient(135deg, #b788ff 0%, #7c4dff 44%, #4b2edb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  letter-spacing: -1.9px;
+}
+
+.wordmark span:last-child::after {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: -5px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid #d9c0ff;
+  border-radius: 50% 50% 50% 0;
+  background: #5b35df;
+  transform: rotate(-45deg);
+  box-shadow: 0 0 0 2px rgba(15, 15, 20, .72), 0 4px 10px rgba(124, 77, 255, .38);
+}
+
+.wordmark span:last-child::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  top: -2px;
+  z-index: 1;
+  width: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: #f5f6fb;
+}
+
+[data-theme="light"] .wordmark span:first-child { color: #211a47; }
+[data-theme="light"] .wordmark span:last-child::after {
+  box-shadow: 0 0 0 2px rgba(245, 246, 251, .9), 0 4px 10px rgba(124, 77, 255, .28);
+}
+
+/* 0.9.2 accessibility baseline. Do not remove focus indication just because
+   the visual design is compact: keyboard/switch users need the same controls. */
+:where(button, a, input, select, textarea, [role="button"]):focus-visible {
+  outline: 3px solid #b788ff;
+  outline-offset: 2px;
+}
+
+:where(button, [role="button"], input[type="button"], input[type="submit"]) {
+  touch-action: manipulation;
+}
+
+/* Primary mobile controls should not collapse below the recommended touch
+   target even when copy is short. Icon-only exceptions keep their explicit
+   component sizing. */
+:where(.filter-chip, .detail-contact, .detail-favorite, .publish-input, .publish-textarea) {
+  min-height: 44px;
+}
+
+::placeholder { opacity: .72; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

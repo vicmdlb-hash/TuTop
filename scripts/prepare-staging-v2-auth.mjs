@@ -70,12 +70,20 @@ if (config.projectId !== projectId) throw new Error(`Firebase Web App project mi
 
 await ensureFirebaseAiApiKeyAllowlist({ projectId, token, apiKey: config.apiKey });
 
+// Storage remains infrastructure-gated on the private Spark staging project.
+// We still export the canonical bucket name so the exact same client path is
+// ready when Blaze/Storage is explicitly authorized; this helper never enables
+// the Storage API or billing by itself.
+const storageBucket = String(config.storageBucket || `${projectId}.firebasestorage.app`).trim();
+
 fs.writeFileSync(outputPath, JSON.stringify({
   apiKey: config.apiKey,
   authDomain: config.authDomain || `${projectId}.firebaseapp.com`,
   projectId: config.projectId,
   appId: config.appId,
+  storageBucket,
 }, null, 2), { mode: 0o600 });
 
 console.log(`✅ Firebase Web App lista para smoke E2E (${app.displayName || 'TuTop staging'}).`);
 console.log(`✅ Config runtime escrita en ${outputPath} sin imprimir credenciales de sesión.`);
+console.log('ℹ️ Bucket de Storage sólo se declara como configuración; Storage/billing no se habilitaron.');

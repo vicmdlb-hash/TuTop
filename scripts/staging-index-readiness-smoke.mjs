@@ -14,6 +14,8 @@ const probeString = '__tutop_index_readiness_probe__';
 const recentCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 const MAX_ATTEMPTS = 20;
 const RETRY_MS = 15_000;
+const NETWORK_MAX_ATTEMPTS = 4;
+const NETWORK_RETRY_MS = 2_000;
 
 const field = (fieldPath) => ({ fieldPath });
 const stringValue = (value) => ({ stringValue: value });
@@ -22,6 +24,7 @@ const arrayValue = (values) => ({ arrayValue: { values } });
 const filter = (fieldPath, op, value) => ({ fieldFilter: { field: field(fieldPath), op, value } });
 const and = (...filters) => ({ compositeFilter: { op: 'AND', filters } });
 const orderBy = (fieldPath, direction) => ({ field: field(fieldPath), direction });
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const probes = [
   {
@@ -125,20 +128,59 @@ const probes = [
   },
 ];
 
+function networkErrorCode(error) {
+  const direct = error?.code;
+  if (typeof direct === 'string') return direct;
+  const cause = error?.cause;
+  if (typeof cause?.code === 'string') return cause.code;
+  if (Array.isArray(cause?.errors)) {
+    const match = cause.errors.find((item) => typeof item?.code === 'string');
+    if (match) return match.code;
+  }
+  return '';
+}
+
+function isTransientNetworkError(error) {
+  const code = networkErrorCode(error);
+  return [
+    'ETIMEDOUT',
+    'ENETUNREACH',
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'EAI_AGAIN',
+    'UND_ERR_CONNECT_TIMEOUT',
+    'UND_ERR_SOCKET',
+  ].includes(code) || (error instanceof TypeError && /fetch failed/i.test(error.message));
+}
+
 async function runProbe(probe) {
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ structuredQuery: probe.query }),
-  });
-  const text = await response.text();
-  if (response.ok) return;
-  const detail = `${response.status}: ${text.slice(0, 1200)}`;
-  const explicitBuildingState = /index/i.test(detail) && /(building|being built|not ready|cannot be used yet)/i.test(detail);
-  const freshlyDeployedMissingState = /FAILED_PRECONDITION/i.test(detail) && /query requires an index/i.test(detail);
-  const error = new Error(`${probe.name}: ${detail}`);
-  error.transientIndexState = explicitBuildingState || freshlyDeployedMissingState;
-  throw error;
+  for (let networkAttempt = 1; networkAttempt <= NETWORK_MAX_ATTEMPTS; networkAttempt += 1) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ structuredQuery: probe.query }),
+      });
+      const text = await response.text();
+      if (response.ok) return;
+      const detail = `${response.status}: ${text.slice(0, 1200)}`;
+      const explicitBuildingState = /index/i.test(detail) && /(building|being built|not ready|cannot be used yet)/i.test(detail);
+      const freshlyDeployedMissingState = /FAILED_PRECONDITION/i.test(detail) && /query requires an index/i.test(detail);
+      const error = new Error(`${probe.name}: ${detail}`);
+      error.transientIndexState = explicitBuildingState || freshlyDeployedMissingState;
+      throw error;
+    } catch (error) {
+      if (error?.transientIndexState) throw error;
+      if (!isTransientNetworkError(error)) throw error;
+      if (networkAttempt === NETWORK_MAX_ATTEMPTS) {
+        const blocked = new Error(`STAGING_INDEX_NETWORK_BLOCKED:${probe.name}:${networkErrorCode(error) || 'fetch_failed'}`);
+        blocked.cause = error;
+        throw blocked;
+      }
+      console.log(`⏳ INDEX NETWORK RETRY: ${probe.name} (network ${networkAttempt}/${NETWORK_MAX_ATTEMPTS})`);
+      await sleep(NETWORK_RETRY_MS * networkAttempt);
+    }
+  }
 }
 
 let pending = [...probes];
@@ -167,7 +209,7 @@ for (let attempt = 1; attempt <= MAX_ATTEMPTS && pending.length; attempt += 1) {
     throw new Error(`STAGING_INDEX_READINESS_BLOCKED:${retry.map((probe) => probe.name).join('|')}`);
   }
   pending = retry;
-  await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
+  await sleep(RETRY_MS);
 }
 
 console.log(`✅ Firestore staging composite-index matrix READY (${probes.length}/${probes.length}) on ${projectId}.`);

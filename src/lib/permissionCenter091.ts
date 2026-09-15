@@ -22,6 +22,10 @@ export async function queryCapabilityPermission(capability: CapabilityPermission
   if (capability === 'location' && getCachedApproxLocation()) return 'granted';
   if (isNativeDeviceRuntime()) {
     if (capability === 'location') return normalizeNativeState(await nativeLocationPermission(false));
+    // Camera 8 uses Android's system camera/photo picker and deliberately does
+    // not request legacy broad CAMERA/storage permission. Here "granted" means
+    // the native picker capability is installed and available, not that TuTop
+    // owns unrestricted camera access.
     if (capability === 'camera') return normalizeNativeState(await nativeCameraPermission());
     if (capability === 'microphone') return normalizeNativeState(await queryTopiVoicePermission());
     if (capability === 'notifications') return normalizeNativeState(await nativePushPermission());
@@ -59,7 +63,7 @@ async function requestBrowserMedia(kind: 'camera' | 'microphone'): Promise<Permi
 
 export async function requestCapabilityPermission(capability: CapabilityPermission): Promise<PermissionState091> {
   if (capability === 'location') {
-    const location = await requestApproxLocation({ timeoutMs: 10_000, maximumAgeMs: 60_000, requestPermission: true });
+    const location = await requestApproxLocation({ timeoutMs: 15_000, maximumAgeMs: 10 * 60_000, requestPermission: true });
     if (location) return 'granted';
     const state = await queryCapabilityPermission('location');
     return state === 'unknown' ? 'denied' : state;
@@ -80,7 +84,7 @@ export async function requestCapabilityPermission(capability: CapabilityPermissi
 
 export const PERMISSION_PRIVACY_COPY: Record<CapabilityPermission, string> = {
   location: 'Se usa sólo para calcular cercanía. TuTop guarda una ubicación aproximada (~1 km), no tu domicilio exacto.',
-  camera: 'La cámara del sistema se abre sólo cuando eliges tomar una foto para una publicación. TuTop no pide almacenamiento legacy.',
+  camera: 'TuTop abre la cámara o el selector de fotos del sistema sólo cuando tú lo eliges al publicar. No pide acceso permanente ni almacenamiento legacy.',
   microphone: 'Se solicita sólo cuando tocas el micrófono de Topi. El audio no se guarda ni se sube por TuTop.',
   notifications: 'Se usan para avisarte de mensajes y actividad relevante. Puedes desactivarlas desde Android cuando quieras.',
 };

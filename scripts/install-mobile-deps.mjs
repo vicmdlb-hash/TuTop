@@ -8,6 +8,7 @@ const mobilePackages = [
   '@capacitor/android@8.5.1',
   '@capacitor/geolocation@8.2.2',
   '@capacitor/camera@8.2.4',
+  '@capacitor/filesystem@8.1.0',
   '@capacitor-firebase/messaging@8.5.1',
   '@capacitor-firebase/app-check@8.5.0',
   'firebase@12.18.0',
@@ -25,7 +26,7 @@ function run(args) {
 
 const ephemeralInstall = ['install', '--no-save', '--package-lock=false', '--no-audit', '--no-fund'];
 
-console.log('Instalando stack Android TuTop 0.9.1: Capacitor + ubicación + cámara + FCM + App Check.');
+console.log('Instalando stack Android TuTop 0.9.2: Capacitor + ubicación + cámara + Filesystem + FCM + App Check.');
 console.log('Instalación efímera de una sola transacción: package.json y package-lock.json permanecen intactos.');
 console.log('No se instalan Cloud Functions, Cloud Storage ni servicios Blaze.');
 run([...ephemeralInstall, ...mobilePackages]);

@@ -3,10 +3,12 @@ import { createRoot } from 'react-dom/client';
 import { initializeTheme091 } from './lib/theme091';
 import { getFirebaseConfig } from './services/runtimeConfig';
 import { restoreNativeSessionForProject } from './services/nativeSecureSession';
+import { applyStagingResetIfNeeded } from './services/stagingResetBridge';
 import './index.css';
 import './brand091.css';
 
 async function bootstrap() {
+  applyStagingResetIfNeeded();
   initializeTheme091();
   const config = getFirebaseConfig();
   await restoreNativeSessionForProject(config.projectId).catch(() => ({ restored: false, migrated: false }));

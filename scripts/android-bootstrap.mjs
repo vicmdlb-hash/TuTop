@@ -10,6 +10,13 @@ const environment = String(process.env.VITE_TUTOP_ENVIRONMENT || '').toLowerCase
 const expectedStagingProject = 'tutop-beta-vicmdlb-1356585881';
 const historicalProject = 'tutop-3a4f7';
 const googleServicesSource = path.resolve(root, process.env.TUTOP_ANDROID_GOOGLE_SERVICES_PATH || '.tutop-staging-google-services.json');
+const requiredNativePlugins = [
+  '@capacitor/camera',
+  '@capacitor/filesystem',
+  '@capacitor/geolocation',
+  '@capacitor-firebase/messaging',
+  '@capacitor-firebase/app-check',
+];
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -23,8 +30,12 @@ if (!fs.existsSync(path.join(root, 'node_modules/@capacitor/core'))) {
   stop('faltan dependencias Capacitor. Ejecuta primero: npm run deps:mobile');
 }
 if (v2) {
-  for (const dependency of ['@capacitor/geolocation', '@capacitor/camera', '@capacitor-firebase/messaging', '@capacitor-firebase/app-check', 'firebase']) {
+  for (const dependency of [...requiredNativePlugins, 'firebase']) {
     if (!fs.existsSync(path.join(root, 'node_modules', dependency))) stop(`falta dependencia Android V2: ${dependency}`);
+  }
+  const includedPlugins = Array.isArray(config?.android?.includePlugins) ? config.android.includePlugins : [];
+  for (const plugin of requiredNativePlugins) {
+    if (!includedPlugins.includes(plugin)) stop(`capacitor.config.json debe incluir explícitamente ${plugin}; las dependencias móviles son efímeras y cap sync no debe depender de package.json.`);
   }
   if (!fs.existsSync(googleServicesSource)) stop(`V2 Android requiere google-services.json validado en ${googleServicesSource}`);
   const googleServices = JSON.parse(fs.readFileSync(googleServicesSource, 'utf8'));
@@ -41,6 +52,7 @@ const run = (command, args) => {
 };
 if (!fs.existsSync(path.join(root, 'android'))) run('npx', ['cap', 'add', 'android']);
 run('npx', ['cap', 'sync', 'android']);
+if (v2) run('node', ['scripts/verify-android-native-plugin-bundle.mjs']);
 run('node', ['scripts/android-assets.mjs']);
 run('node', ['scripts/android-native-capabilities.mjs']);
 run('node', ['scripts/android-secure-session-plugin.mjs']);
@@ -92,4 +104,4 @@ if (v2) {
   console.log(`Firebase Android V2 validado y copiado: ${expectedStagingProject} / ${config.appId}`);
 }
 
-console.log('Android bootstrap 0.9.1 preparado: cámara, ubicación aproximada, Topi AI, Topi Voice, FCM y App Check. No se generó APK en este paso.');
+console.log('Android bootstrap 0.9.2 preparado: cámara/Photo Picker + Filesystem, ubicación aproximada, Topi AI, Topi Voice, FCM y App Check. No se generó APK en este paso.');

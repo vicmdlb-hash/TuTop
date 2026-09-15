@@ -67,8 +67,23 @@ assert.ok(missingCampus.blockers.includes('missing_campus_id'));
 const archived = schema.legacyProductToListingV2(product({ estado: 'Archivado' }), '2026-09-05T20:00:00.000Z');
 assert.equal(archived.listing.status, 'archived');
 
+const safeVideo = 'firebase-storage://tutop-beta-vicmdlb-1356585881.firebasestorage.app/product-videos/seller/clip.mp4';
+assert.equal(schema.validCanonicalVideoUri(safeVideo), true);
+assert.equal(schema.validCanonicalVideoUri('https://example.com/video.mp4'), false);
+assert.equal(schema.validCanonicalVideoUri('firebase-storage://bucket/verification/seller/secret.mp4'), false);
+
+const withVideo = schema.legacyProductToListingV2(product({ video_urls: [safeVideo] }), '2026-09-05T20:00:00.000Z');
+assert.deepEqual(withVideo.listing.video_urls, [safeVideo]);
+assert.equal(schema.listingV2HasNoLegacyDescriptionPacking(withVideo.listing), true);
+
+const invalidVideo = { ...migrated.listing, video_urls: ['https://example.com/not-canonical.mp4'] };
+assert.equal(schema.listingV2HasNoLegacyDescriptionPacking(invalidVideo), false);
+const tooManyVideos = { ...migrated.listing, video_urls: [safeVideo, safeVideo] };
+assert.equal(schema.listingV2HasNoLegacyDescriptionPacking(tooManyVideos), false);
+
 console.log('PASS legacy product migrates to explicit institution/campus listing schema');
 console.log('PASS reservation remains transaction state, not canonical listing state');
 console.log('PASS national shipping and structured attributes survive migration');
 console.log('PASS migration blocks records missing campus identity');
+console.log('PASS canonical listing video references are fail-closed and limited to one Storage object');
 console.log('Canonical listings_v2 migration contract: PASS');

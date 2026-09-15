@@ -10,6 +10,7 @@ const account = fs.readFileSync('scripts/harden-account-operations-rules.mjs', '
 const receipts = fs.readFileSync('scripts/harden-notification-receipts-rules.mjs', 'utf8');
 const locks = fs.readFileSync('scripts/harden-transaction-lock-rules.mjs', 'utf8');
 const nearby = fs.readFileSync('scripts/harden-nearby-v2-rules.mjs', 'utf8');
+const video = fs.readFileSync('scripts/harden-listing-video-rules.mjs', 'utf8');
 
 const expected = [
   'node scripts/prepare-firestore-v2-rules.mjs',
@@ -20,6 +21,7 @@ const expected = [
   'node scripts/harden-notification-receipts-rules.mjs',
   'node scripts/harden-transaction-lock-rules.mjs',
   'node scripts/harden-nearby-v2-rules.mjs',
+  'node scripts/harden-listing-video-rules.mjs',
 ].join(' && ');
 assert.equal(pkg.scripts['v2:rules:prepare'], expected, 'V2 Rules composition order changed');
 assert.doesNotMatch(pkg.scripts['v2:rules:prepare'], /harden-favorite-v2-rules/);
@@ -51,7 +53,7 @@ assert.match(locks, /cancellation releases reservation lock/);
 
 // Independent post-runtime hardeners must remain narrowly scoped and fail closed.
 for (const [name, source] of [
-  ['canonical', canonical], ['runtime', runtime], ['optimize', optimize], ['account', account], ['receipts', receipts], ['locks', locks],
+  ['canonical', canonical], ['runtime', runtime], ['optimize', optimize], ['account', account], ['receipts', receipts], ['locks', locks], ['video', video],
 ]) {
   assert.match(source, /const path = 'firebase\/firestore\.v2\.generated\.rules'/, `${name} must target generated rules only`);
   assert.match(source, /encontró \$\{count\}|encontró \$\{occurrences\}|esperaba 1 coincidencia/, `${name} must fail closed on marker drift`);
@@ -61,6 +63,23 @@ assert.match(nearby, /canonicalCount !== 2/);
 assert.match(nearby, /legacyCount !== 1/);
 assert.match(nearby, /legacyShippingRequirement/);
 
+// 0.9.2 video references are appended after nearby semantics. Keep one helper
+// definition outside the match and call it exactly from create + seller update.
+// This avoids fragile nested-expression injection while preserving the same
+// fail-closed canonical firebase-storage:// product-video surface.
+assert.match(video, /canonicalListingBounds/);
+assert.match(video, /create allowlist video_urls/);
+assert.match(video, /create video validation before listing status/);
+assert.match(video, /seller update video validation before listing status/);
+assert.match(video, /validListingVideoUrls/);
+assert.match(video, /finalAllowlistCount !== 1/);
+assert.match(video, /finalHelperDefinitionCount !== 1/);
+assert.match(video, /finalValidationCallCount !== 2/);
+assert.match(video, /canonicalPrefixCount !== 1/);
+assert.match(video, /firebase-storage:\/\//);
+assert.match(video, /product-videos/);
+assert.match(video, /video_urls\.size\(\) <= 1/);
+
 assert.match(account, /account deletion transition/);
 assert.match(account, /support deletion audit read scope/);
 assert.match(receipts, /notification receipt hardener esperaba 1 coincidencia/);
@@ -68,9 +87,10 @@ assert.match(locks, /transaction create requires unique reservation lock/);
 assert.match(locks, /expiry releases reservation lock/);
 assert.match(locks, /reservation lock collection/);
 
-console.log('PASS V2 Rules pipeline order is explicit and frozen, including 0.9.1 nearby semantics');
+console.log('PASS V2 Rules pipeline order is explicit and frozen, including nearby + 0.9.2 video semantics');
 console.log('PASS canonical listing conversion precedes runtime rules that depend on listingDoc');
 console.log('PASS runtime markers precede listing optimization, notification receipts and reservation-lock hardeners');
 console.log('PASS nearby hardener removes canonical and legacy shipping mandates fail-closed');
+console.log('PASS video hardener uses one helper and two fail-closed create/update calls');
 console.log('PASS duplicate favorites hardener is absent; canonical conversion owns V2 listing identity');
 console.log('V2 Rules composition contract: PASS');

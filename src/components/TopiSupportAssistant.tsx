@@ -12,6 +12,7 @@ export default function TopiSupportAssistant() {
   const [answer, setAnswer] = useState<SupportAnswer | null>(null);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const currentId = route[route.length - 1] || 'root';
   const node = useMemo(() => supportNode(currentId), [currentId]);
@@ -45,11 +46,25 @@ export default function TopiSupportAssistant() {
   };
 
   const dictate = () => {
+    setVoiceNote(null);
     startTopiDictation({
-      onText: (text) => setQuestion((current) => `${current}${current ? ' ' : ''}${text}`.slice(0, 900)),
-      onStatus: (status) => setListening(status === 'listening'),
+      onText: (text) => {
+        setQuestion((current) => `${current}${current ? ' ' : ''}${text}`.slice(0, 900));
+        setVoiceNote('Dictado agregado. Revísalo antes de enviar.');
+      },
+      onStatus: (status) => {
+        setListening(status === 'listening');
+        if (status === 'unsupported') setVoiceNote('El dictado no está disponible en este dispositivo. Puedes seguir escribiendo.');
+        if (status === 'error') setVoiceNote('No pudimos reconocer la voz. Habla después de que se active el micrófono y vuelve a intentarlo.');
+      },
     });
   };
+
+  const sourceChip = answer?.source === 'firebase-ai'
+    ? { label: 'Firebase AI real', className: 'bg-emerald-500/10 text-emerald-300' }
+    : answer?.source === 'unavailable'
+      ? { label: 'IA no disponible', className: 'bg-rose-500/10 text-rose-200' }
+      : { label: 'Guía local', className: 'bg-amber-500/10 text-amber-200' };
 
   if (!open) {
     return (
@@ -66,7 +81,7 @@ export default function TopiSupportAssistant() {
           <TopiMascot className="h-11 w-11 shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-black">Topi</h2>
-            <p className="mt-0.5 text-[9px] text-slate-500">Tu amigo para resolver dudas y usar TuTop.</p>
+            <p className="mt-0.5 text-[9px] text-slate-500">Tu amigo para resolver dudas y usar TuTop · guía segura e IA real claramente identificada.</p>
           </div>
           <button type="button" onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-xl bg-white/[0.05] text-slate-400" aria-label="Cerrar"><X className="h-4 w-4" /></button>
         </header>
@@ -90,9 +105,11 @@ export default function TopiSupportAssistant() {
           )}
 
           {answer && (
-            <div className="mt-3 rounded-2xl border border-emerald-300/10 bg-emerald-500/[0.04] p-4">
-              <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-emerald-300" /><strong className="text-[10px] text-emerald-200">Topi</strong></div>
+            <div className={`mt-3 rounded-2xl border p-4 ${answer.source === 'unavailable' ? 'border-rose-300/10 bg-rose-500/[0.04]' : 'border-emerald-300/10 bg-emerald-500/[0.04]'}`}>
+              <div className="flex flex-wrap items-center gap-2"><Sparkles className={`h-4 w-4 ${answer.source === 'unavailable' ? 'text-rose-300' : 'text-emerald-300'}`} /><strong className="text-[10px] text-emerald-200">Topi</strong><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${sourceChip.className}`}>{sourceChip.label}</span></div>
               <p className="mt-2 whitespace-pre-wrap text-[10px] leading-5 text-slate-300">{answer.text}</p>
+              {answer.source === 'guided' && <p className="mt-2 text-[8px] leading-4 text-slate-600">Esta respuesta viene del árbol seguro de TuTop; no se presenta como respuesta generada por IA.</p>}
+              {answer.source === 'unavailable' && <p className="mt-2 text-[8px] leading-4 text-rose-200/70">Esta beta no sustituye una falla de Firebase AI con una respuesta local silenciosa.</p>}
             </div>
           )}
 
@@ -103,6 +120,7 @@ export default function TopiSupportAssistant() {
               <button type="button" onClick={dictate} className={`grid h-10 w-10 place-items-center rounded-xl ${listening ? 'bg-fuchsia-500 text-white' : 'bg-violet-500/10 text-violet-300'}`} aria-label="Dictar pregunta"><Mic className="h-4 w-4" /></button>
               <button type="button" disabled={busy || question.trim().length < 3} onClick={() => void ask()} className="grid h-10 w-10 place-items-center rounded-xl bg-violet-600 text-white disabled:opacity-40" aria-label="Preguntar a Topi">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
             </div>
+            {voiceNote && <p className="mt-2 text-[8px] leading-4 text-violet-200/80">{voiceNote}</p>}
             <p className="mt-2 text-[8px] leading-4 text-slate-600">Por seguridad, no compartas contraseñas, códigos, tarjetas ni tu domicilio exacto.</p>
           </div>
         </div>

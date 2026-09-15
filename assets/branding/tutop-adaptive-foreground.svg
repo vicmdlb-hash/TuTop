@@ -1,1 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><g fill="#FFFFFF"><text x="112" y="625" font-family="Arial,Helvetica,sans-serif" font-size="360" font-weight="900" letter-spacing="-28">TuT</text><path d="M620 498c0-78 63-141 141-141s141 63 141 141c0 104-141 232-141 232S620 602 620 498Z"/><circle cx="761" cy="495" r="47" fill="#4B2EDB"/><text x="828" y="625" font-family="Arial,Helvetica,sans-serif" font-size="360" font-weight="900" letter-spacing="-28">p</text></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" data-brand="tutop-dd-pin">
+  <defs>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="175%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#4B2EDB" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <path d="M512 194c-172 0-310 136-310 302 0 214 310 424 310 424s310-210 310-424c0-166-138-302-310-302Z" fill="#FFFFFF"/>
+    <circle cx="512" cy="491" r="170" fill="#7C4DFF"/>
+    <circle cx="512" cy="491" r="147" fill="#FFFFFF" opacity=".12"/>
+    <g aria-label="DD">
+      <path d="M392 388h72c88 0 145 40 145 103s-57 103-145 103h-72V388Zm65 55v96h16c43 0 69-17 69-48s-26-48-69-48h-16Z" fill="#FFFFFF"/>
+      <path d="M481 388h72c88 0 145 40 145 103s-57 103-145 103h-72V388Zm65 55v96h16c43 0 69-17 69-48s-26-48-69-48h-16Z" fill="#E7DAFF" opacity=".96"/>
+    </g>
+  </g>
+</svg>

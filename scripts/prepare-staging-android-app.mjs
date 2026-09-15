@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 import { ensureFirebaseAiApiKeyAllowlist, ensureFirebaseAiServices } from './firebase-ai-staging-provision.mjs';
@@ -9,6 +10,7 @@ const projectId = assertStagingFreezeContext({
 });
 const packageName = String(process.env.TUTOP_ANDROID_PACKAGE_NAME || 'mx.tutop.app').trim();
 const outputPath = String(process.env.TUTOP_ANDROID_GOOGLE_SERVICES_PATH || '.tutop-staging-google-services.json').trim();
+const registrationSmokeMarker = '.tutop-registration-smoke-passed';
 if (packageName !== 'mx.tutop.app') throw new Error(`STAGING_FREEZE_BLOCKED:package_mismatch:${packageName}`);
 
 const token = await firebaseCiAccessToken();
@@ -33,6 +35,15 @@ async function operationResult(name) {
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
   throw new Error('Timeout esperando Firebase Android app operation.');
+}
+
+function runNodeScript(args, extraEnv = {}) {
+  const result = spawnSync(process.execPath, args, {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+    env: { ...process.env, ...extraEnv },
+  });
+  if (result.status !== 0) throw new Error(`STAGING_PREP_SUBPROCESS_FAILED:${args.join(' ')}:${result.status ?? 'signal'}`);
 }
 
 await ensureFirebaseAiServices({ projectId, token });
@@ -69,13 +80,26 @@ const androidApiKeys = new Set(
   matchingClients.flatMap((client) => (client?.api_key || []).map((item) => String(item?.current_key || '').trim())).filter(Boolean),
 );
 if (androidApiKeys.size === 0) throw new Error('google-services.json no contiene Firebase API key para mx.tutop.app.');
-for (const apiKey of androidApiKeys) {
-  await ensureFirebaseAiApiKeyAllowlist({ projectId, token, apiKey });
-}
+for (const apiKey of androidApiKeys) await ensureFirebaseAiApiKeyAllowlist({ projectId, token, apiKey });
 
 fs.writeFileSync(outputPath, `${JSON.stringify(parsed, null, 2)}\n`);
+
+// Build-91 proved that a backend smoke can pass while the actual onboarding path
+// remains broken. Before any new APK is assembled, prove the app-like initial
+// account shape + immediate publication, then perform the user-authorized one-shot
+// beta wipe so the new physical candidate starts from clean staging state.
+if (!fs.existsSync(registrationSmokeMarker)) {
+  runNodeScript(['--experimental-strip-types', 'scripts/staging-app-registration-smoke.mjs']);
+  runNodeScript(['scripts/reset-staging-accounts.mjs']);
+  runNodeScript(['scripts/reset-staging-accounts.mjs', '--apply'], {
+    TUTOP_STAGING_RESET_ACK: 'DELETE_ALL_BETA_ACCOUNTS',
+  });
+  fs.writeFileSync(registrationSmokeMarker, `${process.env.GITHUB_SHA || 'local'}\n`);
+}
+
 console.log(`✅ Firebase Android staging listo: ${app.appId}`);
 console.log(`✅ google-services.json validado para ${projectId} / ${packageName}`);
 console.log('✅ Android Firebase API key(s) verificadas para Firebase AI Logic sin imprimir valores.');
+console.log('✅ Registro app-like + publicación inmediata probados; lavado beta one-shot aplicado/verificado antes del APK.');
 console.log(`October gate run: ${process.env.TUTOP_VALIDATED_GATE_RUN_ID}`);
 console.log(`Archivo temporal: ${outputPath}`);
