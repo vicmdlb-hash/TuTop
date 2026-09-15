@@ -27,6 +27,7 @@ export default function ExploreScreen() {
   const [nearbyProducts, setNearbyProducts] = useState<Product[]>([]);
   const [nearbyBusy, setNearbyBusy] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
+  const [nearbyRefreshKey, setNearbyRefreshKey] = useState(0);
 
   useEffect(() => {
     const onLocation = (event: Event) => {
@@ -54,7 +55,7 @@ export default function ExploreScreen() {
       })
       .finally(() => { if (active) setNearbyBusy(false); });
     return () => { active = false; };
-  }, [scope, location?.latitude, location?.longitude, location?.captured_at]);
+  }, [scope, location?.latitude, location?.longitude, location?.captured_at, nearbyRefreshKey]);
 
   const sourceProducts = scope === 'nearby' ? nearbyProducts : products;
 
@@ -115,10 +116,10 @@ export default function ExploreScreen() {
     }
   };
 
-  const refreshNearby = async () => {
-    setLocation(null);
+  const refreshNearby = () => {
+    setNearbyError(null);
     setNearbyProducts([]);
-    await activateNearby();
+    setNearbyRefreshKey((current) => current + 1);
   };
 
   const selectAll = () => {
@@ -189,7 +190,7 @@ export default function ExploreScreen() {
         {scope === 'nearby' && nearbyError && (
           <div className="empty-card mb-3">
             <div className="flex items-start gap-2"><TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" /><div><p className="font-bold">No pudimos actualizar Cerca de ti</p><p className="mt-1 text-[9px] leading-4 text-slate-500">{nearbyError}</p></div></div>
-            <button type="button" onClick={() => void refreshNearby()} className="mt-3 rounded-xl bg-violet-600 px-3 py-2 text-[9px] font-black text-white">Reintentar</button>
+            <button type="button" onClick={refreshNearby} className="mt-3 rounded-xl bg-violet-600 px-3 py-2 text-[9px] font-black text-white">Reintentar</button>
           </div>
         )}
 

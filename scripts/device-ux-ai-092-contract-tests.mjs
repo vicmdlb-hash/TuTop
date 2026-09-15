@@ -133,4 +133,11 @@ assert.match(explore, /RADII = \[5, 10, 25, 50\]/);
 assert.match(explore, /requestApproxLocation/);
 assert.match(listings, /loadNearbyProducts/);
 
-console.log('✅ TuTop 0.9.2 device contract: atomic registration/publication + exact Firestore identity allowlist + Camera 8 photos + correct coarse-location fallback + real AI + one-shot staging reset + generated DD pin branding PASS');
+const nearbyRetryBlock = explore.match(/const refreshNearby = \(\) => \{([\s\S]*?)\n  \};/)?.[1] || '';
+assert.match(explore, /const \[nearbyRefreshKey, setNearbyRefreshKey\] = useState\(0\)/);
+assert.match(explore, /location\?\.captured_at, nearbyRefreshKey/);
+assert.match(nearbyRetryBlock, /setNearbyError\(null\)/);
+assert.match(nearbyRetryBlock, /setNearbyRefreshKey\(\(current\) => current \+ 1\)/);
+assert.doesNotMatch(nearbyRetryBlock, /setLocation\(null\)|activateNearby/);
+
+console.log('✅ TuTop 0.9.2 device contract: atomic registration/publication + exact Firestore identity allowlist + Camera 8 photos + correct coarse-location fallback + real AI + one-shot staging reset + generated DD pin branding + reliable Nearby retry PASS');
