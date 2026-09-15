@@ -38,7 +38,8 @@ assert.match(workflow, /TUTOP_ANDROID_VERSION_CODE: 90200/);
 const hostedRunners = workflow.match(/runs-on: ubuntu-24\.04/g) || [];
 assert.equal(hostedRunners.length, 3, 'full-quality main, independent verification and prerelease must use fresh standard hosted runners');
 assert.doesNotMatch(workflow, /tutop-zero-cost-worker|tutop-zero-cost-controller/);
-assert.match(workflow, /TUTOP_FIREBASE_AUTH_MODE=firebase_cli_refresh_token/);
+assert.match(workflow, /AUTH_MODE="firebase_cli_refresh_token"/);
+assert.match(workflow, /echo "TUTOP_FIREBASE_AUTH_MODE=\$AUTH_MODE"/);
 for (const required of [
   'npm run check',
   'npm run typecheck',
