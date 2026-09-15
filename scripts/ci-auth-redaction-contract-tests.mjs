@@ -14,11 +14,15 @@ assert.doesNotMatch(source, /console\.(?:log|error|warn)\([^\n]*(?:refreshToken|
 
 assert.match(source, /process\.env\.TUTOP_FIREBASE_OAUTH_CLIENT_ID/);
 assert.match(source, /process\.env\.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET/);
-assert.match(source, /FIREBASE_CI_OAUTH_CLIENT_CREDENTIALS_MISSING/);
+assert.match(source, /FIREBASE_CI_OAUTH_CLIENT_CREDENTIALS_PARTIAL/);
+assert.match(source, /FIREBASE_CLI_OAUTH_CLIENT_ID/);
+assert.match(source, /FIREBASE_CLI_OAUTH_CLIENT_SECRET/);
+assert.match(source, /firebase-tools@15\.29\.0/);
 assert.doesNotMatch(source, /const FIREBASE_OAUTH_CLIENT_ID\s*=\s*['"][^'"]+['"]/);
 assert.doesNotMatch(source, /const FIREBASE_OAUTH_CLIENT_SECRET\s*=\s*['"][^'"]+['"]/);
 assert.doesNotMatch(source, /client_secret:\s*['"][^'"]+['"]/);
 
 console.log('PASS Firebase CI OAuth failures redact token-like material before logging');
-console.log('PASS Firebase OAuth client credentials are externally managed and no longer embedded in repository source');
+console.log('PASS managed OAuth credentials remain external while the pinned Firebase CLI installed-app metadata is explicit and testable');
+console.log('PASS partial managed OAuth configuration fails closed');
 console.log('CI auth redaction contract: PASS');
