@@ -39,6 +39,19 @@ assert.match(auth, /accounts:lookup/);
 assert.match(auth, /emailVerified/);
 assert.match(auth, /email_password_verified_beta/);
 
+// Device-A follow-up invariants recovered from the interrupted engineering run:
+// optional phone metadata is normalized/validated before Auth creation, and a
+// VERIFY_EMAIL delivery setup failure cannot orphan marketplace documents.
+assert.match(auth, /FirebaseRestClient, normalizeMexicoPhone/);
+assert.match(auth, /function normalizeOptionalPhone[\s\S]*normalizeMexicoPhone\(phone\)/);
+const phoneValidationIndex = auth.indexOf('const normalizedPhone = normalizeOptionalPhone(profile.phone)');
+const signUpIndex = auth.indexOf("identityRequest('accounts:signUp'");
+assert.ok(phoneValidationIndex >= 0 && signUpIndex > phoneValidationIndex, 'optional phone must be validated before Firebase Auth sign-up');
+const verifyEmailIndex = auth.indexOf("identityRequest('accounts:sendOobCode'");
+const marketplaceCreateIndex = auth.indexOf('await createMarketplaceAccount(data, email, normalizedProfile)');
+assert.ok(verifyEmailIndex >= 0 && marketplaceCreateIndex > verifyEmailIndex, 'VERIFY_EMAIL must be requested before marketplace account documents are committed');
+assert.match(auth, /if \(normalizedPhone\) privateData\.telefono = normalizedPhone/);
+
 // Native security invariant: verified-email auth must use FirebaseRestClient's
 // canonical persistence boundary. On Android nativeSecureSessionBridge intercepts
 // that boundary and writes process sessionStorage + encrypted Keystore. Direct
@@ -51,6 +64,16 @@ assert.match(nativeBridge, /proto\.persistSession = function nativePersistSessio
 assert.match(nativeBridge, /storage\.setItem\(key, raw\)/);
 assert.match(nativeBridge, /markNativeSignedOut\(key, true\)/);
 
+// Async session responses must fail closed after sign-out or another auth event.
+assert.match(auth, /let authGeneration = 0/);
+assert.match(auth, /authGeneration \+= 1;[\s\S]*sessionClient\(\)\.signOut\(\)/);
+assert.match(auth, /function assertSessionUnchanged/);
+assert.match(auth, /AUTH_SESSION_CHANGED/);
+assert.match(auth, /forceRefreshStoredSession\(generation\)/);
+const sessionGuardIndex = auth.lastIndexOf('assertSessionUnchanged(generation, stored.uid, stored.refreshToken)');
+const finalPersistIndex = auth.lastIndexOf('persistCanonicalSession(next)');
+assert.ok(sessionGuardIndex >= 0 && finalPersistIndex > sessionGuardIndex, 'verification refresh must re-check session generation before persisting');
+
 // Promotion safety invariant: app and Rules must cut over together. The follow-up
 // code deliberately has no fallback to phone-alias registration when the new
 // user_private auth_mode is rejected by old build106 Rules.
@@ -58,4 +81,4 @@ assert.match(auth, /Promotion invariant: the verified-email Rules\/Auth contract
 assert.doesNotMatch(auth, /registerWithPhonePassword|signInWithPhonePassword/);
 assert.ok(packageJson.scripts['v2:rules:prepare'].includes('harden-verified-email-beta-rules.mjs'));
 
-console.log('✅ Verified email beta auth + Firestore security + native session persistence + atomic cutover contracts PASS');
+console.log('✅ Verified email beta auth + phone normalization + rollback ordering + session-race guard + Firestore security + native persistence + atomic cutover contracts PASS');
