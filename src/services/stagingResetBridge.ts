@@ -1,4 +1,4 @@
-const RESET_GENERATION = '2026-09-13-physical-failures-1';
+const RESET_GENERATION = '2026-09-16-device-a-build106-1';
 const MARKER_KEY = 'tutop.staging-reset.applied.v1';
 const THEME_KEY = 'tutop.theme.v2';
 

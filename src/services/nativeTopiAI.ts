@@ -11,6 +11,7 @@ type CapacitorRuntime = {
 
 export type NativeTopiAIReason = 'ready' | 'not-native' | 'disabled' | 'plugin-missing' | 'app-check-unavailable' | 'request-failed' | 'empty-response';
 const AI_REQUEST_TIMEOUT_MS = 20_000;
+const AI_TRANSIENT_RETRY_DELAY_MS = 650;
 let lastReason: NativeTopiAIReason = 'disabled';
 let lastModel = '';
 
@@ -77,6 +78,10 @@ function timeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return Promise.race([promise, timeoutPromise]).finally(() => window.clearTimeout(timer));
 }
 
+function delay(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
 /**
  * Native Firebase AI Logic only. Production may require a valid App Check token
  * before the SDK call. Private 0.9.2 staging Physical-QA deliberately leaves
@@ -97,6 +102,18 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
     return null;
   }
 
+  // Prove that the generated Android bridge is alive before spending the full
+  // generation timeout. A status failure is diagnostic only: generate() remains
+  // authoritative because some WebView/plugin versions can expose methods lazily.
+  if (ai.status) {
+    try {
+      const status = await timeout(ai.status({}), 5_000);
+      recordDiagnostic('ai', 'native_plugin_status', { ready: status?.ready !== false });
+    } catch {
+      recordDiagnostic('ai', 'native_plugin_status_failed');
+    }
+  }
+
   const required = appCheckRequired();
   let appCheckToken: string | null = null;
   try {
@@ -115,18 +132,25 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
     : ['gemini-3.5-flash-lite'];
 
   for (const [index, model] of models.entries()) {
-    try {
-      const result = await timeout(ai.generate({ prompt: clean, model }), AI_REQUEST_TIMEOUT_MS);
-      const text = String(result?.text || '').trim();
-      if (text) {
-        lastModel = String(result?.model || model);
-        setReason('ready', { fallback_model: index > 0, app_check_token: Boolean(appCheckToken) });
-        return { text, model: lastModel, provider: 'firebase-ai-logic' };
+    // Device A can hit one transient network/plugin cold-start failure even when
+    // staging is healthy. Retry the preferred model once, then use the bounded
+    // fallback. We still fail closed: no local answer is mislabeled as Firebase AI.
+    const attempts = index === 0 ? 2 : 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const result = await timeout(ai.generate({ prompt: clean, model }), AI_REQUEST_TIMEOUT_MS);
+        const text = String(result?.text || '').trim();
+        if (text) {
+          lastModel = String(result?.model || model);
+          setReason('ready', { fallback_model: index > 0, retry: attempt > 0, app_check_token: Boolean(appCheckToken) });
+          return { text, model: lastModel, provider: 'firebase-ai-logic' };
+        }
+        setReason('empty-response', { fallback_model: index > 0, retry: attempt > 0 });
+      } catch (error) {
+        const code = error instanceof Error && /TIMEOUT/.test(error.message) ? 'timeout' : 'native-request';
+        setReason('request-failed', { fallback_model: index > 0, retry: attempt > 0, failure_kind: code });
       }
-      setReason('empty-response', { fallback_model: index > 0 });
-    } catch (error) {
-      const code = error instanceof Error && /TIMEOUT/.test(error.message) ? 'timeout' : 'native-request';
-      setReason('request-failed', { fallback_model: index > 0, failure_kind: code });
+      if (attempt + 1 < attempts) await delay(AI_TRANSIENT_RETRY_DELAY_MS);
     }
   }
   return null;
