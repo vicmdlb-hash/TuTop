@@ -50,6 +50,12 @@ assert.doesNotMatch(auth, /localStorage\.(?:setItem|removeItem)\(/);
 assert.match(nativeBridge, /proto\.persistSession = function nativePersistSession/);
 assert.match(nativeBridge, /storage\.setItem\(key, raw\)/);
 assert.match(nativeBridge, /markNativeSignedOut\(key, true\)/);
+
+// Promotion safety invariant: app and Rules must cut over together. The follow-up
+// code deliberately has no fallback to phone-alias registration when the new
+// user_private auth_mode is rejected by old build106 Rules.
+assert.match(auth, /Promotion invariant: the verified-email Rules\/Auth contract must be cut over/);
+assert.doesNotMatch(auth, /registerWithPhonePassword|signInWithPhonePassword/);
 assert.ok(packageJson.scripts['v2:rules:prepare'].includes('harden-verified-email-beta-rules.mjs'));
 
-console.log('✅ Verified email beta auth + Firestore security + native session persistence contracts PASS');
+console.log('✅ Verified email beta auth + Firestore security + native session persistence + atomic cutover contracts PASS');
