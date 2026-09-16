@@ -1,9 +1,10 @@
 import { classifySupportQuery, supportNode, supportTreeFacts, type SupportRouteId } from '../lib/supportDecisionTree';
-import { generateNativeTopiText } from './nativeTopiAI';
+import { recordDiagnostic } from './localDiagnostics';
+import { generateNativeTopiText, nativeTopiAIStatus } from './nativeTopiAI';
 
 export type SupportAnswer = {
   text: string;
-  source: 'guided' | 'firebase-ai';
+  source: 'guided' | 'firebase-ai' | 'unavailable';
   route: SupportRouteId;
 };
 
@@ -14,6 +15,12 @@ function safeQuestion(value: string) {
 function resolveRoute(question: string, routeHint: SupportRouteId) {
   const detected = classifySupportQuery(question);
   return detected !== 'root' ? detected : routeHint;
+}
+
+function physicalQaRequiresRealAI() {
+  const environment = String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').trim().toLowerCase();
+  const version = String(import.meta.env.VITE_TUTOP_APP_VERSION || '').trim();
+  return environment === 'staging' && /^0\.9\.2-beta\./.test(version);
 }
 
 function deterministicAnswer(question: string, routeHint: SupportRouteId = 'root'): SupportAnswer {
@@ -58,6 +65,23 @@ export async function answerConsumerSupport(question: string, routeHint: Support
   const route = resolveRoute(clean, routeHint);
   const generated = await generateNativeTopiText(aiPrompt(clean, route));
   const text = generated?.text?.replace(/^```(?:text)?\s*/i, '').replace(/\s*```$/i, '').trim().slice(0, 900);
-  if (text) return { text, source: 'firebase-ai', route };
+  if (text) {
+    recordDiagnostic('ai', 'support_real_ai_success');
+    return { text, source: 'firebase-ai', route };
+  }
+
+  // In the private physical-QA build a typed free-form question is an AI test.
+  // Never disguise a Firebase AI failure as a successful local assistant answer.
+  // Technical reasons are recorded locally but are not exposed in consumer UI.
+  if (physicalQaRequiresRealAI()) {
+    const reason = nativeTopiAIStatus().reason;
+    recordDiagnostic('ai', `support_${reason}`);
+    return {
+      text: 'Topi no pudo conectarse con la IA en este momento. Revisa tu conexión e inténtalo de nuevo. La guía local sigue disponible en las opciones y se identifica por separado.',
+      source: 'unavailable',
+      route,
+    };
+  }
+
   return deterministicAnswer(clean, route);
 }

@@ -2,7 +2,7 @@ import { cleanTitle, detectCategory, extractPrice, improveDescription, isForbidd
 import { detectDeliveryIntent, detectListingCondition, detectNegotiableIntent, detectVisibilityIntent } from '../lib/publishAssistant';
 import type { ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import type { ListingVisibilityScope, Product, ProductCategory, ProductCondition, ProductFormData } from '../types';
-import { generateNativeTopiText } from './nativeTopiAI';
+import { generateNativeTopiText, nativeTopiAIStatus } from './nativeTopiAI';
 
 export const TOPI_PERSONA = {
   name: 'Topi',
@@ -34,9 +34,9 @@ export interface TopiComposeSuggestion {
   description?: string;
 }
 
-// UI intentionally keeps one generic connected-AI state. Provider details stay
-// internal so switching Firebase AI / private proxy never leaks into components.
+// Keep component compatibility while exposing which connected provider actually answered.
 export type TopiSource = 'local' | 'topi-endpoint';
+export type TopiProvider = 'firebase-ai-logic' | 'private-endpoint';
 
 export interface CopilotResult {
   category?: ProductCategory;
@@ -45,6 +45,7 @@ export interface CopilotResult {
   issues?: string[];
   compose?: TopiComposeSuggestion;
   source: TopiSource;
+  provider?: TopiProvider;
 }
 
 export type TopiAction = 'category' | 'description' | 'price' | 'review' | 'compose';
@@ -52,6 +53,12 @@ export type TopiAction = 'category' | 'description' | 'price' | 'review' | 'comp
 const VALID_CONDITIONS: ProductCondition[] = ['Nuevo', 'Como nuevo', 'Buen estado', 'Uso visible', 'Para reparar', 'No aplica'];
 const VALID_SCOPES: ListingVisibilityScope[] = ['campus', 'institution', 'university-zone', 'city', 'national'];
 const VALID_DELIVERY: ListingDeliveryMethod[] = ['campus_meetup', 'pickup', 'local_delivery', 'shipping'];
+
+function physicalQaRequiresRealAI() {
+  const environment = String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').trim().toLowerCase();
+  const version = String(import.meta.env.VITE_TUTOP_APP_VERSION || '').trim();
+  return environment === 'staging' && /^0\.9\.2-beta\./.test(version);
+}
 
 function safeText(value: unknown, max: number) {
   if (typeof value !== 'string') return undefined;
@@ -120,10 +127,10 @@ function sanitizeCompose(raw: unknown, context: CopilotContext): TopiComposeSugg
   return Object.values(suggestion).some((item) => item !== undefined) ? suggestion : undefined;
 }
 
-function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: CopilotContext): CopilotResult | null {
+function sanitizeRemoteResult(action: TopiAction, raw: unknown, context: CopilotContext, provider: TopiProvider): CopilotResult | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
-  const result: CopilotResult = { source: 'topi-endpoint' };
+  const result: CopilotResult = { source: 'topi-endpoint', provider };
 
   const category = validCategory(value.category);
   if (category) result.category = category;
@@ -213,7 +220,7 @@ function parseModelJson(text: string) {
 async function askNativeFirebaseTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult | null> {
   const generated = await generateNativeTopiText(nativePrompt(action, context));
   if (!generated) return null;
-  return sanitizeRemoteResult(action, parseModelJson(generated.text), context);
+  return sanitizeRemoteResult(action, parseModelJson(generated.text), context, 'firebase-ai-logic');
 }
 
 function topiEndpoint() {
@@ -228,8 +235,6 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 6500);
   try {
-    // No provider API key is sent by the client. This optional URL must be a
-    // TuTop-controlled HTTPS proxy with its own moderation/rate limits.
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -243,19 +248,24 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
       }),
     });
     if (!response.ok) return null;
-    return sanitizeRemoteResult(action, await response.json(), context);
+    return sanitizeRemoteResult(action, await response.json(), context, 'private-endpoint');
   } catch { return null; }
   finally { window.clearTimeout(timer); }
 }
 
 /**
- * Topi 0.9.1 cascade: native Firebase AI Logic when explicitly enabled,
- * optional private HTTPS proxy, then deterministic local Topi. Provider failure
- * never blocks publishing and no Gemini/provider secret exists in the JS bundle.
+ * Topi cascade: native Firebase AI Logic when explicitly enabled, optional
+ * private HTTPS endpoint, then deterministic local Topi outside physical QA.
+ * The 0.9.2 staging APK deliberately refuses to disguise an AI outage as a
+ * successful local answer: physical QA must prove Firebase AI itself.
  */
 export async function askTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult> {
   const native = await askNativeFirebaseTopi(action, context);
   if (native) return native;
   const remote = await askConfiguredTopi(action, context);
-  return remote || localTopi(action, context);
+  if (remote) return remote;
+  if (physicalQaRequiresRealAI()) {
+    throw new Error(`TOPI_REAL_AI_UNAVAILABLE:${nativeTopiAIStatus().reason}`);
+  }
+  return localTopi(action, context);
 }

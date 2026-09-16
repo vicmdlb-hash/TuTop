@@ -2,6 +2,16 @@ import './dangerous-script-apply-guard.mjs';
 
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
+// firebase-tools@15.29.0 uses an OAuth "installed application" client. Google
+// explicitly treats this class of client secret as public metadata, not as a
+// confidential server secret. Keeping the same pinned fallback lets a
+// FIREBASE_TOKEN created by `firebase login:ci` work on a fresh GitHub-hosted
+// runner without depending on Víctor's laptop/ADC. Explicit managed credentials
+// still take precedence when both are configured.
+// Source of truth: firebase/firebase-tools v15.29.0 src/api.ts.
+const FIREBASE_CLI_OAUTH_CLIENT_ID = '563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com';
+const FIREBASE_CLI_OAUTH_CLIENT_SECRET = 'j9iVZfS8kkCEFUPaAeJV0sAi';
+
 function redactOAuthDetail(input = '') {
   return String(input)
     .replace(/("(?:access_token|refresh_token|id_token|assertion|client_secret)"\s*:\s*")[^"]+("?)/gi, '$1[REDACTED]$2')
@@ -18,11 +28,13 @@ export async function firebaseCiAccessToken() {
     throw new Error('Falta FIREBASE_TOKEN o TUTOP_FIREBASE_ACCESS_TOKEN para obtener un access token de Google.');
   }
 
-  const clientId = String(process.env.TUTOP_FIREBASE_OAUTH_CLIENT_ID || '').trim();
-  const clientSecret = String(process.env.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET || '').trim();
-  if (!clientId || !clientSecret) {
-    throw new Error('FIREBASE_CI_OAUTH_CLIENT_CREDENTIALS_MISSING');
+  const managedClientId = String(process.env.TUTOP_FIREBASE_OAUTH_CLIENT_ID || '').trim();
+  const managedClientSecret = String(process.env.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET || '').trim();
+  if (Boolean(managedClientId) !== Boolean(managedClientSecret)) {
+    throw new Error('FIREBASE_CI_OAUTH_CLIENT_CREDENTIALS_PARTIAL');
   }
+  const clientId = managedClientId || FIREBASE_CLI_OAUTH_CLIENT_ID;
+  const clientSecret = managedClientSecret || FIREBASE_CLI_OAUTH_CLIENT_SECRET;
 
   const body = new URLSearchParams({
     client_id: clientId,

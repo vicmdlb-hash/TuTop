@@ -16,6 +16,7 @@ const env = await initializeTestEnvironment({
 after(async () => env.cleanup());
 
 const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+const videoBytes = new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70]);
 
 test('product image: owner can upload image to own prefix', async () => {
   const storage = env.authenticatedContext('u1').storage();
@@ -30,6 +31,17 @@ test('product image: user cannot upload into another user prefix', async () => {
 test('product image: non-image mime is rejected', async () => {
   const storage = env.authenticatedContext('u1').storage();
   await assertFails(uploadBytes(ref(storage, 'product-images/u1/not-image.txt'), new TextEncoder().encode('hello'), { contentType: 'text/plain' }));
+});
+
+test('product video: owner can upload a safe video mime to own prefix', async () => {
+  const storage = env.authenticatedContext('u1').storage();
+  await assertSucceeds(uploadBytes(ref(storage, 'product-videos/u1/p1.mp4'), videoBytes, { contentType: 'video/mp4' }));
+});
+
+test('product video: cross-owner upload and unsafe mime are rejected', async () => {
+  const storage = env.authenticatedContext('u1').storage();
+  await assertFails(uploadBytes(ref(storage, 'product-videos/u2/forged.mp4'), videoBytes, { contentType: 'video/mp4' }));
+  await assertFails(uploadBytes(ref(storage, 'product-videos/u1/not-video.bin'), videoBytes, { contentType: 'application/octet-stream' }));
 });
 
 test('verification evidence: owner reads, other user cannot read', async () => {

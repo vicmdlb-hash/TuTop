@@ -1,0 +1,172 @@
+name: TuTop 0.9.2 diagnostics
+
+on:
+  push:
+    branches:
+      - feat/tutop-0.9.2-hardening
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-092-diagnostics-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  diagnostics:
+    name: 0.9.2 focused diagnostics
+    if: github.ref_name == 'feat/tutop-0.9.2-hardening'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      VITE_TUTOP_SCHEMA_V2: "true"
+      VITE_TUTOP_ENVIRONMENT: staging
+      VITE_TUTOP_APP_VERSION: 0.9.2-beta.0
+      VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED: "true"
+      VITE_TUTOP_TOPI_MODEL: gemini-3.8-flash
+      VITE_TUTOP_TOPI_REMOTE_ENABLED: "false"
+      VITE_TUTOP_AI_APP_CHECK_REQUIRED: "false"
+      VITE_TUTOP_MEDIA_STORAGE_ENABLED: "false"
+      VITE_TUTOP_V2_REVIEWS_LAZY_CUTOVER: "false"
+      VITE_TUTOP_V2_WALLET_LAZY_CUTOVER: "false"
+      VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER: "false"
+    steps:
+      - name: Checkout exact 0.9.2 branch
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate modified generator syntax
+        run: |
+          node --check scripts/android-topi-voice-plugin.mjs
+          node --check scripts/export-staging-v2-build-env.mjs
+          node --check scripts/configure-android-beta-version.mjs
+          node --check scripts/harden-listing-video-rules.mjs
+
+      - name: Release identity and real-AI contract
+        run: node scripts/release-092-contract-tests.mjs
+      - name: Device, media, location and branding contract
+        run: node scripts/device-ux-ai-092-contract-tests.mjs
+      - name: Canonical listing and video schema contract
+        run: npm run listing-schema-v2:test
+      - name: Staging mutation/freeze surface contract
+        run: node scripts/staging-mutation-surface-contract-tests.mjs
+      - name: Secondary workflow freeze contract
+        run: node scripts/secondary-workflow-freeze-contract-tests.mjs
+      - name: Actions budget policy contract
+        run: node scripts/actions-budget-policy-tests.mjs
+
+      - name: Core A1 — preflight
+        run: node scripts/preflight.mjs
+      - name: Core A2 — syntax contract
+        run: node scripts/syntax-check.mjs
+      - name: Core A3 — logic
+        run: node scripts/logic-tests.mjs
+      - name: Core A4 — marketplace core
+        run: node scripts/marketplace-core-tests.mjs
+      - name: Core A5 — schema V2
+        run: node scripts/schema-v2-tests.mjs
+      - name: Core A6 — functions domain
+        run: node scripts/functions-domain-tests.mjs
+      - name: Core A7 — security
+        run: node scripts/security-tests.mjs
+      - name: Core A8 — CI auth redaction
+        run: node scripts/ci-auth-redaction-contract-tests.mjs
+      - name: Core A9 — CI auth readiness
+        run: node scripts/ci-auth-readiness-tests.mjs
+      - name: Core A10 — parallel CI auth
+        run: node scripts/ci-auth-parallel-workflow-tests.mjs
+      - name: Core A11 — policy scan
+        run: node scripts/policy-scan.mjs
+      - name: Core A12 — local Topi favorites
+        run: node scripts/local-topi-favorites-tests.mjs
+
+      - name: Data B1 — Firestore cost geography
+        run: node scripts/firestore-cost-geography-tests.mjs
+      - name: Data B2 — seller profile cache
+        run: node scripts/seller-profile-cache-tests.mjs
+      - name: Data B3 — canonical offer read cache
+        run: node scripts/canonical-offer-read-cache-tests.mjs
+      - name: Data B4 — offer backend drift audit
+        run: node scripts/offer-backend-drift-audit.mjs
+      - name: Data B5 — transaction bridge fresh offer
+        run: node scripts/transaction-bridge-fresh-offer-tests.mjs
+      - name: Data B6 — profile editor V2
+        run: node scripts/profile-editor-v2-contract-tests.mjs
+      - name: Data B7 — canonical listing ID
+        run: node scripts/v2-canonical-listing-id-contract-tests.mjs
+      - name: Data B8 — canonical completion
+        run: node scripts/v2-canonical-completion-contract-tests.mjs
+      - name: Data B9 — terminal state authority
+        run: node scripts/v2-terminal-state-authority-tests.mjs
+      - name: Data B10 — rules composition
+        run: node scripts/v2-rules-composition-contract-tests.mjs
+      - name: Data B11 — rules access budget
+        run: node scripts/v2-rules-access-budget-tests.mjs
+      - name: Data B12 — canonical bridge coverage
+        run: node scripts/v2-canonical-bridge-coverage-tests.mjs
+      - name: Data B13 — snapshot cost audit
+        run: node scripts/v2-snapshot-cost-audit.mjs
+      - name: Data B14 — snapshot budget
+        run: node scripts/v2-snapshot-budget-tests.mjs
+
+      - name: Regression C — cutovers, reviews and chat snapshots
+        run: |
+          node scripts/v2-cost-cutover-flags-tests.mjs
+          node scripts/visible-favorites-cutover-tests.mjs
+          node scripts/wallet-lazy-history-readiness-tests.mjs
+          node scripts/trusted-public-reputation-tests.mjs
+          node scripts/review-lazy-status-contract-tests.mjs
+          node scripts/review-strike-cutover-readiness-tests.mjs
+          node scripts/review-strike-emulator-gate-contract-tests.mjs
+          node scripts/chat-lazy-history-contract-tests.mjs
+          node scripts/v2-lean-chat-snapshot-tests.mjs
+          node scripts/unread-aggregation-migration-tests.mjs
+          node scripts/unread-emulator-gate-contract-tests.mjs
+          node scripts/v2-chat-post-send-stability-tests.mjs
+          node scripts/firestore-static-contract-tests.mjs
+
+      - name: Regression D — offers, idempotency and session
+        run: |
+          node scripts/offer-expiry-contract-tests.mjs
+          node scripts/demand-budget-contract-tests.mjs
+          node scripts/inbox-pending-filter-tests.mjs
+          node --experimental-strip-types scripts/chat-message-idempotency-tests.mjs
+          node --experimental-strip-types scripts/offer-idempotency-tests.mjs
+          node --experimental-strip-types scripts/transaction-retry-idempotency-tests.mjs
+          node --experimental-strip-types scripts/firebase-session-hardening-tests.mjs
+
+      - name: Regression E — offline, recovery and physical readiness
+        run: |
+          node scripts/offline-reconnect-chaos-tests.mjs
+          node scripts/offline-reconnect-extreme-tests.mjs
+          node scripts/reservation-lock-residue-audit-tests.mjs
+          node scripts/recovery-local-provider-simulation-tests.mjs
+          node scripts/recovery-local-provider-abuse-tests.mjs
+          node --experimental-strip-types scripts/physical-qa-evidence-bundle-tests.mjs
+          node --experimental-strip-types scripts/physical-qa-two-device-gate-tests.mjs
+          node scripts/physical-qa-readiness-pack-tests.mjs
+
+      - name: Regression F — FCM, App Check, drift and legal retention
+        run: |
+          node scripts/fcm-physical-fixture-tests.mjs
+          node scripts/app-check-enforcement-tests.mjs
+          node scripts/physical-qa-candidate-drift-tests.mjs
+          node scripts/legal-retention-dossier-tests.mjs
+
+      - name: Full regression parity
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build V2 staging web bundle
+        run: npm run build
+      - name: Verify source tree stayed clean
+        run: git diff --exit-code -- package.json package-lock.json src scripts firebase tests

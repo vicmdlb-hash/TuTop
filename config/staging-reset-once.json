@@ -1,0 +1,6 @@
+{
+  "approved": true,
+  "project_id": "tutop-beta-vicmdlb-1356585881",
+  "reset_id": "staging-reset-2026-09-13-physical-failures-1",
+  "reason": "Physical QA build 91 exposed broken registration/publication/photo/location state; wipe beta accounts and user-generated staging data before the next candidate."
+}

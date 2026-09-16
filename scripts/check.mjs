@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
-const steps = [
+
+const packageVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+const commonSteps = [
   [process.execPath, ['scripts/preflight.mjs']],
   [process.execPath, ['scripts/syntax-check.mjs']],
   [process.execPath, ['scripts/logic-tests.mjs']],
@@ -14,10 +16,6 @@ const steps = [
   [process.execPath, ['scripts/policy-scan.mjs']],
   [process.execPath, ['scripts/actions-budget-policy-tests.mjs']],
   [process.execPath, ['scripts/local-topi-favorites-tests.mjs']],
-  [process.execPath, ['scripts/nearby-topi-091-contract-tests.mjs']],
-  [process.execPath, ['scripts/topi-consumer-support-091-contract-tests.mjs']],
-  [process.execPath, ['scripts/topi-app-check-091-contract-tests.mjs']],
-  [process.execPath, ['scripts/release-091-contract-tests.mjs']],
   [process.execPath, ['scripts/firestore-cost-geography-tests.mjs']],
   [process.execPath, ['scripts/seller-profile-cache-tests.mjs']],
   [process.execPath, ['scripts/canonical-offer-read-cache-tests.mjs']],
@@ -30,7 +28,6 @@ const steps = [
   [process.execPath, ['scripts/v2-rules-composition-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-rules-access-budget-tests.mjs']],
   [process.execPath, ['scripts/v2-canonical-bridge-coverage-tests.mjs']],
-  [process.execPath, ['scripts/runtime-freeze-promotion-contract-tests.mjs']],
   [process.execPath, ['scripts/secondary-workflow-freeze-contract-tests.mjs']],
   [process.execPath, ['scripts/staging-mutation-surface-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-snapshot-cost-audit.mjs']],
@@ -47,7 +44,6 @@ const steps = [
   [process.execPath, ['scripts/unread-aggregation-migration-tests.mjs']],
   [process.execPath, ['scripts/unread-emulator-gate-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-chat-post-send-stability-tests.mjs']],
-  [process.execPath, ['scripts/october-static-readiness-tests.mjs']],
   [process.execPath, ['scripts/firestore-static-contract-tests.mjs']],
   [process.execPath, ['scripts/offer-expiry-contract-tests.mjs']],
   [process.execPath, ['scripts/demand-budget-contract-tests.mjs']],
@@ -61,16 +57,39 @@ const steps = [
   [process.execPath, ['scripts/reservation-lock-residue-audit-tests.mjs']],
   [process.execPath, ['scripts/recovery-local-provider-simulation-tests.mjs']],
   [process.execPath, ['scripts/recovery-local-provider-abuse-tests.mjs']],
-  [process.execPath, ['scripts/physical-qa-regression-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/physical-qa-evidence-bundle-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/physical-qa-two-device-gate-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-readiness-pack-tests.mjs']],
   [process.execPath, ['scripts/fcm-physical-fixture-tests.mjs']],
   [process.execPath, ['scripts/app-check-enforcement-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-candidate-drift-tests.mjs']],
-  [process.execPath, ['scripts/physical-qa-candidate-generation-tests.mjs']],
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
 ];
+
+const milestoneSteps = packageVersion === '0.9.1-beta.0'
+  ? [
+      [process.execPath, ['scripts/nearby-topi-091-contract-tests.mjs']],
+      [process.execPath, ['scripts/topi-consumer-support-091-contract-tests.mjs']],
+      [process.execPath, ['scripts/topi-app-check-091-contract-tests.mjs']],
+      [process.execPath, ['scripts/release-091-contract-tests.mjs']],
+      [process.execPath, ['scripts/runtime-freeze-promotion-contract-tests.mjs']],
+      [process.execPath, ['scripts/october-static-readiness-tests.mjs']],
+      [process.execPath, ['scripts/physical-qa-regression-tests.mjs']],
+      [process.execPath, ['scripts/physical-qa-candidate-generation-tests.mjs']],
+    ]
+  : packageVersion === '0.9.2-beta.0'
+    ? [
+        [process.execPath, ['scripts/release-092-contract-tests.mjs']],
+        [process.execPath, ['scripts/device-ux-ai-092-contract-tests.mjs']],
+      ]
+    : null;
+
+if (!milestoneSteps) {
+  console.error(`❌ TuTop check no tiene contrato de milestone para ${packageVersion}.`);
+  process.exit(2);
+}
+
+const steps = [...commonSteps.slice(0, 13), ...milestoneSteps, ...commonSteps.slice(13)];
 for (const file of fs.readdirSync('scripts').filter((name) => name.endsWith('.mjs')).sort()) {
   steps.unshift([process.execPath, ['--check', `scripts/${file}`]]);
 }
@@ -93,4 +112,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log('\n✅ TuTop local check PASS (no sustituye build npm/Android/Firebase emulator).');
+console.log(`\n✅ TuTop ${packageVersion} local check PASS (no sustituye build npm/Android/Firebase emulator).`);

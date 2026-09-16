@@ -7,6 +7,13 @@
     "androidScheme": "https"
   },
   "android": {
-    "allowMixedContent": false
+    "allowMixedContent": false,
+    "includePlugins": [
+      "@capacitor/camera",
+      "@capacitor/filesystem",
+      "@capacitor/geolocation",
+      "@capacitor-firebase/messaging",
+      "@capacitor-firebase/app-check"
+    ]
   }
 }

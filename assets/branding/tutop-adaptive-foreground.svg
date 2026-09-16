@@ -1,1 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><g fill="#FFFFFF"><text x="112" y="625" font-family="Arial,Helvetica,sans-serif" font-size="360" font-weight="900" letter-spacing="-28">TuT</text><path d="M620 498c0-78 63-141 141-141s141 63 141 141c0 104-141 232-141 232S620 602 620 498Z"/><circle cx="761" cy="495" r="47" fill="#4B2EDB"/><text x="828" y="625" font-family="Arial,Helvetica,sans-serif" font-size="360" font-weight="900" letter-spacing="-28">p</text></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" data-brand="tutop-dd-pin">
+  <path d="M512 190c-166 0-300 131-300 292 0 206 300 374 300 374s300-168 300-374c0-161-134-292-300-292Z" fill="#FFFFFF"/>
+  <circle cx="512" cy="479" r="161" fill="#7C4DFF"/>
+  <!-- Double-D monogram kept flat so the adaptive mask remains legible. -->
+  <g aria-label="DD" fill="#FFFFFF">
+    <path d="M370 387h92c93 0 153 37 153 95s-60 95-153 95h-92V387Zm66 53v84h27c51 0 81-15 81-42s-30-42-81-42h-27Z"/>
+    <path d="M470 387h92c93 0 153 37 153 95s-60 95-153 95h-92V387Zm66 53v84h27c51 0 81-15 81-42s-30-42-81-42h-27Z"/>
+  </g>
+</svg>

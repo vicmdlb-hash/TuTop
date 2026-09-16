@@ -7,10 +7,13 @@ import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 
 const EXPECTED_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const EXPECTED_MARKER = 'TUTOP_AI_RUNTIME_OK_091';
-const MAX_ATTEMPTS = 12;
+const PRIMARY_MODEL = 'gemini-3.8-flash';
+const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
+const MAX_PROPAGATION_ATTEMPTS = 12;
+const MAX_CAPACITY_ATTEMPTS_PER_MODEL = 2;
 const RETRY_DELAY_MS = 15_000;
 const configPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-staging-web-config.json').trim();
-const modelName = String(process.env.TUTOP_TOPI_AI_MODEL || 'gemini-3.8-flash').trim();
+const preferredModel = String(process.env.TUTOP_TOPI_AI_MODEL || PRIMARY_MODEL).trim();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -28,7 +31,11 @@ function safeError(error) {
 }
 
 function isPropagationError(message) {
-  return /api-not-enabled|API_KEY_SERVICE_BLOCKED|SERVICE_DISABLED|service identity|PERMISSION_DENIED|app.?check|403|429|temporarily unavailable|ECONNRESET|ETIMEDOUT|ENETUNREACH|fetch failed|503/i.test(message);
+  return /api-not-enabled|API_KEY_SERVICE_BLOCKED|SERVICE_DISABLED|service identity|PERMISSION_DENIED|app.?check|403/i.test(message);
+}
+
+function isCapacityError(message) {
+  return /high demand|temporarily unavailable|RESOURCE_EXHAUSTED|rate.?limit|429|500 Internal Server Error|\b500\b|503|ECONNRESET|ETIMEDOUT|ENETUNREACH|fetch failed|STAGING_TOPI_AI_TIMEOUT/i.test(message);
 }
 
 async function jsonRequest(url, options = {}, allowed = []) {
@@ -57,7 +64,7 @@ async function createEphemeralDebugToken({ projectNumber, appId, oauthToken }) {
         'X-Goog-User-Project': EXPECTED_PROJECT,
       },
       body: JSON.stringify({
-        displayName: `TuTop 0.9.1 staging CI ${process.env.GITHUB_RUN_ID || Date.now()}`,
+        displayName: `TuTop 0.9.2 staging CI ${process.env.GITHUB_RUN_ID || Date.now()}`,
         token: secret,
       }),
     },
@@ -104,7 +111,7 @@ async function exchangeDebugToken({ projectNumber, appId, secret, apiKey }) {
     } catch (error) {
       lastError = error;
       const message = safeError(error);
-      if (attempt < 6 && isPropagationError(message)) {
+      if (attempt < 6 && (isPropagationError(message) || isCapacityError(message))) {
         await sleep(5_000);
         continue;
       }
@@ -129,6 +136,73 @@ async function generateWithTimeout(model) {
   }
 }
 
+function candidateModels() {
+  if (preferredModel === PRIMARY_MODEL) return [PRIMARY_MODEL, FALLBACK_MODEL];
+  if (preferredModel === FALLBACK_MODEL) return [FALLBACK_MODEL];
+  fail(`STAGING_TOPI_AI_MODEL_UNEXPECTED:${preferredModel}`);
+}
+
+function runtimeModel(ai, modelName) {
+  return getGenerativeModel(ai, {
+    model: modelName,
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: 128,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+    },
+  });
+}
+
+async function proveRuntime(ai) {
+  let lastError = null;
+  const models = candidateModels();
+
+  for (const [modelIndex, modelName] of models.entries()) {
+    const model = runtimeModel(ai, modelName);
+    let capacityAttempts = 0;
+
+    for (let attempt = 1; attempt <= MAX_PROPAGATION_ATTEMPTS; attempt += 1) {
+      try {
+        const result = await generateWithTimeout(model);
+        const text = result?.response?.text?.() || '';
+        if (!text.trim()) {
+          const finishReason = String(result?.response?.candidates?.[0]?.finishReason || 'unknown');
+          fail(`STAGING_TOPI_AI_EMPTY_RESPONSE:finish_reason=${finishReason}`);
+        }
+        if (!text.includes(EXPECTED_MARKER)) fail('STAGING_TOPI_AI_MARKER_MISMATCH');
+        return { modelName, fallbackUsed: modelIndex > 0 };
+      } catch (error) {
+        lastError = error;
+        const message = safeError(error);
+
+        if (isCapacityError(message)) {
+          capacityAttempts += 1;
+          if (capacityAttempts < MAX_CAPACITY_ATTEMPTS_PER_MODEL) {
+            console.log(`Firebase AI Logic model=${modelName} temporalmente saturado; reintento controlado ${capacityAttempts}/${MAX_CAPACITY_ATTEMPTS_PER_MODEL}.`);
+            await sleep(RETRY_DELAY_MS);
+            continue;
+          }
+          if (modelIndex < models.length - 1) {
+            console.log(`Firebase AI Logic model=${modelName} sigue saturado; probando fallback permitido ${models[modelIndex + 1]}.`);
+            break;
+          }
+          throw error;
+        }
+
+        if (attempt < MAX_PROPAGATION_ATTEMPTS && isPropagationError(message)) {
+          console.log(`Firebase AI Logic/App Check aún propagando configuración (${attempt}/${MAX_PROPAGATION_ATTEMPTS}); reintento controlado.`);
+          await sleep(RETRY_DELAY_MS);
+          continue;
+        }
+
+        throw error;
+      }
+    }
+  }
+
+  throw lastError || new Error('STAGING_TOPI_AI_RUNTIME_NOT_PROVEN');
+}
+
 let app = null;
 let oauthToken = null;
 let debugTokenName = null;
@@ -137,7 +211,7 @@ try {
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   if (config?.projectId !== EXPECTED_PROJECT) fail(`STAGING_TOPI_AI_PROJECT_MISMATCH:${config?.projectId || 'missing'}`);
   if (!config?.apiKey || !config?.appId) fail('STAGING_TOPI_AI_CONFIG_INCOMPLETE');
-  if (modelName !== 'gemini-3.8-flash') fail(`STAGING_TOPI_AI_MODEL_UNEXPECTED:${modelName}`);
+  candidateModels();
 
   oauthToken = await firebaseCiAccessToken();
   const projectResponse = await jsonRequest(
@@ -166,42 +240,9 @@ try {
   if (!String(attestation?.token || '').trim()) fail('STAGING_APPCHECK_TOKEN_NOT_PROVEN');
 
   const ai = getAI(app, { backend: new GoogleAIBackend() });
-  const model = getGenerativeModel(ai, {
-    model: modelName,
-    generationConfig: {
-      temperature: 0,
-      maxOutputTokens: 128,
-      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-    },
-  });
+  const proof = await proveRuntime(ai);
 
-  let passed = false;
-  let lastError = null;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    try {
-      const result = await generateWithTimeout(model);
-      const text = result?.response?.text?.() || '';
-      if (!text.trim()) {
-        const finishReason = String(result?.response?.candidates?.[0]?.finishReason || 'unknown');
-        fail(`STAGING_TOPI_AI_EMPTY_RESPONSE:finish_reason=${finishReason}`);
-      }
-      if (!text.includes(EXPECTED_MARKER)) fail('STAGING_TOPI_AI_MARKER_MISMATCH');
-      passed = true;
-      break;
-    } catch (error) {
-      lastError = error;
-      const message = safeError(error);
-      if (attempt < MAX_ATTEMPTS && isPropagationError(message)) {
-        console.log(`Firebase AI Logic/App Check aún propagando configuración (${attempt}/${MAX_ATTEMPTS}); reintento controlado.`);
-        await sleep(RETRY_DELAY_MS);
-        continue;
-      }
-      throw error;
-    }
-  }
-  if (!passed) throw lastError || new Error('STAGING_TOPI_AI_RUNTIME_NOT_PROVEN');
-
-  console.log(`✅ Firebase AI Logic runtime PASS · project=${EXPECTED_PROJECT} · model=${modelName} · app_check=true · response_marker_observed=true`);
+  console.log(`✅ Firebase AI Logic runtime PASS · project=${EXPECTED_PROJECT} · model=${proof.modelName} · fallback_used=${proof.fallbackUsed} · app_check=true · response_marker_observed=true`);
 } catch (error) {
   console.error(`DETENIDO: Firebase AI Logic runtime proof falló: ${safeError(error)}`);
   process.exitCode = 1;

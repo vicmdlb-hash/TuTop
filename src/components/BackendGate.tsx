@@ -42,9 +42,14 @@ export default function BackendGate({ children }: { children: ReactNode }) {
         setSuspended({ active: false });
         return;
       }
+
+      // Physical Device A exposed a stale first snapshot: pending university
+      // identity could be completed only after the store had already hydrated,
+      // leaving Publish convinced institution/campus were missing. Complete the
+      // canonical identity first, then load exactly one fresh snapshot.
+      if (nationalSchemaEnabled()) await completePendingUniversityIdentity().catch(() => false);
       const snapshot = await onlineBackend.loadSnapshot();
       hydrateOnline(snapshot);
-      if (nationalSchemaEnabled()) void completePendingUniversityIdentity().catch(() => false);
       setAuthenticated(true);
       setSuspended({ active: snapshot.user.is_suspended === true, reason: snapshot.user.suspension_reason });
     } catch (syncError) {
@@ -88,8 +93,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [institutionId, setInstitutionId] = useState('uatx');
-  const [campusId, setCampusId] = useState('uatx-riberena');
+  const [institutionId, setInstitutionId] = useState('');
+  const [campusId, setCampusId] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,8 +105,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
 
   const chooseInstitution = (id: string) => {
     setInstitutionId(id);
-    const firstCampus = CAMPUSES.find((item) => item.institution_id === id);
-    setCampusId(firstCampus?.id || '');
+    // Never infer campus ownership from phone/LADA or silently pick a campus.
+    setCampusId('');
   };
 
   const submit = async () => {
@@ -141,7 +146,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
             <div className="flex items-center gap-3"><div className="brand-mark"><span>T</span><i /></div><div><div className="wordmark text-3xl"><span>Tu</span><span>Top</span></div><p className="mt-1 text-[10px] font-bold uppercase tracking-[.18em] text-violet-300/80">Red universitaria</p></div></div>
             <h1 className="mt-7 text-[27px] font-black leading-[1.05] tracking-[-.04em]">Compra, vende y encuentra dentro de tu comunidad.</h1>
             <p className="mt-3 text-sm leading-6 text-slate-400">Tu identidad empieza por universidad y campus. Facultad y carrera son contexto adicional, no fronteras del marketplace.</p>
-            <div className="mt-5 flex flex-wrap gap-2 text-[10px] font-semibold text-slate-300"><span className="auth-benefit"><ShieldCheck />Comunidad protegida</span><span className="auth-benefit"><Sparkles />10 UCoins de bienvenida</span></div>
+            <div className="mt-5 flex flex-wrap gap-2 text-[10px] font-semibold text-slate-300"><span className="auth-benefit"><ShieldCheck />Beta privada</span><span className="auth-benefit"><Sparkles />10 UCoins de bienvenida</span></div>
           </div>
         </div>
         <div className="border-t border-white/[0.06] p-5 sm:p-6">
@@ -150,6 +155,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           {mode === 'register' && step === 1 && <>
             <label className="auth-label">Tu nombre</label><div className="relative"><UserRound className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><input value={name} onChange={(event) => setName(event.target.value)} className="auth-input pl-10" placeholder="¿Cómo te llamas?" maxLength={80} /></div>
             <label className="auth-label">Número celular</label><div className="relative"><Phone className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><input value={phone} onChange={(event) => setPhone(event.target.value)} className="auth-input pl-10" inputMode="tel" autoComplete="tel" placeholder="246 123 4567" /></div>
+            <p className="mt-2 text-[9px] leading-4 text-slate-500">Beta privada: este número todavía no está verificado por SMS. TuTop no lo presenta como prueba de identidad.</p>
             <label className="auth-label">Clave TuTop</label><div className="relative"><LockKeyhole className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><input value={password} onChange={(event) => setPassword(event.target.value)} className="auth-input px-10" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder="Mínimo 8 caracteres" /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-3.5 text-slate-600" aria-label={showPassword ? 'Ocultar clave' : 'Mostrar clave'}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>
             <div className="mt-2 grid grid-cols-3 gap-1">{[1, 2, 3].map((value) => <span key={value} className={`h-1 rounded-full ${passwordScore >= value ? 'bg-emerald-400' : 'bg-white/5'}`} />)}</div>
             {error && <p className="mt-3 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>}
@@ -157,11 +163,11 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           </>}
           {mode === 'register' && step === 2 && <>
             <button onClick={() => setStep(1)} className="mt-4 inline-flex items-center gap-1 text-[10px] font-bold text-slate-500"><ArrowLeft className="h-3.5 w-3.5" />Atrás</button>
-            <h2 className="mt-4 text-lg font-black">¿En qué universidad estás?</h2><p className="mt-1 text-xs leading-5 text-slate-500">Elige institución y campus. Después puedes añadir facultad, carrera o comunidad.</p>
-            <label className="auth-label">Institución</label><div className="relative"><Building2 className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={institutionId} onChange={(event) => chooseInstitution(event.target.value)} className="auth-input pl-10">{INSTITUTIONS.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.short_name} · {item.name}</option>)}</select></div>
-            <label className="auth-label">Campus</label><div className="relative"><MapPin className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={campusId} onChange={(event) => setCampusId(event.target.value)} className="auth-input pl-10"><option value="">Selecciona campus</option>{campusOptions.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
+            <h2 className="mt-4 text-lg font-black">¿En qué universidad estás?</h2><p className="mt-1 text-xs leading-5 text-slate-500">Elige institución y campus. TuTop no los decide por tu número telefónico.</p>
+            <label className="auth-label">Institución</label><div className="relative"><Building2 className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={institutionId} onChange={(event) => chooseInstitution(event.target.value)} className="auth-input pl-10"><option value="">Selecciona institución</option>{INSTITUTIONS.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.short_name} · {item.name}</option>)}</select></div>
+            <label className="auth-label">Campus</label><div className="relative"><MapPin className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={campusId} onChange={(event) => setCampusId(event.target.value)} className="auth-input pl-10" disabled={!institutionId}><option value="">Selecciona campus</option>{campusOptions.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
             {error && <p className="mt-3 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>}
-            <button disabled={busy || !campusId} onClick={() => void submit()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}Crear mi cuenta TuTop</button>
+            <button disabled={busy || !institutionId || !campusId} onClick={() => void submit()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}Crear mi cuenta TuTop</button>
             <p className="mt-3 text-center text-[9px] leading-5 text-slate-600">Elegir una institución no equivale a estar verificado. La verificación universitaria es progresiva y opcional.</p>
           </>}
           {mode === 'login' && <>
