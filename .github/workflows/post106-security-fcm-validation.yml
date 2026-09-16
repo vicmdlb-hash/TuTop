@@ -44,6 +44,12 @@ jobs:
       - name: Install exact dependencies
         run: npm ci
 
+      - name: Install ephemeral Firestore emulator test harness
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+
+      - name: Verify dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
+
       - name: Existing regression suite
         run: npm run check
 
@@ -61,11 +67,11 @@ jobs:
 
       - name: Post106 verified identity Firestore emulator gate
         run: >-
-          npx --yes firebase-tools@15.12.0 emulators:exec
+          npx --yes firebase-tools@15.29.0 emulators:exec
           --project tutop-post106-emulator
           --config firebase.v2.json
           --only firestore
-          "node --test tests/firestore.v2.post106-verified-identity.test.mjs"
+          "node --test --test-concurrency=1 tests/firestore.v2.post106-verified-identity.test.mjs"
 
       - name: Trusted marketplace notification projection tests
         run: node scripts/marketplace-notification-projection-tests.mjs
