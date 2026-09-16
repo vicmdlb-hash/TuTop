@@ -12,6 +12,26 @@ function replaceOnce(from, to, label) {
   rules = rules.replace(from, to);
 }
 
+function replaceOnceInSection(startMarker, endMarker, from, to, label) {
+  const start = rules.indexOf(startMarker);
+  if (start < 0) {
+    console.error(`DETENIDO: ${label} no encontró inicio de sección.`);
+    process.exit(2);
+  }
+  const end = rules.indexOf(endMarker, start);
+  if (end < 0) {
+    console.error(`DETENIDO: ${label} no encontró fin de sección.`);
+    process.exit(2);
+  }
+  const section = rules.slice(start, end);
+  const count = section.split(from).length - 1;
+  if (count !== 1) {
+    console.error(`DETENIDO: ${label} esperaba 1 coincidencia dentro de su sección y encontró ${count}.`);
+    process.exit(2);
+  }
+  rules = rules.slice(0, start) + section.replace(from, to) + rules.slice(end);
+}
+
 const signedIn = `    function signedIn() { return request.auth != null; }`;
 const verifiedHelper = `${signedIn}\n    function verifiedIdentity() {\n      return signedIn()\n        && request.auth.token.email is string\n        && request.auth.token.email.size() >= 6\n        && request.auth.token.email_verified == true;\n    }`;
 replaceOnce(signedIn, verifiedHelper, 'verified identity helper');
@@ -70,11 +90,6 @@ const gates = [
     'transaction create',
   ],
   [
-    `      allow update: if signedIn() && notSuspended()\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]`,
-    `      allow update: if signedIn() && notSuspended() && verifiedIdentity()\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]`,
-    'transaction update',
-  ],
-  [
     `      allow create: if signedIn() && notSuspended()\n        && rateLimitConsumed('listing_create')`,
     `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && rateLimitConsumed('listing_create')`,
     'canonical listing create',
@@ -87,6 +102,15 @@ const gates = [
 ];
 
 for (const [from, to, label] of gates) replaceOnce(from, to, label);
+
+const transactionUpdate = `      allow update: if signedIn() && notSuspended()\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]`;
+replaceOnceInSection(
+  '    match /transactions_v2/{transactionId} {',
+  '    match /demand_requests/{requestId} {',
+  transactionUpdate,
+  `      allow update: if signedIn() && notSuspended() && verifiedIdentity()\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]`,
+  'transactions_v2 verified update',
+);
 
 fs.writeFileSync(path, rules);
 console.log('✅ Verified-email beta Rules: sensitive marketplace writes require request.auth.token.email_verified == true.');
