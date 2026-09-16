@@ -26,13 +26,22 @@ type AuthPayload = {
   expiresIn?: string;
 };
 
+type CompatibleSession = {
+  uid: string;
+  idToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  phone: string;
+  email?: string;
+  emailVerified?: boolean;
+  authMode?: 'email_password_verified_beta';
+};
+
 function normalizeEmail(value: string) {
   const email = value.trim().toLowerCase();
   if (email.length < 6 || email.length > 180 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('EMAIL_INVALID');
   return email;
 }
-
-function sessionKey(projectId: string) { return `tutop.firebase.session.v2.${projectId}`; }
 
 async function authHeaders() {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -62,9 +71,27 @@ async function identityRequest(endpoint: string, body: Record<string, unknown>) 
   return readJson(response);
 }
 
+function sessionClient() {
+  return new FirebaseRestClient(getFirebaseConfig());
+}
+
+function persistCanonicalSession(session: CompatibleSession) {
+  const client = sessionClient();
+  const internal = client as any;
+  // Deliberate internal boundary: nativeSecureSessionBridge replaces this method
+  // on Android so the same call writes process sessionStorage + encrypted Keystore.
+  // On web it preserves FirebaseRestClient's normal scoped localStorage behavior.
+  if (typeof internal.persistSession !== 'function') throw new Error('AUTH_SESSION_PERSISTENCE_UNAVAILABLE');
+  internal.persistSession(session);
+  return session;
+}
+
+function clearCanonicalSession() {
+  sessionClient().signOut();
+}
+
 function persistCompatibleSession(payload: AuthPayload, email: string, emailVerified: boolean, phone = '') {
-  const config = getFirebaseConfig();
-  const session = {
+  const session: CompatibleSession = {
     uid: payload.localId,
     idToken: payload.idToken,
     refreshToken: payload.refreshToken,
@@ -74,19 +101,13 @@ function persistCompatibleSession(payload: AuthPayload, email: string, emailVeri
     emailVerified,
     authMode: 'email_password_verified_beta',
   };
-  localStorage.setItem(sessionKey(config.projectId), JSON.stringify(session));
-  return session;
+  return persistCanonicalSession(session);
 }
 
-function readCompatibleSession() {
-  const config = getFirebaseConfig();
-  try {
-    const raw = localStorage.getItem(sessionKey(config.projectId));
-    if (!raw) return null;
-    const value = JSON.parse(raw);
-    if (!value?.uid || !value?.idToken || !value?.refreshToken) return null;
-    return value;
-  } catch { return null; }
+function readCompatibleSession(): CompatibleSession | null {
+  const session = sessionClient().currentSession as CompatibleSession | null;
+  if (!session?.uid || !session?.idToken || !session?.refreshToken) return null;
+  return session;
 }
 
 async function forceRefreshStoredSession() {
@@ -102,20 +123,22 @@ async function forceRefreshStoredSession() {
     body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: stored.refreshToken }),
   });
   const data = await readJson(response);
-  const next = {
+  const next: CompatibleSession = {
     ...stored,
     uid: data.user_id || stored.uid,
     idToken: data.id_token,
     refreshToken: data.refresh_token || stored.refreshToken,
     expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
   };
-  localStorage.setItem(sessionKey(config.projectId), JSON.stringify(next));
-  return next;
+  return persistCanonicalSession(next);
 }
 
 async function createMarketplaceAccount(payload: AuthPayload, email: string, profile: VerifiedEmailBetaProfile) {
   const config = getFirebaseConfig();
   persistCompatibleSession(payload, email, false, profile.phone || '');
+  // A fresh client must be authenticated immediately in this same process. On
+  // Android the native bridge now reads the session written above from
+  // sessionStorage while its encrypted Keystore write completes asynchronously.
   const client = new FirebaseRestClient(config);
   const at = new Date().toISOString();
   const walletTxId = `welcome-${payload.localId}`;
@@ -162,7 +185,7 @@ export const verifiedEmailBetaAuth = {
       return { uid: data.localId, email, emailVerified: false } satisfies VerifiedEmailBetaStatus;
     } catch (error) {
       try { await identityRequest('accounts:delete', { idToken: data.idToken }); } catch { /* best effort rollback */ }
-      localStorage.removeItem(sessionKey(getFirebaseConfig().projectId));
+      clearCanonicalSession();
       throw error;
     }
   },
@@ -171,10 +194,10 @@ export const verifiedEmailBetaAuth = {
     const email = normalizeEmail(emailInput);
     const data = await identityRequest('accounts:signInWithPassword', { email, password, returnSecureToken: true }) as AuthPayload;
     persistCompatibleSession(data, email, false);
-    const client = new FirebaseRestClient(getFirebaseConfig());
+    const client = sessionClient();
     const profile = await client.getDocument(`users/${data.localId}`);
     if (!profile) {
-      localStorage.removeItem(sessionKey(getFirebaseConfig().projectId));
+      clearCanonicalSession();
       throw new Error('PROFILE_MISSING');
     }
     return this.refreshVerificationStatus();
@@ -190,7 +213,7 @@ export const verifiedEmailBetaAuth = {
   async refreshVerificationStatus(): Promise<VerifiedEmailBetaStatus> {
     let stored = readCompatibleSession();
     if (!stored?.idToken) throw new Error('AUTH_REQUIRED');
-    let lookup = await identityRequest('accounts:lookup', { idToken: stored.idToken }).catch(async (error) => {
+    const lookup = await identityRequest('accounts:lookup', { idToken: stored.idToken }).catch(async (error) => {
       if (!/INVALID_ID_TOKEN|TOKEN_EXPIRED/i.test(error instanceof Error ? error.message : String(error))) throw error;
       stored = await forceRefreshStoredSession();
       return identityRequest('accounts:lookup', { idToken: stored.idToken });
@@ -199,8 +222,13 @@ export const verifiedEmailBetaAuth = {
     if (!user?.localId || !user?.email) throw new Error('USER_NOT_FOUND');
     const verified = user.emailVerified === true;
     if (verified) stored = await forceRefreshStoredSession();
-    const next = { ...stored, email: String(user.email).toLowerCase(), emailVerified: verified, authMode: 'email_password_verified_beta' };
-    localStorage.setItem(sessionKey(getFirebaseConfig().projectId), JSON.stringify(next));
+    const next: CompatibleSession = {
+      ...stored,
+      email: String(user.email).toLowerCase(),
+      emailVerified: verified,
+      authMode: 'email_password_verified_beta',
+    };
+    persistCanonicalSession(next);
     return { uid: user.localId, email: String(user.email).toLowerCase(), emailVerified: verified };
   },
 
@@ -211,6 +239,6 @@ export const verifiedEmailBetaAuth = {
   },
 
   signOut() {
-    localStorage.removeItem(sessionKey(getFirebaseConfig().projectId));
+    clearCanonicalSession();
   },
 };
