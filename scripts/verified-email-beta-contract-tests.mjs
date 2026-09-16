@@ -17,6 +17,7 @@ for (const script of [
 
 const rules = fs.readFileSync('firebase/firestore.v2.generated.rules', 'utf8');
 const auth = fs.readFileSync('src/services/verifiedEmailBetaAuth.ts', 'utf8');
+const nativeBridge = fs.readFileSync('src/services/nativeSecureSessionBridge.ts', 'utf8');
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 
 assert.match(rules, /function verifiedIdentity\(\)[\s\S]*email_verified == true/);
@@ -37,6 +38,18 @@ assert.match(auth, /requestType: 'VERIFY_EMAIL'/);
 assert.match(auth, /accounts:lookup/);
 assert.match(auth, /emailVerified/);
 assert.match(auth, /email_password_verified_beta/);
+
+// Native security invariant: verified-email auth must use FirebaseRestClient's
+// canonical persistence boundary. On Android nativeSecureSessionBridge intercepts
+// that boundary and writes process sessionStorage + encrypted Keystore. Direct
+// localStorage token writes would be invisible to same-process native clients and
+// could also bypass the sign-out tombstone.
+assert.match(auth, /internal\.persistSession\(session\)/);
+assert.match(auth, /sessionClient\(\)\.signOut\(\)/);
+assert.doesNotMatch(auth, /localStorage\.(?:setItem|removeItem)\(/);
+assert.match(nativeBridge, /proto\.persistSession = function nativePersistSession/);
+assert.match(nativeBridge, /storage\.setItem\(key, raw\)/);
+assert.match(nativeBridge, /markNativeSignedOut\(key, true\)/);
 assert.ok(packageJson.scripts['v2:rules:prepare'].includes('harden-verified-email-beta-rules.mjs'));
 
-console.log('✅ Verified email beta auth + Firestore security contracts PASS');
+console.log('✅ Verified email beta auth + Firestore security + native session persistence contracts PASS');
