@@ -44,6 +44,9 @@ jobs:
       - name: TypeScript
         run: npm run typecheck
 
+      - name: Verified email beta Auth + Rules contracts
+        run: node scripts/verified-email-beta-contract-tests.mjs
+
       - name: Trusted marketplace notification projection tests
         run: node scripts/marketplace-notification-projection-tests.mjs
 
