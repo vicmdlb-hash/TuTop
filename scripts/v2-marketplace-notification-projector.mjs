@@ -69,12 +69,13 @@ function decodeQueryRows(rows = []) {
   });
 }
 
-async function queryRecent(collectionId, timestampField, { allDescendants = false } = {}) {
-  const response = await request(`${root}:runQuery`, {
+async function queryRecent(collectionId, timestampField, { parentPath = '' } = {}) {
+  const queryRoot = parentPath ? `${root}/${parentPath}:runQuery` : `${root}:runQuery`;
+  const response = await request(queryRoot, {
     method: 'POST',
     body: JSON.stringify({
       structuredQuery: {
-        from: [{ collectionId, ...(allDescendants ? { allDescendants: true } : {}) }],
+        from: [{ collectionId }],
         where: { fieldFilter: { field: { fieldPath: timestampField }, op: 'GREATER_THAN_OR_EQUAL', value: { timestampValue: cutoffIso } } },
         orderBy: [{ field: { fieldPath: timestampField }, direction: 'DESCENDING' }],
         limit,
@@ -82,13 +83,6 @@ async function queryRecent(collectionId, timestampField, { allDescendants = fals
     }),
   });
   return decodeQueryRows(response.data || []);
-}
-
-async function getDocument(path) {
-  const result = await request(`${root}/${path}`, { method: 'GET' }, [404]);
-  if (result.status === 404 || !result.data?.name) return null;
-  const parts = path.split('/').filter(Boolean);
-  return { id: parts.at(-1) || '', _path: path, _parts: parts, ...decodeFields(result.data.fields || {}) };
 }
 
 async function createOutbox(notification) {
@@ -99,21 +93,23 @@ async function createOutbox(notification) {
   return request(url, { method: 'POST', body: JSON.stringify({ fields: encodeFields(document) }) }, [409]);
 }
 
-const [messagesRaw, offers, transactions] = await Promise.all([
-  queryRecent('messages', 'created_at', { allDescendants: true }),
+// Firestore requires an extra collection-group DESC index for a global
+// `messages` + created_at query. Avoid adding staging infrastructure solely for
+// this projector: chats already atomically maintain last_message_at on every
+// send, so discover only recent chats and query each direct messages
+// subcollection. Direct collection queries use the normal single-field index and
+// keep the scan bounded to active conversations.
+const [chats, offers, transactions] = await Promise.all([
+  queryRecent('chats', 'last_message_at'),
   queryRecent('offers', 'updated_at'),
   queryRecent('transactions_v2', 'updated_at'),
 ]);
 
-const messages = messagesRaw.map((message) => {
-  const parts = message._parts || [];
-  const chatsIndex = parts.lastIndexOf('chats');
-  const chatId = chatsIndex >= 0 ? parts[chatsIndex + 1] : '';
-  return { ...message, chat_id: chatId };
-});
-const neededChatIds = [...new Set(messages.map((message) => String(message.chat_id || '')).filter(Boolean))];
-const chatDocs = await Promise.all(neededChatIds.map((chatId) => getDocument(`chats/${chatId}`)));
-const chats = chatDocs.filter(Boolean);
+const messageGroups = await Promise.all(chats.map(async (chat) => {
+  const rows = await queryRecent('messages', 'created_at', { parentPath: `chats/${chat.id}` });
+  return rows.map((message) => ({ ...message, chat_id: chat.id }));
+}));
+const messages = messageGroups.flat();
 
 const projected = projectMarketplaceNotifications({
   chats,
