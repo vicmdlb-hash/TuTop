@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
 
 const projectId = process.env.GCLOUD_PROJECT || 'demo-tutop-post106-verified-identity';
 const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
@@ -25,11 +25,18 @@ function auth(uid, verified) {
   }).firestore();
 }
 
-async function seedIdentity(uid = 'seller') {
+async function seedCatalog() {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await setDoc(doc(db, `institutions/${institutionId}`), { name: 'UATx', country_code: 'MX', active: true });
     await setDoc(doc(db, `campuses/${campusId}`), { institution_id: institutionId, name: 'Campus', city_id: 'tlaxcala', active: true });
+  });
+}
+
+async function seedIdentity(uid = 'seller') {
+  await seedCatalog();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
     await setDoc(doc(db, `users/${uid}`), {
       uid,
       nombre: uid,
@@ -85,6 +92,55 @@ function publicationBatch(db, uid, listingId, photos) {
   return batch;
 }
 
+test('post106 permite bootstrap inicial de cuenta antes de verificar email sin abrir writes sensibles', async () => {
+  await seedCatalog();
+  const uid = 'new-user';
+  const db = auth(uid, false);
+  const at = now();
+  const welcomeId = `welcome-${uid}`;
+  const batch = writeBatch(db);
+  batch.set(doc(db, `users/${uid}`), {
+    uid,
+    nombre: 'New User',
+    facultad: 'Turismo Internacional',
+    esta_verificado: false,
+    institution_id: institutionId,
+    institution_name: 'UATx',
+    campus_id: campusId,
+    campus_name: 'Campus',
+    verification_level: 0,
+    verification_badge: 'Cuenta TuTop',
+    created_at: at,
+    updated_at: at,
+  });
+  batch.set(doc(db, `user_private/${uid}`), {
+    uid,
+    institutional_email: `${uid}@example.com`,
+    auth_mode: 'email_password_verified_beta',
+    created_at: at,
+    updated_at: at,
+  });
+  batch.set(doc(db, `wallets/${uid}`), {
+    owner_uid: uid,
+    balance: 10,
+    prestige: 0,
+    welcome_granted: true,
+    last_op_id: welcomeId,
+    updated_at: at,
+  });
+  batch.set(doc(db, `wallet_transactions/${welcomeId}`), {
+    user_id: uid,
+    type: 'income',
+    description: 'Bono de bienvenida',
+    amount: 10,
+    operation_id: welcomeId,
+    created_at: at,
+  });
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(getDoc(doc(db, `user_private/${uid}`)));
+  await assertFails(publicationBatch(db, uid, 'bootstrap-must-stay-blocked', [photo(1)]).commit());
+});
+
 test('post106 rechaza publicación canónica si email_verified=false', async () => {
   await seedIdentity('seller');
   const db = auth('seller', false);
@@ -134,4 +190,4 @@ test('post106 rechaza mutación sensible de transacción si email_verified=false
   }));
 });
 
-console.log('✅ post106 Firestore emulator gate PASS: unverified blocked; verified listing 1/4 photos + transaction mutation allowed');
+console.log('✅ post106 Firestore emulator gate PASS: unverified bootstrap allowed but sensitive writes blocked; verified listing 1/4 photos + transaction mutation allowed');
