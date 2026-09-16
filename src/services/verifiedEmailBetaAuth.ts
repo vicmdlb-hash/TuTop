@@ -139,6 +139,9 @@ async function createMarketplaceAccount(payload: AuthPayload, email: string, pro
   // A fresh client must be authenticated immediately in this same process. On
   // Android the native bridge now reads the session written above from
   // sessionStorage while its encrypted Keystore write completes asynchronously.
+  // Promotion invariant: the verified-email Rules/Auth contract must be cut over
+  // together for a later candidate. Against build106 Rules this write is expected
+  // to fail closed; do not weaken Rules or silently fall back to phone-alias auth.
   const client = new FirebaseRestClient(config);
   const at = new Date().toISOString();
   const walletTxId = `welcome-${payload.localId}`;
