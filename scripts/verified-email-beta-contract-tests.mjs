@@ -22,12 +22,14 @@ const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 assert.match(rules, /function verifiedIdentity\(\)[\s\S]*email_verified == true/);
 assert.match(rules, /auth_mode in \['phone_password_beta','email_password_verified_beta'\]/);
 assert.match(rules, /auth_mode == 'email_password_verified_beta'[\s\S]*institutional_email == request\.auth\.token\.email/);
-assert.match(rules, /rateLimitConsumed\('listing_create'\)/);
-assert.match(rules, /allow create: if signedIn\(\) && notSuspended\(\) && verifiedIdentity\(\)[\s\S]*rateLimitConsumed\('listing_create'\)/);
+assert.match(rules, /function listingRateLimitConsumed\(\)/);
+assert.match(rules, /match \/listings_v2\/\{listingId\}[\s\S]*allow create: if signedIn\(\) && notSuspended\(\) && verifiedIdentity\(\)[\s\S]*listingRateLimitConsumed\(\)/);
 assert.match(rules, /allow create: if signedIn\(\) && notSuspended\(\) && verifiedIdentity\(\)[\s\S]*rateLimitConsumed\('chat_create'\)/);
 assert.match(rules, /allow create: if participant\(chatId\) && notSuspended\(\) && verifiedIdentity\(\)[\s\S]*rateLimitConsumed\('message_create'\)/);
 assert.match(rules, /allow create: if signedIn\(\) && notSuspended\(\) && verifiedIdentity\(\)[\s\S]*rateLimitConsumed\('offer_create'\)/);
 assert.match(rules, /match \/transactions_v2\/\{transactionId\}[\s\S]*allow create: if signedIn\(\) && notSuspended\(\) && verifiedIdentity\(\)/);
+const txSection = rules.match(/match \/transactions_v2\/\{transactionId\} \{([\s\S]*?)\n    match \/demand_requests\/\{requestId\}/)?.[1] || '';
+assert.equal((txSection.match(/allow update: if signedIn\(\) && notSuspended\(\) && verifiedIdentity\(\)/g) || []).length, 2, 'both user-driven transaction update paths must require verified identity');
 assert.match(rules, /match \/notification_outbox\/\{notificationId\}[\s\S]*allow create, update, delete: if false;/);
 
 assert.match(auth, /accounts:sendOobCode/);
