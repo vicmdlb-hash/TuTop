@@ -1,16 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" data-brand="tutop-dd-pin">
-  <defs>
-    <filter id="shadow" x="-25%" y="-25%" width="150%" height="175%">
-      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#4B2EDB" flood-opacity=".28"/>
-    </filter>
-  </defs>
-  <g filter="url(#shadow)">
-    <path d="M512 194c-172 0-310 136-310 302 0 214 310 424 310 424s310-210 310-424c0-166-138-302-310-302Z" fill="#FFFFFF"/>
-    <circle cx="512" cy="491" r="170" fill="#7C4DFF"/>
-    <circle cx="512" cy="491" r="147" fill="#FFFFFF" opacity=".12"/>
-    <g aria-label="DD">
-      <path d="M392 388h72c88 0 145 40 145 103s-57 103-145 103h-72V388Zm65 55v96h16c43 0 69-17 69-48s-26-48-69-48h-16Z" fill="#FFFFFF"/>
-      <path d="M481 388h72c88 0 145 40 145 103s-57 103-145 103h-72V388Zm65 55v96h16c43 0 69-17 69-48s-26-48-69-48h-16Z" fill="#E7DAFF" opacity=".96"/>
-    </g>
+  <path d="M512 190c-166 0-300 131-300 292 0 206 300 374 300 374s300-168 300-374c0-161-134-292-300-292Z" fill="#FFFFFF"/>
+  <circle cx="512" cy="479" r="161" fill="#7C4DFF"/>
+  <!-- Double-D monogram kept flat so the adaptive mask remains legible. -->
+  <g aria-label="DD" fill="#FFFFFF">
+    <path d="M370 387h92c93 0 153 37 153 95s-60 95-153 95h-92V387Zm66 53v84h27c51 0 81-15 81-42s-30-42-81-42h-27Z"/>
+    <path d="M470 387h92c93 0 153 37 153 95s-60 95-153 95h-92V387Zm66 53v84h27c51 0 81-15 81-42s-30-42-81-42h-27Z"/>
   </g>
 </svg>

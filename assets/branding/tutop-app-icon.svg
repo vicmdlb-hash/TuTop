@@ -1,33 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" data-brand="tutop-dd-pin">
-  <defs>
-    <linearGradient id="bg" x1="110" y1="70" x2="920" y2="950" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#C7ACFF"/>
-      <stop offset=".45" stop-color="#7C4DFF"/>
-      <stop offset="1" stop-color="#5A35D6"/>
-    </linearGradient>
-    <linearGradient id="pin" x1="390" y1="250" x2="650" y2="790" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#F4EEFF"/>
-    </linearGradient>
-    <filter id="shadow" x="-25%" y="-25%" width="150%" height="175%">
-      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#4B2EDB" flood-opacity=".32"/>
-    </filter>
-  </defs>
-  <rect width="1024" height="1024" rx="232" fill="url(#bg)"/>
-  <circle cx="160" cy="135" r="240" fill="#FFFFFF" opacity=".12"/>
-  <circle cx="900" cy="890" r="280" fill="#E7DAFF" opacity=".10"/>
-
-  <g filter="url(#shadow)">
-    <path d="M512 176c-176 0-318 139-318 310 0 222 318 449 318 449s318-227 318-449c0-171-142-310-318-310Z" fill="url(#pin)"/>
-    <circle cx="512" cy="486" r="176" fill="#7C4DFF"/>
-    <circle cx="512" cy="486" r="153" fill="#FFFFFF" opacity=".12"/>
-
-    <!-- Double-D monogram requested for the launcher mark. -->
-    <g aria-label="DD">
-      <path d="M390 381h75c91 0 150 42 150 107s-59 107-150 107h-75V381Zm68 57v100h16c45 0 72-18 72-50s-27-50-72-50h-16Z" fill="#FFFFFF"/>
-      <path d="M482 381h75c91 0 150 42 150 107s-59 107-150 107h-75V381Zm68 57v100h16c45 0 72-18 72-50s-27-50-72-50h-16Z" fill="#E7DAFF" opacity=".96"/>
-    </g>
+  <rect width="1024" height="1024" rx="224" fill="#7C4DFF"/>
+  <path d="M512 172c-169 0-306 133-306 297 0 213 306 383 306 383s306-170 306-383c0-164-137-297-306-297Z" fill="#FFFFFF"/>
+  <circle cx="512" cy="466" r="166" fill="#7C4DFF"/>
+  <!-- Double-D monogram: intentionally flat/minimal for launcher readability. -->
+  <g aria-label="DD" fill="#FFFFFF">
+    <path d="M367 370h94c96 0 158 38 158 98s-62 98-158 98h-94V370Zm68 55v86h28c53 0 84-15 84-43s-31-43-84-43h-28Z"/>
+    <path d="M470 370h94c96 0 158 38 158 98s-62 98-158 98h-94V370Zm68 55v86h28c53 0 84-15 84-43s-31-43-84-43h-28Z"/>
   </g>
-
-  <path d="M386 802c75 42 177 42 252 0" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" opacity=".30"/>
 </svg>

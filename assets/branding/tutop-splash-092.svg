@@ -1,35 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732" data-brand="tutop-dd-pin-splash">
-  <defs>
-    <linearGradient id="bg" x1="220" y1="140" x2="2510" y2="2580" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#B99BFF"/>
-      <stop offset=".38" stop-color="#7C4DFF"/>
-      <stop offset="1" stop-color="#653AD9"/>
-    </linearGradient>
-    <linearGradient id="pin" x1="1030" y1="500" x2="1700" y2="1760" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#F1E9FF"/>
-    </linearGradient>
-    <filter id="soft" x="-25%" y="-25%" width="150%" height="165%">
-      <feDropShadow dx="0" dy="42" stdDeviation="42" flood-color="#5A35D6" flood-opacity=".34"/>
-    </filter>
-  </defs>
-
-  <rect width="2732" height="2732" fill="url(#bg)"/>
-  <circle cx="300" cy="300" r="560" fill="#FFFFFF" opacity=".11"/>
-  <circle cx="2470" cy="2350" r="690" fill="#E7DAFF" opacity=".10"/>
-  <circle cx="2300" cy="420" r="260" fill="#FFFFFF" opacity=".07"/>
-
-  <g filter="url(#soft)">
-    <path d="M1366 410c-390 0-704 307-704 685 0 490 704 990 704 990s704-500 704-990c0-378-314-685-704-685Z" fill="url(#pin)"/>
-    <circle cx="1366" cy="1094" r="386" fill="#7C4DFF"/>
-    <circle cx="1366" cy="1094" r="337" fill="#FFFFFF" opacity=".10"/>
-
-    <g aria-label="DD">
-      <path d="M1104 864h164c201 0 330 94 330 236s-129 236-330 236h-164V864Zm149 125v221h34c99 0 159-40 159-110s-60-111-159-111h-34Z" fill="#FFFFFF"/>
-      <path d="M1307 864h164c201 0 330 94 330 236s-129 236-330 236h-164V864Zm149 125v221h34c99 0 159-40 159-110s-60-111-159-111h-34Z" fill="#E7DAFF" opacity=".97"/>
-    </g>
+  <rect width="2732" height="2732" fill="#7C4DFF"/>
+  <path d="M1366 500c-354 0-640 279-640 622 0 440 640 798 640 798s640-358 640-798c0-343-286-622-640-622Z" fill="#FFFFFF"/>
+  <circle cx="1366" cy="1115" r="344" fill="#7C4DFF"/>
+  <g aria-label="DD" fill="#FFFFFF">
+    <path d="M1070 910h192c194 0 319 78 319 199s-125 199-319 199h-192V910Zm138 111v176h57c106 0 168-31 168-88s-62-88-168-88h-57Z"/>
+    <path d="M1280 910h192c194 0 319 78 319 199s-125 199-319 199h-192V910Zm138 111v176h57c106 0 168-31 168-88s-62-88-168-88h-57Z"/>
   </g>
-
-  <text x="1366" y="2290" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="260" font-weight="900" letter-spacing="-12" fill="#FFFFFF">TuTop</text>
-  <text x="1366" y="2445" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="66" font-weight="700" fill="#F2ECFF">Tu comunidad universitaria, cerca de ti.</text>
+  <text x="1366" y="2265" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="250" font-weight="900" letter-spacing="-14" fill="#FFFFFF">TuTop</text>
 </svg>

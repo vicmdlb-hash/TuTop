@@ -10,7 +10,7 @@ type CapacitorRuntime = {
 };
 
 export type NativeTopiAIReason = 'ready' | 'not-native' | 'disabled' | 'plugin-missing' | 'app-check-unavailable' | 'request-failed' | 'empty-response';
-const AI_REQUEST_TIMEOUT_MS = 12_000;
+const AI_REQUEST_TIMEOUT_MS = 20_000;
 let lastReason: NativeTopiAIReason = 'disabled';
 let lastModel = '';
 
@@ -124,8 +124,9 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
         return { text, model: lastModel, provider: 'firebase-ai-logic' };
       }
       setReason('empty-response', { fallback_model: index > 0 });
-    } catch {
-      setReason('request-failed', { fallback_model: index > 0 });
+    } catch (error) {
+      const code = error instanceof Error && /TIMEOUT/.test(error.message) ? 'timeout' : 'native-request';
+      setReason('request-failed', { fallback_model: index > 0, failure_kind: code });
     }
   }
   return null;

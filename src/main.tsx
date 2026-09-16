@@ -6,6 +6,7 @@ import { restoreNativeSessionForProject } from './services/nativeSecureSession';
 import { applyStagingResetIfNeeded } from './services/stagingResetBridge';
 import './index.css';
 import './brand091.css';
+import './brand092.css';
 
 async function bootstrap() {
   applyStagingResetIfNeeded();

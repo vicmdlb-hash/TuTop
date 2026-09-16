@@ -52,6 +52,15 @@ public class TuTopAIPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void status(PluginCall call) {
+        JSObject payload = new JSObject();
+        payload.put("provider", "firebase-ai-logic");
+        payload.put("sdk", "firebase-ai-17.17.0");
+        payload.put("ready", true);
+        call.resolve(payload);
+    }
+
+    @PluginMethod
     public void generate(PluginCall call) {
         String prompt = call.getString("prompt", "").trim();
         String requestedModel = call.getString("model", "gemini-3.8-flash").trim();
@@ -82,6 +91,7 @@ public class TuTopAIPlugin extends Plugin {
                     payload.put("text", text);
                     payload.put("model", requestedModel);
                     payload.put("provider", "firebase-ai-logic");
+                    payload.put("sdk", "firebase-ai-17.17.0");
                     call.resolve(payload);
                 }
 
@@ -99,8 +109,11 @@ public class TuTopAIPlugin extends Plugin {
 fs.writeFileSync(pluginPath, pluginSource);
 
 let gradle = fs.readFileSync(appGradlePath, 'utf8');
+// Generated Android trees can be prepared more than once in CI/dev. Keep one
+// authoritative Firebase AI version instead of accumulating old declarations.
+gradle = gradle.replace(/^\s*implementation\s+["']com\.google\.firebase:firebase-ai:[^"']+["']\s*$/gm, '');
 const dependencies = [
-  'implementation "com.google.firebase:firebase-ai:17.16.0"',
+  'implementation "com.google.firebase:firebase-ai:17.17.0"',
   'implementation "com.google.guava:guava:31.0.1-android"',
 ];
 for (const dependency of dependencies) {
@@ -127,4 +140,4 @@ if (!activity.includes('registerPlugin(TuTopAIPlugin.class)')) {
   fs.writeFileSync(mainActivityPath, activity);
 }
 
-console.log('✅ TuTopAI Android generado: Firebase AI Logic 17.16.0 + Gemini Flash, sin API key de proveedor en el cliente.');
+console.log('✅ TuTopAI Android generado: Firebase AI Logic 17.17.0 + Gemini Flash, sin API key de proveedor en el cliente.');
