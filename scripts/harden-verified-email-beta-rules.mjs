@@ -89,19 +89,27 @@ const gates = [
     `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','accepted_offer_id'`,
     'transaction create',
   ],
-  [
-    `      allow create: if signedIn() && notSuspended()\n        && rateLimitConsumed('listing_create')`,
-    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && rateLimitConsumed('listing_create')`,
-    'canonical listing create',
-  ],
-  [
-    `      allow update: if signedIn() && notSuspended() && (\n        (\n          request.auth.uid == resource.data.seller_id`,
-    `      allow update: if signedIn() && notSuspended() && (\n        (\n          request.auth.uid == resource.data.seller_id\n          && verifiedIdentity()`,
-    'canonical listing seller update',
-  ],
 ];
 
 for (const [from, to, label] of gates) replaceOnce(from, to, label);
+
+// These markers deliberately run after the rate-limit and video hardeners. Scope
+// both replacements to listings_v2 so future legacy/product changes cannot be
+// accidentally authorized or rejected by a global text match.
+replaceOnceInSection(
+  '    match /listings_v2/{listingId} {',
+  '    match /offers/{offerId} {',
+  `      allow create: if signedIn() && notSuspended()\n        && listingRateLimitConsumed()`,
+  `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && listingRateLimitConsumed()`,
+  'canonical listings_v2 verified create',
+);
+replaceOnceInSection(
+  '    match /listings_v2/{listingId} {',
+  '    match /offers/{offerId} {',
+  `      allow update: if signedIn() && notSuspended() && (\n        (\n          request.auth.uid == resource.data.seller_id`,
+  `      allow update: if signedIn() && notSuspended() && (\n        (\n          request.auth.uid == resource.data.seller_id\n          && verifiedIdentity()`,
+  'canonical listings_v2 verified seller update',
+);
 
 const transactionUpdate = `      allow update: if signedIn() && notSuspended()\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]`;
 replaceOnceInSection(
