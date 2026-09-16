@@ -1,0 +1,71 @@
+name: TuTop post106 security + FCM validation
+
+on:
+  push:
+    branches:
+      - feat/tutop-post106-security-fcm
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: tutop-post106-security-fcm-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+  FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+  TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+  TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
+
+jobs:
+  validate:
+    if: github.ref_name == 'feat/tutop-post106-security-fcm'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact follow-up SHA
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Existing regression suite
+        run: npm run check
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Trusted marketplace notification projection tests
+        run: node scripts/marketplace-notification-projection-tests.mjs
+
+      - name: Require managed staging credentials for dry-run
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${FIREBASE_TOKEN:-}"
+          if [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_ID:-}" ] || [ -n "${TUTOP_FIREBASE_OAUTH_CLIENT_SECRET:-}" ]; then
+            test -n "${TUTOP_FIREBASE_OAUTH_CLIENT_ID:-}"
+            test -n "${TUTOP_FIREBASE_OAUTH_CLIENT_SECRET:-}"
+          fi
+
+      - name: Staging marketplace notification projection dry-run only
+        env:
+          TUTOP_ALLOW_V2_MAINTENANCE: staging-v2
+        run: node scripts/v2-marketplace-notification-projector.mjs
+
+      - name: Preserve build106 candidate branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT="$(git ls-remote origin refs/heads/feat/tutop-0.9.2-hardening | cut -f1)"
+          test "$CURRENT" = "b54b03cb01d1b3ec42dd1458ad3e1bb3bd22043c"
+          echo "✅ build106 candidate remains frozen at $CURRENT"
