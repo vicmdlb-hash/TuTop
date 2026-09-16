@@ -47,6 +47,9 @@ jobs:
       - name: Verified email beta Auth + Rules contracts
         run: node scripts/verified-email-beta-contract-tests.mjs
 
+      - name: Post106 runtime recovery contracts
+        run: node scripts/post106-runtime-recovery-contract-tests.mjs
+
       - name: Trusted marketplace notification projection tests
         run: node scripts/marketplace-notification-projection-tests.mjs
 
