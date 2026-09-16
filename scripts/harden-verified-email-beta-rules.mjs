@@ -32,6 +32,26 @@ function replaceOnceInSection(startMarker, endMarker, from, to, label) {
   rules = rules.slice(0, start) + section.replace(from, to) + rules.slice(end);
 }
 
+function replaceExpectedCountInSection(startMarker, endMarker, from, to, expectedCount, label) {
+  const start = rules.indexOf(startMarker);
+  if (start < 0) {
+    console.error(`DETENIDO: ${label} no encontró inicio de sección.`);
+    process.exit(2);
+  }
+  const end = rules.indexOf(endMarker, start);
+  if (end < 0) {
+    console.error(`DETENIDO: ${label} no encontró fin de sección.`);
+    process.exit(2);
+  }
+  const section = rules.slice(start, end);
+  const count = section.split(from).length - 1;
+  if (count !== expectedCount) {
+    console.error(`DETENIDO: ${label} esperaba ${expectedCount} coincidencias dentro de su sección y encontró ${count}.`);
+    process.exit(2);
+  }
+  rules = rules.slice(0, start) + section.split(from).join(to) + rules.slice(end);
+}
+
 const signedIn = `    function signedIn() { return request.auth != null; }`;
 const verifiedHelper = `${signedIn}\n    function verifiedIdentity() {\n      return signedIn()\n        && request.auth.token.email is string\n        && request.auth.token.email.size() >= 6\n        && request.auth.token.email_verified == true;\n    }`;
 replaceOnce(signedIn, verifiedHelper, 'verified identity helper');
@@ -111,13 +131,19 @@ replaceOnceInSection(
   'canonical listings_v2 verified seller update',
 );
 
+// Runtime hardening deliberately creates two participant-driven transaction
+// updates in transactions_v2: the normal lifecycle transition and unilateral
+// cancellation. Both are sensitive marketplace mutations and both must require
+// the same signed email_verified claim. Exactly two is an invariant: drift fails
+// closed instead of silently leaving one path unverified.
 const transactionUpdate = `      allow update: if signedIn() && notSuspended()\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]`;
-replaceOnceInSection(
+replaceExpectedCountInSection(
   '    match /transactions_v2/{transactionId} {',
   '    match /demand_requests/{requestId} {',
   transactionUpdate,
   `      allow update: if signedIn() && notSuspended() && verifiedIdentity()\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]`,
-  'transactions_v2 verified update',
+  2,
+  'transactions_v2 verified user updates',
 );
 
 fs.writeFileSync(path, rules);
