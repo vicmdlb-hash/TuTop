@@ -1,0 +1,52 @@
+name: TuTop post110 transaction confirmation concurrency
+
+on:
+  push:
+    branches:
+      - fix/tutop-post110-transaction-confirm-race
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post110-transaction-confirm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.ref_name == 'fix/tutop-post110-transaction-confirm-race'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact post-build110 SHA
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Existing regression suite
+        run: npm run check
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Existing reservation retry idempotency
+        run: node scripts/transaction-retry-idempotency-tests.mjs
+
+      - name: Concurrent delivery confirmation contract
+        run: node scripts/transaction-confirmation-concurrency-tests.mjs
+
+      - name: Preserve build110 base candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="$(git merge-base HEAD origin/fix/tutop-107-runtime-recovery)"
+          test "$BASE" = "9dfbe008b70f60cc88b03961aac1e15455f2aebb"
+          echo "build110 base remains exact and unmodified: $BASE"
