@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - feat/tutop-post106-security-fcm
-    paths:
-      - .github/workflows/post106-engineering-candidate-build107.yml
   workflow_dispatch:
 
 permissions:
