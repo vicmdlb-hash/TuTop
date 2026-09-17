@@ -16,6 +16,7 @@ export interface VerifiedEmailBetaStatus {
   uid: string;
   email: string;
   emailVerified: boolean;
+  verificationEmailSent?: boolean;
 }
 
 type AuthPayload = {
@@ -215,16 +216,29 @@ export const verifiedEmailBetaAuth = {
     };
     const data = await identityRequest('accounts:signUp', { email, password, returnSecureToken: true }) as AuthPayload;
     try {
-      // Send VERIFY_EMAIL before Firestore account documents. If delivery setup
-      // fails, rollback Auth while there are no marketplace docs to orphan.
-      await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: data.idToken });
+      // Bootstrap the unverified marketplace account atomically first. Security
+      // Rules allow only this narrow bootstrap before email verification and keep
+      // publication/chat/offer/transaction writes fail-closed.
       await createMarketplaceAccount(data, email, normalizedProfile);
-      return { uid: data.localId, email, emailVerified: false } satisfies VerifiedEmailBetaStatus;
     } catch (error) {
+      // A definite profile/bootstrap failure must not leave a newly-created Auth
+      // identity without its canonical marketplace documents.
       try { await identityRequest('accounts:delete', { idToken: data.idToken }); } catch { /* best effort rollback */ }
       clearCanonicalSession();
       throw error;
     }
+
+    // Email transport/quota is recoverable. Once the atomic marketplace bootstrap
+    // succeeded, never delete Auth/profile/wallet merely because the verification
+    // message could not be sent at this instant; keep verification pending and let
+    // the existing resend action recover without account recreation.
+    let verificationEmailSent = true;
+    try {
+      await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: data.idToken });
+    } catch {
+      verificationEmailSent = false;
+    }
+    return { uid: data.localId, email, emailVerified: false, verificationEmailSent } satisfies VerifiedEmailBetaStatus;
   },
 
   async login(emailInput: string, password: string) {
