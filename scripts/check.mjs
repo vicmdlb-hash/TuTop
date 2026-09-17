@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 
 const packageVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
 const commonSteps = [
+  [process.execPath, ['scripts/verified-email-runtime-tests.mjs']],
   [process.execPath, ['scripts/preflight.mjs']],
   [process.execPath, ['scripts/syntax-check.mjs']],
   [process.execPath, ['scripts/logic-tests.mjs']],
