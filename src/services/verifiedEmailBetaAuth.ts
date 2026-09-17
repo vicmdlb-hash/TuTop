@@ -1,5 +1,5 @@
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
-import { FirebaseRestClient } from './firebaseRest';
+import { FirebaseRestClient, normalizeMexicoPhone } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
 
 export interface VerifiedEmailBetaProfile {
@@ -16,6 +16,7 @@ export interface VerifiedEmailBetaStatus {
   uid: string;
   email: string;
   emailVerified: boolean;
+  verificationEmailSent?: boolean;
 }
 
 type AuthPayload = {
@@ -110,6 +111,13 @@ function readCompatibleSession(): CompatibleSession | null {
   return session;
 }
 
+function assertCurrentSession(expected: CompatibleSession) {
+  const current = readCompatibleSession();
+  if (!current || current.uid !== expected.uid || current.refreshToken !== expected.refreshToken || current.idToken !== expected.idToken) {
+    throw new Error('AUTH_SESSION_CHANGED');
+  }
+}
+
 async function forceRefreshStoredSession() {
   const config = getFirebaseConfig();
   const stored = readCompatibleSession();
@@ -123,6 +131,7 @@ async function forceRefreshStoredSession() {
     body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: stored.refreshToken }),
   });
   const data = await readJson(response);
+  assertCurrentSession(stored);
   const next: CompatibleSession = {
     ...stored,
     uid: data.user_id || stored.uid,
@@ -181,16 +190,23 @@ export const verifiedEmailBetaAuth = {
     if (password.length < 8) throw new Error('WEAK_PASSWORD');
     if (profile.nombre.trim().length < 2) throw new Error('NAME_REQUIRED');
     if (!profile.institution_id || !profile.campus_id) throw new Error('UNIVERSITY_IDENTITY_REQUIRED');
+    const normalizedProfile = { ...profile, phone: profile.phone?.trim() ? normalizeMexicoPhone(profile.phone) : undefined };
     const data = await identityRequest('accounts:signUp', { email, password, returnSecureToken: true }) as AuthPayload;
     try {
-      await createMarketplaceAccount(data, email, profile);
-      await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: data.idToken });
-      return { uid: data.localId, email, emailVerified: false } satisfies VerifiedEmailBetaStatus;
+      await createMarketplaceAccount(data, email, normalizedProfile);
     } catch (error) {
       try { await identityRequest('accounts:delete', { idToken: data.idToken }); } catch { /* best effort rollback */ }
       clearCanonicalSession();
       throw error;
     }
+    // The marketplace commit has succeeded. A mail transport/quota error must
+    // never delete Auth and orphan its profile/wallet. Keep verification pending
+    // and allow the existing resend action to retry.
+    let verificationEmailSent = true;
+    try {
+      await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: data.idToken });
+    } catch { verificationEmailSent = false; }
+    return { uid: data.localId, email, emailVerified: false, verificationEmailSent } satisfies VerifiedEmailBetaStatus;
   },
 
   async login(emailInput: string, password: string) {
@@ -221,6 +237,7 @@ export const verifiedEmailBetaAuth = {
       stored = await forceRefreshStoredSession();
       return identityRequest('accounts:lookup', { idToken: stored.idToken });
     });
+    assertCurrentSession(stored);
     const user = lookup?.users?.[0];
     if (!user?.localId || !user?.email) throw new Error('USER_NOT_FOUND');
     const verified = user.emailVerified === true;

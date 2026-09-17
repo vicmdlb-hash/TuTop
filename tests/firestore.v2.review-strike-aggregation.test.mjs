@@ -1,3 +1,4 @@
+import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -47,20 +48,20 @@ function strikeQuery(db, uid, cutoffMillis) {
 
 test('usuario obtiene COUNT exacto de reviews negativas recibidas en 30 días', async () => {
   const now = await seedReviews();
-  const alice = env.authenticatedContext('alice').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
   const result = await assertSucceeds(getCountFromServer(strikeQuery(alice, 'alice', now - 30 * 86400000)));
   if (result.data().count !== 1) throw new Error(`STRIKE_COUNT_MISMATCH:${result.data().count}`);
 });
 
 test('reviews positivas, emitidas por el usuario y negativas antiguas no cuentan como strike', async () => {
   const now = await seedReviews();
-  const alice = env.authenticatedContext('alice').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
   const result = await assertSucceeds(getCountFromServer(strikeQuery(alice, 'alice', now - 30 * 86400000)));
   if (result.data().count !== 1) throw new Error(`STRIKE_FILTER_MISMATCH:${result.data().count}`);
 });
 
 test('usuario ajeno no puede agregar las reviews privadas recibidas por otra persona', async () => {
   const now = await seedReviews();
-  const mallory = env.authenticatedContext('mallory').firestore();
+  const mallory = verifiedContext(env, 'mallory').firestore();
   await assertFails(getCountFromServer(strikeQuery(mallory, 'alice', now - 30 * 86400000)));
 });

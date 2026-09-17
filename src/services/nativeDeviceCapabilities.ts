@@ -120,8 +120,8 @@ export async function getNativeApproxPosition(options: { requestPermission?: boo
       if (settled) return;
       settled = true;
       lastLocationFailure = value ? 'none' : failure;
-      if (watchId) await geolocation.clearWatch({ id: watchId }).catch(() => undefined);
       resolve(value);
+      if (watchId) void geolocation.clearWatch({ id: watchId }).catch(() => undefined);
     };
     const timer = window.setTimeout(() => void finish(null, 'timeout'), Math.max(5_000, options.timeoutMs ?? 15_000));
     geolocation.watchPosition(
@@ -139,7 +139,11 @@ export async function getNativeApproxPosition(options: { requestPermission?: boo
           }
         }
       },
-    ).then((id: string) => { watchId = String(id || ''); }).catch((error: unknown) => {
+    ).then((id: string) => {
+      watchId = String(id || '');
+      // Native callbacks can arrive before the promise returns its watch ID.
+      if (settled && watchId) void geolocation.clearWatch({ id: watchId }).catch(() => undefined);
+    }).catch((error: unknown) => {
       window.clearTimeout(timer);
       void finish(null, locationFailure(error));
     });

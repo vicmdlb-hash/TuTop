@@ -46,10 +46,18 @@ export function nativeAppCheckProviderMode() {
   return useStagingDebugProvider() ? 'debug' : 'play-integrity';
 }
 
+function boundedNativeCall<T>(promise: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof window.setTimeout>;
+  const deadline = new Promise<T>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error('APP_CHECK_TIMEOUT')), 5_000);
+  });
+  return Promise.race([promise, deadline]).finally(() => window.clearTimeout(timer));
+}
+
 export async function initializeNativeAppCheck() {
   if (!isNativeFirebaseRuntime()) return null;
   if (initializePromise) return initializePromise;
-  initializePromise = (async () => {
+  initializePromise = boundedNativeCall((async () => {
     const appCheck = plugin('FirebaseAppCheck');
     if (!appCheck?.initialize || !appCheck?.getToken) {
       lastFailure = 'plugin-unavailable';
@@ -71,7 +79,11 @@ export async function initializeNativeAppCheck() {
     }
     lastFailure = 'none';
     return appCheck;
-  })().catch(() => {
+  })()).then((result) => {
+    if (!result) initializePromise = null;
+    return result;
+  }).catch(() => {
+    initializePromise = null;
     lastFailure = 'initialize-failed';
     return null;
   });
@@ -84,7 +96,7 @@ export async function getNativeAppCheckToken(forceRefresh = false): Promise<stri
   const appCheck = await initializeNativeAppCheck();
   if (!appCheck?.getToken) return null;
   try {
-    const result = await appCheck.getToken({ forceRefresh });
+    const result = await boundedNativeCall(appCheck.getToken({ forceRefresh }));
     const token = String(result?.token || '').trim();
     if (!token) {
       lastFailure = 'token-failed';

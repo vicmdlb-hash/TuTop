@@ -1,3 +1,4 @@
+import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -98,7 +99,7 @@ function createListingWithRate(db, listingId, listing, count = 1, windowStart = 
 
 test('moderador institucional sólo puede leer y resolver reportes de su institución', async () => {
   await seedBase();
-  const uatx = env.authenticatedContext('uatxmod').firestore();
+  const uatx = verifiedContext(env, 'uatxmod').firestore();
   await assertSucceeds(getDoc(doc(uatx, 'reports/r-uatx')));
   await assertFails(getDoc(doc(uatx, 'reports/r-buap')));
   await assertFails(getDoc(doc(uatx, 'reports/r-global')));
@@ -108,8 +109,8 @@ test('moderador institucional sólo puede leer y resolver reportes de su institu
 
 test('trust safety y admin legacy conservan alcance global', async () => {
   await seedBase();
-  const global = env.authenticatedContext('global').firestore();
-  const legacy = env.authenticatedContext('legacy').firestore();
+  const global = verifiedContext(env, 'global').firestore();
+  const legacy = verifiedContext(env, 'legacy').firestore();
   await assertSucceeds(getDoc(doc(global, 'reports/r-uatx')));
   await assertSucceeds(getDoc(doc(global, 'reports/r-global')));
   await assertSucceeds(getDoc(doc(legacy, 'reports/r-buap')));
@@ -117,14 +118,14 @@ test('trust safety y admin legacy conservan alcance global', async () => {
 
 test('moderador institucional sólo puede suspender usuarios de su institución', async () => {
   await seedBase();
-  const uatx = env.authenticatedContext('uatxmod').firestore();
+  const uatx = verifiedContext(env, 'uatxmod').firestore();
   await assertSucceeds(setDoc(doc(uatx, 'moderationStatus/uatx-user'), { suspended: true, reason: 'case', updated_at: now(), admin_uid: 'uatxmod' }));
   await assertFails(setDoc(doc(uatx, 'moderationStatus/buap-user'), { suspended: true, reason: 'case', updated_at: now(), admin_uid: 'uatxmod' }));
 });
 
 test('preferencias de notificación son privadas del propietario', async () => {
-  const owner = env.authenticatedContext('alice').firestore();
-  const stranger = env.authenticatedContext('bob').firestore();
+  const owner = verifiedContext(env, 'alice').firestore();
+  const stranger = verifiedContext(env, 'bob').firestore();
   await assertSucceeds(setDoc(doc(owner, 'notification_preferences/alice'), preferences()));
   await assertSucceeds(getDoc(doc(owner, 'notification_preferences/alice')));
   await assertFails(getDoc(doc(stranger, 'notification_preferences/alice')));
@@ -133,9 +134,9 @@ test('preferencias de notificación son privadas del propietario', async () => {
 
 test('solicitud de eliminación la crea el usuario y soporte puede procesarla', async () => {
   await seedBase();
-  const owner = env.authenticatedContext('alice').firestore();
-  const support = env.authenticatedContext('support').firestore();
-  const stranger = env.authenticatedContext('bob').firestore();
+  const owner = verifiedContext(env, 'alice').firestore();
+  const support = verifiedContext(env, 'support').firestore();
+  const stranger = verifiedContext(env, 'bob').firestore();
   await assertSucceeds(setDoc(doc(owner, 'account_deletion_requests/alice'), { uid: 'alice', status: 'pending', requested_at: now(), updated_at: now() }));
   await assertFails(getDoc(doc(stranger, 'account_deletion_requests/alice')));
   await assertSucceeds(getDoc(doc(support, 'account_deletion_requests/alice')));
@@ -144,13 +145,13 @@ test('solicitud de eliminación la crea el usuario y soporte puede procesarla', 
 
 test('reviewer de verificación no obtiene permisos generales de moderación', async () => {
   await seedBase();
-  const verify = env.authenticatedContext('verify').firestore();
+  const verify = verifiedContext(env, 'verify').firestore();
   await assertFails(getDoc(doc(verify, 'reports/r-uatx')));
 });
 
 test('listings_v2 requiere identidad de campus y propietario real', async () => {
   await seedBase();
-  const seller = env.authenticatedContext('uatx-user').firestore();
+  const seller = verifiedContext(env, 'uatx-user').firestore();
   const windowStart = now();
   await assertSucceeds(createListingWithRate(seller, 'l1', canonicalListing(), 1, windowStart));
   await assertFails(createListingWithRate(seller, 'l2', { ...canonicalListing(), institution_id: 'buap', campus_id: 'buap-cu' }, 2, windowStart));
@@ -159,10 +160,10 @@ test('listings_v2 requiere identidad de campus y propietario real', async () => 
 
 test('listing pendiente es privado hasta aprobación y moderación respeta institución', async () => {
   await seedBase();
-  const seller = env.authenticatedContext('uatx-user').firestore();
-  const stranger = env.authenticatedContext('viewer').firestore();
-  const uatxMod = env.authenticatedContext('uatxmod').firestore();
-  const buapMod = env.authenticatedContext('buapmod').firestore();
+  const seller = verifiedContext(env, 'uatx-user').firestore();
+  const stranger = verifiedContext(env, 'viewer').firestore();
+  const uatxMod = verifiedContext(env, 'uatxmod').firestore();
+  const buapMod = verifiedContext(env, 'buapmod').firestore();
   await assertSucceeds(createListingWithRate(seller, 'l1', canonicalListing()));
   await assertSucceeds(getDoc(doc(seller, 'listings_v2/l1')));
   await assertFails(getDoc(doc(stranger, 'listings_v2/l1')));
@@ -174,7 +175,7 @@ test('listing pendiente es privado hasta aprobación y moderación respeta insti
 
 test('reserva no existe como estado canónico de listings_v2', async () => {
   await seedBase();
-  const seller = env.authenticatedContext('uatx-user').firestore();
+  const seller = verifiedContext(env, 'uatx-user').firestore();
   await assertSucceeds(createListingWithRate(seller, 'l1', canonicalListing()));
   await assertFails(updateDoc(doc(seller, 'listings_v2/l1'), { status: 'reserved', updated_at: now() }));
   await assertSucceeds(updateDoc(doc(seller, 'listings_v2/l1'), { status: 'paused', updated_at: now() }));

@@ -1,3 +1,4 @@
+import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -21,7 +22,7 @@ beforeEach(async () => {
 });
 
 test('destinatario puede crear recibo sólo para su notificación', async () => {
-  const alice = env.authenticatedContext('alice').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
   const payload = { owner_uid: 'alice', notification_id: 'n1', read_at: now(), created_at: now(), updated_at: now() };
   await assertSucceeds(setDoc(doc(alice, 'notification_receipts/alice-n1'), payload));
   await assertSucceeds(getDoc(doc(alice, 'notification_receipts/alice-n1')));
@@ -32,7 +33,7 @@ test('otro usuario no puede leer, crear ni modificar el recibo', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'notification_receipts/alice-n1'), { owner_uid: 'alice', notification_id: 'n1', read_at: now(), created_at: now(), updated_at: now() });
   });
-  const bob = env.authenticatedContext('bob').firestore();
+  const bob = verifiedContext(env, 'bob').firestore();
   await assertFails(getDoc(doc(bob, 'notification_receipts/alice-n1')));
   await assertFails(updateDoc(doc(bob, 'notification_receipts/alice-n1'), { read_at: now(), updated_at: now() }));
 });
@@ -41,7 +42,7 @@ test('propietario sólo puede actualizar read_at y updated_at', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'notification_receipts/alice-n1'), { owner_uid: 'alice', notification_id: 'n1', read_at: now(), created_at: now(), updated_at: now() });
   });
-  const alice = env.authenticatedContext('alice').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
   await assertSucceeds(updateDoc(doc(alice, 'notification_receipts/alice-n1'), { read_at: now(), updated_at: now() }));
   await assertFails(updateDoc(doc(alice, 'notification_receipts/alice-n1'), { notification_id: 'other', read_at: now(), updated_at: now() }));
 });
