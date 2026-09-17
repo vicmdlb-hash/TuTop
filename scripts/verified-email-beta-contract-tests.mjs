@@ -39,17 +39,21 @@ assert.match(auth, /accounts:lookup/);
 assert.match(auth, /emailVerified/);
 assert.match(auth, /email_password_verified_beta/);
 
-// Device-A follow-up invariants recovered from the interrupted engineering run:
-// optional phone metadata is normalized/validated before Auth creation, and a
-// VERIFY_EMAIL delivery setup failure cannot orphan marketplace documents.
+// Device-A follow-up invariants: optional phone metadata is normalized/validated
+// before Auth creation. The narrow unverified marketplace bootstrap must commit
+// before the recoverable VERIFY_EMAIL mail-transport attempt; if that transport
+// fails, the safe pending account remains intact and resend can recover it.
 assert.match(auth, /FirebaseRestClient, normalizeMexicoPhone/);
 assert.match(auth, /function normalizeOptionalPhone[\s\S]*normalizeMexicoPhone\(phone\)/);
 const phoneValidationIndex = auth.indexOf('const normalizedPhone = normalizeOptionalPhone(profile.phone)');
 const signUpIndex = auth.indexOf("identityRequest('accounts:signUp'");
 assert.ok(phoneValidationIndex >= 0 && signUpIndex > phoneValidationIndex, 'optional phone must be validated before Firebase Auth sign-up');
-const verifyEmailIndex = auth.indexOf("identityRequest('accounts:sendOobCode'");
 const marketplaceCreateIndex = auth.indexOf('await createMarketplaceAccount(data, email, normalizedProfile)');
-assert.ok(verifyEmailIndex >= 0 && marketplaceCreateIndex > verifyEmailIndex, 'VERIFY_EMAIL must be requested before marketplace account documents are committed');
+const verifyEmailIndex = auth.indexOf("identityRequest('accounts:sendOobCode'");
+assert.ok(marketplaceCreateIndex >= 0 && verifyEmailIndex > marketplaceCreateIndex, 'safe unverified marketplace bootstrap must precede recoverable VERIFY_EMAIL transport');
+assert.match(auth, /let verificationEmailSent = true/);
+assert.match(auth, /verificationEmailSent = false/);
+assert.match(auth, /return \{ uid: data\.localId, email, emailVerified: false, verificationEmailSent \}/);
 assert.match(auth, /if \(normalizedPhone\) privateData\.telefono = normalizedPhone/);
 
 // Native security invariant: verified-email auth must use FirebaseRestClient's
@@ -81,4 +85,4 @@ assert.match(auth, /Promotion invariant: the verified-email Rules\/Auth contract
 assert.doesNotMatch(auth, /registerWithPhonePassword|signInWithPhonePassword/);
 assert.ok(packageJson.scripts['v2:rules:prepare'].includes('harden-verified-email-beta-rules.mjs'));
 
-console.log('✅ Verified email beta auth + phone normalization + rollback ordering + session-race guard + Firestore security + native persistence + atomic cutover contracts PASS');
+console.log('✅ Verified email beta auth + resilient bootstrap/mail recovery + phone normalization + session-race guard + Firestore security + native persistence + atomic cutover contracts PASS');
