@@ -13,5 +13,5 @@ const api={billing:()=>request('https://cloudbilling.googleapis.com/v1/projects/
 const snapshot=JSON.parse(fs.readFileSync('staging-promotion-snapshot/read-only-preflight.json','utf8'));
 const records=[];
 const result=await promoteVerifiedRules({api,project:process.env.TUTOP_FIREBASE_PROJECT_ID,source,expectedRuleset:snapshot.current_rules.ruleset_name,validated:true,record:value=>records.push(value)});
-fs.writeFileSync('staging-promotion-snapshot/compiled-not-released.json',JSON.stringify({...result,rules_sha256:testedHash,regression_pass:73,regression_fail:0,candidate_source_sha:'ab58367944a59b8d86ed6c0554840860ef6eceb7',tool_source_sha:process.env.GITHUB_SHA,shared_staging_rules_mutated:false,spend:0,records},null,2)+'\n');
+fs.writeFileSync('staging-promotion-snapshot/compiled-not-released.json',JSON.stringify({...result,rules_sha256:testedHash,regression_pass:73,regression_fail:0,candidate_source_sha:'9dfbe008b70f60cc88b03961aac1e15455f2aebb',tool_source_sha:process.env.GITHUB_SHA,shared_staging_rules_mutated:false,spend:0,records},null,2)+'\n');
 console.log(JSON.stringify(result));
