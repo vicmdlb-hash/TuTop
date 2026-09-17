@@ -21,6 +21,7 @@ jobs:
           node-version: '22'
       - run: node scripts/verified-email-promotion-snapshot.mjs
       - run: node scripts/verified-email-atomic-cutover-tests.mjs
+      - run: node scripts/verified-email-apply-entrypoint-tests.mjs
       - run: npm run v2:rules:prepare
       - run: node scripts/verified-email-prepare-cutover.mjs
       - run: npm ci
