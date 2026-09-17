@@ -10,12 +10,16 @@ const location = read('src/services/nativeDeviceCapabilities.ts');
 // verification after atomic Firestore account creation, and reject stale async session
 // responses after sign-out or another authentication event.
 assert.match(auth, /normalizeMexicoPhone/);
-const phoneValidationIndex = auth.indexOf('const normalizedPhone = normalizeOptionalPhone(profile.phone)');
-const signUpIndex = auth.indexOf("identityRequest('accounts:signUp'");
+const registerStart = auth.indexOf('async register(');
+const registerEnd = auth.indexOf('\n\n  async login(', registerStart);
+assert.ok(registerStart >= 0 && registerEnd > registerStart, 'register implementation must be locatable');
+const register = auth.slice(registerStart, registerEnd);
+const phoneValidationIndex = register.indexOf('const normalizedPhone = normalizeOptionalPhone(profile.phone)');
+const signUpIndex = register.indexOf("identityRequest('accounts:signUp'");
 assert.ok(phoneValidationIndex >= 0 && signUpIndex > phoneValidationIndex, 'phone validation must precede sign-up');
-const verifyIndex = auth.indexOf("identityRequest('accounts:sendOobCode'");
-const accountCreateIndex = auth.indexOf('await createMarketplaceAccount(data, email, normalizedProfile)');
-assert.ok(verifyIndex >= 0 && verifyIndex > accountCreateIndex, 'successful marketplace commit must precede recoverable verification mail delivery');
+const accountCreateIndex = register.indexOf('await createMarketplaceAccount(data, email, normalizedProfile)');
+const verifyIndex = register.indexOf("identityRequest('accounts:sendOobCode'");
+assert.ok(accountCreateIndex >= 0 && verifyIndex > accountCreateIndex, 'successful marketplace commit must precede recoverable verification mail delivery');
 assert.match(auth, /let authGeneration = 0/);
 assert.match(auth, /AUTH_SESSION_CHANGED/);
 assert.match(auth, /assertSessionUnchanged\(generation, stored\.uid, stored\.refreshToken\)/);
