@@ -5,6 +5,7 @@ const read = (path) => fs.readFileSync(path, 'utf8');
 const auth = read('src/services/verifiedEmailBetaAuth.ts');
 const appCheck = read('src/services/nativeAppCheckToken.ts');
 const location = read('src/services/nativeDeviceCapabilities.ts');
+const notificationRouter = read('src/services/nativeNotificationRouter.ts');
 
 // Auth lifecycle: normalize/validate optional phone before sign-up, request email
 // verification after atomic Firestore account creation, and reject stale async session
@@ -47,4 +48,14 @@ assert.match(location, /if \(settled \|\| cleanupRequested\) clearActiveWatch\(\
 const cleanupIndex = location.indexOf('clearActiveWatch();\n      resolve(value);');
 assert.ok(cleanupIndex >= 0, 'location result must resolve independently of native clearWatch completion');
 
-console.log('✅ post106 runtime recovery contracts PASS: auth lifecycle + bounded App Check + nonblocking location cleanup');
+// Notification cold-start routing: a transaction tap can arrive before chats are
+// hydrated. The first pass may fall back to Inbox, but after the authoritative
+// snapshot hydrates it must retry the exact transaction target without marking the
+// notification read twice.
+assert.match(notificationRouter, /function route\(intent: NativeNotificationIntent, markRead = true\)/);
+assert.match(notificationRouter, /if \(markRead && intent\.notification_id\) state\.markNotificationRead/);
+assert.match(notificationRouter, /const exactTargetResolved = route\(intent\)/);
+assert.match(notificationRouter, /hydrateOnline\(snapshot\)/);
+assert.match(notificationRouter, /if \(!exactTargetResolved && intent\.source === 'action' && intent\.transaction_id\) route\(intent, false\)/);
+
+console.log('✅ post106 runtime recovery contracts PASS: auth lifecycle + bounded App Check + nonblocking location cleanup + cold-start transaction deep-link retry');
