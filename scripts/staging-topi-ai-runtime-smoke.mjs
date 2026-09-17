@@ -214,6 +214,13 @@ try {
   candidateModels();
 
   oauthToken = await firebaseCiAccessToken();
+  // A free-tier model selection alone cannot prove SPEND=0. Fail closed if
+  // billing is enabled or its status cannot be read before any AI request.
+  const billing = await jsonRequest(
+    'https://cloudbilling.googleapis.com/v1/projects/' + EXPECTED_PROJECT + '/billingInfo',
+    { headers: { Authorization: 'Bearer ' + oauthToken } },
+  );
+  if (billing.data?.billingEnabled !== false) fail('SPEND_ZERO_BILLING_DISABLED_REQUIRED');
   const projectResponse = await jsonRequest(
     `https://cloudresourcemanager.googleapis.com/v1/projects/${encodeURIComponent(EXPECTED_PROJECT)}`,
     { headers: { Authorization: `Bearer ${oauthToken}`, 'X-Goog-User-Project': EXPECTED_PROJECT } },

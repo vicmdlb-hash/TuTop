@@ -8,7 +8,7 @@ jobs:
   snapshot:
     if: github.event.repository.private == false
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     env:
       TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
@@ -23,6 +23,11 @@ jobs:
       - run: node scripts/verified-email-atomic-cutover-tests.mjs
       - run: npm run v2:rules:prepare
       - run: node scripts/verified-email-prepare-cutover.mjs
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0
+      - run: node scripts/read-existing-staging-build-config.mjs
+      - name: Real Firebase AI under verified zero-billing guard
+        run: node scripts/staging-topi-ai-runtime-smoke.mjs
       - uses: actions/upload-artifact@v7
         with:
           name: TuTop-staging-read-only-${{ github.sha }}
