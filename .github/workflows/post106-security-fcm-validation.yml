@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/tutop-post106-security-fcm
+      - fix/tutop-post110-fcm-delivery
   workflow_dispatch:
 
 permissions:
@@ -22,7 +23,7 @@ env:
 
 jobs:
   validate:
-    if: github.ref_name == 'feat/tutop-post106-security-fcm'
+    if: github.ref_name == 'feat/tutop-post106-security-fcm' || github.ref_name == 'fix/tutop-post110-fcm-delivery'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -76,6 +77,9 @@ jobs:
       - name: Trusted marketplace notification projection tests
         run: node scripts/marketplace-notification-projection-tests.mjs
 
+      - name: FCM sender payload contract
+        run: node scripts/fcm-sender-contract-tests.mjs
+
       - name: Require managed staging credentials for dry-run
         shell: bash
         run: |
@@ -90,6 +94,12 @@ jobs:
         env:
           TUTOP_ALLOW_V2_MAINTENANCE: staging-v2
         run: node scripts/v2-marketplace-notification-projector.mjs
+
+      - name: Post110 FCM sender staging dry-run only
+        if: github.ref_name == 'fix/tutop-post110-fcm-delivery'
+        env:
+          TUTOP_ALLOW_V2_MAINTENANCE: staging-v2
+        run: node scripts/post110-fcm-sender.mjs
 
       - name: Preserve build106 candidate branch
         shell: bash

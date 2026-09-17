@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   maintain-staging:
-    if: github.ref_name == 'feat/tutop-0.9.1-nearby-topi'
+    if: github.ref_name == 'feat/tutop-0.9.1-nearby-topi' || github.ref_name == 'fix/tutop-post110-fcm-delivery'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -21,6 +21,7 @@ jobs:
       TUTOP_ALLOW_V2_RECONCILE: staging-v2
       TUTOP_ALLOW_V2_MAINTENANCE: staging-v2
       TUTOP_ALLOW_V2_OBSERVABILITY: staging-v2
+      TUTOP_TRUSTED_MODE: ${{ github.ref_name == 'fix/tutop-post110-fcm-delivery' && 'post110_fcm' || 'legacy' }}
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
       TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
@@ -34,28 +35,49 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "feat/tutop-0.9.1-nearby-topi"
-          GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
-            -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
-            --jq '.workflow_runs[0].id // empty')"
-          if [ -z "$GATE_RUN_ID" ]; then
-            echo "DETENIDO: trusted maintenance requiere October exitoso same-SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
-            exit 43
+          if [ "$TUTOP_TRUSTED_MODE" = "legacy" ]; then
+            GATE_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/october-01-validation.yml/runs" \
+              -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
+              --jq '.workflow_runs[0].id // empty')"
+            if [ -z "$GATE_RUN_ID" ]; then
+              echo "DETENIDO: trusted maintenance requiere October exitoso same-SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
+              exit 43
+            fi
+            STAGING_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/staging-v2-smoke.yml/runs" \
+              -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
+              --jq '.workflow_runs[0].id // empty')"
+            if [ -z "$STAGING_RUN_ID" ]; then
+              echo "DETENIDO: trusted maintenance requiere Staging exitoso same-SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
+              exit 44
+            fi
+            {
+              echo "TUTOP_VALIDATED_GATE_RUN_ID=$GATE_RUN_ID"
+              echo "TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA"
+              echo "TUTOP_VALIDATED_STAGING_RUN_ID=$STAGING_RUN_ID"
+              echo "TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA"
+            } >> "$GITHUB_ENV"
+            echo "✅ Trusted maintenance histórica autorizada: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
+            exit 0
           fi
-          STAGING_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/staging-v2-smoke.yml/runs" \
-            -f branch="$GITHUB_REF_NAME" -f head_sha="$GITHUB_SHA" -f status=success -f event=workflow_dispatch -f per_page=10 \
-            --jq '.workflow_runs[0].id // empty')"
-          if [ -z "$STAGING_RUN_ID" ]; then
-            echo "DETENIDO: trusted maintenance requiere Staging exitoso same-SHA ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
-            exit 44
+
+          if [ "$TUTOP_TRUSTED_MODE" = "post110_fcm" ]; then
+            FCM_RUN_ID="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/post106-security-fcm-validation.yml/runs" \
+              -f head_sha="$GITHUB_SHA" -f status=success -f event=push -f per_page=10 \
+              --jq ".workflow_runs[] | select(.head_branch == \"${GITHUB_REF_NAME}\") | .id" | head -n1)"
+            if [ -z "$FCM_RUN_ID" ]; then
+              echo "DETENIDO: post110 FCM requiere validación SUCCESS same-SHA y same-branch ${GITHUB_REF_NAME}@${GITHUB_SHA}." >&2
+              exit 45
+            fi
+            {
+              echo "TUTOP_VALIDATED_FCM_RUN_ID=$FCM_RUN_ID"
+              echo "TUTOP_VALIDATED_FCM_SHA=$GITHUB_SHA"
+            } >> "$GITHUB_ENV"
+            echo "✅ Post110 FCM autorizado por validación same-SHA/same-branch ${FCM_RUN_ID}."
+            exit 0
           fi
-          {
-            echo "TUTOP_VALIDATED_GATE_RUN_ID=$GATE_RUN_ID"
-            echo "TUTOP_VALIDATED_GATE_SHA=$GITHUB_SHA"
-            echo "TUTOP_VALIDATED_STAGING_RUN_ID=$STAGING_RUN_ID"
-            echo "TUTOP_VALIDATED_STAGING_SHA=$GITHUB_SHA"
-          } >> "$GITHUB_ENV"
-          echo "✅ Trusted maintenance 0.9.1 autorizada: gate=${GATE_RUN_ID}, staging=${STAGING_RUN_ID}."
+
+          echo "DETENIDO: modo trusted no autorizado: $TUTOP_TRUSTED_MODE" >&2
+          exit 46
 
       - name: Require managed staging credentials before dependency setup
         shell: bash
@@ -78,13 +100,21 @@ jobs:
         run: npm ci
 
       - name: Expire reservations and repair completed listings
+        if: env.TUTOP_TRUSTED_MODE == 'legacy'
         run: node scripts/gated-trusted-staging-apply.mjs reconcile
 
       - name: Verify reservation lock residues fail closed
+        if: env.TUTOP_TRUSTED_MODE == 'legacy'
         run: node scripts/reservation-lock-residue-audit.mjs
 
       - name: Guard and rebuild trusted reputation purge credentials queue alerts and send push
+        if: env.TUTOP_TRUSTED_MODE == 'legacy'
         run: node scripts/gated-trusted-staging-apply.mjs maintenance
 
       - name: Persist privacy-safe marketplace observability snapshot
+        if: env.TUTOP_TRUSTED_MODE == 'legacy'
         run: node scripts/gated-trusted-staging-apply.mjs observability
+
+      - name: Send post110 FCM only after same-SHA validation
+        if: env.TUTOP_TRUSTED_MODE == 'post110_fcm'
+        run: node scripts/gated-post110-fcm-send.mjs

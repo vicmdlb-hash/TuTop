@@ -5,17 +5,22 @@ const read = (path) => fs.readFileSync(path, 'utf8');
 const auth = read('src/services/verifiedEmailBetaAuth.ts');
 const appCheck = read('src/services/nativeAppCheckToken.ts');
 const location = read('src/services/nativeDeviceCapabilities.ts');
+const notificationRouter = read('src/services/nativeNotificationRouter.ts');
 
 // Auth lifecycle: normalize/validate optional phone before sign-up, request email
 // verification after atomic Firestore account creation, and reject stale async session
 // responses after sign-out or another authentication event.
 assert.match(auth, /normalizeMexicoPhone/);
-const phoneValidationIndex = auth.indexOf('const normalizedPhone = normalizeOptionalPhone(profile.phone)');
-const signUpIndex = auth.indexOf("identityRequest('accounts:signUp'");
+const registerStart = auth.indexOf('async register(');
+const registerEnd = auth.indexOf('\n\n  async login(', registerStart);
+assert.ok(registerStart >= 0 && registerEnd > registerStart, 'register implementation must be locatable');
+const register = auth.slice(registerStart, registerEnd);
+const phoneValidationIndex = register.indexOf('const normalizedPhone = normalizeOptionalPhone(profile.phone)');
+const signUpIndex = register.indexOf("identityRequest('accounts:signUp'");
 assert.ok(phoneValidationIndex >= 0 && signUpIndex > phoneValidationIndex, 'phone validation must precede sign-up');
-const verifyIndex = auth.indexOf("identityRequest('accounts:sendOobCode'");
-const accountCreateIndex = auth.indexOf('await createMarketplaceAccount(data, email, normalizedProfile)');
-assert.ok(verifyIndex >= 0 && verifyIndex > accountCreateIndex, 'successful marketplace commit must precede recoverable verification mail delivery');
+const accountCreateIndex = register.indexOf('await createMarketplaceAccount(data, email, normalizedProfile)');
+const verifyIndex = register.indexOf("identityRequest('accounts:sendOobCode'");
+assert.ok(accountCreateIndex >= 0 && verifyIndex > accountCreateIndex, 'successful marketplace commit must precede recoverable verification mail delivery');
 assert.match(auth, /let authGeneration = 0/);
 assert.match(auth, /AUTH_SESSION_CHANGED/);
 assert.match(auth, /assertSessionUnchanged\(generation, stored\.uid, stored\.refreshToken\)/);
@@ -43,4 +48,14 @@ assert.match(location, /if \(settled \|\| cleanupRequested\) clearActiveWatch\(\
 const cleanupIndex = location.indexOf('clearActiveWatch();\n      resolve(value);');
 assert.ok(cleanupIndex >= 0, 'location result must resolve independently of native clearWatch completion');
 
-console.log('✅ post106 runtime recovery contracts PASS: auth lifecycle + bounded App Check + nonblocking location cleanup');
+// Notification cold-start routing: a transaction tap can arrive before chats are
+// hydrated. The first pass may fall back to Inbox, but after the authoritative
+// snapshot hydrates it must retry the exact transaction target without marking the
+// notification read twice.
+assert.match(notificationRouter, /function route\(intent: NativeNotificationIntent, markRead = true\)/);
+assert.match(notificationRouter, /if \(markRead && intent\.notification_id\) state\.markNotificationRead/);
+assert.match(notificationRouter, /const exactTargetResolved = route\(intent\)/);
+assert.match(notificationRouter, /hydrateOnline\(snapshot\)/);
+assert.match(notificationRouter, /if \(!exactTargetResolved && intent\.source === 'action' && intent\.transaction_id\) route\(intent, false\)/);
+
+console.log('✅ post106 runtime recovery contracts PASS: auth lifecycle + bounded App Check + nonblocking location cleanup + cold-start transaction deep-link retry');

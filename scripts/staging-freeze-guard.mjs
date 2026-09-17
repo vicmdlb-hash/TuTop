@@ -1,8 +1,10 @@
 export const TUTOP_V2_STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 export const TUTOP_V2_FREEZE_BRANCH = 'feat/tutop-0.9.1-nearby-topi';
+export const TUTOP_POST110_FCM_BRANCH = 'fix/tutop-post110-fcm-delivery';
 export const TUTOP_V2_ALLOWED_STAGING_BRANCHES = [
   'feat/tutop-0.9.1-nearby-topi',
   'feat/tutop-0.9.2-hardening',
+  TUTOP_POST110_FCM_BRANCH,
 ];
 
 function stop(message) {
