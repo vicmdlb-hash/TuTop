@@ -16,7 +16,7 @@ jobs:
     env:
       TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
       TUTOP_BETA_VERSION: 0.9.2-beta.0
-      TUTOP_ANDROID_VERSION_CODE: 90203
+      TUTOP_ANDROID_VERSION_CODE: 90204
       TUTOP_AI_APP_CHECK_REQUIRED: 'false'
       VITE_TUTOP_TOPI_REMOTE_ENABLED: 'false'
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
@@ -66,7 +66,7 @@ jobs:
         run: node scripts/package-engineering-candidate.mjs
       - uses: actions/upload-artifact@v7
         with:
-          name: TuTop-build109-${{ github.sha }}
+          name: TuTop-build110-${{ github.sha }}
           path: engineering-candidate/
           retention-days: 30
           if-no-files-found: error

@@ -1,5 +1,5 @@
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
-import { FirebaseRestClient, normalizeMexicoPhone } from './firebaseRest';
+import { FirebaseRestClient, normalizeMexicoPhone, phoneAliasEmail } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
 
 export interface VerifiedEmailBetaProfile {
@@ -158,6 +158,38 @@ async function forceRefreshStoredSession(expectedGeneration = authGeneration) {
   return persistCanonicalSession(next);
 }
 
+async function synchronizePrivateEmail(uid: string, email: string) {
+  const client = sessionClient();
+  const privateIdentity = await client.getDocument<Record<string, unknown>>(`user_private/${uid}`);
+  if (!privateIdentity) throw new Error('PRIVATE_IDENTITY_MISSING');
+  const currentEmail = String(privateIdentity.data.institutional_email || '').trim().toLowerCase();
+  if (currentEmail === email) return;
+  await client.setDocument(`user_private/${uid}`, {
+    institutional_email: email,
+    updated_at: new Date().toISOString(),
+  }, { merge: true });
+}
+
+async function migrateLegacySessionToEmail(session: CompatibleSession, emailInput: string, expectedGeneration: number) {
+  const email = normalizeEmail(emailInput);
+  const data = await identityRequest('accounts:update', {
+    idToken: session.idToken,
+    email,
+    returnSecureToken: true,
+  }) as AuthPayload;
+  if (authGeneration !== expectedGeneration) throw new Error('AUTH_SESSION_CHANGED');
+  if (!data.localId || data.localId !== session.uid) {
+    clearCanonicalSession();
+    throw new Error('AUTH_UID_MISMATCH');
+  }
+  const next = persistCompatibleSession(data, email, false, session.phone);
+  let verificationEmailSent = true;
+  try {
+    await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: next.idToken });
+  } catch { verificationEmailSent = false; }
+  return { uid: data.localId, email, emailVerified: false, verificationEmailSent } satisfies VerifiedEmailBetaStatus;
+}
+
 async function createMarketplaceAccount(payload: AuthPayload, email: string, profile: VerifiedEmailBetaProfile) {
   const config = getFirebaseConfig();
   const normalizedPhone = normalizeOptionalPhone(profile.phone);
@@ -248,6 +280,36 @@ export const verifiedEmailBetaAuth = {
     return this.refreshVerificationStatus();
   },
 
+  async recoverLegacyPhoneAccount(phoneInput: string, password: string, emailInput: string) {
+    const phone = normalizeMexicoPhone(phoneInput);
+    const email = normalizeEmail(emailInput);
+    if (password.length < 8) throw new Error('WEAK_PASSWORD');
+    const aliasEmail = await phoneAliasEmail(phone);
+    const requestGeneration = ++authGeneration;
+    const data = await identityRequest('accounts:signInWithPassword', {
+      email: aliasEmail,
+      password,
+      returnSecureToken: true,
+    }) as AuthPayload;
+    if (authGeneration !== requestGeneration) throw new Error('AUTH_SESSION_CHANGED');
+    const legacySession: CompatibleSession = {
+      uid: data.localId,
+      idToken: data.idToken,
+      refreshToken: data.refreshToken,
+      expiresAt: Date.now() + Number(data.expiresIn || 3600) * 1000,
+      phone,
+    };
+    return migrateLegacySessionToEmail(legacySession, email, requestGeneration);
+  },
+
+  async migrateCurrentLegacySession(emailInput: string) {
+    const stored = readCompatibleSession();
+    if (!stored?.idToken || !stored.uid) throw new Error('AUTH_REQUIRED');
+    if (stored.email || stored.authMode === 'email_password_verified_beta') throw new Error('LEGACY_MIGRATION_NOT_REQUIRED');
+    const requestGeneration = ++authGeneration;
+    return migrateLegacySessionToEmail(stored, emailInput, requestGeneration);
+  },
+
   async resendVerificationEmail() {
     const stored = readCompatibleSession();
     if (!stored?.idToken) throw new Error('AUTH_REQUIRED');
@@ -269,14 +331,17 @@ export const verifiedEmailBetaAuth = {
     const verified = user.emailVerified === true;
     if (verified) stored = await forceRefreshStoredSession(generation);
     assertSessionUnchanged(generation, stored.uid, stored.refreshToken);
+    const normalizedUserEmail = String(user.email).toLowerCase();
+    if (verified) await synchronizePrivateEmail(user.localId, normalizedUserEmail);
+    assertSessionUnchanged(generation, stored.uid, stored.refreshToken);
     const next: CompatibleSession = {
       ...stored,
-      email: String(user.email).toLowerCase(),
+      email: normalizedUserEmail,
       emailVerified: verified,
       authMode: 'email_password_verified_beta',
     };
     persistCanonicalSession(next);
-    return { uid: user.localId, email: String(user.email).toLowerCase(), emailVerified: verified };
+    return { uid: user.localId, email: normalizedUserEmail, emailVerified: verified };
   },
 
   readLocalStatus(): VerifiedEmailBetaStatus | null {
