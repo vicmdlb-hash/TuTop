@@ -61,6 +61,14 @@ const tests = [
    await new Promise(r=>setImmediate(r)); h.auth.signOut(); release();
    await assert.rejects(pending,/AUTH_SESSION_CHANGED|AUTH_REQUIRED/); assert.equal(h.session,null);
  }],
+ ['old lookup cannot overwrite a new login with identical tokens',async()=>{
+   const h=harness(); await h.auth.register('a@example.test','password123',profile);
+   h.lookupVerified=false; let release; h.lookupWait=new Promise(r=>release=r);
+   const pending=h.auth.refreshVerificationStatus();
+   await new Promise(r=>setImmediate(r)); h.auth.signOut(); h.lookupWait=null;
+   await h.auth.login('a@example.test','password123'); release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/); assert.equal(h.session.uid,'u1');
+ }],
  ['successful verification refreshes signed token',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',profile);
    assert.equal((await h.auth.refreshVerificationStatus()).emailVerified,true);

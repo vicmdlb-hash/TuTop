@@ -24,7 +24,7 @@ jobs:
   validate:
     if: github.ref_name == 'feat/tutop-post106-security-fcm'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout exact follow-up SHA
         uses: actions/checkout@v7
@@ -35,8 +35,20 @@ jobs:
           node-version: '22'
           cache: npm
 
+      - name: Java 21 for Firestore emulator
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Install exact dependencies
         run: npm ci
+
+      - name: Install ephemeral Firestore emulator test harness
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+
+      - name: Verify dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
 
       - name: Existing regression suite
         run: npm run check
@@ -46,6 +58,20 @@ jobs:
 
       - name: Verified email beta Auth + Rules contracts
         run: node scripts/verified-email-beta-contract-tests.mjs
+
+      - name: Post106 runtime recovery contracts
+        run: node scripts/post106-runtime-recovery-contract-tests.mjs
+
+      - name: Compose exact post106 Firestore Rules
+        run: npm run v2:rules:prepare
+
+      - name: Post106 verified identity Firestore emulator gate
+        run: >-
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --project tutop-post106-emulator
+          --config firebase.v2.json
+          --only firestore
+          "node --test --test-concurrency=1 tests/firestore.v2.post106-verified-identity.test.mjs"
 
       - name: Trusted marketplace notification projection tests
         run: node scripts/marketplace-notification-projection-tests.mjs

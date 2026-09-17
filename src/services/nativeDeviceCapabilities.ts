@@ -116,36 +116,43 @@ export async function getNativeApproxPosition(options: { requestPermission?: boo
   return new Promise<NativeApproxPosition | null>((resolve) => {
     let settled = false;
     let watchId = '';
-    const finish = async (value: NativeApproxPosition | null, failure: NativeLocationFailure = 'none') => {
+    let cleanupRequested = false;
+    const clearActiveWatch = () => {
+      cleanupRequested = true;
+      if (!watchId) return;
+      const id = watchId;
+      watchId = '';
+      // Cleanup must never delay the location result. Some native plugin versions
+      // resolve clearWatch slowly; the subscription is still cleared best-effort.
+      void geolocation.clearWatch({ id }).catch(() => undefined);
+    };
+    const finish = (value: NativeApproxPosition | null, failure: NativeLocationFailure = 'none') => {
       if (settled) return;
       settled = true;
+      window.clearTimeout(timer);
       lastLocationFailure = value ? 'none' : failure;
+      clearActiveWatch();
       resolve(value);
-      if (watchId) void geolocation.clearWatch({ id: watchId }).catch(() => undefined);
     };
-    const timer = window.setTimeout(() => void finish(null, 'timeout'), Math.max(5_000, options.timeoutMs ?? 15_000));
+    const timer = window.setTimeout(() => finish(null, 'timeout'), Math.max(5_000, options.timeoutMs ?? 15_000));
     geolocation.watchPosition(
       { ...requestOptions, interval: 2_500, minimumUpdateInterval: 1_500 },
       (position: any, error: unknown) => {
         const parsed = positionFromResult(position);
         if (parsed) {
-          window.clearTimeout(timer);
-          void finish(parsed);
+          finish(parsed);
         } else if (error) {
           const failure = locationFailure(error);
-          if (failure === 'permission-denied' || failure === 'services-disabled') {
-            window.clearTimeout(timer);
-            void finish(null, failure);
-          }
+          if (failure === 'permission-denied' || failure === 'services-disabled') finish(null, failure);
         }
       },
     ).then((id: string) => {
       watchId = String(id || '');
-      // Native callbacks can arrive before the promise returns its watch ID.
-      if (settled && watchId) void geolocation.clearWatch({ id: watchId }).catch(() => undefined);
+      // The first callback can arrive before watchPosition resolves its id. If
+      // finish() already requested cleanup, clear as soon as that id becomes known.
+      if (settled || cleanupRequested) clearActiveWatch();
     }).catch((error: unknown) => {
-      window.clearTimeout(timer);
-      void finish(null, locationFailure(error));
+      finish(null, locationFailure(error));
     });
   });
 }

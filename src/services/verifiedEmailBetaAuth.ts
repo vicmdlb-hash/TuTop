@@ -38,10 +38,17 @@ type CompatibleSession = {
   authMode?: 'email_password_verified_beta';
 };
 
+let authGeneration = 0;
+
 function normalizeEmail(value: string) {
   const email = value.trim().toLowerCase();
   if (email.length < 6 || email.length > 180 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('EMAIL_INVALID');
   return email;
+}
+
+function normalizeOptionalPhone(value?: string) {
+  const phone = String(value || '').trim();
+  return phone ? normalizeMexicoPhone(phone) : '';
 }
 
 async function authHeaders() {
@@ -88,16 +95,20 @@ function persistCanonicalSession(session: CompatibleSession) {
 }
 
 function clearCanonicalSession() {
+  // A generation bump invalidates every in-flight lookup/refresh so an async
+  // response that finishes after sign-out cannot resurrect the cleared session.
+  authGeneration += 1;
   sessionClient().signOut();
 }
 
 function persistCompatibleSession(payload: AuthPayload, email: string, emailVerified: boolean, phone = '') {
+  authGeneration += 1;
   const session: CompatibleSession = {
     uid: payload.localId,
     idToken: payload.idToken,
     refreshToken: payload.refreshToken,
     expiresAt: Date.now() + Number(payload.expiresIn || 3600) * 1000,
-    phone: phone.trim(),
+    phone: normalizeOptionalPhone(phone),
     email,
     emailVerified,
     authMode: 'email_password_verified_beta',
@@ -111,32 +122,37 @@ function readCompatibleSession(): CompatibleSession | null {
   return session;
 }
 
-function assertCurrentSession(expected: CompatibleSession) {
+function assertSessionUnchanged(expectedGeneration: number, expectedUid: string, expectedRefreshToken: string) {
   const current = readCompatibleSession();
-  if (!current || current.uid !== expected.uid || current.refreshToken !== expected.refreshToken || current.idToken !== expected.idToken) {
-    throw new Error('AUTH_SESSION_CHANGED');
-  }
+  if (
+    authGeneration !== expectedGeneration
+    || !current
+    || current.uid !== expectedUid
+    || current.refreshToken !== expectedRefreshToken
+  ) throw new Error('AUTH_SESSION_CHANGED');
+  return current;
 }
 
-async function forceRefreshStoredSession() {
+async function forceRefreshStoredSession(expectedGeneration = authGeneration) {
   const config = getFirebaseConfig();
   const stored = readCompatibleSession();
   if (!stored?.refreshToken) throw new Error('AUTH_REQUIRED');
+  const originalRefreshToken = stored.refreshToken;
   const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' };
   const appCheck = await getNativeAppCheckToken(false).catch(() => null);
   if (appCheck) headers['X-Firebase-AppCheck'] = appCheck;
   const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(config.apiKey)}`, {
     method: 'POST',
     headers,
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: stored.refreshToken }),
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: originalRefreshToken }),
   });
   const data = await readJson(response);
-  assertCurrentSession(stored);
+  assertSessionUnchanged(expectedGeneration, stored.uid, originalRefreshToken);
   const next: CompatibleSession = {
     ...stored,
     uid: data.user_id || stored.uid,
     idToken: data.id_token,
-    refreshToken: data.refresh_token || stored.refreshToken,
+    refreshToken: data.refresh_token || originalRefreshToken,
     expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
   };
   return persistCanonicalSession(next);
@@ -144,7 +160,8 @@ async function forceRefreshStoredSession() {
 
 async function createMarketplaceAccount(payload: AuthPayload, email: string, profile: VerifiedEmailBetaProfile) {
   const config = getFirebaseConfig();
-  persistCompatibleSession(payload, email, false, profile.phone || '');
+  const normalizedPhone = normalizeOptionalPhone(profile.phone);
+  persistCompatibleSession(payload, email, false, normalizedPhone);
   // A fresh client must be authenticated immediately in this same process. On
   // Android the native bridge now reads the session written above from
   // sessionStorage while its encrypted Keystore write completes asynchronously.
@@ -175,7 +192,7 @@ async function createMarketplaceAccount(payload: AuthPayload, email: string, pro
     created_at: at,
     updated_at: at,
   };
-  if (profile.phone?.trim()) privateData.telefono = profile.phone.trim();
+  if (normalizedPhone) privateData.telefono = normalizedPhone;
   await client.commit([
     { update: client.encodeDocumentForWrite(`users/${payload.localId}`, userData), currentDocument: { exists: false } },
     { update: client.encodeDocumentForWrite(`user_private/${payload.localId}`, privateData), currentDocument: { exists: false } },
@@ -190,7 +207,13 @@ export const verifiedEmailBetaAuth = {
     if (password.length < 8) throw new Error('WEAK_PASSWORD');
     if (profile.nombre.trim().length < 2) throw new Error('NAME_REQUIRED');
     if (!profile.institution_id || !profile.campus_id) throw new Error('UNIVERSITY_IDENTITY_REQUIRED');
-    const normalizedProfile = { ...profile, phone: profile.phone?.trim() ? normalizeMexicoPhone(profile.phone) : undefined };
+    // Validate/normalize optional phone before creating Firebase Auth so bad
+    // metadata cannot leave behind a newly-created identity.
+    const normalizedPhone = normalizeOptionalPhone(profile.phone);
+    const normalizedProfile: VerifiedEmailBetaProfile = {
+      ...profile,
+      ...(normalizedPhone ? { phone: normalizedPhone } : { phone: undefined }),
+    };
     const data = await identityRequest('accounts:signUp', { email, password, returnSecureToken: true }) as AuthPayload;
     try {
       await createMarketplaceAccount(data, email, normalizedProfile);
@@ -199,9 +222,8 @@ export const verifiedEmailBetaAuth = {
       clearCanonicalSession();
       throw error;
     }
-    // The marketplace commit has succeeded. A mail transport/quota error must
-    // never delete Auth and orphan its profile/wallet. Keep verification pending
-    // and allow the existing resend action to retry.
+    // Mail failure after a successful atomic commit keeps a recoverable pending
+    // identity. Resend retries delivery without deleting its profile or wallet.
     let verificationEmailSent = true;
     try {
       await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: data.idToken });
@@ -230,18 +252,19 @@ export const verifiedEmailBetaAuth = {
   },
 
   async refreshVerificationStatus(): Promise<VerifiedEmailBetaStatus> {
+    const generation = authGeneration;
     let stored = readCompatibleSession();
     if (!stored?.idToken) throw new Error('AUTH_REQUIRED');
     const lookup = await identityRequest('accounts:lookup', { idToken: stored.idToken }).catch(async (error) => {
       if (!/INVALID_ID_TOKEN|TOKEN_EXPIRED/i.test(error instanceof Error ? error.message : String(error))) throw error;
-      stored = await forceRefreshStoredSession();
+      stored = await forceRefreshStoredSession(generation);
       return identityRequest('accounts:lookup', { idToken: stored.idToken });
     });
-    assertCurrentSession(stored);
     const user = lookup?.users?.[0];
     if (!user?.localId || !user?.email) throw new Error('USER_NOT_FOUND');
     const verified = user.emailVerified === true;
-    if (verified) stored = await forceRefreshStoredSession();
+    if (verified) stored = await forceRefreshStoredSession(generation);
+    assertSessionUnchanged(generation, stored.uid, stored.refreshToken);
     const next: CompatibleSession = {
       ...stored,
       email: String(user.email).toLowerCase(),
