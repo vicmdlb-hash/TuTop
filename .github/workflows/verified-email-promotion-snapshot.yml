@@ -20,6 +20,9 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/verified-email-promotion-snapshot.mjs
+      - run: node scripts/verified-email-atomic-cutover-tests.mjs
+      - run: npm run v2:rules:prepare
+      - run: node scripts/verified-email-prepare-cutover.mjs
       - uses: actions/upload-artifact@v7
         with:
           name: TuTop-staging-read-only-${{ github.sha }}
