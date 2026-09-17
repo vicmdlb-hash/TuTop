@@ -47,10 +47,25 @@ assert.match(auth, /function normalizeOptionalPhone[\s\S]*normalizeMexicoPhone\(
 const phoneValidationIndex = auth.indexOf('const normalizedPhone = normalizeOptionalPhone(profile.phone)');
 const signUpIndex = auth.indexOf("identityRequest('accounts:signUp'");
 assert.ok(phoneValidationIndex >= 0 && signUpIndex > phoneValidationIndex, 'optional phone must be validated before Firebase Auth sign-up');
-const verifyEmailIndex = auth.indexOf("identityRequest('accounts:sendOobCode'");
 const marketplaceCreateIndex = auth.indexOf('await createMarketplaceAccount(data, email, normalizedProfile)');
-assert.ok(verifyEmailIndex >= 0 && verifyEmailIndex > marketplaceCreateIndex, 'verification mail delivery follows atomic marketplace commit and cannot undo it');
+const registerVerifyEmailIndex = auth.indexOf("identityRequest('accounts:sendOobCode'", marketplaceCreateIndex);
+assert.ok(registerVerifyEmailIndex >= 0 && registerVerifyEmailIndex > marketplaceCreateIndex, 'registration verification mail delivery follows atomic marketplace commit and cannot undo it');
 assert.match(auth, /if \(normalizedPhone\) privateData\.telefono = normalizedPhone/);
+
+// Legacy signed-out recovery must preserve the existing Firebase UID. It may
+// authenticate the historical phone-derived alias with the user's existing
+// password, but it must never sign up a second account or claim phone ownership.
+assert.match(auth, /async recoverLegacyPhoneAccount\(/);
+assert.match(auth, /const aliasEmail = await phoneAliasEmail\(phone\)/);
+assert.match(auth, /accounts:update/);
+assert.match(auth, /if \(!data\.localId \|\| data\.localId !== session\.uid\)/);
+assert.match(auth, /AUTH_UID_MISMATCH/);
+const legacyStart = auth.indexOf('async recoverLegacyPhoneAccount(');
+const legacyEnd = auth.indexOf('\n  async migrateCurrentLegacySession', legacyStart);
+const legacySection = auth.slice(legacyStart, legacyEnd);
+assert.match(legacySection, /accounts:signInWithPassword/);
+assert.doesNotMatch(legacySection, /accounts:signUp|accounts:delete/);
+assert.match(auth, /async function synchronizePrivateEmail/);
 
 // Native security invariant: verified-email auth must use FirebaseRestClient's
 // canonical persistence boundary. On Android nativeSecureSessionBridge intercepts
@@ -75,10 +90,11 @@ const finalPersistIndex = auth.lastIndexOf('persistCanonicalSession(next)');
 assert.ok(sessionGuardIndex >= 0 && finalPersistIndex > sessionGuardIndex, 'verification refresh must re-check session generation before persisting');
 
 // Promotion safety invariant: app and Rules must cut over together. The follow-up
-// code deliberately has no fallback to phone-alias registration when the new
-// user_private auth_mode is rejected by old build106 Rules.
+// code deliberately has no fallback to legacy phone registration when the new
+// user_private auth_mode is rejected by old build106 Rules. The explicit legacy
+// recovery path is migration-only and reuses the existing Firebase UID.
 assert.match(auth, /Promotion invariant: the verified-email Rules\/Auth contract must be cut over/);
 assert.doesNotMatch(auth, /registerWithPhonePassword|signInWithPhonePassword/);
 assert.ok(packageJson.scripts['v2:rules:prepare'].includes('harden-verified-email-beta-rules.mjs'));
 
-console.log('✅ Verified email beta auth + phone normalization + recoverable mail delivery + session-race guard + Firestore security + native persistence + atomic cutover contracts PASS');
+console.log('✅ Verified email beta auth + legacy same-UID recovery + phone normalization + recoverable mail delivery + session-race guard + Firestore security + native persistence + atomic cutover contracts PASS');
