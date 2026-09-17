@@ -8,11 +8,11 @@ const bytes=fs.readFileSync(apk);
 const hash=crypto.createHash('sha256').update(bytes).digest('hex');
 const directory='engineering-candidate';
 fs.mkdirSync(directory,{recursive:true});
-const name='TuTop-build108-'+sha.slice(0,12)+'-engineering-staging.apk';
+const name='TuTop-build109-'+sha.slice(0,12)+'-engineering-staging.apk';
 fs.copyFileSync(apk,directory+'/'+name);
 fs.writeFileSync(directory+'/'+name+'.sha256',hash+'  '+name+'\n');
 const manifest={
- candidate:'build108-engineering',source_sha:sha,apk:name,apk_sha256:hash,android_version_code:90202,
+ candidate:'build109-engineering',source_sha:sha,apk:name,apk_sha256:hash,android_version_code:90203,
  base_physical_sha:'b54b03cb01d1b3ec42dd1458ad3e1bb3bd22043c',
  post106_base_sha:'6402cfd90e2559ce2e83e285390bad385d96ed27',
  superseded_engineering_sha:'3411f20bfb191ff79935a2e44dbd55c0d53b5d5b',

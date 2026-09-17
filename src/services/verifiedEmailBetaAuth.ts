@@ -233,10 +233,14 @@ export const verifiedEmailBetaAuth = {
 
   async login(emailInput: string, password: string) {
     const email = normalizeEmail(emailInput);
+    const requestGeneration = ++authGeneration;
     const data = await identityRequest('accounts:signInWithPassword', { email, password, returnSecureToken: true }) as AuthPayload;
-    persistCompatibleSession(data, email, false);
+    if (authGeneration !== requestGeneration) throw new Error('AUTH_SESSION_CHANGED');
+    const ownSession = persistCompatibleSession(data, email, false);
+    const ownGeneration = authGeneration;
     const client = sessionClient();
     const profile = await client.getDocument(`users/${data.localId}`);
+    assertSessionUnchanged(ownGeneration, ownSession.uid, ownSession.refreshToken);
     if (!profile) {
       clearCanonicalSession();
       throw new Error('PROFILE_MISSING');

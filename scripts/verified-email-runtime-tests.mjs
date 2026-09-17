@@ -5,14 +5,14 @@ const source = fs.readFileSync(process.argv[2] || 'src/services/verifiedEmailBet
 function harness() {
   let session = null;
   const calls = [];
-  let commitError, sendError, lookupWait, lookupVerified=true;
+  let commitError, sendError, lookupWait, signInWait, profileWait, lookupVerified=true;
   class Client {
     get currentSession() { return session && {...session}; }
     persistSession(value) { session = value; }
     signOut() { session = null; }
     encodeDocumentForWrite(path, data) { return {path,data}; }
     async commit(writes) { calls.push({kind:'commit',writes}); if(commitError) throw new Error(commitError); }
-    async getDocument() { return {data:{uid:'u1'}}; }
+    async getDocument() { if(profileWait) await profileWait; return {data:{uid:'u1'}}; }
     async getIdToken() { return session.idToken; }
   }
   const normalizeMexicoPhone = (input) => {
@@ -25,6 +25,7 @@ function harness() {
     const body = options.body instanceof URLSearchParams ? Object.fromEntries(options.body) : JSON.parse(options.body);
     calls.push({kind:url,body});
     if(url.includes('accounts:lookup') && lookupWait) await lookupWait;
+    if(url.includes('accounts:signInWithPassword') && signInWait) await signInWait;
     if(url.includes('sendOobCode') && sendError) throw new Error(sendError);
     let data = url.includes('accounts:lookup') ? {users:[{localId:'u1',email:'a@example.test',emailVerified:lookupVerified}]} :
       url.includes('securetoken') ? {user_id:'u1',id_token:'renewed',refresh_token:'r2',expires_in:'3600'} :
@@ -33,7 +34,7 @@ function harness() {
   };
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
   const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','fetch',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,fetch);
-  return {auth,calls,get session(){return session;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;}};
+  return {auth,calls,get session(){return session;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set signInWait(v){signInWait=v;},set profileWait(v){profileWait=v;}};
 }
 const profile={nombre:'Tester',facultad:'Campus',institution_id:'inst',institution_name:'Institution',campus_id:'camp',campus_name:'Campus'};
 const tests = [
@@ -68,6 +69,16 @@ const tests = [
    await new Promise(r=>setImmediate(r)); h.auth.signOut(); h.lookupWait=null;
    await h.auth.login('a@example.test','password123'); release();
    await assert.rejects(pending,/AUTH_SESSION_CHANGED/); assert.equal(h.session.uid,'u1');
+ }],
+ ['sign-in response after sign-out cannot restore session',async()=>{
+   const h=harness(); let release; h.signInWait=new Promise(r=>release=r);
+   const pending=h.auth.login('a@example.test','password123'); await new Promise(r=>setImmediate(r));
+   h.auth.signOut(); release(); await assert.rejects(pending,/AUTH_SESSION_CHANGED/); assert.equal(h.session,null);
+ }],
+ ['profile response after sign-out cannot restore session',async()=>{
+   const h=harness(); let release; h.profileWait=new Promise(r=>release=r);
+   const pending=h.auth.login('a@example.test','password123'); await new Promise(r=>setImmediate(r));
+   h.auth.signOut(); release(); await assert.rejects(pending,/AUTH_SESSION_CHANGED/); assert.equal(h.session,null);
  }],
  ['successful verification refreshes signed token',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',profile);
