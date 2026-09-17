@@ -216,28 +216,18 @@ export const verifiedEmailBetaAuth = {
     };
     const data = await identityRequest('accounts:signUp', { email, password, returnSecureToken: true }) as AuthPayload;
     try {
-      // Bootstrap the unverified marketplace account atomically first. Security
-      // Rules allow only this narrow bootstrap before email verification and keep
-      // publication/chat/offer/transaction writes fail-closed.
       await createMarketplaceAccount(data, email, normalizedProfile);
     } catch (error) {
-      // A definite profile/bootstrap failure must not leave a newly-created Auth
-      // identity without its canonical marketplace documents.
       try { await identityRequest('accounts:delete', { idToken: data.idToken }); } catch { /* best effort rollback */ }
       clearCanonicalSession();
       throw error;
     }
-
-    // Email transport/quota is recoverable. Once the atomic marketplace bootstrap
-    // succeeded, never delete Auth/profile/wallet merely because the verification
-    // message could not be sent at this instant; keep verification pending and let
-    // the existing resend action recover without account recreation.
+    // Mail failure after a successful atomic commit keeps a recoverable pending
+    // identity. Resend retries delivery without deleting its profile or wallet.
     let verificationEmailSent = true;
     try {
       await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: data.idToken });
-    } catch {
-      verificationEmailSent = false;
-    }
+    } catch { verificationEmailSent = false; }
     return { uid: data.localId, email, emailVerified: false, verificationEmailSent } satisfies VerifiedEmailBetaStatus;
   },
 

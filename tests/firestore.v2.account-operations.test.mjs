@@ -1,3 +1,4 @@
+import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -22,8 +23,8 @@ beforeEach(async () => {
 });
 
 test('owner crea solicitud pending y terceros no pueden leerla ni modificarla', async () => {
-  const owner = env.authenticatedContext('alice').firestore();
-  const stranger = env.authenticatedContext('bob').firestore();
+  const owner = verifiedContext(env, 'alice').firestore();
+  const stranger = verifiedContext(env, 'bob').firestore();
   const ref = doc(owner, 'account_deletion_requests/alice');
   await assertSucceeds(setDoc(ref, { uid: 'alice', status: 'pending', requested_at: now(), updated_at: now() }));
   await assertSucceeds(getDoc(ref));
@@ -35,7 +36,7 @@ test('support procesa sólo transiciones forward y no reabre solicitudes cerrada
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'account_deletion_requests/alice'), { uid: 'alice', status: 'pending', requested_at: now(), updated_at: now() });
   });
-  const support = env.authenticatedContext('support').firestore();
+  const support = verifiedContext(env, 'support').firestore();
   const ref = doc(support, 'account_deletion_requests/alice');
   await assertSucceeds(getDoc(ref));
   await assertSucceeds(updateDoc(ref, { status: 'processing', updated_at: now() }));
@@ -49,7 +50,7 @@ test('support puede rechazar pending pero no alterar identidad ni fecha original
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'account_deletion_requests/alice'), { uid: 'alice', status: 'pending', requested_at: now(), updated_at: now() });
   });
-  const support = env.authenticatedContext('support').firestore();
+  const support = verifiedContext(env, 'support').firestore();
   const ref = doc(support, 'account_deletion_requests/alice');
   await assertFails(updateDoc(ref, { uid: 'mallory', status: 'processing', updated_at: now() }));
   await assertFails(updateDoc(ref, { requested_at: now(), status: 'processing', updated_at: now() }));
@@ -57,7 +58,7 @@ test('support puede rechazar pending pero no alterar identidad ni fecha original
 });
 
 test('support audita sólo operaciones de eliminación de cuenta', async () => {
-  const support = env.authenticatedContext('support').firestore();
+  const support = verifiedContext(env, 'support').firestore();
   await assertSucceeds(setDoc(doc(support, 'audit_log/delete-alice'), {
     admin_uid: 'support', actor_type: 'admin', role: 'support', action: 'account_deletion_processing',
     target_type: 'account_deletion_request', target_id: 'alice', created_at: now(),
@@ -73,7 +74,7 @@ test('moderator general no hereda permisos de privacidad de soporte', async () =
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'account_deletion_requests/alice'), { uid: 'alice', status: 'pending', requested_at: now(), updated_at: now() });
   });
-  const moderator = env.authenticatedContext('moderator').firestore();
+  const moderator = verifiedContext(env, 'moderator').firestore();
   await assertFails(getDoc(doc(moderator, 'account_deletion_requests/alice')));
   await assertFails(updateDoc(doc(moderator, 'account_deletion_requests/alice'), { status: 'processing', updated_at: now() }));
 });

@@ -1,3 +1,4 @@
+import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -119,7 +120,7 @@ function completionPhaseOne(db, { sellOut = true, completeTx = true, actor = 'se
 
 test('sólo una reservation lock puede existir por listing', async () => {
   await seed();
-  const seller = env.authenticatedContext('seller').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
   await assertSucceeds(reserveBatch(seller, 'a', 'buyer-a', 400).commit());
   await assertFails(reserveBatch(seller, 'b', 'buyer-b', 410).commit());
   const lock = await getDoc(doc(seller, 'listing_reservation_locks/listing-1'));
@@ -128,8 +129,8 @@ test('sólo una reservation lock puede existir por listing', async () => {
 
 test('cancelación atómica libera lock y permite una nueva reserva', async () => {
   await seed();
-  const seller = env.authenticatedContext('seller').firestore();
-  const buyerA = env.authenticatedContext('buyer-a').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
+  const buyerA = verifiedContext(env, 'buyer-a').firestore();
   await assertSucceeds(reserveBatch(seller, 'a', 'buyer-a', 400).commit());
 
   const cancel = writeBatch(buyerA);
@@ -145,8 +146,8 @@ test('cancelación atómica libera lock y permite una nueva reserva', async () =
 
 test('cancelar sin borrar lock queda bloqueado', async () => {
   await seed();
-  const seller = env.authenticatedContext('seller').firestore();
-  const buyerA = env.authenticatedContext('buyer-a').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
+  const buyerA = verifiedContext(env, 'buyer-a').firestore();
   await assertSucceeds(reserveBatch(seller, 'a', 'buyer-a', 400).commit());
   const at = now();
   const bad = writeBatch(buyerA);
@@ -158,7 +159,7 @@ test('cancelar sin borrar lock queda bloqueado', async () => {
 
 test('vendedor-segundo: tx completed + listing sold_out es atómica y conserva lock', async () => {
   await seedCompletionState({ preconfirmed: 'buyer' });
-  const seller = env.authenticatedContext('seller').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
   await assertSucceeds(completionPhaseOne(seller, { actor: 'seller' }).commit());
   const lock = await getDoc(doc(seller, 'listing_reservation_locks/listing-1'));
   if (!lock.exists()) throw new Error('lock debe sobrevivir hasta cleanup trusted');
@@ -166,8 +167,8 @@ test('vendedor-segundo: tx completed + listing sold_out es atómica y conserva l
 
 test('comprador-segundo: tx completed también exige y permite sold_out atómico', async () => {
   await seedCompletionState({ preconfirmed: 'seller' });
-  const buyer = env.authenticatedContext('buyer-a').firestore();
-  const seller = env.authenticatedContext('seller').firestore();
+  const buyer = verifiedContext(env, 'buyer-a').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
   await assertSucceeds(completionPhaseOne(buyer, { actor: 'buyer' }).commit());
   const listing = await getDoc(doc(seller, 'listings_v2/listing-1'));
   if (listing.data()?.status !== 'sold_out') throw new Error('buyer-second completion must atomically close listing');
@@ -175,37 +176,37 @@ test('comprador-segundo: tx completed también exige y permite sold_out atómico
 
 test('comprador-segundo no puede completar tx sin sold_out', async () => {
   await seedCompletionState({ preconfirmed: 'seller' });
-  const buyer = env.authenticatedContext('buyer-a').firestore();
+  const buyer = verifiedContext(env, 'buyer-a').firestore();
   await assertFails(completionPhaseOne(buyer, { actor: 'buyer', sellOut: false }).commit());
 });
 
 test('comprador no puede marcar sold_out sin completar su transacción', async () => {
   await seedCompletionState({ preconfirmed: 'seller' });
-  const buyer = env.authenticatedContext('buyer-a').firestore();
+  const buyer = verifiedContext(env, 'buyer-a').firestore();
   await assertFails(completionPhaseOne(buyer, { actor: 'buyer', completeTx: false, sellOut: true }).commit());
 });
 
 test('cliente no puede borrar lock completado aunque listing ya esté sold_out', async () => {
   await seedCompletionState({ txStatus: 'completed', listingStatus: 'sold_out' });
-  const seller = env.authenticatedContext('seller').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
   await assertFails(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
 });
 
 test('completion vendedor-segundo sin sold_out queda bloqueada por regla de transacción', async () => {
   await seedCompletionState({ preconfirmed: 'buyer' });
-  const seller = env.authenticatedContext('seller').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
   await assertFails(completionPhaseOne(seller, { actor: 'seller', sellOut: false, completeTx: true }).commit());
 });
 
 test('sold_out del seller sin completar tx no autoriza liberar lock', async () => {
   await seedCompletionState({ preconfirmed: 'buyer' });
-  const seller = env.authenticatedContext('seller').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
   await assertSucceeds(completionPhaseOne(seller, { actor: 'seller', sellOut: true, completeTx: false }).commit());
   await assertFails(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
 });
 
 test('lock histórico completed no se libera desde cliente aunque listing siga active', async () => {
   await seedCompletionState({ txStatus: 'completed', listingStatus: 'active' });
-  const seller = env.authenticatedContext('seller').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
   await assertFails(deleteDoc(doc(seller, 'listing_reservation_locks/listing-1')));
 });

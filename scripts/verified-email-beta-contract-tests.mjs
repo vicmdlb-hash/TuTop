@@ -41,7 +41,7 @@ assert.match(auth, /email_password_verified_beta/);
 
 // Device-A follow-up invariants recovered from the interrupted engineering run:
 // optional phone metadata is normalized/validated before Auth creation, and a
-// VERIFY_EMAIL delivery setup failure cannot orphan marketplace documents.
+// VERIFY_EMAIL delivery failure keeps the committed account pending for resend.
 assert.match(auth, /FirebaseRestClient, normalizeMexicoPhone/);
 assert.match(auth, /function normalizeOptionalPhone[\s\S]*normalizeMexicoPhone\(phone\)/);
 const phoneValidationIndex = auth.indexOf('const normalizedPhone = normalizeOptionalPhone(profile.phone)');
@@ -49,7 +49,7 @@ const signUpIndex = auth.indexOf("identityRequest('accounts:signUp'");
 assert.ok(phoneValidationIndex >= 0 && signUpIndex > phoneValidationIndex, 'optional phone must be validated before Firebase Auth sign-up');
 const verifyEmailIndex = auth.indexOf("identityRequest('accounts:sendOobCode'");
 const marketplaceCreateIndex = auth.indexOf('await createMarketplaceAccount(data, email, normalizedProfile)');
-assert.ok(verifyEmailIndex >= 0 && marketplaceCreateIndex > verifyEmailIndex, 'VERIFY_EMAIL must be requested before marketplace account documents are committed');
+assert.ok(verifyEmailIndex >= 0 && verifyEmailIndex > marketplaceCreateIndex, 'verification mail delivery follows atomic marketplace commit and cannot undo it');
 assert.match(auth, /if \(normalizedPhone\) privateData\.telefono = normalizedPhone/);
 
 // Native security invariant: verified-email auth must use FirebaseRestClient's
@@ -81,4 +81,4 @@ assert.match(auth, /Promotion invariant: the verified-email Rules\/Auth contract
 assert.doesNotMatch(auth, /registerWithPhonePassword|signInWithPhonePassword/);
 assert.ok(packageJson.scripts['v2:rules:prepare'].includes('harden-verified-email-beta-rules.mjs'));
 
-console.log('✅ Verified email beta auth + phone normalization + rollback ordering + session-race guard + Firestore security + native persistence + atomic cutover contracts PASS');
+console.log('✅ Verified email beta auth + phone normalization + recoverable mail delivery + session-race guard + Firestore security + native persistence + atomic cutover contracts PASS');

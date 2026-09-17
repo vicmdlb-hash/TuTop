@@ -1,3 +1,4 @@
+import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -37,39 +38,39 @@ async function seedAdmin() {
 }
 
 test('usuario autenticado no puede escribir su propia reputación', async () => {
-  const seller = env.authenticatedContext('seller').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
   await assertFails(setDoc(doc(seller, 'reputation/seller'), reputation));
 });
 
 test('tercero tampoco puede fabricar reputación para otra cuenta', async () => {
-  const stranger = env.authenticatedContext('stranger').firestore();
+  const stranger = verifiedContext(env, 'stranger').firestore();
   await assertFails(setDoc(doc(stranger, 'reputation/seller'), reputation));
 });
 
 test('admin activo puede persistir un snapshot trusted y usuarios pueden leerlo', async () => {
   await seedAdmin();
-  const admin = env.authenticatedContext('admin').firestore();
-  const seller = env.authenticatedContext('seller').firestore();
+  const admin = verifiedContext(env, 'admin').firestore();
+  const seller = verifiedContext(env, 'seller').firestore();
   await assertSucceeds(setDoc(doc(admin, 'reputation/seller'), reputation));
   await assertSucceeds(getDoc(doc(seller, 'reputation/seller')));
 });
 
 test('admin no puede escribir subject_uid de otra cuenta', async () => {
   await seedAdmin();
-  const admin = env.authenticatedContext('admin').firestore();
+  const admin = verifiedContext(env, 'admin').firestore();
   await assertFails(setDoc(doc(admin, 'reputation/seller'), { ...reputation, subject_uid: 'other' }));
 });
 
 test('admin no puede escribir campos arbitrarios ni contadores negativos', async () => {
   await seedAdmin();
-  const admin = env.authenticatedContext('admin').firestore();
+  const admin = verifiedContext(env, 'admin').firestore();
   await assertFails(setDoc(doc(admin, 'reputation/seller'), { ...reputation, fabricated_score: 999 }));
   await assertFails(setDoc(doc(admin, 'reputation/seller'), { ...reputation, reports_upheld: -1 }));
 });
 
 test('admin no puede romper consistencia de transacciones o reviews', async () => {
   await seedAdmin();
-  const admin = env.authenticatedContext('admin').firestore();
+  const admin = verifiedContext(env, 'admin').firestore();
   await assertFails(setDoc(doc(admin, 'reputation/seller'), { ...reputation, completed_transactions: 99 }));
   await assertFails(setDoc(doc(admin, 'reputation/seller'), { ...reputation, seller_positive_count: 3 }));
   await assertFails(setDoc(doc(admin, 'reputation/seller'), { ...reputation, seller_positive_rate: 101 }));
@@ -77,7 +78,7 @@ test('admin no puede romper consistencia de transacciones o reviews', async () =
 
 test('tasas null sólo son válidas sin reviews', async () => {
   await seedAdmin();
-  const admin = env.authenticatedContext('admin').firestore();
+  const admin = verifiedContext(env, 'admin').firestore();
   await assertFails(setDoc(doc(admin, 'reputation/seller'), { ...reputation, seller_positive_rate: null }));
   await assertSucceeds(setDoc(doc(admin, 'reputation/empty'), {
     subject_uid: 'empty',

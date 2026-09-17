@@ -1,3 +1,4 @@
+import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -36,7 +37,7 @@ async function seedChat() {
 
 test('participante obtiene COUNT exacto de mensajes posteriores a read_at', async () => {
   const base = await seedChat();
-  const alice = env.authenticatedContext('alice').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
   const q = query(collection(alice, 'chats/chat-unread/messages'), where('created_at', '>', ts(base)));
   const result = await assertSucceeds(getCountFromServer(q));
   if (result.data().count !== 3) throw new Error(`UNREAD_COUNT_MISMATCH:${result.data().count}`);
@@ -44,22 +45,22 @@ test('participante obtiene COUNT exacto de mensajes posteriores a read_at', asyn
 
 test('usuario ajeno no puede ejecutar COUNT sobre mensajes del chat', async () => {
   const base = await seedChat();
-  const eve = env.authenticatedContext('eve').firestore();
+  const eve = verifiedContext(env, 'eve').firestore();
   const q = query(collection(eve, 'chats/chat-unread/messages'), where('created_at', '>', ts(base)));
   await assertFails(getCountFromServer(q));
 });
 
 test('read-marker sólo puede actualizarlo el participante propietario', async () => {
   const base = await seedChat();
-  const alice = env.authenticatedContext('alice').firestore();
-  const bob = env.authenticatedContext('bob').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
+  const bob = verifiedContext(env, 'bob').firestore();
   await assertSucceeds(updateDoc(doc(alice, 'chats/chat-unread/reads/alice'), { user_id: 'alice', read_at: ts(base + 35_000) }));
   await assertFails(updateDoc(doc(bob, 'chats/chat-unread/reads/alice'), { user_id: 'alice', read_at: ts(base + 36_000) }));
 });
 
 test('COUNT después de read-marker actualizado refleja sólo mensajes posteriores', async () => {
   const base = await seedChat();
-  const alice = env.authenticatedContext('alice').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
   await assertSucceeds(updateDoc(doc(alice, 'chats/chat-unread/reads/alice'), { user_id: 'alice', read_at: ts(base + 20_000) }));
   const q = query(collection(alice, 'chats/chat-unread/messages'), where('created_at', '>', ts(base + 20_000)));
   const result = await assertSucceeds(getCountFromServer(q));

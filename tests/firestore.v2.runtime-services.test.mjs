@@ -1,3 +1,4 @@
+import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -42,8 +43,8 @@ async function seedCanonicalTransaction(id, status = 'reserved', meetupAt = unde
 }
 
 test('device token sólo lo controla su propietario', async () => {
-  const alice = env.authenticatedContext('alice').firestore();
-  const bob = env.authenticatedContext('bob').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
+  const bob = verifiedContext(env, 'bob').firestore();
   const payload = {
     owner_uid: 'alice', token: 'fcm-token-value-that-is-long-enough-123456789', platform: 'android', app_version: '0.8.5-beta', active: true, created_at: now(), updated_at: now(),
   };
@@ -61,8 +62,8 @@ test('notification outbox es legible sólo por destinatario y server-only para e
       recipient_uid: 'alice', kind: 'saved_search_match', title: 'Encontramos algo', body: 'Calculadora', status: 'pending', created_at: now(), updated_at: now(),
     });
   });
-  const alice = env.authenticatedContext('alice').firestore();
-  const bob = env.authenticatedContext('bob').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
+  const bob = verifiedContext(env, 'bob').firestore();
   await assertSucceeds(getDoc(doc(alice, 'notification_outbox/n1')));
   await assertFails(getDoc(doc(bob, 'notification_outbox/n1')));
   await assertFails(updateDoc(doc(alice, 'notification_outbox/n1'), { status: 'sent' }));
@@ -70,7 +71,7 @@ test('notification outbox es legible sólo por destinatario y server-only para e
 });
 
 test('acción protegida exige bucket atómico y reportes se limitan a 10 por hora', async () => {
-  const alice = env.authenticatedContext('alice').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
   const windowStart = now();
   const report = (index) => ({
     created_by: 'alice', target_type: 'user', target_id: 'bob', reason: `Reporte válido ${index}`, status: 'open', priority: 'normal', created_at: now(), updated_at: now(),
@@ -92,7 +93,7 @@ test('acción protegida exige bucket atómico y reportes se limitan a 10 por hor
 });
 
 test('bucket horario no puede reducirse ni reiniciarse antes de una hora', async () => {
-  const alice = env.authenticatedContext('alice').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
   const windowStart = now();
   await assertSucceeds(setDoc(doc(alice, 'rate_limits/alice-message_create'), ratePayload('alice', 'message_create', 1, windowStart)));
   await assertSucceeds(setDoc(doc(alice, 'rate_limits/alice-message_create'), ratePayload('alice', 'message_create', 2, windowStart)));
@@ -101,7 +102,7 @@ test('bucket horario no puede reducirse ni reiniciarse antes de una hora', async
 
 test('cancelación unilateral atribuye responsabilidad al actor real', async () => {
   await seedCanonicalTransaction('tx-cancel');
-  const alice = env.authenticatedContext('alice').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
   await assertFails(updateDoc(doc(alice, 'transactions_v2/tx-cancel'), {
     status: 'cancelled', outcome_code: 'seller_cancelled', outcome_actor_id: 'bob', outcome_recorded_at: now(), updated_at: now(),
   }));
@@ -112,8 +113,8 @@ test('cancelación unilateral atribuye responsabilidad al actor real', async () 
 
 test('acuerdo mutuo sólo acepta solicitudes auténticas y de la institución del listing', async () => {
   await seedCanonicalTransaction('tx-mutual');
-  const alice = env.authenticatedContext('alice').firestore();
-  const bob = env.authenticatedContext('bob').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
+  const bob = verifiedContext(env, 'bob').firestore();
   const base = { transaction_id: 'tx-mutual', kind: 'mutual_cancel', institution_id: 'uatx', status: 'open', created_at: now(), updated_at: now() };
   await assertSucceeds(setDoc(doc(alice, 'transaction_cancellation_requests/tx-mutual-alice'), { ...base, requester_uid: 'alice' }));
   await assertSucceeds(setDoc(doc(bob, 'transaction_cancellation_requests/tx-mutual-bob'), { ...base, requester_uid: 'bob' }));
@@ -126,7 +127,7 @@ test('no-show sólo puede reclamarse contra la contraparte después del encuentr
   const meetupFuture = Timestamp.fromMillis(Date.now() + 60 * 60_000);
   await seedCanonicalTransaction('tx-past', 'meetup_scheduled', meetupPast);
   await seedCanonicalTransaction('tx-future', 'meetup_scheduled', meetupFuture);
-  const alice = env.authenticatedContext('alice').firestore();
+  const alice = verifiedContext(env, 'alice').firestore();
   const windowStart = now();
   const claim = {
     transaction_id: 'tx-past', claimant_uid: 'alice', accused_uid: 'bob', kind: 'seller_no_show', institution_id: 'uatx', reason: 'Esperé más de 30 minutos', status: 'open', created_at: now(), updated_at: now(),

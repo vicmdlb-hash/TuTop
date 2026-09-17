@@ -8,7 +8,7 @@ const octoberWorkflow = fs.readFileSync('.github/workflows/october-01-validation
 assert.match(fixture, /getCountFromServer/);
 assert.match(fixture, /UNREAD_COUNT_MISMATCH/);
 assert.match(fixture, /UNREAD_AFTER_MARKER_MISMATCH/);
-assert.match(fixture, /authenticatedContext\('eve'\)/);
+assert.match(fixture, /verifiedContext\(env, 'eve'\)/);
 assert.match(fixture, /assertFails\(getCountFromServer\(q\)\)/);
 assert.match(fixture, /reads\/alice/);
 assert.match(fixture, /assertFails\(updateDoc\(doc\(bob/);
