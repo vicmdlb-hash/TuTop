@@ -93,8 +93,11 @@ assert.match(authGate, /const \[institutionId, setInstitutionId\] = useState\(''
 assert.match(authGate, /const \[campusId, setCampusId\] = useState\(''\)/);
 assert.doesNotMatch(authGate, /useState\('uatx'\)|useState\('uatx-riberena'\)/);
 assert.match(authGate, /Selecciona institución/);
-assert.match(authGate, /TuTop no los decide por tu número telefónico/);
-assert.match(authGate, /todavía no está verificado por SMS/);
+assert.match(authGate, /nunca se infieren por LADA o ubicación/);
+assert.match(authGate, /celular permanece SIN VERIFICAR/);
+assert.match(authGate, /no se usa como prueba de identidad/);
+assert.match(authGate, /verifiedEmailBetaAuth\.register/);
+assert.match(authGate, /Verifica tu correo/);
 const pendingBeforeSnapshot = authGate.indexOf('await completePendingUniversityIdentity().catch(() => false)');
 const snapshotAfterPending = authGate.indexOf('const snapshot = await onlineBackend.loadSnapshot()');
 assert.ok(pendingBeforeSnapshot >= 0 && snapshotAfterPending > pendingBeforeSnapshot, 'canonical university identity must settle before store hydration');
@@ -163,4 +166,4 @@ assert.match(nearbyRetryBlock, /setNearbyError\(null\)/);
 assert.match(nearbyRetryBlock, /setNearbyRefreshKey\(\(current\) => current \+ 1\)/);
 assert.doesNotMatch(nearbyRetryBlock, /setLocation\(null\)|activateNearby/);
 
-console.log('✅ TuTop 0.9.2 device contract: Device A identity-before-hydration + explicit university selection + Camera 8 photos + coarse-location fallback + Firebase AI 17.17 + light-theme layer + minimal DD pin branding + reliable Nearby retry PASS');
+console.log('✅ TuTop 0.9.2 device contract: Device A identity-before-hydration + explicit university selection + verified-email beta identity + Camera 8 photos + coarse-location fallback + Firebase AI 17.17 + light-theme layer + minimal DD pin branding + reliable Nearby retry PASS');
