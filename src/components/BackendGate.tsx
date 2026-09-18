@@ -185,7 +185,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
         <div className="relative overflow-hidden px-6 pb-6 pt-7">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_10%_0%,rgba(168,85,247,.30),transparent_43%),radial-gradient(circle_at_92%_10%,rgba(56,189,248,.12),transparent_30%)]" />
           <div className="relative">
-            <div className="flex items-center gap-3"><div className="brand-mark"><span>T</span><i /></div><div><div className="wordmark text-3xl"><span>Tu</span><span>Top</span></div><p className="mt-1 text-[10px] font-bold uppercase tracking-[.18em] text-violet-300/80">Red universitaria</p></div></div>
+            <div><div className="wordmark text-4xl" aria-label="TuTop"><span>Tu</span><span>Top</span></div><p className="mt-1 text-[10px] font-bold uppercase tracking-[.18em] text-violet-300/80">Descubre, conecta y encuentra cerca de ti.</p></div>
             <h1 className="mt-7 text-[27px] font-black leading-[1.05] tracking-[-.04em]">Compra, vende y encuentra dentro de tu comunidad.</h1>
             <p className="mt-3 text-sm leading-6 text-slate-400">Para proteger publicaciones y transacciones, esta beta verifica que tengas acceso a un correo real.</p>
             <div className="mt-5 flex flex-wrap gap-2 text-[10px] font-semibold text-slate-300"><span className="auth-benefit"><ShieldCheck />Identidad verificable</span><span className="auth-benefit"><Sparkles />10 UCoins de bienvenida</span></div>
