@@ -1,0 +1,37 @@
+name: TuTop read-only verified promotion snapshot
+on:
+  push:
+    branches: [fix/tutop-staging-promotion-snapshot]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: node scripts/verified-email-promotion-snapshot.mjs
+      - run: node scripts/verified-email-atomic-cutover-tests.mjs
+      - run: node scripts/verified-email-apply-entrypoint-tests.mjs
+      - run: npm run v2:rules:prepare
+      - run: node scripts/verified-email-prepare-cutover.mjs
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0
+      - run: node scripts/read-existing-staging-build-config.mjs
+      - name: Real Firebase AI under verified zero-billing guard
+        run: node scripts/staging-topi-ai-runtime-smoke.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-staging-read-only-${{ github.sha }}
+          path: staging-promotion-snapshot/
+          retention-days: 30
+          if-no-files-found: error

@@ -1,0 +1,64 @@
+name: TuTop build110 controlled verified-rules cutover
+
+on:
+  workflow_dispatch:
+    inputs:
+      action_id:
+        description: 'Unique operator action ID for this cutover attempt'
+        required: true
+        type: string
+      device_installed:
+        description: 'Exact build110 APK is installed on Device A'
+        required: true
+        type: boolean
+        default: false
+      exclusive_window:
+        description: 'Immediate exclusive Device A retest window is active'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-build110-shared-rules-cutover
+  cancel-in-progress: false
+
+jobs:
+  cutover:
+    if: inputs.device_installed && inputs.exclusive_window
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
+      TUTOP_CUTOVER_ACTION_ID: ${{ inputs.action_id }}
+      TUTOP_CUTOVER_DEVICE_INSTALLED: ${{ inputs.device_installed }}
+      TUTOP_CUTOVER_EXCLUSIVE_WINDOW: ${{ inputs.exclusive_window }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Atomic cutover regression
+        run: node scripts/verified-email-atomic-cutover-tests.mjs
+      - name: Apply-entrypoint contract
+        run: node scripts/verified-email-apply-entrypoint-tests.mjs
+      - name: Compose exact build110 Rules
+        run: npm run v2:rules:prepare
+      - name: Fresh shared-staging preflight immediately before mutation
+        run: node scripts/verified-email-promotion-snapshot.mjs
+      - name: Apply atomic verified-email Rules cutover
+        run: node scripts/verified-email-apply-cutover.mjs --apply
+      - name: Preserve cutover evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-build110-rules-cutover-${{ github.run_id }}
+          path: staging-promotion-snapshot/applied-cutover.json
+          retention-days: 30
+          if-no-files-found: error
