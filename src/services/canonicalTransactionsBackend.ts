@@ -66,6 +66,52 @@ function normalizeReservationError(error: unknown): never {
   throw error;
 }
 
+function sameTransactionIdentity(current: MarketplaceTransaction, expected: MarketplaceTransaction) {
+  return current.id === expected.id
+    && current.listing_id === expected.listing_id
+    && current.chat_id === expected.chat_id
+    && current.buyer_id === expected.buyer_id
+    && current.seller_id === expected.seller_id
+    && current.accepted_offer_id === expected.accepted_offer_id
+    && Number(current.agreed_amount_mxn) === Number(expected.agreed_amount_mxn);
+}
+
+async function loadCurrentTransaction(client: FirebaseRestClient, expected: MarketplaceTransaction) {
+  const stored = await client.getDocument<any>(`transactions_v2/${expected.id}`);
+  if (!stored) throw new Error('TRANSACTION_NOT_FOUND');
+  const current = { id: stored.id, ...stored.data } as MarketplaceTransaction;
+  if (!sameTransactionIdentity(current, expected)) throw new Error('TRANSACTION_MISMATCH');
+  return current;
+}
+
+function actorConfirmationField(transaction: MarketplaceTransaction, actor: string) {
+  if (actor === transaction.buyer_id) return 'buyer_confirmed_at' as const;
+  if (actor === transaction.seller_id) return 'seller_confirmed_at' as const;
+  throw new Error('PARTICIPANT_REQUIRED');
+}
+
+async function commitDeliveryConfirmation(client: FirebaseRestClient, transaction: MarketplaceTransaction, actor: string) {
+  const field = actorConfirmationField(transaction, actor);
+  if (transaction.status === 'completed' && transaction[field]) return transaction;
+  if (!canActOnTransaction(transaction, actor, 'confirm_delivery')) throw new Error('TRANSACTION_ACTION_DENIED');
+
+  const at = nowIso();
+  const status = transactionStatusForAction(transaction, actor, 'confirm_delivery') || transaction.status;
+  const next = { ...transaction, [field]: at, status, updated_at: at } as MarketplaceTransaction;
+  const confirmationWrite = patchWrite(client, `transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at });
+
+  if (status === 'completed') {
+    await assertReservationLockConsistent(client, transaction);
+    await client.commit([
+      confirmationWrite,
+      patchWrite(client, `listings_v2/${transaction.listing_id}`, { status: 'sold_out', updated_at: at }),
+    ]);
+  } else {
+    await client.commit([confirmationWrite]);
+  }
+  return next;
+}
+
 export const canonicalTransactionsBackend = {
   async acceptOfferAndCreateTransaction(offer: Offer, reserveMinutes: 30 | 120 | 1440 = 120) {
     const client = getClient();
@@ -149,34 +195,39 @@ export const canonicalTransactionsBackend = {
   async scheduleMeetup(transaction: MarketplaceTransaction, meetingPointId: string, meetupAt: string) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (!canActOnTransaction(transaction, actor, 'schedule_meetup')) throw new Error('TRANSACTION_ACTION_DENIED');
+    const current = await loadCurrentTransaction(client, transaction);
+    if (!canActOnTransaction(current, actor, 'schedule_meetup')) throw new Error('TRANSACTION_ACTION_DENIED');
     const meetupMs = Date.parse(meetupAt);
     if (!meetingPointId || !Number.isFinite(meetupMs) || meetupMs <= Date.now() || meetupMs > Date.now() + 30 * 86400000) throw new Error('INVALID_MEETUP');
     const at = nowIso();
-    const next = { ...transaction, status: 'meetup_scheduled' as const, meeting_point_id: meetingPointId, meetup_at: new Date(meetupMs).toISOString(), updated_at: at };
-    await client.setDocument(`transactions_v2/${transaction.id}`, { status: next.status, meeting_point_id: meetingPointId, meetup_at: next.meetup_at, updated_at: at }, { merge: true });
+    const next = { ...current, status: 'meetup_scheduled' as const, meeting_point_id: meetingPointId, meetup_at: new Date(meetupMs).toISOString(), updated_at: at };
+    await client.setDocument(`transactions_v2/${current.id}`, { status: next.status, meeting_point_id: meetingPointId, meetup_at: next.meetup_at, updated_at: at }, { merge: true });
     return next;
   },
 
   async confirmDelivery(transaction: MarketplaceTransaction) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (!canActOnTransaction(transaction, actor, 'confirm_delivery')) throw new Error('TRANSACTION_ACTION_DENIED');
-    const at = nowIso();
-    const status = transactionStatusForAction(transaction, actor, 'confirm_delivery') || transaction.status;
-    const field = actor === transaction.buyer_id ? 'buyer_confirmed_at' : 'seller_confirmed_at';
-    const next = { ...transaction, [field]: at, status, updated_at: at } as MarketplaceTransaction;
-    const confirmationWrite = patchWrite(client, `transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at });
-    if (status === 'completed') {
-      await assertReservationLockConsistent(client, transaction);
-      // Completion is symmetric: whichever participant confirms second closes the listing
-      // in the same commit. The reservation lock remains for trusted reconciliation cleanup.
-      await client.commit([
-        confirmationWrite,
-        patchWrite(client, `listings_v2/${transaction.listing_id}`, { status: 'sold_out', updated_at: at }),
-      ]);
-    } else await client.commit([confirmationWrite]);
-    return next;
+    const current = await loadCurrentTransaction(client, transaction);
+
+    try {
+      return await commitDeliveryConfirmation(client, current, actor);
+    } catch (error) {
+      // Another device can confirm between our read and commit. Firestore Rules
+      // correctly reject a stale status calculation; recover by re-reading once.
+      // A lost response is also idempotent: if this actor is already confirmed,
+      // return canonical server state without issuing a duplicate write.
+      let refreshed: MarketplaceTransaction;
+      try {
+        refreshed = await loadCurrentTransaction(client, transaction);
+      } catch {
+        throw error;
+      }
+      const field = actorConfirmationField(refreshed, actor);
+      if (refreshed[field]) return refreshed;
+      if (!canActOnTransaction(refreshed, actor, 'confirm_delivery')) throw error;
+      return commitDeliveryConfirmation(client, refreshed, actor);
+    }
   },
 
   async finalizeCompletedListing(transaction: MarketplaceTransaction) {
@@ -194,21 +245,23 @@ export const canonicalTransactionsBackend = {
   async disputeTransaction(transaction: MarketplaceTransaction) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (!canActOnTransaction(transaction, actor, 'dispute')) throw new Error('TRANSACTION_ACTION_DENIED');
+    const current = await loadCurrentTransaction(client, transaction);
+    if (!canActOnTransaction(current, actor, 'dispute')) throw new Error('TRANSACTION_ACTION_DENIED');
     const at = nowIso();
-    await client.setDocument(`transactions_v2/${transaction.id}`, { status: 'disputed', updated_at: at }, { merge: true });
-    return { ...transaction, status: 'disputed' as const, updated_at: at };
+    await client.setDocument(`transactions_v2/${current.id}`, { status: 'disputed', updated_at: at }, { merge: true });
+    return { ...current, status: 'disputed' as const, updated_at: at };
   },
 
   async cancelTransaction(transaction: MarketplaceTransaction) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    assertCancelable(transaction, actor);
+    const current = await loadCurrentTransaction(client, transaction);
+    assertCancelable(current, actor);
     const at = nowIso();
-    const outcomeCode: TransactionOutcomeCode = actor === transaction.buyer_id ? 'buyer_cancelled' : 'seller_cancelled';
+    const outcomeCode: TransactionOutcomeCode = actor === current.buyer_id ? 'buyer_cancelled' : 'seller_cancelled';
     const patch = { status: 'cancelled' as const, outcome_code: outcomeCode, outcome_actor_id: actor, outcome_recorded_at: at, updated_at: at };
-    await client.commit(await terminalTransactionWrites(client, transaction, patch));
-    return { ...transaction, ...patch } as MarketplaceTransaction;
+    await client.commit(await terminalTransactionWrites(client, current, patch));
+    return { ...current, ...patch } as MarketplaceTransaction;
   },
 
   async requestMutualCancellation(transaction: MarketplaceTransaction, institutionId: string) {
@@ -266,9 +319,10 @@ export const canonicalTransactionsBackend = {
   async releaseExpiredReservation(transaction: MarketplaceTransaction) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (!canActOnTransaction(transaction, actor, 'expire')) throw new Error('RESERVATION_NOT_EXPIRED');
+    const current = await loadCurrentTransaction(client, transaction);
+    if (!canActOnTransaction(current, actor, 'expire')) throw new Error('RESERVATION_NOT_EXPIRED');
     const at = nowIso();
-    await client.commit(await terminalTransactionWrites(client, transaction, { status: 'expired', updated_at: at }));
-    return { ...transaction, status: 'expired' as const, updated_at: at };
+    await client.commit(await terminalTransactionWrites(client, current, { status: 'expired', updated_at: at }));
+    return { ...current, status: 'expired' as const, updated_at: at };
   },
 };
