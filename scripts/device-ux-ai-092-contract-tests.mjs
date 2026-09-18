@@ -164,7 +164,7 @@ assert.match(androidAssets, /splashBackgroundColor', '#FFFFFF'/);
 assert.match(androidAssets, /splashBackgroundColorDark', '#FFFFFF'/);
 assert.match(androidAssets, /--iconBackgroundColor', '#7C4DFF'/);
 assert.match(androidAssets, /--iconBackgroundColorDark', '#7C4DFF'/);
-assert.match(androidAssets, /máscara por componente conectado/);
+assert.match(androidAssets, /máscara por componente; launcher cromático separa caption gris/);
 assert.match(topiMascot, /TOPI_REFERENCE/);
 assert.match(topiMascot, /data:image\/webp;base64/);
 assert.doesNotMatch(topiMascot, /topi-crochet-stitches|topi-yarn-purple/);
