@@ -158,7 +158,7 @@ async function isolateLargestVisualComponent(source, label, options = {}) {
 async function makeSplash() {
   const isolated = await isolateLargestVisualComponent(brand.topiReference, 'topi', {
     minAreaRatio: 0.02,
-    maxCropRatio: 0.90,
+    maxCropRatio: 0.98,
     proximityRatio: 0.025,
     paddingRatio: 0.015,
     secondaryAreaRatio: 0.02,
