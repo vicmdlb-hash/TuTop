@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Images, Loader2, MapPin, Mic, Plus, ShieldCheck, Sparkles, Video, X } from 'lucide-react';
 import { compressImageForFirestore } from '../lib/imageCompression';
 import { categorySafetyRequirements } from '../lib/marketplaceGovernance';
@@ -15,11 +15,49 @@ import { firebaseMediaStorage, mediaStorageEnabled, userFacingMediaError, valida
 import { recordDiagnostic } from '../services/localDiagnostics';
 import { isNativeDeviceRuntime, nativePhotoToImageFile, pickNativePhoto, takeNativePhoto } from '../services/nativeDeviceCapabilities';
 import { nativeTopiAIStatus } from '../services/nativeTopiAI';
+import { verifiedEmailBetaAuth } from '../services/verifiedEmailBetaAuth';
 import { useAppStore } from '../store/useAppStore';
 import type { ListingVisibilityScope, Product, ProductCategory } from '../types';
 import TopiMascot from './TopiMascot';
 
 const FALLBACK_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="#111827"/><text x="450" y="310" text-anchor="middle" fill="#c4b5fd" font-size="42" font-family="Arial">TuTop</text></svg>')}`;
+const PUBLISH_DRAFT_PREFIX = 'tutop.publish.draft.v1.';
+
+type PublishDraft = {
+  assistantText?: string;
+  title?: string;
+  description?: string;
+  price?: string;
+  quantity?: string;
+  category?: ProductCategory | '';
+  condition?: string;
+  negotiable?: boolean;
+  scope?: ListingVisibilityScope;
+  deliveryMethods?: ListingDeliveryMethod[];
+  meetingPointId?: string;
+  attributes?: Record<string, string | number | boolean>;
+  images?: string[];
+};
+
+function readPublishDraft(uid: string): PublishDraft | null {
+  if (!uid || typeof sessionStorage === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(`${PUBLISH_DRAFT_PREFIX}${uid}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed as PublishDraft : null;
+  } catch { return null; }
+}
+
+function writePublishDraft(uid: string, draft: PublishDraft) {
+  if (!uid || typeof sessionStorage === 'undefined') return;
+  try { sessionStorage.setItem(`${PUBLISH_DRAFT_PREFIX}${uid}`, JSON.stringify(draft)); } catch { /* best effort local draft */ }
+}
+
+function clearPublishDraft(uid: string) {
+  if (!uid || typeof sessionStorage === 'undefined') return;
+  try { sessionStorage.removeItem(`${PUBLISH_DRAFT_PREFIX}${uid}`); } catch { /* best effort */ }
+}
 const DELIVERY: Array<{ id: ListingDeliveryMethod; label: string }> = [
   { id: 'campus_meetup', label: 'Encuentro en campus' },
   { id: 'pickup', label: 'Recoger con vendedor' },
@@ -64,21 +102,22 @@ export default function NationalPublishScreen() {
   const videoRef = useRef<HTMLInputElement>(null);
   const nativeDevice = isNativeDeviceRuntime();
   const videoInfraEnabled = mediaStorageEnabled();
+  const initialDraft = useMemo(() => readPublishDraft(user.id), [user.id]);
 
-  const [assistantText, setAssistantText] = useState('');
+  const [assistantText, setAssistantText] = useState(initialDraft?.assistantText || '');
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [price, setPrice] = useState('');
-  const [quantity, setQuantity] = useState('1');
-  const [category, setCategory] = useState<ProductCategory | ''>('');
-  const [condition, setCondition] = useState('Buen estado');
-  const [negotiable, setNegotiable] = useState(false);
-  const [scope, setScope] = useState<ListingVisibilityScope>('campus');
-  const [deliveryMethods, setDeliveryMethods] = useState<ListingDeliveryMethod[]>(['campus_meetup']);
-  const [meetingPointId, setMeetingPointId] = useState('');
-  const [attributes, setAttributes] = useState<Record<string, string | number | boolean>>({});
-  const [images, setImages] = useState<string[]>([]);
+  const [title, setTitle] = useState(initialDraft?.title || '');
+  const [description, setDescription] = useState(initialDraft?.description || '');
+  const [price, setPrice] = useState(initialDraft?.price || '');
+  const [quantity, setQuantity] = useState(initialDraft?.quantity || '1');
+  const [category, setCategory] = useState<ProductCategory | ''>(initialDraft?.category || '');
+  const [condition, setCondition] = useState(initialDraft?.condition || 'Buen estado');
+  const [negotiable, setNegotiable] = useState(Boolean(initialDraft?.negotiable));
+  const [scope, setScope] = useState<ListingVisibilityScope>(initialDraft?.scope || 'campus');
+  const [deliveryMethods, setDeliveryMethods] = useState<ListingDeliveryMethod[]>(initialDraft?.deliveryMethods?.length ? initialDraft.deliveryMethods : ['campus_meetup']);
+  const [meetingPointId, setMeetingPointId] = useState(initialDraft?.meetingPointId || '');
+  const [attributes, setAttributes] = useState<Record<string, string | number | boolean>>(initialDraft?.attributes || {});
+  const [images, setImages] = useState<string[]>(initialDraft?.images?.slice(0, 4) || []);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [topiBusy, setTopiBusy] = useState(false);
@@ -125,6 +164,13 @@ export default function NationalPublishScreen() {
   }, [category, user.id, user.nombre, user.facultad, title, description, price, normalizedAttributes, institutionId, campusId, cityId, scope]);
   const pricing = useMemo(() => pricingTarget ? smartPriceFromTuTop(pricingTarget, products) : null, [pricingTarget, products]);
 
+  useEffect(() => {
+    writePublishDraft(user.id, {
+      assistantText, title, description, price, quantity, category, condition, negotiable, scope,
+      deliveryMethods, meetingPointId, attributes, images,
+    });
+  }, [user.id, assistantText, title, description, price, quantity, category, condition, negotiable, scope, deliveryMethods, meetingPointId, attributes, images]);
+
   const applyTopi = async () => {
     const text = assistantText.trim();
     if (text.length < 3) return setMessage('Cuéntale a Topi qué quieres vender en una frase.');
@@ -148,17 +194,17 @@ export default function NationalPublishScreen() {
       const suggestion = result.compose;
       if (!suggestion) return setMessage('Topi no encontró datos seguros para completar. Puedes seguir manualmente.');
 
-      if (!title.trim() && suggestion.title) setTitle(suggestion.title);
-      if (!price.trim() && suggestion.price) setPrice(String(suggestion.price));
-      if (!description.trim() && suggestion.description) setDescription(suggestion.description);
-      if (!category && suggestion.category) {
+      if (suggestion.title) setTitle(suggestion.title);
+      if (suggestion.price && suggestion.price > 0) setPrice(String(suggestion.price));
+      if (suggestion.description) setDescription(suggestion.description);
+      if (suggestion.category) {
+        if (suggestion.category !== category) setAttributes({});
         setCategory(suggestion.category);
-        setAttributes({});
       }
-      if (condition === 'Buen estado' && suggestion.condition) setCondition(suggestion.condition);
+      if (suggestion.condition) setCondition(suggestion.condition);
       if (suggestion.negotiable !== undefined) setNegotiable(suggestion.negotiable);
       if (suggestion.visibilityScope) setScope(suggestion.visibilityScope);
-      else if (!category && suggestion.category) setScope(defaultScopeForCategory(suggestion.category));
+      else if (suggestion.category) setScope(defaultScopeForCategory(suggestion.category));
       if (suggestion.deliveryMethods?.length) setDeliveryMethods(suggestion.deliveryMethods);
 
       setTopiSource(result.source);
@@ -287,6 +333,21 @@ export default function NationalPublishScreen() {
     setBusy(true);
     let uploadedVideoUri: string | null = null;
     try {
+      let verification;
+      try {
+        verification = await verifiedEmailBetaAuth.refreshVerificationStatus();
+      } catch (error) {
+        recordDiagnostic('publication', 'publish_identity_refresh_failed');
+        const reason = error instanceof Error ? error.message : String(error);
+        setMessage(`No pudimos actualizar tu sesión de verificación (${reason}). Cierra sesión, vuelve a entrar y reintenta.`);
+        return;
+      }
+      if (!verification.emailVerified) {
+        recordDiagnostic('publication', 'publish_email_not_verified');
+        setMessage('Esta beta necesita que confirmes el correo de la cuenta antes de publicar. Abre el enlace de verificación y vuelve a tocar Publicar; TuTop actualizará la sesión automáticamente.');
+        return;
+      }
+
       const location = approxLocation || await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000 });
       if (location && !approxLocation) setApproxLocation(location);
 
@@ -331,6 +392,7 @@ export default function NationalPublishScreen() {
       // re-reads it, then writes listings_v2. No UI catch-and-continue path remains.
       await canonicalListingsBackend.create(listing, category);
       uploadedVideoUri = null;
+      clearPublishDraft(user.id);
 
       let refreshedFeed = true;
       try {
