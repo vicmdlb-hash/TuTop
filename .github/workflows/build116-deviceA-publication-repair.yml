@@ -1,0 +1,84 @@
+name: TuTop build116 Device A publication repair
+
+on:
+  push:
+    branches: [fix/tutop-116-deviceA-publication-repair]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-build116-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    if: github.ref_name == 'fix/tutop-116-deviceA-publication-repair' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_BETA_VERSION: 0.9.2-beta.6
+      TUTOP_ANDROID_VERSION_CODE: 90210
+      TUTOP_AI_APP_CHECK_REQUIRED: 'false'
+      VITE_TUTOP_TOPI_REMOTE_ENABLED: 'false'
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Runtime and full existing regression
+        run: npm run check
+      - name: Build116 Device A feedback contract
+        run: node scripts/build116-deviceA-feedback-tests.mjs
+      - name: Physical-feedback regression retained
+        run: node scripts/build111-physical-feedback-tests.mjs
+      - name: Exact typecheck and verified Rules contracts
+        run: |
+          npm run typecheck
+          node scripts/verified-email-beta-contract-tests.mjs
+          node scripts/marketplace-notification-projection-tests.mjs
+      - name: Emulator test dependencies
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
+      - name: Verified identity publication and relevant Rules regression
+        run: |
+          npx firebase emulators:exec --only firestore --project demo-tutop-verified --config firebase.v2.json "node --test --test-concurrency=1 tests/firestore.verified-email.test.mjs tests/firestore.v2.post106-verified-identity.test.mjs tests/firestore.v2.runtime-services.test.mjs tests/firestore.v2.transaction-lock.test.mjs tests/firestore.v2.account-operations.test.mjs tests/firestore.v2.favorite-membership.test.mjs tests/firestore.v2.governance.test.mjs tests/firestore.v2.notification-receipts.test.mjs tests/firestore.v2.reputation-trust.test.mjs tests/firestore.v2.review-strike-aggregation.test.mjs tests/firestore.v2.unread-aggregation.test.mjs"
+      - name: Read existing staging configuration without mutations
+        run: node scripts/read-existing-staging-build-config.mjs
+      - name: Prove Firebase AI runtime on staging
+        run: node scripts/staging-topi-ai-runtime-smoke.mjs
+      - run: node scripts/export-staging-v2-build-env.mjs
+      - run: npm run build
+      - run: npm run deps:mobile
+      - run: git diff --exit-code -- package.json package-lock.json
+      - run: npm run android:bootstrap
+      - run: node scripts/configure-android-beta-version.mjs
+      - run: npm run android:doctor
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+      - name: Android lint unit and APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon lintDebug testDebugUnitTest assembleDebug
+      - name: Inspect exact APK branding geometry and bundled auth UX
+        run: node scripts/build115-apk-branding-artifact-tests.mjs android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Exact build116 candidate provenance
+        run: node scripts/package-build116-candidate.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-build116-${{ github.sha }}
+          path: engineering-candidate/
+          retention-days: 30
+          if-no-files-found: error
