@@ -195,12 +195,13 @@ export const canonicalTransactionsBackend = {
   async scheduleMeetup(transaction: MarketplaceTransaction, meetingPointId: string, meetupAt: string) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (!canActOnTransaction(transaction, actor, 'schedule_meetup')) throw new Error('TRANSACTION_ACTION_DENIED');
+    const current = await loadCurrentTransaction(client, transaction);
+    if (!canActOnTransaction(current, actor, 'schedule_meetup')) throw new Error('TRANSACTION_ACTION_DENIED');
     const meetupMs = Date.parse(meetupAt);
     if (!meetingPointId || !Number.isFinite(meetupMs) || meetupMs <= Date.now() || meetupMs > Date.now() + 30 * 86400000) throw new Error('INVALID_MEETUP');
     const at = nowIso();
-    const next = { ...transaction, status: 'meetup_scheduled' as const, meeting_point_id: meetingPointId, meetup_at: new Date(meetupMs).toISOString(), updated_at: at };
-    await client.setDocument(`transactions_v2/${transaction.id}`, { status: next.status, meeting_point_id: meetingPointId, meetup_at: next.meetup_at, updated_at: at }, { merge: true });
+    const next = { ...current, status: 'meetup_scheduled' as const, meeting_point_id: meetingPointId, meetup_at: new Date(meetupMs).toISOString(), updated_at: at };
+    await client.setDocument(`transactions_v2/${current.id}`, { status: next.status, meeting_point_id: meetingPointId, meetup_at: next.meetup_at, updated_at: at }, { merge: true });
     return next;
   },
 
@@ -244,21 +245,23 @@ export const canonicalTransactionsBackend = {
   async disputeTransaction(transaction: MarketplaceTransaction) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (!canActOnTransaction(transaction, actor, 'dispute')) throw new Error('TRANSACTION_ACTION_DENIED');
+    const current = await loadCurrentTransaction(client, transaction);
+    if (!canActOnTransaction(current, actor, 'dispute')) throw new Error('TRANSACTION_ACTION_DENIED');
     const at = nowIso();
-    await client.setDocument(`transactions_v2/${transaction.id}`, { status: 'disputed', updated_at: at }, { merge: true });
-    return { ...transaction, status: 'disputed' as const, updated_at: at };
+    await client.setDocument(`transactions_v2/${current.id}`, { status: 'disputed', updated_at: at }, { merge: true });
+    return { ...current, status: 'disputed' as const, updated_at: at };
   },
 
   async cancelTransaction(transaction: MarketplaceTransaction) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    assertCancelable(transaction, actor);
+    const current = await loadCurrentTransaction(client, transaction);
+    assertCancelable(current, actor);
     const at = nowIso();
-    const outcomeCode: TransactionOutcomeCode = actor === transaction.buyer_id ? 'buyer_cancelled' : 'seller_cancelled';
+    const outcomeCode: TransactionOutcomeCode = actor === current.buyer_id ? 'buyer_cancelled' : 'seller_cancelled';
     const patch = { status: 'cancelled' as const, outcome_code: outcomeCode, outcome_actor_id: actor, outcome_recorded_at: at, updated_at: at };
-    await client.commit(await terminalTransactionWrites(client, transaction, patch));
-    return { ...transaction, ...patch } as MarketplaceTransaction;
+    await client.commit(await terminalTransactionWrites(client, current, patch));
+    return { ...current, ...patch } as MarketplaceTransaction;
   },
 
   async requestMutualCancellation(transaction: MarketplaceTransaction, institutionId: string) {
@@ -316,9 +319,10 @@ export const canonicalTransactionsBackend = {
   async releaseExpiredReservation(transaction: MarketplaceTransaction) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (!canActOnTransaction(transaction, actor, 'expire')) throw new Error('RESERVATION_NOT_EXPIRED');
+    const current = await loadCurrentTransaction(client, transaction);
+    if (!canActOnTransaction(current, actor, 'expire')) throw new Error('RESERVATION_NOT_EXPIRED');
     const at = nowIso();
-    await client.commit(await terminalTransactionWrites(client, transaction, { status: 'expired', updated_at: at }));
-    return { ...transaction, status: 'expired' as const, updated_at: at };
+    await client.commit(await terminalTransactionWrites(client, current, { status: 'expired', updated_at: at }));
+    return { ...current, status: 'expired' as const, updated_at: at };
   },
 };
