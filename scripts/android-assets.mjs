@@ -127,8 +127,19 @@ async function isolateLargestVisualComponent(source, label, options = {}) {
     stop(`${label}: recorte automático no confiable ${cropWidth}x${cropHeight} ratio=${cropRatio.toFixed(3)}.`);
   }
 
-  const output = await sharp(normalized)
-    .extract({ left, top, width: cropWidth, height: cropHeight })
+  // Avoid Sharp extract entirely. Builds 113/114 showed provider/libvips
+  // extract_area can reject valid rectangles even after normalization. Copy the
+  // exact RGBA rectangle ourselves, then give Sharp a brand-new raw raster.
+  const cropped = Buffer.alloc(cropWidth * cropHeight * 4);
+  for (let y = 0; y < cropHeight; y++) {
+    const sourceStart = ((top + y) * width + left) * 4;
+    const sourceEnd = sourceStart + cropWidth * 4;
+    data.copy(cropped, y * cropWidth * 4, sourceStart, sourceEnd);
+  }
+
+  const output = await sharp(cropped, {
+    raw: { width: cropWidth, height: cropHeight, channels: 4 },
+  })
     .trim({ background: '#FFFFFF', threshold: 12 })
     .png()
     .toBuffer();
