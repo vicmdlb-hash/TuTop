@@ -30,7 +30,9 @@ for (const method of ['scheduleMeetup','disputeTransaction','cancelTransaction',
   const section = tx.slice(start, next > start ? next : tx.length);
   assert.match(section, /loadCurrentTransaction\(client, transaction\)/, `${method} must use canonical server state`);
 }
-assert.match(notif, /markRead=false|markRead: false|markRead \= false/);
+assert.match(notif, /route\(intent, false\)/);
+assert.match(notif, /function route\(intent: NativeNotificationIntent, markRead = true\)/);
+assert.match(notif, /if \(markRead && intent\.notification_id\) state\.markNotificationRead/);
 assert.match(privacy, /Firebase Cloud Messaging/);
 assert.match(controls, /href="\/privacy\.html"/);
 assert.match(controls, /href="\/delete-account\.html"/);
