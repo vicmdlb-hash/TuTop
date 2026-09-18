@@ -16,16 +16,19 @@ function section(source, start, end) {
   return source.slice(from, to);
 }
 
+const confirmationCommit = section(backend, 'async function commitDeliveryConfirmation', 'export const canonicalTransactionsBackend');
 const completion = section(backend, '  async confirmDelivery', '  async finalizeCompletedListing');
 const dispute = section(backend, '  async disputeTransaction', '  async cancelTransaction');
 const cancel = section(backend, '  async cancelTransaction', '  async requestMutualCancellation');
 const noShow = section(backend, '  async claimNoShow', '  async releaseExpiredReservation');
 const expire = section(backend, '  async releaseExpiredReservation', '\n};');
 
-assert.match(completion, /if \(status === 'completed'\)/);
-assert.match(completion, /listings_v2\/\$\{transaction\.listing_id\}/);
-assert.match(completion, /status: 'sold_out'/);
-assert.doesNotMatch(completion, /actor === transaction\.seller_id/);
+assert.match(confirmationCommit, /if \(status === 'completed'\)/);
+assert.match(confirmationCommit, /listings_v2\/\$\{transaction\.listing_id\}/);
+assert.match(confirmationCommit, /status: 'sold_out'/);
+assert.match(completion, /commitDeliveryConfirmation\(client, current, actor\)/);
+assert.match(completion, /commitDeliveryConfirmation\(client, refreshed, actor\)/);
+assert.doesNotMatch(confirmationCommit, /actor === transaction\.seller_id/);
 
 for (const method of [
   'confirmDelivery',

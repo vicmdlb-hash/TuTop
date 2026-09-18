@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BellRing, ChevronDown, ChevronUp, KeyRound, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
+import { BellRing, ChevronDown, ChevronUp, ExternalLink, KeyRound, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NOTIFICATION_PRIORITY, type NotificationPreferenceKey, type NotificationPreferences } from '../lib/notificationPreferences.ts';
 import { nationalSchemaEnabled } from '../services/nationalBackend.ts';
 import { disableNativePushNotifications, enableNativePushNotifications, nativePushPermission } from '../services/nativeFirebaseSecurity.ts';
@@ -158,6 +158,14 @@ export default function NationalAccountControls() {
         {highPriority.map(renderToggle)}
         <p className="pt-2 text-[9px] font-black uppercase tracking-wide text-slate-500">Opcionales</p>
         {optional.map(renderToggle)}
+
+        <div className="mt-4 rounded-xl border border-violet-400/10 bg-violet-500/[0.035] p-3">
+          <div className="flex gap-2"><ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" /><div><strong className="block text-[10px] text-violet-200">Privacidad y uso de datos</strong><p className="mt-1 text-[9px] leading-relaxed text-slate-500">Consulta el borrador técnico de privacidad y la información del proceso de eliminación. La revisión legal final sigue pendiente.</p></div></div>
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <a href="/privacy.html" target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center justify-center rounded-xl bg-violet-500/10 px-3 text-center text-[9px] font-black text-violet-200">Privacidad beta</a>
+            <a href="/delete-account.html" target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center justify-center rounded-xl bg-white/[0.04] px-3 text-center text-[9px] font-black text-slate-300">Proceso de eliminación</a>
+          </div>
+        </div>
 
         <div className="mt-4 rounded-xl border border-rose-400/10 bg-rose-500/[0.04] p-3">
           <div className="flex gap-2"><ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-300" /><div><strong className="block text-[10px] text-rose-200">Eliminar cuenta y datos</strong><p className="mt-1 text-[9px] leading-relaxed text-slate-500">La solicitud es distinta de cerrar sesión o desactivar la cuenta. Datos necesarios para disputas, fraude u obligaciones justificadas pueden conservarse temporalmente.</p></div></div>

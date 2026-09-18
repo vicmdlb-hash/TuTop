@@ -29,8 +29,7 @@ for (const source of Object.values(brand)) {
 }
 
 async function renderBrandAssets() {
-  // User-rejected purple/black launcher backgrounds are forbidden in 0.9.2.
-  // Adaptive icon background stays visibly purple in both light and dark launcher modes.
+  // Approved TuTop reference uses a purple gradient launcher tile with the white TuTop wordmark.
   const backgroundSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><defs><linearGradient id="r" x1="120" y1="80" x2="900" y2="950" gradientUnits="userSpaceOnUse"><stop stop-color="#B99BFF"/><stop offset=".45" stop-color="#7C4DFF"/><stop offset="1" stop-color="#653AD9"/></linearGradient></defs><rect width="1024" height="1024" rx="224" fill="url(#r)"/></svg>');
 
   await sharp(brand.icon, { density: 240 }).resize(1024, 1024).png().toFile(path.join(root, 'assets/icon-only.png'));
@@ -83,4 +82,4 @@ const result = spawnSync('npx', args, {
   shell: process.platform === 'win32',
 });
 if (result.status !== 0) process.exit(result.status || 1);
-console.log(`✅ Branding Android ${appVersion} generado desde DD + pin: morado/blanco sin fondo negro heredado, splash 0.9.2 coherente.`);
+console.log(`✅ Branding Android ${appVersion} generado desde la referencia aprobada TuTop/Topi.`);

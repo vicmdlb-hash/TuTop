@@ -1,9 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" data-brand="tutop-dd-pin">
-  <path d="M512 190c-166 0-300 131-300 292 0 206 300 374 300 374s300-168 300-374c0-161-134-292-300-292Z" fill="#FFFFFF"/>
-  <circle cx="512" cy="479" r="161" fill="#7C4DFF"/>
-  <!-- Double-D monogram kept flat so the adaptive mask remains legible. -->
-  <g aria-label="DD" fill="#FFFFFF">
-    <path d="M370 387h92c93 0 153 37 153 95s-60 95-153 95h-92V387Zm66 53v84h27c51 0 81-15 81-42s-30-42-81-42h-27Z"/>
-    <path d="M470 387h92c93 0 153 37 153 95s-60 95-153 95h-92V387Zm66 53v84h27c51 0 81-15 81-42s-30-42-81-42h-27Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" data-brand="tutop-reference-wordmark">
+  <g fill="#FFFFFF" font-family="Arial Black,Arial,Helvetica,sans-serif" font-weight="900" text-anchor="middle">
+    <text x="512" y="590" font-size="250" letter-spacing="-18">TuTop</text>
   </g>
 </svg>
