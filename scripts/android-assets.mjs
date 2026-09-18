@@ -175,7 +175,7 @@ async function makeSplash() {
 async function renderBrandAssets() {
   const isolatedIcon = await isolateLargestVisualComponent(brand.iconReference, 'launcher', {
     minAreaRatio: 0.08,
-    maxCropRatio: 0.85,
+    maxCropRatio: 0.94,
     proximityRatio: 0.012,
     paddingRatio: 0.008,
     secondaryAreaRatio: 0.05,
