@@ -146,12 +146,18 @@ assert.match(splash092, /data-brand="tutop-reference-splash"/);
 assert.match(splash092, /Descubre, conecta y encuentra cerca de ti/);
 assert.match(splash092, /data:image\/webp;base64/);
 assert.doesNotMatch(splash092, /tutop-dd-pin-splash|aria-label="DD"/);
-assert.match(androidAssets, /tutop-splash-092\.svg/);
-assert.doesNotMatch(androidAssets, /tutop-splash-091\.svg/);
-assert.doesNotMatch(androidAssets, /#34206F|#090A10/);
+
+// Build112 must use real raster files for Android packaging.
+// Build111 proved SVG-with-embedded-WebP can pass source assertions while losing pixels in the APK.
+assert.match(androidAssets, /tutop-app-icon-reference\.webp/);
+assert.match(androidAssets, /topi-reference\.webp/);
+assert.doesNotMatch(androidAssets, /sharp\(brand\.icon[^R]/);
+assert.match(androidAssets, /splashBackgroundColor', '#FFFFFF'/);
+assert.match(androidAssets, /splashBackgroundColorDark', '#FFFFFF'/);
 assert.match(androidAssets, /--iconBackgroundColor', '#7C4DFF'/);
 assert.match(androidAssets, /--iconBackgroundColorDark', '#7C4DFF'/);
-assert.match(androidAssets, /referencia aprobada TuTop\/Topi/);
+assert.match(androidAssets, /raster de referencia directo/);
+assert.match(androidAssets, /Topi visible/);
 assert.match(topiMascot, /TOPI_REFERENCE/);
 assert.match(topiMascot, /data:image\/webp;base64/);
 assert.doesNotMatch(topiMascot, /topi-crochet-stitches|topi-yarn-purple/);
@@ -169,4 +175,4 @@ assert.match(nearbyRetryBlock, /setNearbyError\(null\)/);
 assert.match(nearbyRetryBlock, /setNearbyRefreshKey\(\(current\) => current \+ 1\)/);
 assert.doesNotMatch(nearbyRetryBlock, /setLocation\(null\)|activateNearby/);
 
-console.log('✅ TuTop 0.9.2 device contract: Device A identity-before-hydration + explicit university selection + verified-email beta identity + Camera 8 photos + coarse-location fallback + Firebase AI 17.17 + light-theme layer + approved TuTop/Topi reference branding + reliable Nearby retry PASS');
+console.log('✅ TuTop 0.9.2 device contract: Device A identity-before-hydration + explicit university selection + verified-email beta identity + Camera 8 photos + coarse-location fallback + Firebase AI 17.17 + light-theme layer + approved raster TuTop/Topi branding + reliable Nearby retry PASS');
