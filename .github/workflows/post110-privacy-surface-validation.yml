@@ -1,0 +1,42 @@
+name: TuTop post110 privacy surface alignment
+
+on:
+  push:
+    branches:
+      - fix/tutop-post110-privacy-surface-alignment
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post110-privacy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.ref_name == 'fix/tutop-post110-privacy-surface-alignment'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Existing regression suite
+        run: npm run check
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Privacy/deletion surface contract
+        run: node scripts/privacy-surface-alignment-tests.mjs
+      - name: Preserve exact build110 base
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="$(git merge-base HEAD origin/fix/tutop-107-runtime-recovery)"
+          test "$BASE" = "9dfbe008b70f60cc88b03961aac1e15455f2aebb"
+          echo "build110 base remains exact and unmodified: $BASE"
