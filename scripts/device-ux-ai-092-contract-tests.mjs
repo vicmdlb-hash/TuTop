@@ -147,20 +147,20 @@ assert.match(splash092, /Descubre, conecta y encuentra cerca de ti/);
 assert.match(splash092, /data:image\/webp;base64/);
 assert.doesNotMatch(splash092, /tutop-dd-pin-splash|aria-label="DD"/);
 
-// Build113 must use real raster files plus explicit board-residue crops for Android packaging.
-// Build111 lost embedded pixels; build112 still carried board caption/palette residue.
+// Build114 isolates the largest connected visual component from normalized raster bytes.
+// Build111 lost embedded pixels; build112 carried caption/palette residue; build113 masks cut through Topi.
 assert.match(androidAssets, /tutop-app-icon-reference\.webp/);
 assert.match(androidAssets, /topi-reference\.webp/);
-assert.doesNotMatch(androidAssets, /sharp\(brand\.icon[^R]/);
+assert.match(androidAssets, /isolateLargestVisualComponent/);
+assert.match(androidAssets, /normalized bytes/);
+assert.match(androidAssets, /components\.sort/);
+assert.match(androidAssets, /branding_component/);
+assert.doesNotMatch(androidAssets, /captionMask|leftMaskWidth|rightMaskWidth|bottomMaskHeight/);
 assert.match(androidAssets, /splashBackgroundColor', '#FFFFFF'/);
 assert.match(androidAssets, /splashBackgroundColorDark', '#FFFFFF'/);
 assert.match(androidAssets, /--iconBackgroundColor', '#7C4DFF'/);
 assert.match(androidAssets, /--iconBackgroundColorDark', '#7C4DFF'/);
-assert.match(androidAssets, /approved brand board/);
-assert.match(androidAssets, /Crop away palette\/annotation residue/);
-assert.match(androidAssets, /lower caption band/);
-assert.match(androidAssets, /icono sin caption/);
-assert.match(androidAssets, /Topi recortado del tablero aprobado/);
+assert.match(androidAssets, /componente visual principal aislado/);
 assert.match(topiMascot, /TOPI_REFERENCE/);
 assert.match(topiMascot, /data:image\/webp;base64/);
 assert.doesNotMatch(topiMascot, /topi-crochet-stitches|topi-yarn-purple/);
