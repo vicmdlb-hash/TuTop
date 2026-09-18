@@ -51,19 +51,33 @@ export default function PermissionSettings() {
 
   useEffect(() => {
     let active = true;
-    Promise.all(PERMISSIONS.map(async ({ id }) => [id, await queryCapabilityPermission(id)] as const))
-      .then((entries) => { if (active) setStates(Object.fromEntries(entries) as Record<CapabilityPermission, PermissionState091>); })
-      .catch(() => undefined);
-    return () => { active = false; };
+    const update = () => {
+      Promise.all(PERMISSIONS.map(async ({ id }) => [id, await queryCapabilityPermission(id)] as const))
+        .then((entries) => { if (active) setStates(Object.fromEntries(entries) as Record<CapabilityPermission, PermissionState091>); })
+        .catch(() => undefined);
+    };
+    update();
+    const onVisible = () => { if (document.visibilityState === 'visible') update(); };
+    window.addEventListener('focus', update);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', update);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   const request = async (id: CapabilityPermission) => {
     setBusy(id);
     setNote(null);
     try {
-      const result = await requestCapabilityPermission(id);
+      const requested = await requestCapabilityPermission(id);
+      const queried = await queryCapabilityPermission(id).catch(() => requested);
+      const result = queried === 'unknown' ? requested : queried;
       setStates((current) => ({ ...current, [id]: result }));
-      if (id === 'camera' && result === 'granted') {
+      if (id === 'notifications' && result === 'granted') {
+        setNote('Notificaciones activas en Android. TuTop actualizará este estado también cuando regreses desde los ajustes del sistema.');
+      } else if (id === 'camera' && result === 'granted') {
         setNote('Cámara/galería disponible. La prueba real se hace desde Publicar: toca Cámara o Galería y Android abrirá su selector del sistema.');
       } else if (id === 'location' && result !== 'granted') {
         setNote('Si Android ya mostró el permiso pero sigue sin ubicación, comprueba que los servicios de ubicación del teléfono estén encendidos y vuelve a intentar.');
