@@ -45,6 +45,27 @@ try {
     }
     return total ? n/total : 0;
   }
+  function regionNeutralCaptionRatio(buf, x0, y0, x1, y1) {
+    const {data,info}=buf;
+    const left=Math.max(0,Math.floor(info.width*x0));
+    const right=Math.min(info.width,Math.ceil(info.width*x1));
+    const top=Math.max(0,Math.floor(info.height*y0));
+    const bottom=Math.min(info.height,Math.ceil(info.height*y1));
+    let n=0,total=0;
+    for(let y=top;y<bottom;y++){
+      for(let x=left;x<right;x++){
+        const i=(y*info.width+x)*4;
+        const r=data[i], g=data[i+1], b=data[i+2], a=data[i+3];
+        const max=Math.max(r,g,b), min=Math.min(r,g,b);
+        const chroma=max-min;
+        const luma=(r+g+b)/3;
+        // Board caption is neutral gray. Ignore white background and saturated violet tile.
+        if(a>8 && chroma<=12 && luma>=35 && luma<=225) n++;
+        total++;
+      }
+    }
+    return total ? n/total : 0;
+  }
   function alphaRatio(buf) {
     const {data,info}=buf;
     let n=0;
@@ -67,7 +88,7 @@ try {
     launcherAlpha:alphaRatio(launcherBuf),
     launcherNonWhite:nonWhiteRatio(launcherBuf),
     launcherBottomCenter:regionRatio(launcherBuf,0.18,0.78,0.82,0.96),
-    launcherCaptionStrip:regionRatio(launcherBuf,0.15,0.94,0.85,1.00),
+    launcherCaptionGray:regionNeutralCaptionRatio(launcherBuf,0.15,0.90,0.85,1.00),
     foregroundAlpha:alphaRatio(foregroundBuf),
     backgroundAlpha:alphaRatio(backgroundBuf),
     splashNonWhite:nonWhiteRatio(splashBuf),
@@ -83,7 +104,7 @@ try {
   assert.ok(metrics.launcherNonWhite > 0.50, `launcher lacks approved purple tile: ${JSON.stringify(metrics)}`);
   // Build112's board-caption residue left a mostly white lower band. A clean icon stays purple in the center-bottom.
   assert.ok(metrics.launcherBottomCenter > 0.70, `launcher likely lacks the approved tile near its lower center: ${JSON.stringify(metrics)}`);
-  assert.ok(metrics.launcherCaptionStrip < 0.01, `launcher board caption residue detected below icon tile: ${JSON.stringify(metrics)}`);
+  assert.ok(metrics.launcherCaptionGray < 0.01, `neutral-gray launcher caption residue detected: ${JSON.stringify(metrics)}`);
   assert.ok(metrics.foregroundAlpha > 0.01, `adaptive foreground empty: ${JSON.stringify(metrics)}`);
   assert.ok(metrics.backgroundAlpha > 0.90, `adaptive background empty: ${JSON.stringify(metrics)}`);
 
