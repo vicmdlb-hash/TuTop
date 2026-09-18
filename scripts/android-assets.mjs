@@ -30,14 +30,31 @@ for (const source of Object.values(brand)) {
 
 const SIZE = 2732;
 
-async function makeSplash() {
-  const topi = await sharp(brand.topiReference)
-    .resize({ width: 1080, height: 1280, fit: 'inside', withoutEnlargement: false })
+async function cleanTopiReference() {
+  const metadata = await sharp(brand.topiReference).metadata();
+  const width = Number(metadata.width || 0);
+  const height = Number(metadata.height || 0);
+  if (width < 10 || height < 10) stop('Referencia Topi inválida.');
+
+  // The source raster intentionally comes from the approved brand board.
+  // Crop away palette/annotation residue and use only the mascot head/upper body,
+  // which is the approved splash/onboarding direction.
+  const left = Math.round(width * 0.14);
+  const cropWidth = Math.max(1, Math.round(width * 0.82));
+  const cropHeight = Math.max(1, Math.round(height * 0.62));
+  return sharp(brand.topiReference)
+    .extract({ left, top: 0, width: Math.min(cropWidth, width - left), height: Math.min(cropHeight, height) })
+    .trim({ background: '#FFFFFF', threshold: 18 })
+    .resize({ width: 900, height: 900, fit: 'inside', withoutEnlargement: false })
     .png()
     .toBuffer();
+}
+
+async function makeSplash() {
+  const topi = await cleanTopiReference();
   const topiMeta = await sharp(topi).metadata();
-  const left = Math.round((SIZE - Number(topiMeta.width || 1080)) / 2);
-  const top = 170;
+  const left = Math.round((SIZE - Number(topiMeta.width || 900)) / 2);
+  const top = 185;
 
   const overlay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}">
     <text x="1366" y="1835" text-anchor="middle" font-family="Arial Black,Arial,Helvetica,sans-serif" font-size="330" font-weight="900" letter-spacing="-24" fill="#4B2EDB">Tu<tspan fill="#7C4DFF">Top</tspan></text>
@@ -55,8 +72,16 @@ async function makeSplash() {
 
 async function renderBrandAssets() {
   // Do not rasterize an SVG that itself embeds WebP: build111 proved that path can silently drop the image.
+  // The approved board crop includes a tiny "App icon" caption below the icon.
+  // Remove the lower caption band first, then trim only the surrounding white board margin.
+  const iconMetadata = await sharp(brand.iconReference).metadata();
+  const iconWidth = Number(iconMetadata.width || 0);
+  const iconHeight = Number(iconMetadata.height || 0);
+  if (iconWidth < 10 || iconHeight < 10) stop('Referencia de icono inválida.');
   await sharp(brand.iconReference)
-    .resize(1024, 1024, { fit: 'cover' })
+    .extract({ left: 0, top: 0, width: iconWidth, height: Math.max(1, Math.floor(iconHeight * 0.94)) })
+    .trim({ background: '#FFFFFF', threshold: 18 })
+    .resize(1024, 1024, { fit: 'fill' })
     .png()
     .toFile(path.join(root, 'assets/icon-only.png'));
 
@@ -104,4 +129,4 @@ const result = spawnSync('npx', args, {
   shell: process.platform === 'win32',
 });
 if (result.status !== 0) process.exit(result.status || 1);
-console.log(`✅ Branding Android ${appVersion}: raster de referencia directo + Topi visible + splash blanco.`);
+console.log(`✅ Branding Android ${appVersion}: icono sin caption + Topi recortado del tablero aprobado + splash blanco.`);
