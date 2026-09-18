@@ -36,6 +36,17 @@ function isVisualPixel(r, g, b, a) {
   return !(r > 244 && g > 244 && b > 244);
 }
 
+function isChromaticLauncherPixel(r, g, b, a) {
+  if (a < 18) return false;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const chroma = max - min;
+  // The approved launcher tile is violet/purple; the unwanted board caption is
+  // neutral gray. Require real chroma plus blue/violet dominance so a faint gray
+  // bridge cannot join the caption to the tile component.
+  return chroma >= 18 && b >= r && b >= g;
+}
+
 async function isolateLargestVisualComponent(source, label, options = {}) {
   // Normalize orientation and format first. Every later crop is against these exact
   // normalized bytes, avoiding the metadata/extract mismatch seen in build113.
@@ -47,8 +58,9 @@ async function isolateLargestVisualComponent(source, label, options = {}) {
 
   const total = width * height;
   const mask = new Uint8Array(total);
+  const pixelPredicate = options.pixelMode === 'chromatic-launcher' ? isChromaticLauncherPixel : isVisualPixel;
   for (let p = 0, i = 0; p < total; p++, i += 4) {
-    if (isVisualPixel(data[i], data[i + 1], data[i + 2], data[i + 3])) mask[p] = 1;
+    if (pixelPredicate(data[i], data[i + 1], data[i + 2], data[i + 3])) mask[p] = 1;
   }
 
   const labels = new Int32Array(total);
@@ -196,6 +208,7 @@ async function makeSplash() {
 
 async function renderBrandAssets() {
   const isolatedIcon = await isolateLargestVisualComponent(brand.iconReference, 'launcher', {
+    pixelMode: 'chromatic-launcher',
     minAreaRatio: 0.08,
     maxCropRatio: 0.94,
     proximityRatio: 0.012,
@@ -251,4 +264,4 @@ const result = spawnSync('npx', args, {
   shell: process.platform === 'win32',
 });
 if (result.status !== 0) process.exit(result.status || 1);
-console.log(`✅ Branding Android ${appVersion}: máscara por componente conectado; captions/paletas excluidos aunque caigan dentro del bounding box.`);
+console.log(`✅ Branding Android ${appVersion}: máscara por componente; launcher cromático separa caption gris y Topi excluye componentes ajenos.`);
