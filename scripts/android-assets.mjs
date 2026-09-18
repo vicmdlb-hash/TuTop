@@ -36,6 +36,17 @@ function isVisualPixel(r, g, b, a) {
   return !(r > 244 && g > 244 && b > 244);
 }
 
+function isChromaticLauncherPixel(r, g, b, a) {
+  if (a < 18) return false;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const chroma = max - min;
+  // The approved launcher tile is violet/purple; the unwanted board caption is
+  // neutral gray. Require real chroma plus blue/violet dominance so a faint gray
+  // bridge cannot join the caption to the tile component.
+  return chroma >= 18 && b >= r && b >= g;
+}
+
 async function isolateLargestVisualComponent(source, label, options = {}) {
   // Normalize orientation and format first. Every later crop is against these exact
   // normalized bytes, avoiding the metadata/extract mismatch seen in build113.
@@ -47,11 +58,12 @@ async function isolateLargestVisualComponent(source, label, options = {}) {
 
   const total = width * height;
   const mask = new Uint8Array(total);
+  const pixelPredicate = options.pixelMode === 'chromatic-launcher' ? isChromaticLauncherPixel : isVisualPixel;
   for (let p = 0, i = 0; p < total; p++, i += 4) {
-    if (isVisualPixel(data[i], data[i + 1], data[i + 2], data[i + 3])) mask[p] = 1;
+    if (pixelPredicate(data[i], data[i + 1], data[i + 2], data[i + 3])) mask[p] = 1;
   }
 
-  const seen = new Uint8Array(total);
+  const labels = new Int32Array(total);
   const queue = new Int32Array(total);
   const components = [];
   const offsets = [
@@ -61,10 +73,11 @@ async function isolateLargestVisualComponent(source, label, options = {}) {
   ];
 
   for (let seed = 0; seed < total; seed++) {
-    if (!mask[seed] || seen[seed]) continue;
+    if (!mask[seed] || labels[seed]) continue;
+    const componentId = components.length + 1;
     let head = 0, tail = 0;
     queue[tail++] = seed;
-    seen[seed] = 1;
+    labels[seed] = componentId;
     let area = 0;
     let minX = width, minY = height, maxX = 0, maxY = 0;
 
@@ -82,12 +95,12 @@ async function isolateLargestVisualComponent(source, label, options = {}) {
         const nx = x + dx, ny = y + dy;
         if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
         const np = ny * width + nx;
-        if (!mask[np] || seen[np]) continue;
-        seen[np] = 1;
+        if (!mask[np] || labels[np]) continue;
+        labels[np] = componentId;
         queue[tail++] = np;
       }
     }
-    components.push({ area, minX, minY, maxX, maxY });
+    components.push({ id: componentId, area, minX, minY, maxX, maxY });
   }
 
   components.sort((a, b) => b.area - a.area);
@@ -99,6 +112,7 @@ async function isolateLargestVisualComponent(source, label, options = {}) {
   // Include nearby fragments that clearly belong to the same subject (e.g. isolated
   // yarn highlights/eyes) but not distant captions/palette dots.
   const subject = { ...largest };
+  const keptComponentIds = new Set([largest.id]);
   const proximity = Math.max(4, Math.round(Math.min(width, height) * (options.proximityRatio ?? 0.035)));
   for (const component of components.slice(1)) {
     if (component.area < largest.area * (options.secondaryAreaRatio ?? 0.012)) continue;
@@ -107,6 +121,7 @@ async function isolateLargestVisualComponent(source, label, options = {}) {
     const nearX = component.minX <= subject.maxX + proximity && component.maxX >= subject.minX - proximity;
     const nearY = component.minY <= subject.maxY + proximity && component.maxY >= subject.minY - proximity;
     if ((nearX && nearY) || (horizontalGap <= proximity && verticalGap <= proximity)) {
+      keptComponentIds.add(component.id);
       subject.minX = Math.min(subject.minX, component.minX);
       subject.minY = Math.min(subject.minY, component.minY);
       subject.maxX = Math.max(subject.maxX, component.maxX);
@@ -127,14 +142,21 @@ async function isolateLargestVisualComponent(source, label, options = {}) {
     stop(`${label}: recorte automático no confiable ${cropWidth}x${cropHeight} ratio=${cropRatio.toFixed(3)}.`);
   }
 
-  // Avoid Sharp extract entirely. Builds 113/114 showed provider/libvips
-  // extract_area can reject valid rectangles even after normalization. Copy the
-  // exact RGBA rectangle ourselves, then give Sharp a brand-new raw raster.
-  const cropped = Buffer.alloc(cropWidth * cropHeight * 4);
+  // Keep ONLY pixels belonging to the selected connected component(s).
+  // Build114 copied the full bounding rectangle, which let unrelated board
+  // captions/palette marks survive inside that rectangle.
+  const cropped = Buffer.alloc(cropWidth * cropHeight * 4, 255);
   for (let y = 0; y < cropHeight; y++) {
-    const sourceStart = ((top + y) * width + left) * 4;
-    const sourceEnd = sourceStart + cropWidth * 4;
-    data.copy(cropped, y * cropWidth * 4, sourceStart, sourceEnd);
+    for (let x = 0; x < cropWidth; x++) {
+      const sourcePixel = (top + y) * width + (left + x);
+      if (!keptComponentIds.has(labels[sourcePixel])) continue;
+      const sourceOffset = sourcePixel * 4;
+      const targetOffset = (y * cropWidth + x) * 4;
+      cropped[targetOffset] = data[sourceOffset];
+      cropped[targetOffset + 1] = data[sourceOffset + 1];
+      cropped[targetOffset + 2] = data[sourceOffset + 2];
+      cropped[targetOffset + 3] = data[sourceOffset + 3];
+    }
   }
 
   const output = await sharp(cropped, {
@@ -149,6 +171,7 @@ async function isolateLargestVisualComponent(source, label, options = {}) {
     branding_component: label,
     source: { width, height },
     largest_area: largest.area,
+    kept_component_count: keptComponentIds.size,
     crop: { left, top, width: cropWidth, height: cropHeight, ratio: Number(cropRatio.toFixed(4)) },
     output: { width: outMeta.width, height: outMeta.height },
   }));
@@ -185,6 +208,7 @@ async function makeSplash() {
 
 async function renderBrandAssets() {
   const isolatedIcon = await isolateLargestVisualComponent(brand.iconReference, 'launcher', {
+    pixelMode: 'chromatic-launcher',
     minAreaRatio: 0.08,
     maxCropRatio: 0.94,
     proximityRatio: 0.012,
@@ -240,4 +264,4 @@ const result = spawnSync('npx', args, {
   shell: process.platform === 'win32',
 });
 if (result.status !== 0) process.exit(result.status || 1);
-console.log(`✅ Branding Android ${appVersion}: componente visual principal aislado del tablero aprobado; captions/paletas quedan fuera del artefacto.`);
+console.log(`✅ Branding Android ${appVersion}: máscara por componente; launcher cromático separa caption gris y Topi excluye componentes ajenos.`);
