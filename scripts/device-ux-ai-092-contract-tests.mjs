@@ -147,8 +147,8 @@ assert.match(splash092, /Descubre, conecta y encuentra cerca de ti/);
 assert.match(splash092, /data:image\/webp;base64/);
 assert.doesNotMatch(splash092, /tutop-dd-pin-splash|aria-label="DD"/);
 
-// Build112 must use real raster files for Android packaging.
-// Build111 proved SVG-with-embedded-WebP can pass source assertions while losing pixels in the APK.
+// Build113 must use real raster files plus explicit board-residue crops for Android packaging.
+// Build111 lost embedded pixels; build112 still carried board caption/palette residue.
 assert.match(androidAssets, /tutop-app-icon-reference\.webp/);
 assert.match(androidAssets, /topi-reference\.webp/);
 assert.doesNotMatch(androidAssets, /sharp\(brand\.icon[^R]/);
@@ -156,8 +156,11 @@ assert.match(androidAssets, /splashBackgroundColor', '#FFFFFF'/);
 assert.match(androidAssets, /splashBackgroundColorDark', '#FFFFFF'/);
 assert.match(androidAssets, /--iconBackgroundColor', '#7C4DFF'/);
 assert.match(androidAssets, /--iconBackgroundColorDark', '#7C4DFF'/);
-assert.match(androidAssets, /raster de referencia directo/);
-assert.match(androidAssets, /Topi visible/);
+assert.match(androidAssets, /approved brand board/);
+assert.match(androidAssets, /crop away palette\/annotation residue/);
+assert.match(androidAssets, /lower caption band/);
+assert.match(androidAssets, /icono sin caption/);
+assert.match(androidAssets, /Topi recortado del tablero aprobado/);
 assert.match(topiMascot, /TOPI_REFERENCE/);
 assert.match(topiMascot, /data:image\/webp;base64/);
 assert.doesNotMatch(topiMascot, /topi-crochet-stitches|topi-yarn-purple/);
