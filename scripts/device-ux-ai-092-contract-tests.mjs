@@ -157,7 +157,7 @@ assert.match(androidAssets, /splashBackgroundColorDark', '#FFFFFF'/);
 assert.match(androidAssets, /--iconBackgroundColor', '#7C4DFF'/);
 assert.match(androidAssets, /--iconBackgroundColorDark', '#7C4DFF'/);
 assert.match(androidAssets, /approved brand board/);
-assert.match(androidAssets, /crop away palette\/annotation residue/);
+assert.match(androidAssets, /Crop away palette\/annotation residue/);
 assert.match(androidAssets, /lower caption band/);
 assert.match(androidAssets, /icono sin caption/);
 assert.match(androidAssets, /Topi recortado del tablero aprobado/);
