@@ -45,6 +45,9 @@ jobs:
       - name: Concurrent delivery confirmation contract
         run: node scripts/transaction-confirmation-concurrency-tests.mjs
 
+      - name: Canonical mutable-transaction state guard
+        run: node scripts/transaction-canonical-state-guard-tests.mjs
+
       - name: Preserve build110 base candidate
         shell: bash
         run: |
