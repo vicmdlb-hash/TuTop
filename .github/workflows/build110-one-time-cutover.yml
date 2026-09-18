@@ -1,0 +1,51 @@
+name: TuTop build110 one-time physical cutover
+
+on:
+  push:
+    branches:
+      - fix/tutop-staging-promotion-snapshot
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-build110-shared-rules-cutover
+  cancel-in-progress: false
+
+jobs:
+  cutover:
+    if: contains(github.event.head_commit.message, 'CUTOVER_ACTION_ID=build110-deviceA-20260917T2010')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
+      TUTOP_CUTOVER_ACTION_ID: build110-deviceA-20260917T2010
+      TUTOP_CUTOVER_DEVICE_INSTALLED: 'true'
+      TUTOP_CUTOVER_EXCLUSIVE_WINDOW: 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Atomic cutover regression
+        run: node scripts/verified-email-atomic-cutover-tests.mjs
+      - name: Apply-entrypoint contract
+        run: node scripts/verified-email-apply-entrypoint-tests.mjs
+      - name: Compose exact build110 Rules
+        run: npm run v2:rules:prepare
+      - name: Fresh shared-staging preflight immediately before mutation
+        run: node scripts/verified-email-promotion-snapshot.mjs
+      - name: Apply atomic verified-email Rules cutover
+        run: node scripts/verified-email-apply-cutover.mjs --apply
+      - name: Preserve cutover evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-build110-rules-cutover-${{ github.run_id }}
+          path: staging-promotion-snapshot/applied-cutover.json
+          retention-days: 30
+          if-no-files-found: error
