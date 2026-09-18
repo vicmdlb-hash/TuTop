@@ -1,1 +1,49 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Privacidad · TuTop</title><style>body{font:16px/1.6 system-ui;background:#050a13;color:#e5e7eb;max-width:760px;margin:auto;padding:40px 20px}h1,h2{color:#fff}a{color:#c084fc}.note{padding:14px;border:1px solid #7c3aed55;border-radius:14px;background:#7c3aed12}</style></head><body><h1>Aviso de privacidad de TuTop — borrador beta</h1><p class="note">Este texto es un borrador operativo para pruebas privadas y requiere completar identidad/contacto del responsable y revisión legal antes de una publicación pública.</p><h2>Datos usados en la beta</h2><p>Número telefónico; nombre y facultad; publicaciones; mensajes; calificaciones; saldo de puntos UCoins y Puntos de Prestigio; fotografías de productos; reportes; y, cuando el usuario solicita verificación, evidencia de credencial estudiantil.</p><p>Durante esta beta el número sirve para crear una identidad de acceso en Firebase, pero <strong>no se verifica por SMS</strong>. TuTop no debe presentarlo como número verificado hasta que exista un mecanismo de verificación real.</p><h2>Finalidades</h2><p>Crear y proteger la cuenta, operar el marketplace universitario, permitir comunicación y coordinación de entregas, gestionar reputación, detectar abuso, atender reportes y solicitudes de verificación, y mantener la seguridad de la beta.</p><h2>Infraestructura</h2><p>La beta usa Firebase Authentication y Cloud Firestore. Las reglas de seguridad de Firestore y las operaciones atómicas limitan qué datos puede leer o modificar cada cuenta. En esta etapa no se usan Cloud Storage, Cloud Functions ni notificaciones push.</p><h2>Pagos</h2><p>TuTop no procesa ni custodia el pago de los productos físicos durante el MVP. El acuerdo de pago ocurre directamente entre estudiantes.</p><h2>Eliminación</h2><p>La eliminación automática todavía no está habilitada en la beta Spark. La página de <a href="/delete-account.html">eliminación de cuenta</a> explica el procedimiento vigente y esta limitación. No se debe prometer un borrado automático desde la app hasta que el flujo exista y haya sido probado.</p><h2>Seguridad</h2><p>Movimientos de UCoins, pujas, reputación, moderación y verificación están restringidos mediante Firestore Security Rules y escrituras atómicas. Aun así, esta es una beta privada y requiere pruebas reales con el proyecto Firebase antes de considerarse lista para producción.</p><p>Última revisión del borrador: 3 de septiembre de 2026.</p></body></html>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Privacidad · TuTop</title>
+  <style>
+    body{font:16px/1.6 system-ui;background:#050a13;color:#e5e7eb;max-width:760px;margin:auto;padding:40px 20px}
+    h1,h2{color:#fff}a{color:#c084fc}.note{padding:14px;border:1px solid #7c3aed55;border-radius:14px;background:#7c3aed12}
+  </style>
+</head>
+<body>
+  <h1>Privacidad de TuTop — borrador beta</h1>
+  <p class="note"><strong>No es una política legal aprobada para publicación.</strong> Resume el comportamiento técnico observado en la candidata build110 y debe pasar revisión legal antes de una release pública.</p>
+
+  <h2>Cuenta e identidad</h2>
+  <p>TuTop usa Firebase Authentication. La candidata actual trabaja con correo real y estado de verificación de correo. El flujo de recuperación legacy puede partir de un alias telefónico existente y la Clave TuTop para conservar el mismo UID; ese teléfono sigue siendo opcional/no verificado y TuTop no lo presenta como verificado por SMS.</p>
+
+  <h2>Datos y contenido usados por la beta</h2>
+  <p>Según la superficie técnica revisada, TuTop puede manejar datos de perfil y universidad/campus; publicaciones y fotografías; chats y mensajes; ofertas, reservas y transacciones; favoritos, búsquedas guardadas, reseñas y reportes; preferencias de notificaciones; tokens de dispositivo para push; solicitudes de eliminación; y evidencia de verificación cuando el usuario usa ese flujo.</p>
+
+  <h2>Ubicación</h2>
+  <p>Nearby puede solicitar ubicación aproximada bajo demanda. La configuración nativa revisada usa ubicación coarse y no exige ubicación precisa ni ubicación en segundo plano para este flujo.</p>
+
+  <h2>Topi / Firebase AI</h2>
+  <p>Cuando se usa Topi con IA remota habilitada, una pregunta del usuario se sanea y limita antes de enviarse a Firebase AI Logic. La respuesta y el modelo regresan al cliente. El módulo local de diagnóstico revisado no conserva prompts, tokens, UID, teléfonos ni coordenadas.</p>
+
+  <h2>Notificaciones</h2>
+  <p>La candidata incluye soporte de Firebase Cloud Messaging y preferencias de notificación. El dispositivo puede registrar o desactivar un token push. La aceptación física extremo a extremo de FCM continúa pendiente y no debe confundirse con validación de código.</p>
+
+  <h2>Fotos y video</h2>
+  <p>El flujo de fotos puede usar Camera/Photo Picker y lectura local de archivos. El código de video/Firebase Storage existe detrás de feature flags, pero Storage/video permanece bloqueado en la candidata actual y no se declara aquí como una superficie activa de producción.</p>
+
+  <h2>Eliminación de cuenta</h2>
+  <p>Desde <strong>Perfil → Notificaciones y privacidad V2 → Eliminar cuenta y datos</strong> una cuenta autenticada puede registrar una solicitud de eliminación. La ejecución destructiva no se dispara automáticamente desde la app: existe un proceso controlado que separa datos eliminables, contenido que debe retirarse y evidencia operativa que podría requerir retención.</p>
+  <p><a href="/delete-account.html">Ver información técnica sobre eliminación de cuenta</a>.</p>
+
+  <h2>Retención y revisión legal</h2>
+  <p>Los plazos, bases jurídicas, excepciones de retención y aprobación final siguen pendientes de revisión legal. Este borrador no inventa esos elementos ni sustituye la declaración final de Data Safety de Google Play.</p>
+
+  <h2>Infraestructura observada</h2>
+  <p>En la superficie Android revisada aparecen Firebase Authentication/Firestore, Firebase AI Logic, Firebase App Check, Firebase Cloud Messaging y componentes Capacitor para Android, ubicación, cámara y filesystem.</p>
+
+  <h2>Estado de publicación</h2>
+  <p>TuTop continúa en beta controlada. Play Store, producción, billing, Storage/video y merge permanecen bloqueados por los gates actuales. Una política pública final debe ser coherente con el comportamiento real de la candidata que se publique.</p>
+
+  <p>Última revisión técnica del borrador: 17 de septiembre de 2026.</p>
+</body>
+</html>
