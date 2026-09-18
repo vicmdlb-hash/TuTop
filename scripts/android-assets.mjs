@@ -37,13 +37,20 @@ async function cleanTopiReference() {
   if (width < 10 || height < 10) stop('Referencia Topi inválida.');
 
   // The source raster intentionally comes from the approved brand board.
-  // Crop away palette/annotation residue and use only the mascot head/upper body,
-  // which is the approved splash/onboarding direction.
-  const left = Math.round(width * 0.14);
-  const cropWidth = Math.max(1, Math.round(width * 0.82));
-  const cropHeight = Math.max(1, Math.round(height * 0.62));
+  // Crop away palette/annotation residue without Sharp extract(): build113's
+  // first attempt proved provider/image metadata can make extract fail even
+  // when the intended rectangle is inside nominal dimensions.
+  const leftMaskWidth = Math.max(1, Math.round(width * 0.14));
+  const rightMaskWidth = Math.max(1, Math.round(width * 0.04));
+  const bottomMaskHeight = Math.max(1, Math.round(height * 0.38));
+  const white = (w, h) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="#FFFFFF"/></svg>`);
+
   return sharp(brand.topiReference)
-    .extract({ left, top: 0, width: Math.min(cropWidth, width - left), height: Math.min(cropHeight, height) })
+    .composite([
+      { input: white(leftMaskWidth, height), left: 0, top: 0 },
+      { input: white(rightMaskWidth, height), left: Math.max(0, width - rightMaskWidth), top: 0 },
+      { input: white(width, bottomMaskHeight), left: 0, top: Math.max(0, height - bottomMaskHeight) },
+    ])
     .trim({ background: '#FFFFFF', threshold: 18 })
     .resize({ width: 900, height: 900, fit: 'inside', withoutEnlargement: false })
     .png()
@@ -78,8 +85,10 @@ async function renderBrandAssets() {
   const iconWidth = Number(iconMetadata.width || 0);
   const iconHeight = Number(iconMetadata.height || 0);
   if (iconWidth < 10 || iconHeight < 10) stop('Referencia de icono inválida.');
+  const captionMaskHeight = Math.max(1, Math.round(iconHeight * 0.08));
+  const captionMask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${iconWidth}" height="${captionMaskHeight}"><rect width="100%" height="100%" fill="#FFFFFF"/></svg>`);
   await sharp(brand.iconReference)
-    .extract({ left: 0, top: 0, width: iconWidth, height: Math.max(1, Math.floor(iconHeight * 0.94)) })
+    .composite([{ input: captionMask, left: 0, top: Math.max(0, iconHeight - captionMaskHeight) }])
     .trim({ background: '#FFFFFF', threshold: 18 })
     .resize(1024, 1024, { fit: 'fill' })
     .png()
