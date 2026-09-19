@@ -12,6 +12,7 @@ export type NativeNotificationIntent = {
   listing_id?: string;
   transaction_id?: string;
   saved_search_id?: string;
+  recipient_uid?: string;
 };
 
 export const NATIVE_NOTIFICATION_EVENT = 'tutop:native-notification';
@@ -71,6 +72,7 @@ function intentFromEvent(event: any, source: NativeNotificationIntent['source'])
     listing_id: String(data.listing_id || data.product_id || '').trim() || undefined,
     transaction_id: String(data.transaction_id || '').trim() || undefined,
     saved_search_id: String(data.saved_search_id || '').trim() || undefined,
+    recipient_uid: String(data.recipient_uid || '').trim() || undefined,
   };
 }
 
