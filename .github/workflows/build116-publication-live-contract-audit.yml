@@ -1,0 +1,39 @@
+name: Build116 publication live-contract audit
+
+on:
+  push:
+    branches: [audit/build116-publication-live-contract]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Generate exact local Rules without deployment
+        run: npm run v2:rules:prepare
+      - name: Read live staging contract and aggregate profile compatibility
+        run: node scripts/build116-publication-live-contract-audit.mjs
+      - name: Independent Firebase CLI Auth inventory — count only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes firebase-tools@15.30.1 auth:export /tmp/tutop-auth-export.json --project "$TUTOP_FIREBASE_PROJECT_ID" --format=json >/tmp/auth-export.log
+          node -e "const fs=require('fs');const raw=JSON.parse(fs.readFileSync('/tmp/tutop-auth-export.json','utf8'));const u=raw.users||[];console.log(JSON.stringify({firebase_cli_auth_users:u.length,email_verified:u.filter(x=>x.emailVerified===true).length,disabled:u.filter(x=>x.disabled===true).length,phone_alias:u.filter(x=>/^phone-[a-f0-9]+@auth\\.tutop\\.app$/i.test(String(x.email||''))).length,no_user_fields_logged:true}))"
+          rm -f /tmp/tutop-auth-export.json /tmp/auth-export.log
+      - name: Prove no tracked mutation
+        run: git diff --exit-code -- package.json package-lock.json
