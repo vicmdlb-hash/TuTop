@@ -139,17 +139,20 @@ export default function NationalPublishScreen() {
   const missing = required.filter((key) => normalizedAttributes[key] === undefined || normalizedAttributes[key] === null || normalizedAttributes[key] === '');
   const parsedPrice = Number(price);
   const parsedQuantity = Number(quantity);
-  const hasValidPrice = price.trim() !== '' && Number.isFinite(parsedPrice) && parsedPrice > 0 && parsedPrice <= 1_000_000;
+  const hasValidPrice = price.trim() !== '' && Number.isFinite(parsedPrice) && parsedPrice >= 0.01 && parsedPrice <= 1_000_000;
   const hasValidQuantity = quantity.trim() !== '' && Number.isInteger(parsedQuantity) && parsedQuantity >= 1 && parsedQuantity <= 99;
+  const hasValidTitle = title.trim().length >= 2;
   const shippingAvailable = deliveryMethods.includes('shipping');
+  const nationalShippingValid = scope !== 'national' || shippingAvailable;
   const prohibitedDraft = isForbiddenProductText(`${title} ${description}`);
   const publishIssues: string[] = [];
   if (!institutionId || !campusId) publishIssues.push('universidad/campus');
-  if (!title.trim()) publishIssues.push('título');
+  if (!hasValidTitle) publishIssues.push('título de al menos 2 caracteres');
   if (!category) publishIssues.push('categoría');
   if (!hasValidPrice) publishIssues.push('precio entre $0.01 y $1,000,000');
   if (!hasValidQuantity) publishIssues.push('cantidad entera entre 1 y 99');
   if (!deliveryMethods.length) publishIssues.push('forma de entrega');
+  if (!nationalShippingValid) publishIssues.push('envío para alcance nacional');
   if (prohibitedDraft) publishIssues.push('artículo o servicio no permitido');
   if (missing.length) publishIssues.push(`${missing.length} dato${missing.length === 1 ? '' : 's'} obligatorio${missing.length === 1 ? '' : 's'}`);
   if (videoFile && !videoInfraEnabled) publishIssues.push('video no disponible en esta beta');
@@ -326,10 +329,12 @@ export default function NationalPublishScreen() {
   const publish = async () => {
     setMessage(null);
     if (!institutionId || !campusId) return setMessage('Primero selecciona tu universidad y campus.');
-    if (!title.trim() || !category || !hasValidPrice) return setMessage('Completa título, categoría y un precio entre $0.01 y $1,000,000.');
+    if (!hasValidTitle) return setMessage('El título debe tener al menos 2 caracteres.');
+    if (!category || !hasValidPrice) return setMessage('Completa categoría y un precio entre $0.01 y $1,000,000.');
     if (!hasValidQuantity) return setMessage('La cantidad debe ser un número entero entre 1 y 99.');
     if (prohibitedDraft) return setMessage('Ese artículo o servicio no está permitido en TuTop. Revisa el título y la descripción.');
     if (!deliveryMethods.length) return setMessage('Selecciona al menos una forma de entrega.');
+    if (!nationalShippingValid) return setMessage('Para publicar en Todo México debes activar Envío externo acordado.');
     if (missing.length) {
       setAdvancedOpen(true);
       return setMessage('Completa los campos obligatorios marcados con * antes de publicar.');
