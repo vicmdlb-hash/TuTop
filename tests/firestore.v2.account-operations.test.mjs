@@ -32,7 +32,7 @@ test('owner crea solicitud pending y terceros no pueden leerla ni modificarla', 
   await assertFails(updateDoc(ref, { status: 'processing', updated_at: now() }));
 });
 
-test('support procesa sólo transiciones forward y no reabre solicitudes cerradas', async () => {
+test('support puede iniciar procesamiento pero no declarar completed desde cliente', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'account_deletion_requests/alice'), { uid: 'alice', status: 'pending', requested_at: now(), updated_at: now() });
   });
@@ -41,9 +41,9 @@ test('support procesa sólo transiciones forward y no reabre solicitudes cerrada
   await assertSucceeds(getDoc(ref));
   await assertSucceeds(updateDoc(ref, { status: 'processing', updated_at: now() }));
   await assertFails(updateDoc(ref, { status: 'pending', updated_at: now() }));
-  await assertSucceeds(updateDoc(ref, { status: 'completed', updated_at: now() }));
+  await assertFails(updateDoc(ref, { status: 'completed', updated_at: now() }));
+  await assertSucceeds(updateDoc(ref, { status: 'rejected', updated_at: now() }));
   await assertFails(updateDoc(ref, { status: 'processing', updated_at: now() }));
-  await assertFails(updateDoc(ref, { status: 'rejected', updated_at: now() }));
 });
 
 test('support puede rechazar pending pero no alterar identidad ni fecha original', async () => {

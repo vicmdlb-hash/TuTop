@@ -129,6 +129,7 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
         && request.resource.data.institution_id is string && request.resource.data.institution_id.size() >= 2
         && request.resource.data.campus_id is string && request.resource.data.campus_id.size() >= 2
         && validUniversityMetadata(request.resource.data)
+        && productMatchesSellerIdentity(request.resource.data, request.auth.uid)
         && request.resource.data.category_id is string && request.resource.data.category_id.size() >= 2 && request.resource.data.category_id.size() <= 80
         && (!('subcategory_id' in request.resource.data) || (request.resource.data.subcategory_id is string && request.resource.data.subcategory_id.size() <= 80))
         && request.resource.data.title is string && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 120
@@ -276,7 +277,11 @@ const strictModerationAndPrivacy = `    match /moderation_cases/{caseId} {
       allow update: if canSupportAppeals()
         && request.resource.data.uid == uid
         && request.resource.data.requested_at == resource.data.requested_at
-        && request.resource.data.status in ['pending','processing','completed','rejected']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+        && (
+          (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
+          || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
+        )
         && fresh(request.resource.data.updated_at);
       allow delete: if false;
     }

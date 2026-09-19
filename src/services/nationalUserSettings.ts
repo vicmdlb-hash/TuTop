@@ -10,6 +10,14 @@ export type AccountDeletionRequest = {
   status: AccountDeletionRequestStatus;
   requested_at: string;
   updated_at: string;
+  completed_at?: string;
+  erasure_policy_version?: string;
+  residual_manifest_version?: string;
+  processor_run_id?: string;
+  deleted_count?: number;
+  withdrawn_count?: number;
+  retained_count?: number;
+  auth_deleted?: boolean;
 };
 
 function client() {
