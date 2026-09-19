@@ -154,10 +154,10 @@ if (nationalSchemaEnabled()) {
   // error and "try the listing anyway" because that only moves the failure into
   // Firestore rules and creates a confusing physical-device loop.
   const originalCreateListing = canonicalListingsBackend.create.bind(canonicalListingsBackend);
-  canonicalListingsBackend.create = async (listing, category) => {
+  canonicalListingsBackend.create = async (listing, category, operationId) => {
     const firebase = new FirebaseRestClient(getFirebaseConfig());
     const uid = firebase.currentSession?.uid;
-    if (!uid || uid !== listing.seller_id) return originalCreateListing(listing, category);
+    if (!uid || uid !== listing.seller_id) return originalCreateListing(listing, category, operationId);
 
     const profile = await firebase.getDocument<Record<string, unknown>>(`users/${uid}`);
     if (!profile) throw new Error('Tu perfil de TuTop no está disponible. Cierra sesión, vuelve a entrar e intenta publicar de nuevo.');
@@ -207,7 +207,7 @@ if (nationalSchemaEnabled()) {
       city_id: canonicalIdentity.city_id || listing.city_id,
       faculty_id: resolved.faculty?.id,
       career_id: resolved.career?.id,
-    }, category);
+    }, category, operationId);
   };
 
   const originalLoadSnapshot = onlineBackend.loadSnapshot.bind(onlineBackend);

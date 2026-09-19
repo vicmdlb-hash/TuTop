@@ -1,0 +1,26 @@
+name: Post-build116 publish idempotency
+
+on:
+  push:
+    branches: [hardening/post116-publish-idempotency]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run typecheck
+      - run: node scripts/post116-publish-idempotency-tests.mjs
+      - run: node scripts/build116-deviceA-feedback-tests.mjs
+      - run: npm run build
