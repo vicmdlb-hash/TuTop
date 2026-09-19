@@ -1,0 +1,50 @@
+name: Build116 exact publication live proof — no APK
+
+on:
+  push:
+    branches: [probe/build116-exact-publication-after-rate-read]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build116-exact-publication-live-proof
+  cancel-in-progress: true
+
+jobs:
+  exact-client-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_BUILD116_EXACT_ACK: BUILD116_EXACT_PUBLICATION_AFTER_RATE_READ
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Assert probe branch still contains exact build116 production sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse 8a4368ba0fce34d0a87acc8eccf38bf5dc019bc2:src/services/rateLimit.ts)" = "$(git rev-parse HEAD:src/services/rateLimit.ts)"
+          test "$(git rev-parse 8a4368ba0fce34d0a87acc8eccf38bf5dc019bc2:src/services/firebaseRest.ts)" = "$(git rev-parse HEAD:src/services/firebaseRest.ts)"
+          test "$(git rev-parse 8a4368ba0fce34d0a87acc8eccf38bf5dc019bc2:src/services/canonicalListingsBackend.ts)" = "$(git rev-parse HEAD:src/services/canonicalListingsBackend.ts)"
+          echo "PASS production sources exactly match build116 SHA"
+      - name: Read exact existing staging client config — no deploy
+        run: node scripts/read-existing-staging-build-config.mjs
+      - name: Execute exact build116 rate-limit and publication path
+        run: node --experimental-strip-types --experimental-loader ./scripts/node-ts-extension-loader.mjs scripts/build116-exact-publication-live-proof.mjs
+      - name: No dependency drift
+        run: git diff --exit-code -- package.json package-lock.json
+      - name: Prove no Android candidate work exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs/apk || test -z "$(find android/app/build/outputs/apk -type f -name '*.apk' -print -quit 2>/dev/null)"
+          echo "PASS no APK generated"
