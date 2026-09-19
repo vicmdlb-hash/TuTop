@@ -37,6 +37,9 @@ export default function ProductDetail() {
   if (!product) return null;
   const favorite = favorites.includes(product.id);
   const ownProduct = product.vendedor_id === user.id;
+  const existingBuyerChat = chats.some((chat) => chat.producto_id === product.id && chat.comprador_id === user.id && chat.vendedor_id === product.vendedor_id);
+  const reserved = product.availability_status === 'reserved';
+  const reservedForViewer = reserved && !ownProduct && !existingBuyerChat;
   const photos = product.imagenes_url?.length ? product.imagenes_url : [product.imagen_url];
   const activePhoto = photos[Math.min(photoIndex, photos.length - 1)] || product.imagen_url;
   const videoUri = (product as Product & { video_urls?: string[] }).video_urls?.[0];
@@ -44,7 +47,7 @@ export default function ProductDetail() {
   const detailEntries = Object.entries(parsed.details).slice(0, 12);
   const negotiable = parsed.details['Precio negociable']?.toLowerCase() === 'sí';
   const deliverySummary = parsed.details['Entrega'] || product.punto_encuentro;
-  const similar = useMemo(() => products.filter((item) => item.id !== product.id && item.estado === 'Activo' && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4), [products, product]);
+  const similar = useMemo(() => products.filter((item) => item.id !== product.id && item.estado === 'Activo' && item.availability_status !== 'reserved' && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4), [products, product]);
   const reputation = sellerReputationEvidence(product.vendedor_id, reviews, chats);
 
   useEffect(() => {
@@ -99,7 +102,7 @@ export default function ProductDetail() {
   };
 
   const startOffer = () => {
-    if (ownProduct) return;
+    if (ownProduct || reserved) return;
     feedbackTap();
     contactProduct(product.id);
   };
@@ -112,7 +115,7 @@ export default function ProductDetail() {
           <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-black/55" />
           <button onClick={closeProduct} className="detail-floating left-3" aria-label="Regresar"><ArrowLeft /></button>
           <button onClick={share} className="detail-floating right-3" aria-label="Compartir"><Share2 /></button>
-          <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-3 py-1 text-[10px] font-semibold backdrop-blur">{product.categoria}</span><span className="rounded-full bg-emerald-500/85 px-3 py-1 text-[10px] font-black text-white">{product.estado === 'Activo' ? 'Disponible' : product.estado}</span>{videoUri && <span className="inline-flex items-center gap-1 rounded-full bg-violet-600/85 px-2.5 py-1 text-[9px] font-black text-white"><Video className="h-3 w-3" />Video</span>}</div>
+          <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-3 py-1 text-[10px] font-semibold backdrop-blur">{product.categoria}</span><span className={`rounded-full px-3 py-1 text-[10px] font-black ${reserved ? 'bg-amber-500/90 text-black' : 'bg-emerald-500/85 text-white'}`}>{product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado}</span>{videoUri && <span className="inline-flex items-center gap-1 rounded-full bg-violet-600/85 px-2.5 py-1 text-[9px] font-black text-white"><Video className="h-3 w-3" />Video</span>}</div>
           {photos.length > 1 && <span className="absolute bottom-3 right-3 rounded-full bg-black/55 px-2.5 py-1 text-[9px] font-bold backdrop-blur">{photoIndex + 1}/{photos.length}</span>}
         </div>
         {photos.length > 1 && <div className="flex gap-2 overflow-x-auto border-b border-white/[0.05] bg-[#09111d] px-4 py-2.5">{photos.map((photo, index) => <button key={`${photo.slice(0, 24)}-${index}`} onClick={() => { setPhotoIndex(index); feedbackTap(); }} className={`detail-thumb ${photoIndex === index ? 'detail-thumb-active' : ''}`}><img src={photo} alt={`Foto ${index + 1}`} /></button>)}</div>}
@@ -131,12 +134,12 @@ export default function ProductDetail() {
             </button>
             <SellerReputationInline sellerId={product.vendedor_id} visibleEvidence={reputation} />
           </div>
-          <div className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-white/5 bg-[#0d1725] p-3 text-[12px] text-[#b6c0cf]"><span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-success" />{deliverySummary}</span><span className="text-[10px] font-bold text-slate-500">{product.stock || 1} disponible{(product.stock || 1) === 1 ? '' : 's'}</span></div>
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-white/5 bg-[#0d1725] p-3 text-[12px] text-[#b6c0cf]"><span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-success" />{deliverySummary}</span><span className="text-[10px] font-bold text-slate-500">{reserved ? 'Reserva activa' : `${product.stock || 1} disponible${(product.stock || 1) === 1 ? '' : 's'}`}</span></div>
 
           {!ownProduct && <section className="mt-3 rounded-2xl border border-violet-400/10 bg-violet-500/[0.055] p-3"><button onClick={() => setTopiOpen((value) => !value)} className="flex w-full items-center gap-2 text-left"><span className="brand-mini">T</span><span className="flex-1"><strong className="block text-[11px]">Topi puede ayudarte</strong><small className="text-[9px] text-slate-500">Preguntas útiles antes de comprar.</small></span><Sparkles className="h-4 w-4 text-violet-300" /></button>{topiOpen && <div className="mt-3 flex flex-wrap gap-2">{['¿Sigue disponible?', '¿Qué incluye exactamente?', '¿Dónde entregas?', negotiable ? '¿Aceptarías una oferta?' : '¿El precio es fijo?'].map((text) => <button key={text} onClick={() => { const chatId = contactProduct(product.id); if (chatId) sendMessage(chatId, text); }} className="rounded-full border border-white/5 bg-white/[0.035] px-3 py-2 text-[9px] font-bold text-slate-300">{text}</button>)}</div>}</section>}
 
-          <div className="mt-4 flex gap-2"><button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`detail-favorite ${favorite ? 'favorite-button-active' : ''}`}><Heart className="h-5 w-5" fill={favorite ? 'currentColor' : 'none'} />{favorite ? 'Guardado' : 'Guardar'}</button><button onClick={() => { if (!ownProduct) { feedbackTap(); contactProduct(product.id); } }} disabled={ownProduct} className="detail-contact"><MessageCircle className="h-5 w-5" />{ownProduct ? 'Es tu publicación' : 'Contactar'}</button></div>
-          {!ownProduct && <button onClick={startOffer} className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-400/15 bg-emerald-500/10 py-3 text-xs font-black text-emerald-200"><TimerReset className="h-4 w-4" />Negociar / hacer oferta</button>}
+          <div className="mt-4 flex gap-2"><button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`detail-favorite ${favorite ? 'favorite-button-active' : ''}`}><Heart className="h-5 w-5" fill={favorite ? 'currentColor' : 'none'} />{favorite ? 'Guardado' : 'Guardar'}</button><button onClick={() => { if (!ownProduct && !reservedForViewer) { feedbackTap(); contactProduct(product.id); } }} disabled={ownProduct || reservedForViewer} className="detail-contact disabled:cursor-not-allowed disabled:opacity-45"><MessageCircle className="h-5 w-5" />{ownProduct ? 'Es tu publicación' : reservedForViewer ? 'Reservado' : existingBuyerChat ? 'Volver al chat' : 'Contactar'}</button></div>
+          {!ownProduct && <button disabled={reserved} onClick={startOffer} className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-400/15 bg-emerald-500/10 py-3 text-xs font-black text-emerald-200 disabled:cursor-not-allowed disabled:border-amber-400/10 disabled:bg-amber-500/[0.06] disabled:text-amber-200"><TimerReset className="h-4 w-4" />{reserved ? 'Reservado temporalmente' : 'Negociar / hacer oferta'}</button>}
 
           {similar.length > 0 && <section className="mt-5"><div className="mb-2 flex items-center justify-between"><h2 className="text-xs font-black">También podría interesarte</h2><span className="text-[9px] text-slate-600">Productos similares</span></div><div className="grid grid-cols-2 gap-2">{similar.map((item) => <button key={item.id} onClick={() => openProduct(item.id)} className="overflow-hidden rounded-2xl border border-white/5 bg-white/[0.025] text-left"><img src={item.imagen_url} alt={item.titulo} className="aspect-[4/3] w-full object-cover" /><div className="p-2"><p className="line-clamp-1 text-[10px] font-bold">{item.titulo}</p><p className="mt-1 text-[11px] font-black text-emerald-300">${item.precio_mxn.toLocaleString('es-MX')}</p></div></button>)}</div></section>}
 

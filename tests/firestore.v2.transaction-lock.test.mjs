@@ -20,7 +20,7 @@ async function seedCatalog(db) {
   await setDoc(doc(db, 'campuses/campus'), { institution_id: 'uatx', name: 'Campus', active: true });
 }
 
-async function seedCanonicalListing(db, at = now(), status = 'active') {
+async function seedCanonicalListing(db, at = now(), status = 'active', availability = 'available') {
   await setDoc(doc(db, 'listings_v2/listing-1'), {
     schema_version: 2,
     seller_id: 'seller',
@@ -40,6 +40,7 @@ async function seedCanonicalListing(db, at = now(), status = 'active') {
     photo_urls: ['data:image/png;base64,AA'],
     status,
     moderation_status: 'approved',
+    availability_status: availability,
     visibility_scope: 'campus',
     published_at: at,
     created_at: at,
@@ -98,6 +99,7 @@ function reserveBatch(db, suffix, buyer, amount) {
   batch.set(doc(db, 'listing_reservation_locks/listing-1'), {
     listing_id: 'listing-1', transaction_id: txId, buyer_id: buyer, seller_id: 'seller', created_at: at, updated_at: at,
   });
+  batch.update(doc(db, 'listings_v2/listing-1'), { availability_status: 'reserved', updated_at: at });
   batch.update(doc(db, `chats/chat-${suffix}`), { transaction_id: txId, current_offer_id: `offer-${suffix}`, updated_at: at });
   return batch;
 }
@@ -107,7 +109,7 @@ async function seedCompletionState({ txStatus = 'meetup_scheduled', listingStatu
     const db = ctx.firestore();
     const at = now();
     await seedCatalog(db);
-    await seedCanonicalListing(db, at, listingStatus);
+    await seedCanonicalListing(db, at, listingStatus, 'reserved');
     await setDoc(doc(db, 'transactions_v2/tx-done'), {
       listing_id: 'listing-1',
       chat_id: 'chat-done',
@@ -171,6 +173,32 @@ test('buyer puede ofertar antes del lock pero no crear nuevas ofertas mientras l
   }).commit());
 });
 
+test('reserva exige proyección pública reserved en el mismo commit', async () => {
+  await seed();
+  const seller = verifiedContext(env, 'seller').firestore();
+  const at = now();
+  const batch = writeBatch(seller);
+  batch.update(doc(seller, 'offers/offer-a'), { status: 'accepted', updated_at: at });
+  batch.set(doc(seller, 'transactions_v2/tx-offer-a'), {
+    listing_id: 'listing-1', chat_id: 'chat-a', buyer_id: 'buyer-a', seller_id: 'seller', accepted_offer_id: 'offer-a',
+    agreed_amount_mxn: 400, status: 'reserved', reservation_expires_at: future(), created_at: at, updated_at: at,
+  });
+  batch.set(doc(seller, 'listing_reservation_locks/listing-1'), {
+    listing_id: 'listing-1', transaction_id: 'tx-offer-a', buyer_id: 'buyer-a', seller_id: 'seller', created_at: at, updated_at: at,
+  });
+  batch.update(doc(seller, 'chats/chat-a'), { transaction_id: 'tx-offer-a', current_offer_id: 'offer-a', updated_at: at });
+  await assertFails(batch.commit());
+});
+
+test('seller no puede fingir reserved sin lock transaccional', async () => {
+  await seed();
+  const seller = verifiedContext(env, 'seller').firestore();
+  await assertFails(setDoc(doc(seller, 'listings_v2/listing-1'), {
+    availability_status: 'reserved',
+    updated_at: now(),
+  }, { merge: true }));
+});
+
 test('sólo una reservation lock puede existir por listing', async () => {
   await seed();
   const seller = verifiedContext(env, 'seller').firestore();
@@ -192,9 +220,26 @@ test('cancelación atómica libera lock y permite una nueva reserva', async () =
     status: 'cancelled', outcome_code: 'buyer_cancelled', outcome_actor_id: 'buyer-a', outcome_recorded_at: at, updated_at: at,
   });
   cancel.delete(doc(buyerA, 'listing_reservation_locks/listing-1'));
+  cancel.update(doc(buyerA, 'listings_v2/listing-1'), { availability_status: 'available', updated_at: at });
   await assertSucceeds(cancel.commit());
 
+  const reopened = await getDoc(doc(seller, 'listings_v2/listing-1'));
+  if (reopened.data()?.availability_status !== 'available') throw new Error('cancel must restore public availability');
   await assertSucceeds(reserveBatch(seller, 'b', 'buyer-b', 410).commit());
+});
+
+test('cancelación con lock borrado pero sin restaurar availability queda bloqueada', async () => {
+  await seed();
+  const seller = verifiedContext(env, 'seller').firestore();
+  const buyerA = verifiedContext(env, 'buyer-a').firestore();
+  await assertSucceeds(reserveBatch(seller, 'a', 'buyer-a', 400).commit());
+  const at = now();
+  const bad = writeBatch(buyerA);
+  bad.update(doc(buyerA, 'transactions_v2/tx-offer-a'), {
+    status: 'cancelled', outcome_code: 'buyer_cancelled', outcome_actor_id: 'buyer-a', outcome_recorded_at: at, updated_at: at,
+  });
+  bad.delete(doc(buyerA, 'listing_reservation_locks/listing-1'));
+  await assertFails(bad.commit());
 });
 
 test('cancelar sin borrar lock queda bloqueado', async () => {

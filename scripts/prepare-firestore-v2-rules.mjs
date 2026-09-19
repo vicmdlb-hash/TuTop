@@ -122,7 +122,7 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
           'schema_version','seller_id','institution_id','campus_id','city_id','faculty_id','career_id','community_id',
           'category_id','subcategory_id','title','description','attributes','price_mxn','negotiable','quantity','condition',
           'delivery_methods','meeting_point_ids','shipping_available','photo_urls','status','moderation_status','visibility_scope',
-          'published_at','created_at','updated_at'
+          'published_at','created_at','updated_at','availability_status'
         ])
         && request.resource.data.schema_version == 2
         && request.resource.data.seller_id == request.auth.uid
@@ -148,6 +148,7 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
         && (request.resource.data.photo_urls.size() < 4 || (request.resource.data.photo_urls[3] is string && request.resource.data.photo_urls[3].size() <= 180000))
         && request.resource.data.status in ['draft','active']
         && request.resource.data.moderation_status == 'pending'
+        && (!('availability_status' in request.resource.data) || request.resource.data.availability_status == 'available')
         && validVisibilityScope(request.resource.data.visibility_scope)
         && (request.resource.data.visibility_scope != 'national' || request.resource.data.shipping_available == true)
         && (!('published_at' in request.resource.data) || request.resource.data.published_at is timestamp)
@@ -161,6 +162,7 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
           && request.resource.data.campus_id == resource.data.campus_id
           && request.resource.data.created_at == resource.data.created_at
           && request.resource.data.moderation_status == resource.data.moderation_status
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['availability_status'])
           && request.resource.data.status in ['draft','active','paused','sold_out','archived']
           && (
             request.resource.data.status == resource.data.status
@@ -180,6 +182,33 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['moderation_status','updated_at'])
           && request.resource.data.moderation_status in ['pending','approved','rejected','flagged']
           && fresh(request.resource.data.updated_at)
+        )
+        ||
+        (
+          signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability_status','updated_at'])
+          && fresh(request.resource.data.updated_at)
+          && (
+            (
+              (!('availability_status' in resource.data) || resource.data.availability_status == 'available')
+              && request.resource.data.availability_status == 'reserved'
+              && request.auth.uid == resource.data.seller_id
+              && existsAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId))
+              && getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.seller_id == resource.data.seller_id
+            )
+            ||
+            (
+              ('availability_status' in resource.data)
+              && resource.data.availability_status == 'reserved'
+              && request.resource.data.availability_status == 'available'
+              && exists(/databases/$(database)/documents/listing_reservation_locks/$(listingId))
+              && request.auth.uid in [
+                get(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.buyer_id,
+                get(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.seller_id
+              ]
+              && !existsAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId))
+            )
+          )
         )
       );
       allow delete: if false;
