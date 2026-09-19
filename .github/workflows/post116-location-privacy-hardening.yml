@@ -1,0 +1,35 @@
+name: TuTop post116 location privacy hardening
+
+on:
+  push:
+    branches: [fix/post116-location-privacy-hardening]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post116-location-privacy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Full existing regression
+        run: npm run check
+      - name: Exact TypeScript
+        run: npm run typecheck
+      - name: Location privacy contract
+        run: node scripts/post116-location-privacy-contract-tests.mjs
+      - name: Build web bundle
+        run: npm run build
+      - name: No dependency drift
+        run: git diff --exit-code -- package.json package-lock.json
