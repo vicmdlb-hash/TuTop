@@ -87,6 +87,22 @@ for(const d of users){
   if(bad)profile.would_fail_identity_update_shape++;
 }
 
+const privateDocs=await listCollection('user_private');
+const authModes={};
+for(const d of privateDocs){
+  const mode=String(field(d,'auth_mode')||'missing');
+  authModes[mode]=(authModes[mode]||0)+1;
+}
+const createdTimes=users.map(d=>Date.parse(String(field(d,'created_at')||''))).filter(Number.isFinite).sort((a,b)=>a-b);
+const resetMarker=await maybeDoc('staging_maintenance/staging-reset-2026-09-13-physical-failures-1');
+const maintenance=resetMarker ? {
+  present:true,
+  completed_at:field(resetMarker,'completed_at')||null,
+  auth_users_deleted:Number(field(resetMarker,'auth_users_deleted')||0),
+  firestore_documents_deleted:Number(field(resetMarker,'firestore_documents_deleted')||0),
+} : {present:false};
+const deletionRequests=await listCollection('account_deletion_requests');
+
 const buckets=await listCollection('rate_limits');
 const listingBuckets=buckets.filter(d=>field(d,'action')==='listing_create');
 const rate={
@@ -128,7 +144,14 @@ const evidence={
   requires_verified_email:activeRules.includes('email_verified == true'),
   supports_verified_email_bootstrap:activeRules.includes('email_password_verified_beta'),
   catalog:{institutions:institutions.length,campuses:campuses.length,...knownCatalog},
-  profile_aggregate:profile,
+  profile_aggregate:{
+    ...profile,
+    earliest_created_at:createdTimes.length?new Date(createdTimes[0]).toISOString():null,
+    latest_created_at:createdTimes.length?new Date(createdTimes.at(-1)).toISOString():null,
+  },
+  private_profile_aggregate:{total:privateDocs.length,auth_modes:authModes},
+  staging_reset:maintenance,
+  account_deletion_requests:deletionRequests.length,
   listing_rate_aggregate:rate,
   auth_aggregate:{total:authTotal,email_accounts:authEmail,email_verified:authVerified,phone_alias_accounts:authPhoneAlias},
   no_uid_or_email_logged:true,
