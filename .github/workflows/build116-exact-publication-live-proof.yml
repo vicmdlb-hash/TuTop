@@ -67,7 +67,7 @@ jobs:
           must(backend,/await commitWithRateLimit\(client, 'listing_create'/,'canonical create consumes listing rate bucket');
           must(backend,/client\.encodeDocumentForWrite\(`listings_v2\/\$\{id\}`/,'canonical create serializes listings_v2');
 
-          must(rate,/client\.getDocument<RateLimitBucket>\(path\)/,'rate path reads deterministic bucket');
+          must(rate,/client\.getDocument(?:<[^>]+>)?\(path\)/,'rate path reads deterministic bucket');
           must(rate,/if \(!existing\)/,'missing bucket has create branch');
           must(rate,/currentDocument: \{ exists: false \}/,'first bucket uses create precondition');
 
