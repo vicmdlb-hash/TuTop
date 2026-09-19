@@ -34,17 +34,20 @@ export async function buildRateLimitWrite(client: FirebaseRestClient, action: Ra
   );
 
   const count = sameWindow ? Math.max(0, Number(existing?.data?.count || 0)) + 1 : 1;
-  const windowStart = new Date(sameWindow ? existingStart : at.getTime());
-  const payload = {
-    uid,
-    action,
-    window_start: windowStart,
-    count,
-    updated_at: at,
-  };
+  // Never trust the device wall clock for security timestamps. Firestore Rules
+  // compare these values to request.time; using REQUEST_TIME makes publication
+  // robust to a phone whose clock is several minutes fast/slow.
+  const payload: Record<string, unknown> = { uid, action, count };
+  if (sameWindow) payload.window_start = new Date(existingStart);
+
+  const updateTransforms: Array<{ fieldPath: string; setToServerValue: 'REQUEST_TIME' }> = [
+    ...(sameWindow ? [] : [{ fieldPath: 'window_start', setToServerValue: 'REQUEST_TIME' as const }]),
+    { fieldPath: 'updated_at', setToServerValue: 'REQUEST_TIME' as const },
+  ];
 
   const write: any = {
     update: client.encodeDocumentForWrite(path, payload),
+    updateTransforms,
   };
 
   if (existing?.updateTime) {
