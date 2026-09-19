@@ -22,7 +22,7 @@ globalThis.localStorage={
   get length(){return storage.size;}
 };
 
-const [{FirebaseRestClient},{buildCanonicalListingCreateWrite,validateCanonicalListingPolicy},{commitWithRateLimit}]=await Promise.all([
+const [{FirebaseRestClient},{buildCanonicalListingCreateWrite,validateCanonicalListingPolicy},{commitWithRateLimit,buildRateLimitWrite}]=await Promise.all([
   import('../src/services/firebaseRest.ts'),
   import('../src/services/canonicalListingsBackend.ts'),
   import('../src/services/rateLimit.ts')
@@ -32,7 +32,13 @@ const run=String(process.env.GITHUB_RUN_ID||'').replace(/\D/g,'').slice(-16);
 if(!run) throw new Error('CLIENT_EQ_RUN_ID_REQUIRED');
 const email='synthetic-client-equivalent-'+run+'@example.com';
 const password='TuTopClientEq!'+run+'Aa9';
-const listingIds=['synthetic-client-eq-a-'+run,'synthetic-client-eq-b-'+run,'synthetic-client-eq-c-'+run];
+const listingIds=[
+  'synthetic-client-eq-a-'+run,
+  'synthetic-client-eq-b-'+run,
+  'synthetic-client-eq-c-'+run,
+  'synthetic-client-eq-order-listing-first-'+run,
+  'synthetic-client-eq-order-rate-first-'+run
+];
 let oauth='';
 let uid='';
 let client=null;
@@ -102,6 +108,59 @@ function listing(id,title,clientIso){
     __id:id
   };
 }
+function sanitizedWriteShape(write){
+  const name=String(write?.update?.name||'');
+  const fields=write?.update?.fields||{};
+  return {
+    collection:name.includes('/documents/listings_v2/')?'listings_v2':name.includes('/documents/rate_limits/')?'rate_limits':'other',
+    field_names:Object.keys(fields).sort(),
+    field_types:Object.fromEntries(Object.entries(fields).map(([key,value])=>[key,Object.keys(value||{})[0]||'unknown']).sort(([a],[b])=>a.localeCompare(b))),
+    transforms:(write?.updateTransforms||[]).map(item=>item.fieldPath).sort(),
+    precondition_keys:Object.keys(write?.currentDocument||{}).sort()
+  };
+}
+
+async function clearOrderProbe(id){
+  await adminDeleteDoc('listings_v2/'+id).catch(()=>undefined);
+  if(uid) await adminDeleteDoc('rate_limits/'+uid+'-listing_create').catch(()=>undefined);
+}
+
+async function probeActualWriteOrder(){
+  const fakeAt='2099-01-01T00:00:00.000Z';
+  const results={};
+  for(const [label,id,order] of [
+    ['listing_before_bucket',listingIds[3],'listing_first'],
+    ['bucket_before_listing',listingIds[4],'rate_first']
+  ]){
+    await clearOrderProbe(id);
+    const raw=listing(id,'Orden real '+label,fakeAt);
+    const {__id,...payload}=raw;
+    validateCanonicalListingPolicy(payload,'Electrónica');
+    const listingWrite=buildCanonicalListingCreateWrite(client,id,payload);
+    const rateWrite=await buildRateLimitWrite(client,'listing_create',new Date(fakeAt));
+    const writes=order==='listing_first'?[listingWrite,rateWrite]:[rateWrite,listingWrite];
+    console.log(JSON.stringify({client_equivalent_write_shape:{
+      label,order,
+      writes:writes.map(sanitizedWriteShape),
+      user_data_logged:false
+    }}));
+    let outcome='PASS'; let errorClass='none';
+    try{
+      await client.commit(writes);
+      const readback=await client.getDocument('listings_v2/'+id);
+      if(!readback) throw new Error('ORDER_PROBE_READBACK_MISSING');
+    }catch(error){
+      outcome='DENIED';
+      const rawError=String(error instanceof Error?error.message:error);
+      errorClass=/Missing or insufficient permissions|PERMISSION_DENIED/i.test(rawError)?'permission_denied':'other';
+    }
+    results[label]={order,outcome,error_class:errorClass};
+    await clearOrderProbe(id);
+  }
+  console.log(JSON.stringify({client_equivalent_write_order_probe:{...results,order_sensitive:results.listing_before_bucket.outcome!==results.bucket_before_listing.outcome,user_data_logged:false}}));
+  return results;
+}
+
 async function publishExact(id,title,clientIso,callerClock){
   const raw=listing(id,title,clientIso);
   const {__id,...payload}=raw;
@@ -175,6 +234,9 @@ try{
 
   const fakeFuture='2099-01-01T00:00:00.000Z';
   const fakePast='1900-01-01T00:00:00.000Z';
+
+  stage='WRITE_ORDER_PROBE';
+  await probeActualWriteOrder();
 
   stage='FIRST_CREATE';
   await publishExact(listingIds[0],'Cliente real A',fakeFuture,new Date(fakeFuture));
