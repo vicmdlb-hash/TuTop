@@ -24,6 +24,7 @@ const FALLBACK_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<
 const PUBLISH_DRAFT_PREFIX = 'tutop.publish.draft.v1.';
 
 type PublishDraft = {
+  operationId?: string;
   assistantText?: string;
   title?: string;
   description?: string;
@@ -57,6 +58,11 @@ function writePublishDraft(uid: string, draft: PublishDraft) {
 function clearPublishDraft(uid: string) {
   if (!uid || typeof sessionStorage === 'undefined') return;
   try { sessionStorage.removeItem(`${PUBLISH_DRAFT_PREFIX}${uid}`); } catch { /* best effort */ }
+}
+
+function newPublishOperationId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `publish-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
 }
 const DELIVERY: Array<{ id: ListingDeliveryMethod; label: string }> = [
   { id: 'campus_meetup', label: 'Encuentro en campus' },
@@ -103,6 +109,7 @@ export default function NationalPublishScreen() {
   const nativeDevice = isNativeDeviceRuntime();
   const videoInfraEnabled = mediaStorageEnabled();
   const initialDraft = useMemo(() => readPublishDraft(user.id), [user.id]);
+  const [publishOperationId] = useState(() => initialDraft?.operationId || newPublishOperationId());
 
   const [assistantText, setAssistantText] = useState(initialDraft?.assistantText || '');
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -166,10 +173,11 @@ export default function NationalPublishScreen() {
 
   useEffect(() => {
     writePublishDraft(user.id, {
+      operationId: publishOperationId,
       assistantText, title, description, price, quantity, category, condition, negotiable, scope,
       deliveryMethods, meetingPointId, attributes, images,
     });
-  }, [user.id, assistantText, title, description, price, quantity, category, condition, negotiable, scope, deliveryMethods, meetingPointId, attributes, images]);
+  }, [user.id, publishOperationId, assistantText, title, description, price, quantity, category, condition, negotiable, scope, deliveryMethods, meetingPointId, attributes, images]);
 
   const applyTopi = async () => {
     const text = assistantText.trim();
@@ -390,7 +398,7 @@ export default function NationalPublishScreen() {
       // bridge. That bridge is the single publication authority: it validates
       // institution/campus documents, their relationship, reconciles the profile,
       // re-reads it, then writes listings_v2. No UI catch-and-continue path remains.
-      await canonicalListingsBackend.create(listing, category);
+      const created = await canonicalListingsBackend.create(listing, category, publishOperationId);
       uploadedVideoUri = null;
       clearPublishDraft(user.id);
 
@@ -402,9 +410,11 @@ export default function NationalPublishScreen() {
         refreshedFeed = false;
       }
 
-      setMessage(refreshedFeed
-        ? 'Publicación creada y enviada a revisión. TuTop no gestiona envíos; cualquier entrega se acuerda directamente entre las personas.'
-        : 'Publicación creada y enviada a revisión. El feed tardará en refrescarse; no vuelvas a publicarla para evitar duplicados.');
+      setMessage(created.recovered
+        ? 'TuTop confirmó que este mismo anuncio ya se había creado. Recuperamos la publicación sin duplicarla y la enviamos a revisión.'
+        : refreshedFeed
+          ? 'Publicación creada y enviada a revisión. TuTop no gestiona envíos; cualquier entrega se acuerda directamente entre las personas.'
+          : 'Publicación creada y enviada a revisión. El feed tardará en refrescarse; no vuelvas a publicarla para evitar duplicados.');
       window.setTimeout(() => setActiveTab('feed'), refreshedFeed ? 850 : 1500);
     } catch (error) {
       if (uploadedVideoUri) await firebaseMediaStorage.delete(uploadedVideoUri).catch(() => undefined);
