@@ -34,10 +34,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse 8a4368ba0fce34d0a87acc8eccf38bf5dc019bc2:src/services/rateLimit.ts)" = "$(git rev-parse HEAD:src/services/rateLimit.ts)"
-          test "$(git rev-parse 8a4368ba0fce34d0a87acc8eccf38bf5dc019bc2:src/services/firebaseRest.ts)" = "$(git rev-parse HEAD:src/services/firebaseRest.ts)"
-          test "$(git rev-parse 8a4368ba0fce34d0a87acc8eccf38bf5dc019bc2:src/services/canonicalListingsBackend.ts)" = "$(git rev-parse HEAD:src/services/canonicalListingsBackend.ts)"
-          echo "PASS production sources exactly match build116 SHA"
+          for path in \
+            src/components/NationalPublishScreen.tsx \
+            src/components/PermissionSettings.tsx \
+            src/lib/nearbyMarketplace.ts \
+            src/lib/permissionCenter091.ts \
+            src/lib/topiVoice.ts \
+            src/services/assistantProvider.ts \
+            src/services/nativeDeviceCapabilities.ts \
+            src/services/nativeFirebaseSecurity.ts \
+            src/services/nativeTopiAI.ts \
+            src/services/nationalIdentityHydrationBridge.ts \
+            src/services/rateLimit.ts \
+            src/services/firebaseRest.ts \
+            src/services/canonicalListingsBackend.ts
+          do
+            test "$(git rev-parse 8a4368ba0fce34d0a87acc8eccf38bf5dc019bc2:$path)" = "$(git rev-parse HEAD:$path)"
+          done
+          echo "PASS tested production sources exactly match build116 SHA"
       - name: Prove exact build116 screen-to-backend publication delegation
         shell: bash
         run: |
@@ -74,7 +88,7 @@ jobs:
 
           console.log('PASS exact build116 delegation: screen -> verification -> identity bridge -> canonical create -> rate-limited atomic listing write');
           NODE
-      - name: Exact build116 Topi draft and permission-refresh contract
+      - name: Exact build116 Topi, draft, permission and native-capability contract
         run: node scripts/build116-deviceA-feedback-tests.mjs
       - name: Read exact existing staging client config — no deploy
         run: node scripts/read-existing-staging-build-config.mjs
