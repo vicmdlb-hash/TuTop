@@ -1,0 +1,26 @@
+name: Post110 FCM current token owner
+
+on:
+  push:
+    branches: [hardening/post110-fcm-current-token-owner]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run typecheck
+      - run: node scripts/fcm-token-ownership-tests.mjs
+      - run: node scripts/fcm-sender-contract-tests.mjs
+      - run: node scripts/fcm-physical-fixture-tests.mjs
