@@ -1,0 +1,3 @@
+POST116_RULES_ACTION_ID=post116-publication-rules-20260919-01
+Purpose: minimal staging Rules repair for confirmed build116 publication blocker.
+No APK. No build117. No merge. No production.
