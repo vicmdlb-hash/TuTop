@@ -19,7 +19,7 @@ function sourceFiles(root) {
 const allSource = sourceFiles('src').map((file) => fs.readFileSync(file, 'utf8')).join('\n');
 
 assert.match(app, /import '\.\/services\/nationalBackendCanonicalBridge';/);
-assert.match(app, /bot: v2 \? <NationalPublishScreen \/> : <Chatbot \/>/);
+assert.match(app, /bot: v2 \? <NationalPublishScreen key=\{user\.id\} \/> : <Chatbot \/>/);
 assert.match(bridge, /if \(nationalSchemaEnabled\(\)\) \{/);
 assert.match(bridge, /Object\.assign\(nationalBackend, \{/);
 

@@ -8,6 +8,7 @@ import type { CanonicalListingV2, ListingDeliveryMethod } from '../lib/listingSc
 import { smartPriceFromTuTop } from '../lib/smartPricing';
 import { startTopiDictation } from '../lib/topiVoice';
 import { isForbiddenProductText, MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
+import { clearDurablePublishDraft, readDurablePublishDraft, writeDurablePublishDraft } from '../lib/publishDraftPersistence';
 import { defaultScopeForCategory, safeMeetingPointsFor, VISIBILITY_SCOPES } from '../lib/universityNetwork';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { askTopi } from '../services/assistantProvider';
@@ -24,6 +25,7 @@ const FALLBACK_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<
 const PUBLISH_DRAFT_PREFIX = 'tutop.publish.draft.v1.';
 
 type PublishDraft = {
+  operationId?: string;
   assistantText?: string;
   title?: string;
   description?: string;
@@ -40,23 +42,37 @@ type PublishDraft = {
 };
 
 function readPublishDraft(uid: string): PublishDraft | null {
-  if (!uid || typeof sessionStorage === 'undefined') return null;
+  if (!uid) return null;
+  const durable = readDurablePublishDraft(uid) as PublishDraft | null;
+  if (typeof sessionStorage === 'undefined') return durable;
   try {
     const raw = sessionStorage.getItem(`${PUBLISH_DRAFT_PREFIX}${uid}`);
-    if (!raw) return null;
+    if (!raw) return durable;
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed as PublishDraft : null;
-  } catch { return null; }
+    if (!parsed || typeof parsed !== 'object') return durable;
+    return { ...(durable || {}), ...(parsed as PublishDraft) };
+  } catch { return durable; }
 }
 
 function writePublishDraft(uid: string, draft: PublishDraft) {
-  if (!uid || typeof sessionStorage === 'undefined') return;
-  try { sessionStorage.setItem(`${PUBLISH_DRAFT_PREFIX}${uid}`, JSON.stringify(draft)); } catch { /* best effort local draft */ }
+  if (!uid) return false;
+  if (typeof sessionStorage !== 'undefined') {
+    try { sessionStorage.setItem(`${PUBLISH_DRAFT_PREFIX}${uid}`, JSON.stringify(draft)); } catch { /* session draft is best effort */ }
+  }
+  return writeDurablePublishDraft(uid, draft as Record<string, unknown>);
 }
 
 function clearPublishDraft(uid: string) {
-  if (!uid || typeof sessionStorage === 'undefined') return;
-  try { sessionStorage.removeItem(`${PUBLISH_DRAFT_PREFIX}${uid}`); } catch { /* best effort */ }
+  if (!uid) return;
+  if (typeof sessionStorage !== 'undefined') {
+    try { sessionStorage.removeItem(`${PUBLISH_DRAFT_PREFIX}${uid}`); } catch { /* best effort */ }
+  }
+  clearDurablePublishDraft(uid);
+}
+
+function newPublishOperationId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `publish-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
 }
 const DELIVERY: Array<{ id: ListingDeliveryMethod; label: string }> = [
   { id: 'campus_meetup', label: 'Encuentro en campus' },
@@ -107,6 +123,7 @@ export default function NationalPublishScreen() {
   const nativeDevice = isNativeDeviceRuntime();
   const videoInfraEnabled = mediaStorageEnabled();
   const initialDraft = useMemo(() => readPublishDraft(user.id), [user.id]);
+  const [publishOperationId, setPublishOperationId] = useState(() => initialDraft?.operationId || newPublishOperationId());
 
   const [assistantText, setAssistantText] = useState(initialDraft?.assistantText || '');
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -174,12 +191,45 @@ export default function NationalPublishScreen() {
   }, [category, user.id, user.nombre, user.facultad, title, description, price, normalizedAttributes, institutionId, campusId, cityId, scope]);
   const pricing = useMemo(() => pricingTarget ? smartPriceFromTuTop(pricingTarget, products) : null, [pricingTarget, products]);
 
+  const draftSnapshot = useMemo<PublishDraft>(() => ({
+    operationId: publishOperationId,
+    assistantText, title, description, price, quantity, category, condition, negotiable, scope,
+    deliveryMethods, meetingPointId, attributes, images,
+  }), [publishOperationId, assistantText, title, description, price, quantity, category, condition, negotiable, scope, deliveryMethods, meetingPointId, attributes, images]);
+
   useEffect(() => {
-    writePublishDraft(user.id, {
-      assistantText, title, description, price, quantity, category, condition, negotiable, scope,
-      deliveryMethods, meetingPointId, attributes, images,
-    });
-  }, [user.id, assistantText, title, description, price, quantity, category, condition, negotiable, scope, deliveryMethods, meetingPointId, attributes, images]);
+    writePublishDraft(user.id, draftSnapshot);
+  }, [user.id, draftSnapshot]);
+
+  const saveDraftNow = () => {
+    const durable = writePublishDraft(user.id, draftSnapshot);
+    setMessage(durable
+      ? 'Borrador guardado en este dispositivo por hasta 7 días. Las fotos no se guardan de forma durable y podrían requerir volver a agregarse después de reiniciar la app.'
+      : 'El borrador sigue guardado para esta sesión, pero no pudimos conservar una copia durable en el dispositivo.');
+  };
+
+  const discardDraft = () => {
+    clearPublishDraft(user.id);
+    setPublishOperationId(newPublishOperationId());
+    setAssistantText('');
+    setTitle('');
+    setDescription('');
+    setPrice('');
+    setQuantity('1');
+    setCategory('');
+    setCondition('Buen estado');
+    setNegotiable(false);
+    setScope('campus');
+    setDeliveryMethods(['campus_meetup']);
+    setMeetingPointId('');
+    setAttributes({});
+    setImages([]);
+    setVideoFile(null);
+    setTopiSource(null);
+    setTopiProvider(null);
+    setAdvancedOpen(false);
+    setMessage('Borrador descartado de esta cuenta y este dispositivo.');
+  };
 
   const applyTopi = async () => {
     const text = assistantText.trim();
@@ -403,7 +453,7 @@ export default function NationalPublishScreen() {
       // bridge. That bridge is the single publication authority: it validates
       // institution/campus documents, their relationship, reconciles the profile,
       // re-reads it, then writes listings_v2. No UI catch-and-continue path remains.
-      await canonicalListingsBackend.create(listing, category);
+      const created = await canonicalListingsBackend.create(listing, category, publishOperationId);
       uploadedVideoUri = null;
       clearPublishDraft(user.id);
 
@@ -415,9 +465,11 @@ export default function NationalPublishScreen() {
         refreshedFeed = false;
       }
 
-      setMessage(refreshedFeed
-        ? 'Publicación creada y enviada a revisión. TuTop no gestiona envíos; cualquier entrega se acuerda directamente entre las personas.'
-        : 'Publicación creada y enviada a revisión. El feed tardará en refrescarse; no vuelvas a publicarla para evitar duplicados.');
+      setMessage(created.recovered
+        ? 'TuTop confirmó que este mismo anuncio ya se había creado. Recuperamos la publicación sin duplicarla y la enviamos a revisión.'
+        : refreshedFeed
+          ? 'Publicación creada y enviada a revisión. TuTop no gestiona envíos; cualquier entrega se acuerda directamente entre las personas.'
+          : 'Publicación creada y enviada a revisión. El feed tardará en refrescarse; no vuelvas a publicarla para evitar duplicados.');
       window.setTimeout(() => setActiveTab('feed'), refreshedFeed ? 850 : 1500);
     } catch (error) {
       if (uploadedVideoUri) await firebaseMediaStorage.delete(uploadedVideoUri).catch(() => undefined);
@@ -528,6 +580,10 @@ export default function NationalPublishScreen() {
       {category && <section className="publish-card"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-300" /><strong className="text-xs">Precio inteligente</strong></div>{pricing ? <><p className="mt-2 text-[10px] leading-5 text-slate-400">{pricing.sample_size} comparables · mediana ${pricing.median_mxn.toLocaleString('es-MX')} · vender rápido ${pricing.sell_fast_mxn.toLocaleString('es-MX')} · recomendado <strong className="text-violet-200">${pricing.recommended_mxn.toLocaleString('es-MX')}</strong> · probar alto ${pricing.try_high_mxn.toLocaleString('es-MX')}</p><button type="button" onClick={() => setPrice(String(pricing.recommended_mxn))} className="mt-2 rounded-xl bg-violet-500/10 px-3 py-2 text-[10px] font-bold text-violet-200">Usar precio recomendado</button></> : <p className="mt-2 text-[9px] text-slate-500">Aún no hay suficientes comparables reales. Topi no inventará un precio.</p>}</section>}
 
       <section className={`publish-card ${readyToPublish ? 'border-emerald-400/20 bg-emerald-500/[0.05]' : 'border-amber-400/15 bg-amber-500/[0.04]'}`}><div className="flex items-center gap-2"><CheckCircle2 className={`h-4 w-4 ${readyToPublish ? 'text-emerald-300' : 'text-amber-300'}`} /><strong className="text-xs">{readyToPublish ? 'Listo para publicar' : 'Completa lo mínimo'}</strong></div><p className="mt-1 text-[9px] text-slate-400">{readyToPublish ? 'Tu anuncio tiene lo necesario. Los campos avanzados siguen siendo opcionales salvo los marcados con *.' : `Falta: ${publishIssues.join(' · ')}`}</p></section>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={saveDraftNow} className="rounded-xl border border-violet-400/15 bg-violet-500/[0.06] px-3 py-2.5 text-[10px] font-black text-violet-200">Guardar borrador</button>
+        <button type="button" onClick={discardDraft} className="rounded-xl border border-rose-400/10 bg-rose-500/[0.05] px-3 py-2.5 text-[10px] font-black text-rose-200">Descartar borrador</button>
+      </div>
       {message && <div role="status" aria-live="polite" aria-atomic="true" className="rounded-2xl bg-white/[0.04] p-3 text-xs leading-5 text-slate-300">{message}</div>}
       <button disabled={busy || !readyToPublish} onClick={() => void publish()} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-4 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}{busy ? 'Publicando…' : readyToPublish ? 'Publicar en TuTop' : 'Completa lo mínimo para publicar'}</button>
     </main>
