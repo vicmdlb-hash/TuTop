@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { redactTopiRemoteText } from '../src/lib/topiPrivacy.ts';
 
 const nearby = fs.readFileSync('src/lib/nearbyMarketplace.ts','utf8');
 const publish = fs.readFileSync('src/components/NationalPublishScreen.tsx','utf8');
@@ -36,6 +37,18 @@ assert.match(permissions, /únicamente cuando la activas para tu cuenta/);
 assert.match(gate, /clearApproxLocation\(currentUid \|\| undefined\)/);
 
 // Preserve #47 privacy truth while importing #58's UID-scoped cache.
+const email = redactTopiRemoteText('Escríbeme a vendedor@example.com por favor');
+assert.equal(email.text?.includes('vendedor@example.com'), false);
+assert.ok(email.redactions.includes('email'));
+const phone = redactTopiRemoteText('Mi WhatsApp: 246 123 4567');
+assert.equal(phone.text?.includes('246 123 4567'), false);
+assert.ok(phone.redactions.includes('phone'));
+const otp = redactTopiRemoteText('Código de verificación: 839201');
+assert.equal(otp.text?.includes('839201'), false);
+assert.ok(otp.redactions.includes('otp'));
+const productFacts = redactTopiRemoteText('Vendo iPhone 13 de 128 GB en $12,500, batería 88%');
+assert.equal(productFacts.text, 'Vendo iPhone 13 de 128 GB en $12,500, batería 88%');
+
 assert.match(assistant, /redactTopiRemoteText/);
 assert.match(assistant, /safeDraftForRemote/);
 assert.match(publish, /Antes del envío remoto se omiten emails, teléfonos y códigos sensibles evidentes/);
