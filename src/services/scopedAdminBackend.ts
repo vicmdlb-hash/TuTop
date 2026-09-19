@@ -13,8 +13,9 @@ function client() {
 }
 
 function normalizeRole(value: unknown): AdminRole {
-  if (['super_admin', 'trust_safety', 'moderator', 'institution_moderator', 'verification_reviewer', 'support'].includes(String(value))) return value as AdminRole;
-  return 'super_admin';
+  const role = String(value || '').trim();
+  if (['super_admin', 'trust_safety', 'moderator', 'institution_moderator', 'verification_reviewer', 'support'].includes(role)) return role as AdminRole;
+  throw new Error('ADMIN_ROLE_INVALID');
 }
 
 function patchWrite(firebase: FirebaseRestClient, path: string, data: Record<string, unknown>) {
