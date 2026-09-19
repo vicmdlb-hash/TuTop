@@ -1,0 +1,156 @@
+import fs from 'node:fs';
+import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { adminDeleteDocument, adminDeleteTestUsers } from './staging-v2-admin.mjs';
+
+const PROJECT='tutop-beta-vicmdlb-1356585881';
+const BRANCH='probe/build116-publication-live-smoke';
+const ACK='BUILD116_P0_SYNTHETIC_PUBLICATION_ONLY';
+if(process.env.TUTOP_FIREBASE_PROJECT_ID!==PROJECT) throw new Error('SMOKE_PROJECT_GUARD');
+if(process.env.GITHUB_REF_NAME!==BRANCH) throw new Error('SMOKE_BRANCH_GUARD');
+if(process.env.TUTOP_PUBLICATION_SMOKE_ACK!==ACK) throw new Error('SMOKE_ACK_GUARD');
+if(!fs.existsSync('.tutop-staging-web-config.json')) throw new Error('SMOKE_WEB_CONFIG_MISSING');
+
+const config=JSON.parse(fs.readFileSync('.tutop-staging-web-config.json','utf8'));
+if(config.projectId!==PROJECT || !config.apiKey) throw new Error('SMOKE_CONFIG_MISMATCH');
+const apiKey=String(config.apiKey);
+const run=String(process.env.GITHUB_RUN_ID||'').replace(/\D/g,'').slice(-16);
+if(!run) throw new Error('SMOKE_RUN_ID_REQUIRED');
+
+const email='synthetic-publication-'+run+'@example.com';
+const password='TuTopSmoke!'+run+'Aa9';
+const listingId='synthetic-publication-'+run;
+let uid='';
+let stage='INIT';
+const createdPaths=[];
+
+function jsonValue(value, field='') {
+  if(value===null) return {nullValue:null};
+  if(typeof value==='string') {
+    if(/(?:_at|published_at|window_start)$/.test(field) && /^\d{4}-\d{2}-\d{2}T/.test(value)) return {timestampValue:value};
+    return {stringValue:value};
+  }
+  if(typeof value==='boolean') return {booleanValue:value};
+  if(typeof value==='number') return Number.isInteger(value)?{integerValue:String(value)}:{doubleValue:value};
+  if(Array.isArray(value)) return {arrayValue:{values:value.map(v=>jsonValue(v))}};
+  if(typeof value==='object') return {mapValue:{fields:encodeFields(value)}};
+  throw new Error('UNSUPPORTED_VALUE');
+}
+function encodeFields(data){return Object.fromEntries(Object.entries(data).filter(([,v])=>v!==undefined).map(([k,v])=>[k,jsonValue(v,k)]));}
+function docName(path){return 'projects/'+PROJECT+'/databases/(default)/documents/'+path;}
+function write(path,data){return {update:{name:docName(path),fields:encodeFields(data)},currentDocument:{exists:false}};}
+async function parse(response,label){
+  const text=await response.text(); let body={};
+  try{body=text?JSON.parse(text):{};}catch{body={raw:text.slice(0,200)};}
+  if(!response.ok) {
+    const message=String(body?.error?.message||body?.error?.status||body?.raw||response.status);
+    throw new Error(label+':'+message);
+  }
+  return body;
+}
+async function publicPost(url,body,idToken){
+  return parse(await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...(idToken?{Authorization:'Bearer '+idToken}:{})},body:JSON.stringify(body)}),'PUBLIC_POST');
+}
+function decodeJwt(token){
+  const part=String(token||'').split('.')[1]||'';
+  return JSON.parse(Buffer.from(part.replace(/-/g,'+').replace(/_/g,'/'),'base64').toString('utf8'));
+}
+async function commit(writes,idToken,label){
+  const response=await fetch('https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents:commit',{
+    method:'POST',headers:{Authorization:'Bearer '+idToken,'Content-Type':'application/json'},body:JSON.stringify({writes})
+  });
+  return parse(response,label);
+}
+async function getPublic(path,idToken){
+  const response=await fetch('https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents/'+path,{
+    headers:{Authorization:'Bearer '+idToken}
+  });
+  return parse(response,'READBACK');
+}
+
+try {
+  stage='AUTH_ADMIN_CREATE';
+  const oauth=await firebaseCiAccessToken();
+  const create=await parse(await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts?key='+encodeURIComponent(apiKey),{
+    method:'POST',headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json'},
+    body:JSON.stringify({email,password,emailVerified:true,displayName:'TuTop publication smoke',disabled:false})
+  }),'AUTH_ADMIN_CREATE');
+  uid=String(create.localId||'');
+  if(!uid) throw new Error('AUTH_CREATE_NO_UID');
+
+  stage='AUTH_PUBLIC_SIGNIN';
+  const login=await publicPost('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key='+encodeURIComponent(apiKey),{
+    email,password,returnSecureToken:true
+  });
+  const idToken=String(login.idToken||'');
+  const claims=decodeJwt(idToken);
+  if(String(login.localId||'')!==uid) throw new Error('AUTH_UID_DRIFT');
+  if(claims.email_verified!==true) throw new Error('AUTH_EMAIL_VERIFIED_CLAIM_FALSE');
+
+  stage='PROFILE_BOOTSTRAP';
+  const at=new Date().toISOString();
+  const profile={
+    uid,nombre:'TuTop Synthetic Smoke',facultad:'Turismo Internacional',esta_verificado:false,
+    country_code:'MX',institution_id:'uatx',institution_name:'Universidad Autónoma de Tlaxcala',
+    campus_id:'uatx-riberena',campus_name:'Ribereña',verification_level:0,verification_badge:'Cuenta TuTop',
+    created_at:at,updated_at:at
+  };
+  const privateData={uid,institutional_email:email,auth_mode:'email_password_verified_beta',created_at:at,updated_at:at};
+  await commit([write('users/'+uid,profile),write('user_private/'+uid,privateData)],idToken,'PROFILE_BOOTSTRAP');
+  createdPaths.push('user_private/'+uid,'users/'+uid);
+
+  stage='LISTING_COMMIT';
+  const listingAt=new Date().toISOString();
+  const bucket={
+    uid,action:'listing_create',window_start:listingAt,count:1,updated_at:listingAt
+  };
+  const listing={
+    schema_version:2,seller_id:uid,institution_id:'uatx',campus_id:'uatx-riberena',
+    category_id:'electronica',title:'Synthetic publication smoke',description:'Validación controlada del flujo real de publicación.',
+    attributes:{},price_mxn:500,negotiable:true,quantity:1,condition:'Buen estado',
+    delivery_methods:['campus_meetup'],meeting_point_ids:[],shipping_available:false,
+    photo_urls:['data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg"/>'],
+    status:'active',moderation_status:'pending',visibility_scope:'campus',
+    published_at:listingAt,created_at:listingAt,updated_at:listingAt
+  };
+  await commit([
+    write('rate_limits/'+uid+'-listing_create',bucket),
+    write('listings_v2/'+listingId,listing)
+  ],idToken,'LISTING_COMMIT');
+  createdPaths.push('listings_v2/'+listingId,'rate_limits/'+uid+'-listing_create');
+
+  stage='LISTING_READBACK';
+  const readback=await getPublic('listings_v2/'+listingId,idToken);
+  if(!readback?.name?.endsWith('/'+listingId)) throw new Error('LISTING_READBACK_MISSING');
+
+  stage='PASS';
+  console.log(JSON.stringify({
+    result:'PASS',
+    stage,
+    project:PROJECT,
+    verified_claim:true,
+    identity:'uatx/uatx-riberena',
+    listing_created_and_read_back:true,
+    user_data_logged:false,
+    cleanup_required:true
+  }));
+} catch(error) {
+  console.error(JSON.stringify({
+    result:'FAIL',
+    stage,
+    error_code:String(error instanceof Error?error.message:error).slice(0,500),
+    user_data_logged:false
+  }));
+  throw error;
+} finally {
+  const cleanup=[...new Set([
+    'listings_v2/'+listingId,
+    ...(uid?['rate_limits/'+uid+'-listing_create','user_private/'+uid,'users/'+uid]:[]),
+  ])];
+  for(const path of cleanup) {
+    try { await adminDeleteDocument(path); } catch { /* idempotent cleanup */ }
+  }
+  if(uid) {
+    try { await adminDeleteTestUsers([uid]); } catch { /* cleanup evidence checked below */ }
+  }
+  console.log(JSON.stringify({cleanup_attempted:true,synthetic_paths:cleanup.length,auth_cleanup_attempted:Boolean(uid)}));
+}
