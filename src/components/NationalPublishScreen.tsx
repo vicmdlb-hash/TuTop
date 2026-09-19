@@ -125,7 +125,7 @@ export default function NationalPublishScreen() {
   const [topiProvider, setTopiProvider] = useState<'firebase-ai-logic' | 'private-endpoint' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening'>('idle');
-  const [approxLocation, setApproxLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
+  const [approxLocation, setApproxLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
 
   const institutionId = user.institution_id || user.university?.institution_id || '';
   const campusId = user.campus_id || user.university?.campus_id || '';
@@ -240,7 +240,7 @@ export default function NationalPublishScreen() {
 
   const refreshLocation = async () => {
     setMessage('Obteniendo una ubicación aproximada…');
-    const location = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000 });
+    const location = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000, ownerUid: user.id });
     setApproxLocation(location);
     if (location) {
       setMessage('Ubicación aproximada activada. TuTop guardará sólo precisión cercana a 1 km, nunca tu domicilio exacto.');
@@ -348,8 +348,9 @@ export default function NationalPublishScreen() {
         return;
       }
 
-      const location = approxLocation || await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000 });
-      if (location && !approxLocation) setApproxLocation(location);
+      // Publishing must never request location as an implicit side effect.
+      // Only an explicitly activated, account-scoped location may be attached.
+      const location = approxLocation;
 
       if (videoFile) {
         const uploaded = await firebaseMediaStorage.uploadListingVideo(videoFile, user.id);
