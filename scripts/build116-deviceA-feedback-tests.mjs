@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const read = (path) => fs.readFileSync(path, 'utf8');
 
+const app = read('src/App.tsx');
 const publish = read('src/components/NationalPublishScreen.tsx');
 const permissions = read('src/components/PermissionSettings.tsx');
 const permissionCenter = read('src/lib/permissionCenter091.ts');
@@ -10,6 +11,10 @@ const nearby = read('src/lib/nearbyMarketplace.ts');
 const nativeDevice = read('src/services/nativeDeviceCapabilities.ts');
 const voice = read('src/lib/topiVoice.ts');
 const nativeSecurity = read('src/services/nativeFirebaseSecurity.ts');
+
+assert.match(app, /bot: v2 \? <NationalPublishScreen \/>/, 'Publicar tab must render NationalPublishScreen');
+assert.match(app, /const transitionKey = surface \|\| activeTab/, 'navigation must key the rendered surface by active destination');
+assert.match(app, /<motion\.div key=\{transitionKey\}/, 'tab changes must remount the keyed content surface');
 
 assert.match(publish, /verifiedEmailBetaAuth\.refreshVerificationStatus\(\)/, 'publish must refresh verified-email status before write');
 assert.match(publish, /publish_email_not_verified/, 'publish must distinguish unverified identity from generic permission failure');
@@ -46,8 +51,10 @@ assert.match(nativeDevice, /geolocation\.watchPosition\(/, 'location path must h
 assert.match(nativeDevice, /geolocation\.clearWatch\(\{ id \}\)/, 'location fallback must clear the native watcher');
 assert.match(nativeDevice, /if \(settled \|\| cleanupRequested\) clearActiveWatch\(\)/, 'watcher must still be cleared if callback settles before watch id resolves');
 assert.match(nativeDevice, /enableHighAccuracy: false/, 'location must remain approximate');
-assert.match(nearby, /coarseCoordinate\(position\.latitude\)/, 'nearby location must be reduced to coarse precision before persistence');
-assert.match(nearby, /saveApproxLocation\(location\)/, 'successful location acquisition must persist only the approximate location');
+assert.match(nearby, /latitude: coarseCoordinate\(latitude\)/, 'approximate location must round latitude before persistence');
+assert.match(nearby, /longitude: coarseCoordinate\(longitude\)/, 'approximate location must round longitude before persistence');
+assert.match(nearby, /const location = position \? toApproxLocation\(position\.latitude, position\.longitude, 'device'\) : null/, 'native coordinates must flow through the coarse-location constructor');
+assert.match(nearby, /if \(location\) saveApproxLocation\(location\)/, 'successful location acquisition must persist only the approximate location');
 
 assert.match(nativeDevice, /plugin\('Camera'\)/, 'camera/photo picker must require the native Camera plugin');
 assert.match(nativeDevice, /camera\.takePhoto/, 'camera path must support native camera capture');
@@ -67,4 +74,4 @@ assert.match(nativeSecurity, /messaging\.checkPermissions\(\)/, 'notification pe
 assert.match(nativeSecurity, /messaging\.requestPermissions\(\)/, 'notification activation must request through FirebaseMessaging');
 assert.match(nativeSecurity, /const permission = await nativePushPermission\(\)/, 'token sync must re-check notification permission before registering');
 
-console.log('✅ build116 Device A feedback + native capability contract PASS');
+console.log('✅ build116 Device A feedback + navigation + native capability contract PASS');
