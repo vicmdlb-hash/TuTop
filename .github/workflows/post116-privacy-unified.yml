@@ -1,0 +1,25 @@
+name: Post-build116 unified privacy hardening
+
+on:
+  push:
+    branches: [hardening/post116-privacy-unified]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run typecheck
+      - run: node scripts/post116-privacy-unified-tests.mjs
+      - run: npm run build

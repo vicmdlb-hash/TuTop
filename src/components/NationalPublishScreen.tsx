@@ -126,7 +126,7 @@ export default function NationalPublishScreen() {
   const [topiProvider, setTopiProvider] = useState<'firebase-ai-logic' | 'private-endpoint' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening'>('idle');
-  const [approxLocation, setApproxLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
+  const [approxLocation, setApproxLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
   const [locationOptIn, setLocationOptIn] = useState(Boolean(initialDraft?.locationOptIn));
 
   const institutionId = user.institution_id || user.university?.institution_id || '';
@@ -245,7 +245,7 @@ export default function NationalPublishScreen() {
 
   const refreshLocation = async () => {
     setMessage('Obteniendo una ubicación aproximada para este anuncio…');
-    const location = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000 });
+    const location = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000, ownerUid: user.id });
     setApproxLocation(location);
     if (location) {
       setLocationOptIn(true);
