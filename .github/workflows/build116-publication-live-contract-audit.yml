@@ -1,0 +1,32 @@
+name: Build116 publication live-contract audit
+
+on:
+  push:
+    branches: [audit/build116-publication-live-contract]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Generate exact local Rules without deployment
+        run: npm run v2:rules:prepare
+      - name: Read live staging contract and aggregate profile compatibility
+        run: node scripts/build116-publication-live-contract-audit.mjs
+      - name: Prove no tracked mutation
+        run: git diff --exit-code -- package.json package-lock.json
