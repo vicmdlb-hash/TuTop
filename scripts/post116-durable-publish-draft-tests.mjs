@@ -24,6 +24,7 @@ const uidA = 'uid-A-123456789';
 const uidB = 'uid-B-987654321';
 
 assert.equal(writeDurablePublishDraft(uidA, {
+  operationId: '550e8400-e29b-41d4-a716-446655440000',
   assistantText: 'vendo calculadora',
   title: 'Calculadora científica',
   description: 'Usada, funciona bien',
@@ -48,6 +49,7 @@ const envelope = JSON.parse(raw);
 assert.equal(envelope.uid, uidA);
 assert.equal(envelope.expires_at, now + DURABLE_PUBLISH_DRAFT_TTL_MS);
 assert.equal(envelope.draft.title, 'Calculadora científica');
+assert.equal(envelope.draft.operationId, '550e8400-e29b-41d4-a716-446655440000');
 assert.equal(envelope.draft.attributes.brand, 'Casio');
 assert.equal('images' in envelope.draft, false);
 assert.equal('locationOptIn' in envelope.draft, false);
@@ -58,6 +60,7 @@ assert.equal(raw.includes('SHOULD_NOT_PERSIST'), false);
 
 const restoredA = readDurablePublishDraft(uidA, storage, now + 1000);
 assert.equal(restoredA?.title, 'Calculadora científica');
+assert.equal(restoredA?.operationId, '550e8400-e29b-41d4-a716-446655440000');
 assert.equal(restoredA?.attributes?.model, 'fx-991');
 assert.equal(readDurablePublishDraft(uidB, storage, now + 1000), null, 'account B must never receive account A draft');
 
@@ -77,6 +80,10 @@ storage.setItem(`${DURABLE_PUBLISH_DRAFT_PREFIX}${uidA}`, JSON.stringify({
 }));
 assert.equal(readDurablePublishDraft(uidA, storage, now), null, 'owner mismatch must fail closed');
 
+const invalidOperation = mockStorage();
+writeDurablePublishDraft(uidA, { operationId: 'bad op id', title: 'X' }, invalidOperation, now);
+assert.equal(readDurablePublishDraft(uidA, invalidOperation, now)?.operationId, undefined);
+
 const invalidCategory = mockStorage();
 writeDurablePublishDraft(uidA, { category: 'Inventada', title: 'X' }, invalidCategory, now);
 assert.equal(readDurablePublishDraft(uidA, invalidCategory, now)?.category, undefined);
@@ -91,4 +98,4 @@ assert.match(screen, /Descartar borrador/);
 assert.match(screen, /Las fotos no se guardan de forma durable/);
 assert.match(app, /<NationalPublishScreen key=\{user\.id\} \/>/);
 
-console.log('PASS durable publish drafts: UID partition, TTL, no media/location/token persistence, explicit save/discard and account remount');
+console.log('PASS durable publish drafts: UID partition, TTL, safe operation-id preservation, no media/location/token persistence, explicit save/discard and account remount');
