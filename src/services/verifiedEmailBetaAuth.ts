@@ -190,6 +190,21 @@ async function migrateLegacySessionToEmail(session: CompatibleSession, emailInpu
   return { uid: data.localId, email, emailVerified: false, verificationEmailSent } satisfies VerifiedEmailBetaStatus;
 }
 
+type BootstrapReadback = 'complete' | 'absent' | 'partial';
+
+async function readMarketplaceBootstrap(uid: string): Promise<BootstrapReadback> {
+  const client = sessionClient();
+  const [profile, privateIdentity, wallet] = await Promise.all([
+    client.getDocument(`users/${uid}`),
+    client.getDocument(`user_private/${uid}`),
+    client.getDocument(`wallets/${uid}`),
+  ]);
+  const present = [profile, privateIdentity, wallet].filter(Boolean).length;
+  if (present === 3) return 'complete';
+  if (present === 0) return 'absent';
+  return 'partial';
+}
+
 async function createMarketplaceAccount(payload: AuthPayload, email: string, profile: VerifiedEmailBetaProfile) {
   const config = getFirebaseConfig();
   const normalizedPhone = normalizeOptionalPhone(profile.phone);
@@ -250,9 +265,27 @@ export const verifiedEmailBetaAuth = {
     try {
       await createMarketplaceAccount(data, email, normalizedProfile);
     } catch (error) {
-      try { await identityRequest('accounts:delete', { idToken: data.idToken }); } catch { /* best effort rollback */ }
-      clearCanonicalSession();
-      throw error;
+      // Firestore commit is atomic, but a network failure can arrive after the
+      // server accepted it. Never delete Auth blindly: first read back the
+      // bootstrap with the still-authenticated session.
+      let readback: BootstrapReadback;
+      try {
+        readback = await readMarketplaceBootstrap(data.localId);
+      } catch {
+        // We cannot prove whether the atomic commit landed. Preserve Auth/session
+        // rather than risk creating orphaned Firestore identity by deleting Auth.
+        throw new Error(`REGISTRATION_BOOTSTRAP_UNCERTAIN:${error instanceof Error ? error.message : String(error)}`);
+      }
+      if (readback === 'complete') {
+        // Lost/ambiguous commit response, but authoritative readback proves the
+        // atomic account bootstrap exists. Continue to verification-mail stage.
+      } else if (readback === 'absent') {
+        try { await identityRequest('accounts:delete', { idToken: data.idToken }); } catch { /* best effort rollback */ }
+        clearCanonicalSession();
+        throw error;
+      } else {
+        throw new Error('REGISTRATION_BOOTSTRAP_PARTIAL_REQUIRES_REPAIR');
+      }
     }
     // Mail failure after a successful atomic commit keeps a recoverable pending
     // identity. Resend retries delivery without deleting its profile or wallet.
