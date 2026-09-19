@@ -33,7 +33,7 @@
     "firebase:link": "node scripts/freeze-blocked-command.mjs firebase:link",
     "firebase:deploy:spark": "node scripts/freeze-blocked-command.mjs firebase:deploy:spark",
     "firebase:emulators:spark": "firebase emulators:start --only auth,firestore,hosting",
-    "v2:rules:prepare": "node scripts/prepare-firestore-v2-rules.mjs && node scripts/harden-canonical-v2-rules.mjs && node scripts/harden-runtime-v2-rules.mjs && node scripts/optimize-listing-rate-limit-rules.mjs && node scripts/harden-account-operations-rules.mjs && node scripts/harden-notification-receipts-rules.mjs && node scripts/harden-transaction-lock-rules.mjs && node scripts/harden-nearby-v2-rules.mjs && node scripts/harden-listing-video-rules.mjs && node scripts/harden-verified-email-beta-rules.mjs",
+    "v2:rules:prepare": "node scripts/prepare-firestore-v2-rules.mjs && node scripts/harden-canonical-v2-rules.mjs && node scripts/harden-runtime-v2-rules.mjs && node scripts/optimize-listing-rate-limit-rules.mjs && node scripts/harden-account-operations-rules.mjs && node scripts/harden-notification-receipts-rules.mjs && node scripts/harden-transaction-lock-rules.mjs && node scripts/harden-nearby-v2-rules.mjs && node scripts/harden-listing-video-rules.mjs && node scripts/harden-verified-email-beta-rules.mjs && node scripts/harden-private-admin-read-rules.mjs",
     "v2:catalog:plan": "node scripts/seed-v2-catalog.mjs",
     "v2:catalog:seed": "node scripts/gated-v2-catalog-seed.mjs",
     "v2:staging:readiness:test": "node scripts/staging-v2-readiness-tests.mjs",

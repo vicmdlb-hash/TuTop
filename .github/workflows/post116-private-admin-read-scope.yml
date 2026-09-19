@@ -1,0 +1,34 @@
+name: Post-build116 private admin read scope
+
+on:
+  push:
+    branches: [hardening/post116-private-admin-read-scope]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run check
+      - run: npm run typecheck
+      - run: npm run v2:rules:prepare
+      - name: Emulator dependencies
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
+      - name: Least-privilege role matrix emulator
+        run: npx firebase emulators:exec --only firestore --project demo-tutop-private-admin-reads --config firebase.v2.json "node --test --test-concurrency=1 tests/firestore.v2.private-admin-reads.test.mjs"
+      - name: Existing governance regression
+        run: npx firebase emulators:exec --only firestore --project demo-tutop-private-admin-governance --config firebase.v2.json "node --test --test-concurrency=1 tests/firestore.v2.governance.test.mjs"
