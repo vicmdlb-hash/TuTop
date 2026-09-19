@@ -6,13 +6,15 @@ const backend = fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8
 const bridge = fs.readFileSync('src/services/nationalIdentityHydrationBridge.ts','utf8');
 
 assert.match(publish, /operationId\?: string/);
-assert.match(publish, /initialDraft\?\.operationId \|\| newPublishOperationId\(\)/);\nassert.match(publish, /setPublishOperationId\(newPublishOperationId\(\)\)/, 'discard must rotate the operation id');
+assert.match(publish, /initialDraft\?\.operationId \|\| newPublishOperationId\(\)/);
+assert.match(publish, /setPublishOperationId\(newPublishOperationId\(\)\)/, 'discard must rotate the operation id');
 assert.match(publish, /operationId: publishOperationId/);
 assert.match(publish, /canonicalListingsBackend\.create\(listing, category, publishOperationId\)/);
 assert.match(publish, /created\.recovered/);
 
 assert.match(backend, /function listingIdForOperation\(operationId: string\)/);
-assert.match(backend, /return `listing-op-\$\{clean\}`/);\nassert.match(backend, /return \{ id, \.\.\.existing\.data, recovered: true as const \}/, 'recovery must return canonical stored truth, not the retry payload');
+assert.match(backend, /return `listing-op-\$\{clean\}`/);
+assert.match(backend, /return \{ id, \.\.\.existing\.data, recovered: true as const \}/, 'recovery must return canonical stored truth, not the retry payload');
 assert.match(backend, /async create\(listing: CanonicalListingV2, category: ProductCategory, operationId\?: string\)/);
 assert.match(backend, /const alreadyCommitted = await recoverCommitted\(\)/);
 assert.match(backend, /if \(alreadyCommitted\) return alreadyCommitted/);
