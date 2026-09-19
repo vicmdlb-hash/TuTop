@@ -18,6 +18,30 @@ export const NATIVE_NOTIFICATION_EVENT = 'tutop:native-notification';
 
 let initialization: Promise<void> | null = null;
 let listenersInstalled = false;
+let ownershipRetryInstalled = false;
+const PENDING_PUSH_OWNERSHIP_RESET_KEY = 'tutop.push.pending-owner-reset.v1';
+
+function pendingPushOwnershipReset() {
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem(PENDING_PUSH_OWNERSHIP_RESET_KEY) === '1'; }
+  catch { return false; }
+}
+
+function setPendingPushOwnershipReset(pending: boolean) {
+  try {
+    if (typeof localStorage === 'undefined') return false;
+    if (pending) localStorage.setItem(PENDING_PUSH_OWNERSHIP_RESET_KEY, '1');
+    else localStorage.removeItem(PENDING_PUSH_OWNERSHIP_RESET_KEY);
+    return true;
+  } catch { return false; }
+}
+
+function installPushOwnershipRetryListener() {
+  if (ownershipRetryInstalled || typeof window === 'undefined') return;
+  ownershipRetryInstalled = true;
+  window.addEventListener('online', () => {
+    if (pendingPushOwnershipReset()) void initializeNativeFirebaseSecurity();
+  });
+}
 
 function capacitorPlugin(name: string): CapacitorPlugin | null {
   if (typeof window === 'undefined') return null;
@@ -103,13 +127,39 @@ async function syncGrantedPushToken() {
   return true;
 }
 
+async function reconcilePendingPushOwnershipReset() {
+  const pending = pendingPushOwnershipReset();
+  if (!pending) return { pending: false, tokenDeleted: false };
+  const messaging = capacitorPlugin('FirebaseMessaging');
+  if (!messaging?.deleteToken) return { pending: true, tokenDeleted: false };
+
+  const tokenDeleted = await bounded(
+    messaging.deleteToken().then(() => true),
+    1_500,
+    false,
+  );
+  if (tokenDeleted) setPendingPushOwnershipReset(false);
+  return { pending: !tokenDeleted, tokenDeleted };
+}
+
 export async function initializeNativeFirebaseSecurity() {
   if (!isNativeFirebaseRuntime()) return;
+  installPushOwnershipRetryListener();
   if (initialization) return initialization;
   initialization = (async () => {
     await initializeNativeAppCheck();
     const messaging = capacitorPlugin('FirebaseMessaging');
     if (messaging) await installMessagingListeners(messaging);
+
+    // If a previous account logged out fully offline, never register that same
+    // native token under a new UID. Invalidate it first; a fresh token can then
+    // be registered for the current account. The stale server record remains a
+    // cleanup concern, but it no longer authorizes reuse on this device.
+    const ownership = await reconcilePendingPushOwnershipReset();
+    if (ownership.pending) {
+      initialization = null;
+      return;
+    }
     await syncGrantedPushToken().catch(() => false);
   })();
   return initialization;
@@ -117,9 +167,11 @@ export async function initializeNativeFirebaseSecurity() {
 
 export async function nativePushRegistrationHealth() {
   const permission = await nativePushPermission();
-  if (permission !== 'granted') return { permission, tokenRegistered: false };
+  if (permission !== 'granted') return { permission, tokenRegistered: false, ownershipReconciliationPending: pendingPushOwnershipReset() };
+  const ownership = await reconcilePendingPushOwnershipReset();
+  if (ownership.pending) return { permission, tokenRegistered: false, ownershipReconciliationPending: true };
   const tokenRegistered = await syncGrantedPushToken().catch(() => false);
-  return { permission, tokenRegistered };
+  return { permission, tokenRegistered, ownershipReconciliationPending: false };
 }
 
 export async function enableNativePushNotifications() {
@@ -133,8 +185,10 @@ export async function enableNativePushNotifications() {
     permission = String(result?.receive || 'denied') as PushPermission;
   }
   if (permission !== 'granted') return { enabled: false, permission };
+  const ownership = await reconcilePendingPushOwnershipReset();
+  if (ownership.pending) return { enabled: false, permission, ownershipReconciliationPending: true };
   const enabled = await syncGrantedPushToken();
-  return { enabled, permission };
+  return { enabled, permission, ownershipReconciliationPending: false };
 }
 
 export async function disableNativePushNotifications() {
@@ -202,6 +256,10 @@ export async function prepareNativePushForAccountSignOut() {
     );
   }
 
+  const ownershipResetQueued = !serverDeactivated && !tokenDeleted
+    ? setPendingPushOwnershipReset(true)
+    : (setPendingPushOwnershipReset(false), false);
+
   initialization = null;
-  return { serverDeactivated, tokenDeleted };
+  return { serverDeactivated, tokenDeleted, ownershipResetQueued };
 }
