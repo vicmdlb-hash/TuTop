@@ -35,25 +35,49 @@ export function toApproxLocation(latitude: number, longitude: number, source: Ap
   };
 }
 
-export function getCachedApproxLocation(maxAgeMs = 6 * 60 * 60_000): ApproxLocation | null {
+type PersistedApproxLocation = ApproxLocation & { owner_uid: string };
+
+export function getCachedApproxLocation(ownerUid: string, maxAgeMs = 6 * 60 * 60_000): ApproxLocation | null {
+  if (!ownerUid) return null;
   try {
     const raw = localStorage.getItem(LOCATION_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as ApproxLocation;
-    if (!validCoordinate(parsed.latitude, parsed.longitude)) return null;
-    const age = Date.now() - Date.parse(parsed.captured_at || '');
+    const parsed = JSON.parse(raw) as Partial<PersistedApproxLocation>;
+    // Legacy/unscoped cache entries are intentionally rejected instead of being
+    // attached to whichever account logs in next on the same device.
+    if (!parsed.owner_uid || parsed.owner_uid !== ownerUid) return null;
+    if (!validCoordinate(Number(parsed.latitude), Number(parsed.longitude))) return null;
+    const age = Date.now() - Date.parse(String(parsed.captured_at || ''));
     if (!Number.isFinite(age) || age < 0 || age > maxAgeMs) return null;
-    return { ...parsed, source: 'cache' };
+    return {
+      latitude: Number(parsed.latitude),
+      longitude: Number(parsed.longitude),
+      captured_at: String(parsed.captured_at),
+      source: 'cache',
+    };
   } catch { return null; }
 }
 
-export function saveApproxLocation(location: ApproxLocation) {
-  try { localStorage.setItem(LOCATION_KEY, JSON.stringify(location)); } catch { /* optional cache */ }
+export function saveApproxLocation(location: ApproxLocation, ownerUid: string) {
+  if (!ownerUid) return;
+  const persisted: PersistedApproxLocation = { ...location, owner_uid: ownerUid };
+  try { localStorage.setItem(LOCATION_KEY, JSON.stringify(persisted)); } catch { /* optional cache */ }
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ApproxLocation>(NEARBY_LOCATION_EVENT, { detail: location }));
 }
 
-export function clearCachedApproxLocation() {
-  try { localStorage.removeItem(LOCATION_KEY); } catch { /* optional cache */ }
+export function clearApproxLocation(ownerUid?: string) {
+  try {
+    const raw = localStorage.getItem(LOCATION_KEY);
+    if (!raw) return;
+    if (!ownerUid) {
+      localStorage.removeItem(LOCATION_KEY);
+      return;
+    }
+    const parsed = JSON.parse(raw) as Partial<PersistedApproxLocation>;
+    if (!parsed.owner_uid || parsed.owner_uid === ownerUid) localStorage.removeItem(LOCATION_KEY);
+  } catch {
+    try { localStorage.removeItem(LOCATION_KEY); } catch { /* optional cache */ }
+  }
 }
 
 export async function nearbyLocationPermission(): Promise<DevicePermissionState> {
@@ -72,7 +96,6 @@ function requestBrowserLocation(options: { timeoutMs?: number; maximumAgeMs?: nu
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const location = toApproxLocation(position.coords.latitude, position.coords.longitude, 'device');
-        if (location) saveApproxLocation(location);
         resolve(location);
       },
       () => resolve(null),
@@ -85,18 +108,20 @@ function requestBrowserLocation(options: { timeoutMs?: number; maximumAgeMs?: nu
   });
 }
 
-export async function requestApproxLocation(options: { timeoutMs?: number; maximumAgeMs?: number; requestPermission?: boolean } = {}) {
+export async function requestApproxLocation(options: { timeoutMs?: number; maximumAgeMs?: number; requestPermission?: boolean; ownerUid?: string } = {}) {
+  let location: ApproxLocation | null;
   if (isNativeDeviceRuntime()) {
     const position = await getNativeApproxPosition({
       requestPermission: options.requestPermission !== false,
       timeoutMs: options.timeoutMs,
       maximumAgeMs: options.maximumAgeMs,
     });
-    const location = position ? toApproxLocation(position.latitude, position.longitude, 'device') : null;
-    if (location) saveApproxLocation(location);
-    return location;
+    location = position ? toApproxLocation(position.latitude, position.longitude, 'device') : null;
+  } else {
+    location = await requestBrowserLocation(options);
   }
-  return requestBrowserLocation(options);
+  if (location && options.ownerUid) saveApproxLocation(location, options.ownerUid);
+  return location;
 }
 
 export function geoCellForLocation(location: Pick<ApproxLocation, 'latitude' | 'longitude'>) {
