@@ -66,7 +66,7 @@ export default function App() {
 type UtilitySurface = 'explore' | 'wallet' | null;
 
 function MobileApp() {
-  const { activeTab, setActiveTab, chats, activeChatId, selectedProductId } = useAppStore();
+  const { activeTab, setActiveTab, chats, activeChatId, selectedProductId, user } = useAppStore();
   const [surface, setSurface] = useState<UtilitySurface>(null);
   const unread = chats.reduce((sum, chat) => sum + (chat.sin_leer || 0), 0);
   const v2 = nationalSchemaEnabled();
@@ -90,7 +90,7 @@ function MobileApp() {
 
   const content: Record<AppTab, ReactNode> = {
     feed: <Feed />,
-    bot: v2 ? <NationalPublishScreen /> : <Chatbot />,
+    bot: v2 ? <NationalPublishScreen key={user.id} /> : <Chatbot />,
     wallet: <WalletView />,
     inbox: <Inbox />,
     profile: <>
