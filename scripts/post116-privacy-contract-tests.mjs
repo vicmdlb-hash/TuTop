@@ -44,4 +44,13 @@ assert.match(provider, /redactTopiRemoteText\(draft\.descripcion, 1200\)/);
 assert.match(provider, /prompt: privacy\.prompt/);
 assert.doesNotMatch(provider, /prompt: String\(context\.prompt \|\| ''\)\.slice/);
 
+const nearby = fs.readFileSync('src/lib/nearbyMarketplace.ts', 'utf8');
+const gate = fs.readFileSync('src/components/BackendGate.tsx', 'utf8');
+assert.match(nearby, /export function clearCachedApproxLocation\(\)/);
+assert.match(nearby, /localStorage\.removeItem\(LOCATION_KEY\)/);
+assert.match(gate, /clearCachedApproxLocation/);
+const clearIndex = gate.indexOf('clearCachedApproxLocation()');
+const authClearIndex = gate.indexOf('verifiedEmailBetaAuth.signOut()', clearIndex);
+assert(clearIndex >= 0 && authClearIndex > clearIndex, 'location cache must be cleared at the account boundary before auth teardown');
+
 console.log('PASS post-build116 privacy: explicit listing-location opt-in + conservative Topi remote PII redaction');
