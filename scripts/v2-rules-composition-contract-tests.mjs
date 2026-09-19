@@ -82,7 +82,8 @@ assert.match(video, /firebase-storage:\/\//);
 assert.match(video, /product-videos/);
 assert.match(video, /video_urls\.size\(\) <= 1/);
 
-assert.match(account, /account deletion transition/);
+assert.match(account, /account deletion trusted-completion/);
+assert.doesNotMatch(account, /request\.resource\.data\.status in \['completed','rejected'\]/);
 assert.match(account, /support deletion audit read scope/);
 assert.match(receipts, /notification receipt hardener esperaba 1 coincidencia/);
 assert.match(locks, /transaction create requires unique reservation lock/);

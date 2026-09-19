@@ -133,6 +133,7 @@ jobs:
       - name: Real controlled account erasure smoke
         env:
           TUTOP_ALLOW_ACCOUNT_ERASURE: staging-reviewed
+          TUTOP_ERASURE_RUN_ID: ${{ github.run_id }}
         run: node scripts/staging-account-erasure-smoke.mjs
 
       - name: Verify final App Check service isolation

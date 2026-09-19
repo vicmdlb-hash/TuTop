@@ -10,6 +10,8 @@ const apply = process.argv.includes('--apply');
 if (projectId !== REQUIRED) throw new Error(`Account erasure sólo puede operar en staging ${REQUIRED}.`);
 if (!uid || uid.length < 8 || uid.length > 128) throw new Error('Usa --uid <firebase_uid> válido.');
 if (apply && process.env.TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed') throw new Error('Apply bloqueado: requiere TUTOP_ALLOW_ACCOUNT_ERASURE=staging-reviewed.');
+const processorRunId = String(process.env.TUTOP_ERASURE_RUN_ID || process.env.GITHUB_RUN_ID || '').trim();
+if (apply && !processorRunId) throw new Error('Apply bloqueado: requiere TUTOP_ERASURE_RUN_ID/GITHUB_RUN_ID para atestación.');
 
 function fieldString(document, field) {
   return String(document?.fields?.[field]?.stringValue || '');
@@ -136,18 +138,34 @@ for (const path of plan.delete_paths) await adminDeleteDocument(path);
 // permanecen sólo en colecciones operativas retenidas para transacciones/disputas.
 await adminDeleteDocument(`users/${uid}`);
 
+// Auth se borra antes de declarar "completed". Si este paso falla, la solicitud
+// permanece processing y nunca se publica un falso estado de finalización.
+await adminDeleteTestUsers([uid]);
+
+const completedAt = new Date();
 await adminPatchDocument(`account_deletion_requests/${uid}`, {
   status: 'completed',
-  updated_at: new Date(),
-  processing_note: 'staging-controlled-erasure-v1',
+  completed_at: completedAt,
+  updated_at: completedAt,
+  processing_note: 'staging-controlled-erasure-v2',
+  erasure_policy_version: 'staging-account-erasure-v1',
   residual_manifest_version: 'staging-erasure-residual-v2',
+  processor_run_id: processorRunId,
+  deleted_count: plan.delete_paths.length + 1,
+  withdrawn_count: plan.withdrawals.length,
   retained_count: plan.retained_count,
+  auth_deleted: true,
 });
-await adminPatchDocument(`audit_log/account-erasure-${uid}-${Date.now()}`, {
-  admin_uid: 'trusted-runner', actor_type: 'trusted_runner', role: 'trust_safety', action: 'account_erasure_completed',
-  target_type: 'account_deletion_request', target_id: uid, created_at: new Date(),
+await adminPatchDocument(`audit_log/account-erasure-${uid}-${processorRunId}`, {
+  admin_uid: 'trusted-runner',
+  actor_type: 'trusted_runner',
+  role: 'trust_safety',
+  action: 'account_erasure_completed',
+  target_type: 'account_deletion_request',
+  target_id: uid,
+  processor_run_id: processorRunId,
+  residual_manifest_version: 'staging-erasure-residual-v2',
+  created_at: completedAt,
 });
 
-// Auth se borra al final para evitar dejar datos privados activos si un paso anterior falla.
-await adminDeleteTestUsers([uid]);
-console.log(`✅ Eliminación controlada staging completada para ${uid}. Datos operativos retenidos: ${plan.retained_count}.`);
+console.log(`✅ Eliminación controlada staging completada para ${uid}. Datos operativos retenidos: ${plan.retained_count}. Run: ${processorRunId}.`);

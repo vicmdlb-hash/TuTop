@@ -12,23 +12,21 @@ function replaceOnce(from, to, label) {
   rules = rules.replace(from, to);
 }
 
-const loose = `      allow update: if canSupportAppeals()
-        && request.resource.data.uid == uid
-        && request.resource.data.requested_at == resource.data.requested_at
-        && request.resource.data.status in ['pending','processing','completed','rejected']
-        && fresh(request.resource.data.updated_at);`;
-
-const strict = `      allow update: if canSupportAppeals()
+const trustedProcessorOnlyCompletion = `      allow update: if canSupportAppeals()
         && request.resource.data.uid == uid
         && request.resource.data.requested_at == resource.data.requested_at
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
         && (
           (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
-          || (resource.data.status == 'processing' && request.resource.data.status in ['completed','rejected'])
+          || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
         )
         && fresh(request.resource.data.updated_at);`;
 
-replaceOnce(loose, strict, 'account deletion transition');
+const accountTransitionCount = rules.split(trustedProcessorOnlyCompletion).length - 1;
+if (accountTransitionCount !== 1) {
+  console.error(`DETENIDO: account deletion trusted-completion esperaba 1 coincidencia y encontró ${accountTransitionCount}.`);
+  process.exit(2);
+}
 
 replaceOnce(
   '      allow read: if globalModerationAdmin() || institutionModeratorFor(resource.data);',
@@ -43,4 +41,4 @@ replaceOnce(
 );
 
 fs.writeFileSync(path, rules);
-console.log('✅ Account operations rules: transiciones irreversibles + auditoría limitada a solicitudes de eliminación.');
+console.log('✅ Account operations rules: completion reservada al trusted runner + auditoría limitada a solicitudes de eliminación.');

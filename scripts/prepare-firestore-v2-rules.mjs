@@ -277,7 +277,11 @@ const strictModerationAndPrivacy = `    match /moderation_cases/{caseId} {
       allow update: if canSupportAppeals()
         && request.resource.data.uid == uid
         && request.resource.data.requested_at == resource.data.requested_at
-        && request.resource.data.status in ['pending','processing','completed','rejected']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+        && (
+          (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
+          || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
+        )
         && fresh(request.resource.data.updated_at);
       allow delete: if false;
     }
