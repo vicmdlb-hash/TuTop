@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowLeft, ArrowRight, Building2, CheckCircle2, Eye, Eye
 import { CAMPUSES, INSTITUTIONS } from '../lib/universityNetwork';
 import { clearApproxLocation } from '../lib/nearbyMarketplace';
 import { nationalSchemaEnabled } from '../services/nationalBackend';
+import { prepareNativePushForAccountSignOut } from '../services/nativeFirebaseSecurity';
 import { onlineBackend } from '../services/onlineBackend';
 import { completePendingUniversityIdentity } from '../services/v2OnboardingRecovery';
 import { verifiedEmailBetaAuth, type VerifiedEmailBetaStatus } from '../services/verifiedEmailBetaAuth';
@@ -35,9 +36,13 @@ export default function BackendGate({ children }: { children: ReactNode }) {
   const [legacyIdentity, setLegacyIdentity] = useState(false);
   const syncInFlight = useRef(false);
 
-  const signOutAll = () => {
+  const signOutAll = async () => {
     const currentUid = useAppStore.getState().user.id;
     clearApproxLocation(currentUid || undefined);
+    // Keep the old authenticated session alive long enough to deactivate its
+    // UID-scoped push mapping. This cleanup is bounded/best-effort so logout
+    // still completes offline.
+    await prepareNativePushForAccountSignOut().catch(() => ({ serverDeactivated: false, tokenDeleted: false }));
     try { onlineBackend.signOut(); } catch { /* no configured client */ }
     verifiedEmailBetaAuth.signOut();
     clearOnline();
@@ -93,7 +98,7 @@ export default function BackendGate({ children }: { children: ReactNode }) {
       setSuspended({ active: snapshot.user.is_suspended === true, reason: snapshot.user.suspension_reason });
     } catch (syncError) {
       const message = syncError instanceof Error ? syncError.message : String(syncError);
-      if (message === 'AUTH_REQUIRED' || /TOKEN_EXPIRED|INVALID_ID_TOKEN|USER_NOT_FOUND/i.test(message)) signOutAll();
+      if (message === 'AUTH_REQUIRED' || /TOKEN_EXPIRED|INVALID_ID_TOKEN|USER_NOT_FOUND/i.test(message)) await signOutAll();
       else setError(friendlyError(message));
     } finally {
       syncInFlight.current = false;
@@ -118,9 +123,9 @@ export default function BackendGate({ children }: { children: ReactNode }) {
 
   if (!authenticated && !loading) return <AuthScreen onAuthenticated={() => void sync()} />;
   if (loading && !authenticated) return <FullLoader label="Preparando TuTop…" />;
-  if (legacyIdentity) return <LegacyIdentityScreen onMigrated={() => void sync()} onSignOut={signOutAll} />;
-  if (verificationPending) return <EmailVerificationScreen status={verificationPending} onVerified={() => void sync()} onSignOut={signOutAll} />;
-  if (authenticated && suspended.active) return <SuspendedScreen reason={suspended.reason} onSignOut={signOutAll} />;
+  if (legacyIdentity) return <LegacyIdentityScreen onMigrated={() => void sync()} onSignOut={() => void signOutAll()} />;
+  if (verificationPending) return <EmailVerificationScreen status={verificationPending} onVerified={() => void sync()} onSignOut={() => void signOutAll()} />;
+  if (authenticated && suspended.active) return <SuspendedScreen reason={suspended.reason} onSignOut={() => void signOutAll()} />;
 
   return <>{error && <div className="fixed inset-x-3 top-[calc(10px+env(safe-area-inset-top))] z-[120] mx-auto max-w-xl rounded-2xl border border-amber-300/20 bg-[#17110b]/95 p-3 text-xs text-amber-100 shadow-2xl backdrop-blur"><div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" /><div className="min-w-0 flex-1"><strong>No pudimos sincronizar TuTop</strong><p className="mt-1 text-amber-100/65">{error}</p></div><button onClick={() => void sync()} className="rounded-lg border border-amber-200/15 px-2 py-1 font-bold">Reintentar</button></div></div>}{children}</>;
 }

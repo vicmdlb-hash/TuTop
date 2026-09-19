@@ -5,7 +5,22 @@ import { onlineBackend } from './onlineBackend';
 
 let installed = false;
 
+function activeRecipientUid() {
+  try {
+    if (!onlineBackend.ready) onlineBackend.configureFromRuntime();
+  } catch { /* fail closed below when recipient identity is present */ }
+  return String(onlineBackend.session?.uid || useAppStore.getState().user.id || '').trim();
+}
+
+function recipientMatchesActiveSession(intent: NativeNotificationIntent) {
+  const intended = String(intent.recipient_uid || '').trim();
+  if (!intended) return true; // backward compatibility for historical payloads
+  const active = activeRecipientUid();
+  return Boolean(active && active === intended);
+}
+
 function route(intent: NativeNotificationIntent, markRead = true) {
+  if (!recipientMatchesActiveSession(intent)) return false;
   const state = useAppStore.getState();
   if (markRead && intent.notification_id) state.markNotificationRead(intent.notification_id);
   if (intent.source !== 'action') return true;
@@ -44,6 +59,7 @@ export function installNativeNotificationRouter() {
   installed = true;
   window.addEventListener(NATIVE_NOTIFICATION_EVENT, ((event: CustomEvent<NativeNotificationIntent>) => {
     const intent = event.detail || { source: 'received' };
+    if (!recipientMatchesActiveSession(intent)) return;
     const exactTargetResolved = route(intent);
     void onlineBackend.loadSnapshot().then((snapshot) => {
       useAppStore.getState().hydrateOnline(snapshot);
