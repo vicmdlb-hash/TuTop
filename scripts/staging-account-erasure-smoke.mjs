@@ -162,7 +162,6 @@ try {
   await adminPatchDocument(`chats/${chatId}`, {
     buyer_id: 'synthetic-control-buyer',
     seller_id: uid,
-    participants: ['synthetic-control-buyer', uid],
     nombre_otro_usuario: 'Cuenta temporal',
     last_message: 'mensaje retenido de smoke',
     updated_at: now,
