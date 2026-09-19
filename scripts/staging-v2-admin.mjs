@@ -1,4 +1,5 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { collectCursorPages } from './firestore-query-pagination.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
 const projectId = assertStagingFreezeContext();
@@ -48,13 +49,38 @@ export async function adminDeleteDocument(path) {
   return request(`${firestoreBase}/${path}`, { method: 'DELETE' }, [404]);
 }
 
-export async function adminRunQuery(collectionId, filters = [], limit = 500) {
-  const where = filters.length === 0 ? undefined : filters.length === 1
+function structuredWhere(filters = []) {
+  return filters.length === 0 ? undefined : filters.length === 1
     ? { fieldFilter: { field: { fieldPath: filters[0].field }, op: 'EQUAL', value: value(filters[0].value) } }
     : { compositeFilter: { op: 'AND', filters: filters.map((filter) => ({ fieldFilter: { field: { fieldPath: filter.field }, op: 'EQUAL', value: value(filter.value) } })) } };
-  const body = { structuredQuery: { from: [{ collectionId }], ...(where ? { where } : {}), limit: Math.max(1, Math.min(1000, Number(limit) || 500)) } };
-  const rows = await request(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:runQuery`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+async function runStructuredQuery(structuredQuery) {
+  const rows = await request(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:runQuery`, {
+    method: 'POST',
+    body: JSON.stringify({ structuredQuery }),
+  });
   return queryRows(rows);
+}
+
+export async function adminRunQuery(collectionId, filters = [], limit = 500) {
+  const where = structuredWhere(filters);
+  return runStructuredQuery({
+    from: [{ collectionId }],
+    ...(where ? { where } : {}),
+    limit: Math.max(1, Math.min(1000, Number(limit) || 500)),
+  });
+}
+
+export async function adminRunQueryAll(collectionId, filters = [], pageSize = 500) {
+  const where = structuredWhere(filters);
+  return collectCursorPages(async ({ afterName, pageSize: size }) => runStructuredQuery({
+    from: [{ collectionId }],
+    ...(where ? { where } : {}),
+    orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }],
+    ...(afterName ? { startAt: { values: [{ referenceValue: afterName }], before: false } } : {}),
+    limit: size,
+  }), { pageSize });
 }
 
 // Collection-group scan used by destructive staging cleanup. allDescendants=true
