@@ -227,6 +227,41 @@ async function auditLiveState(){
   }));
 }
 
+async function auditActiveRulesContract() {
+  const headers={Authorization:'Bearer '+oauth,'X-Goog-User-Project':PROJECT};
+  const release=await parse(
+    await fetch('https://firebaserules.googleapis.com/v1/projects/'+PROJECT+'/releases/cloud.firestore',{headers}),
+    'RULES_RELEASE_READ'
+  );
+  const rulesetName=String(release?.rulesetName||'');
+  if(!rulesetName.startsWith('projects/'+PROJECT+'/rulesets/')) throw new Error('RULES_RELEASE_RULESET_MISSING');
+  const ruleset=await parse(
+    await fetch('https://firebaserules.googleapis.com/v1/'+rulesetName,{headers}),
+    'RULESET_READ'
+  );
+  const content=(ruleset?.source?.files||[]).map(file=>String(file?.content||'')).join('\n');
+  const start=content.indexOf('match /listings_v2/{listingId}');
+  const end=start>=0?content.indexOf('match /offers/{offerId}',start):-1;
+  const section=start>=0?content.slice(start,end>start?end:Math.min(content.length,start+14000)):'';
+  const audit={
+    ruleset_name:rulesetName,
+    canonical_listings_v2_present:start>=0,
+    title_min_2:/title\.size\(\)\s*>=\s*2/.test(section),
+    title_max_120:/title\.size\(\)\s*<=\s*120/.test(section),
+    quantity_integer:/quantity\s+is\s+int/.test(section),
+    price_max_1000000:/price_mxn\s*<=\s*1000000/.test(section),
+    national_requires_shipping:/visibility_scope\s*!=\s*'national'\s*\|\|\s*request\.resource\.data\.shipping_available\s*==\s*true/.test(section),
+    video_urls_allowed_create_key:/hasOnly\(\[[\s\S]*?'video_urls'/.test(section),
+    seller_profile_identity_coupling:/productMatchesSellerIdentity\(request\.resource\.data,\s*request\.auth\.uid\)/.test(section),
+    rules_content_logged:false
+  };
+  console.log(JSON.stringify({live_rules_contract_audit:audit}));
+  if(!audit.canonical_listings_v2_present || !audit.title_min_2 || audit.seller_profile_identity_coupling) {
+    throw new Error('LIVE_RULES_CONTRACT_UNEXPECTED');
+  }
+  return audit;
+}
+
 function assertSyntheticPath(path) {
   const safe = uid && (
     path === 'users/'+uid
@@ -257,6 +292,7 @@ async function cleanupAuth() {
 try {
   stage='AUTH_ADMIN_CREATE';
   oauth=await firebaseCiAccessToken();
+  const liveRulesContract=await auditActiveRulesContract();
   await auditLiveState();
   const create=await parse(await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts',{
     method:'POST',headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json'},
@@ -611,7 +647,8 @@ try {
     server_request_time_skew_minus_60m_pass:true,
     existing_bucket_server_authoritative_rollover_pass:true,
     title_minimum_live_boundary_pass:true,
-    live_source_drift_national_without_shipping:true,
+    live_source_drift_national_without_shipping:liveRulesContract.national_requires_shipping===false,
+    live_rules_video_key_enabled:liveRulesContract.video_urls_allowed_create_key,
     user_data_logged:false,
     cleanup_required:true
   }));
