@@ -204,6 +204,23 @@ try {
   uid=String(create.localId||'');
   if(!uid) throw new Error('AUTH_CREATE_NO_UID');
 
+  stage='AUTH_QUERY_SELF_CHECK';
+  const queryAfterCreate=await parse(await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts:query',{
+    method:'POST',
+    headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json','X-Goog-User-Project':PROJECT},
+    body:JSON.stringify({maxResults:1000})
+  }),'AUTH_QUERY_SELF_CHECK');
+  const queriedAccounts=queryAfterCreate?.users||[];
+  const syntheticVisible=queriedAccounts.some(account=>String(account.localId||'')===uid);
+  console.log(JSON.stringify({
+    auth_query_self_check:{
+      accounts_visible_after_synthetic_create:queriedAccounts.length,
+      synthetic_auth_query_visible:syntheticVisible,
+      identities_logged:false
+    }
+  }));
+  if(!syntheticVisible) throw new Error('AUTH_QUERY_INSTRUMENT_INVALID');
+
   stage='AUTH_PUBLIC_SIGNIN';
   const login=await publicPost('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key='+encodeURIComponent(apiKey),{
     email,password,returnSecureToken:true
