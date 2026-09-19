@@ -68,8 +68,9 @@ jobs:
           must(backend,/client\.encodeDocumentForWrite\(`listings_v2\/\$\{id\}`/,'canonical create serializes listings_v2');
 
           must(rate,/client\.getDocument(?:<[^>]+>)?\(path\)/,'rate path reads deterministic bucket');
-          must(rate,/if \(!existing\)/,'missing bucket has create branch');
-          must(rate,/currentDocument: \{ exists: false \}/,'first bucket uses create precondition');
+          must(rate,/const sameWindow = Boolean\(/,'rate path derives existing-window state');
+          must(rate,/if \(existing\?\.updateTime\)/,'existing bucket uses updateTime precondition');
+          must(rate,/write\.currentDocument = \{ exists: false \}/,'missing bucket uses create precondition');
 
           console.log('PASS exact build116 delegation: screen -> verification -> identity bridge -> canonical create -> rate-limited atomic listing write');
           NODE
