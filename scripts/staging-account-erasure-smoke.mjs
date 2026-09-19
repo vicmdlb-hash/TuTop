@@ -48,6 +48,11 @@ const retainedPaths = [
   `chats/${chatId}`,
   `reports/${reportId}`,
 ];
+const retainedNestedPaths = [
+  `chats/${chatId}/messages/erasure-message-${run}`,
+  `chats/${chatId}/reads/placeholder-until-uid`,
+  `chats/${chatId}/confirmations/placeholder-until-uid`,
+];
 const withdrawalPaths = [
   `listings_v2/${listingId}`,
   `demand_requests/${demandId}`,
@@ -64,6 +69,10 @@ function fieldString(document, field) {
   return String(document?.fields?.[field]?.stringValue || '');
 }
 
+function fieldInteger(document, field) {
+  return Number(document?.fields?.[field]?.integerValue || 0);
+}
+
 async function mustExist(path) {
   const document = await adminGetDocument(path);
   assert(document, `${path} debía existir`);
@@ -78,6 +87,7 @@ async function cleanup() {
   const paths = [
     ...directPaths,
     ...queryDeletePaths,
+    ...retainedNestedPaths.filter((path) => !path.includes('placeholder-until-uid')),
     ...retainedPaths,
     ...withdrawalPaths,
     lockPath,
@@ -149,9 +159,21 @@ try {
 
   await adminPatchDocument(`transactions_v2/${txId}`, { listing_id: listingId, buyer_id: uid, seller_id: 'synthetic-control-seller', status: 'reserved', updated_at: now });
   await adminPatchDocument(lockPath, { listing_id: listingId, transaction_id: txId, buyer_id: uid, seller_id: 'synthetic-control-seller', created_at: now, updated_at: now });
-  await adminPatchDocument(`chats/${chatId}`, { buyer_id: 'synthetic-control-buyer', seller_id: uid, updated_at: now });
+  await adminPatchDocument(`chats/${chatId}`, {
+    buyer_id: 'synthetic-control-buyer',
+    seller_id: uid,
+    participants: ['synthetic-control-buyer', uid],
+    nombre_otro_usuario: 'Cuenta temporal',
+    last_message: 'mensaje retenido de smoke',
+    updated_at: now,
+  });
+  retainedNestedPaths[1] = `chats/${chatId}/reads/${uid}`;
+  retainedNestedPaths[2] = `chats/${chatId}/confirmations/${uid}`;
+  await adminPatchDocument(retainedNestedPaths[0], { sender_id: uid, text: 'mensaje retenido de smoke', created_at: now });
+  await adminPatchDocument(retainedNestedPaths[1], { user_id: uid, read_at: now });
+  await adminPatchDocument(retainedNestedPaths[2], { user_id: uid, created_at: now });
   await adminPatchDocument(`reports/${reportId}`, { created_by: uid, status: 'open', updated_at: now });
-  ok('fixture de privacidad/marketplace/retención creado con transacción activa');
+  ok('fixture de privacidad/marketplace/retención creado con transacción activa y residuos chat anidados');
 
   const requestTime = Timestamp.now();
   await setDoc(doc(db, 'account_deletion_requests', uid), {
@@ -203,11 +225,14 @@ try {
   ok('contenido público fue retirado/anonimizado en vez de borrado ciego');
 
   for (const path of retainedPaths) await mustExist(path);
-  ok('transacción/chat/reporte operativos se conservaron');
+  for (const path of retainedNestedPaths) await mustExist(path);
+  ok('transacción/chat/reporte y subcolecciones chat operativas se conservaron de forma explícita');
 
   const request = await mustExist(`account_deletion_requests/${uid}`);
   assert.equal(fieldString(request, 'status'), 'completed');
   assert.equal(fieldString(request, 'processing_note'), 'staging-controlled-erasure-v1');
+  assert.equal(fieldString(request, 'residual_manifest_version'), 'staging-erasure-residual-v2');
+  assert(fieldInteger(request, 'retained_count') >= 6, 'el manifiesto no contó los residuos chat anidados');
   const audits = await adminRunQuery('audit_log', [{ field: 'target_id', value: uid }], 100);
   assert(audits.some((audit) => fieldString(audit, 'action') === 'account_erasure_completed'), 'faltó audit_log de erasure completado');
   ok('solicitud quedó completed y auditada');
