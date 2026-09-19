@@ -1,0 +1,55 @@
+name: Post116 publication client contract — no APK
+
+on:
+  push:
+    branches: [fix/post116-publication-client-contract]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post116-publication-client-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-and-rules-proof:
+    if: github.ref_name == 'fix/post116-publication-client-contract'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Publication client contract regression
+        run: node scripts/post116-publication-client-contract-tests.mjs
+      - name: Existing regression
+        run: npm run check
+      - name: Exact typecheck
+        run: npm run typecheck
+      - name: Prepare exact strict V2 Rules
+        run: npm run v2:rules:prepare
+      - name: Emulator dependencies
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
+      - name: Publication + rate-limit Rules regression
+        run: >
+          npx firebase emulators:exec --only firestore
+          --project demo-tutop-post116-client-contract
+          --config firebase.v2.json
+          "node --test --test-concurrency=1
+          tests/firestore.verified-email.test.mjs
+          tests/firestore.v2.post106-verified-identity.test.mjs
+          tests/firestore.v2.runtime-services.test.mjs"
+      - name: Prove no Android candidate work exists in this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs/apk || test -z "$(find android/app/build/outputs/apk -type f -name '*.apk' -print -quit 2>/dev/null)"
+          echo "PASS no APK generated"
