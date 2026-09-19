@@ -35,7 +35,7 @@ export default function ProductCard({ product }: { product: Product }) {
   const negotiable = product.precio_negociable === true || parsed.details['Precio negociable']?.toLowerCase() === 'sí';
   const delivery = parsed.details['Entrega'] || parsed.details['Horario'] || parsed.details['Disponibilidad'];
   const reputation = sellerReputationEvidence(product.vendedor_id, reviews, chats);
-  const [viewerLocation, setViewerLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
+  const [viewerLocation, setViewerLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
 
   useEffect(() => {
     const onLocation = (event: Event) => {
