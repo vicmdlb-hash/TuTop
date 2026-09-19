@@ -33,7 +33,7 @@ jobs:
       - name: Read exact existing staging client config — no deploy
         run: node scripts/read-existing-staging-build-config.mjs
       - name: Execute actual client serializer/write/rate-limit path against staging
-        run: node --experimental-strip-types scripts/post116-client-equivalent-live-smoke.mjs
+        run: node --experimental-strip-types --experimental-loader ./scripts/node-ts-extension-loader.mjs scripts/post116-client-equivalent-live-smoke.mjs
       - name: No dependency drift
         run: git diff --exit-code -- package.json package-lock.json
       - name: Prove no Android candidate work exists
