@@ -148,7 +148,7 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
         && (request.resource.data.photo_urls.size() < 4 || (request.resource.data.photo_urls[3] is string && request.resource.data.photo_urls[3].size() <= 180000))
         && request.resource.data.status in ['draft','active']
         && request.resource.data.moderation_status == 'pending'
-        && request.resource.data.availability_status == 'available'
+        && (!('availability_status' in request.resource.data) || request.resource.data.availability_status == 'available')
         && validVisibilityScope(request.resource.data.visibility_scope)
         && (request.resource.data.visibility_scope != 'national' || request.resource.data.shipping_available == true)
         && (!('published_at' in request.resource.data) || request.resource.data.published_at is timestamp)
