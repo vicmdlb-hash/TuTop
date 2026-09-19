@@ -365,6 +365,29 @@ try {
     if(!ok) throw new Error('MATRIX_UNEXPECTED_'+name+'_'+outcome);
   }
 
+  async function runTimeIsolationVariant(name, listingOffsetMs, bucketOffsetMs, expected) {
+    await clearSyntheticPublication();
+    const listingAt=new Date(Date.now()+listingOffsetMs).toISOString();
+    const bucketAt=new Date(Date.now()+bucketOffsetMs).toISOString();
+    const variantListing={...listing,published_at:listingAt,created_at:listingAt,updated_at:listingAt};
+    const variantBucket={uid,action:'listing_create',window_start:bucketAt,count:1,updated_at:bucketAt};
+    let outcome='PASS'; let errorCode='';
+    try {
+      await commit([
+        write('rate_limits/'+uid+'-listing_create',variantBucket),
+        write('listings_v2/'+listingId,variantListing)
+      ],idToken,'TIME_'+name);
+      const check=await getPublic('listings_v2/'+listingId,idToken);
+      if(!check?.name?.endsWith('/'+listingId)) throw new Error('TIME_READBACK_MISSING');
+    } catch(error) {
+      outcome='DENIED';
+      errorCode=String(error instanceof Error?error.message:error).slice(0,160);
+    }
+    const ok=outcome===expected;
+    console.log(JSON.stringify({publication_time_isolation:{name,outcome,expected,ok,error_class:/Missing or insufficient permissions|PERMISSION_DENIED/i.test(errorCode)?'permission_denied':(errorCode?'other':'none'),user_data_logged:false}}));
+    if(!ok) throw new Error('TIME_UNEXPECTED_'+name+'_'+outcome);
+  }
+
   const longPhoto='data:image/jpeg;base64,'+'A'.repeat(110000);
   await runPayloadVariant('city_location',{
     city_id:'TLAX-tlaxcala',
@@ -386,6 +409,21 @@ try {
   await runPayloadVariant('clock_minus_9m',{},'PASS',-9*60_000);
   await runPayloadVariant('clock_plus_6m',{},'DENIED',6*60_000);
   await runPayloadVariant('clock_minus_11m',{},'DENIED',-11*60_000);
+  await runTimeIsolationVariant('clock_listing_only_plus_6m',6*60_000,0,'DENIED');
+  await runTimeIsolationVariant('clock_bucket_only_plus_6m',0,6*60_000,'DENIED');
+  await runTimeIsolationVariant('clock_listing_only_minus_11m',-11*60_000,0,'DENIED');
+  await runTimeIsolationVariant('clock_bucket_only_minus_11m',0,-11*60_000,'DENIED');
+  await runPayloadVariant('category_electronica',{category_id:'electronica',title:'QA Electrónica'},'PASS');
+  await runPayloadVariant('category_ropa-accesorios',{category_id:'ropa-accesorios',title:'QA Ropa & Accesorios'},'PASS');
+  await runPayloadVariant('category_libros-apuntes',{category_id:'libros-apuntes',title:'QA Libros & Apuntes'},'PASS');
+  await runPayloadVariant('category_comida',{category_id:'comida',title:'QA Comida'},'PASS');
+  await runPayloadVariant('category_postres',{category_id:'postres',title:'QA Postres'},'PASS');
+  await runPayloadVariant('category_servicios',{category_id:'servicios',title:'QA Servicios'},'PASS');
+  await runPayloadVariant('category_transporte',{category_id:'transporte',title:'QA Transporte'},'PASS');
+  await runPayloadVariant('category_cuartos-renta',{category_id:'cuartos-renta',title:'QA Cuartos & Renta'},'PASS');
+  await runPayloadVariant('category_eventos',{category_id:'eventos',title:'QA Eventos'},'PASS');
+  await runPayloadVariant('category_arte-manualidades',{category_id:'arte-manualidades',title:'QA Arte & Manualidades'},'PASS');
+  await runPayloadVariant('category_otros',{category_id:'otros',title:'QA Otros'},'PASS');
   await clearSyntheticPublication();
 
   stage='LEGACY_PROFILE_DATE_PROBE';
