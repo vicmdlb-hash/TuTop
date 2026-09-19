@@ -24,12 +24,12 @@ export default function V2NearbyListingsHydrator() {
     let active = true;
     let requestSerial = 0;
 
-    const hydrate = async (location: ApproxLocation) => {
+    const hydrate = async (location: ApproxLocation, force = false) => {
       const serial = ++requestSerial;
       const cells = nearbyGeoCells(location);
       if (!cells.length) return;
       try {
-        const nearby = await canonicalListingsBackend.loadNearbyProducts({ geoCells: cells, limitPerCell: 10 });
+        const nearby = await canonicalListingsBackend.loadNearbyProducts({ geoCells: cells, limitPerCell: 10, force });
         if (!active || serial !== requestSerial) return;
         const current = useAppStore.getState().products;
         useAppStore.setState({ products: mergeProducts(current, nearby) });
@@ -38,9 +38,9 @@ export default function V2NearbyListingsHydrator() {
       }
     };
 
-    const hydrateCached = () => {
+    const hydrateCached = (force = false) => {
       const cached = getCachedApproxLocation();
-      if (cached) void hydrate(cached);
+      if (cached) void hydrate(cached, force);
     };
     hydrateCached();
 
@@ -49,12 +49,13 @@ export default function V2NearbyListingsHydrator() {
       if (location) void hydrate(location);
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
-    window.addEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, hydrateCached);
+    const onBaseHydrated = () => hydrateCached(true);
+    window.addEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, onBaseHydrated);
     return () => {
       active = false;
       requestSerial += 1;
       window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
-      window.removeEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, hydrateCached);
+      window.removeEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, onBaseHydrated);
     };
   }, []);
 
