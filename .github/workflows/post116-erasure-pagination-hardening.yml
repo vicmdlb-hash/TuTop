@@ -1,0 +1,35 @@
+name: TuTop post116 erasure pagination hardening
+
+on:
+  push:
+    branches: [fix/post116-erasure-pagination-hardening]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post116-erasure-pagination-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Full existing regression
+        run: npm run check
+      - name: Exact TypeScript
+        run: npm run typecheck
+      - name: Pagination synthetic >1000
+        run: node scripts/firestore-run-query-pagination-tests.mjs
+      - name: Account erasure contract
+        run: node scripts/account-erasure-tests.mjs
+      - name: No dependency drift
+        run: git diff --exit-code -- package.json package-lock.json
