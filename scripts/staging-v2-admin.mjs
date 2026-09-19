@@ -1,5 +1,6 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
+import { paginateRunQueryByDocumentName } from './firestore-run-query-pagination.mjs';
 
 const projectId = assertStagingFreezeContext();
 const token = await firebaseCiAccessToken();
@@ -55,6 +56,28 @@ export async function adminRunQuery(collectionId, filters = [], limit = 500) {
   const body = { structuredQuery: { from: [{ collectionId }], ...(where ? { where } : {}), limit: Math.max(1, Math.min(1000, Number(limit) || 500)) } };
   const rows = await request(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:runQuery`, { method: 'POST', body: JSON.stringify(body) });
   return queryRows(rows);
+}
+
+export async function adminRunQueryAll(collectionId, filters = [], pageSize = 500) {
+  const clean = String(collectionId || '').trim();
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(clean)) throw new Error(`Collection ID inválido: ${clean || 'empty'}`);
+  const where = filters.length === 0 ? undefined : filters.length === 1
+    ? { fieldFilter: { field: { fieldPath: filters[0].field }, op: 'EQUAL', value: value(filters[0].value) } }
+    : { compositeFilter: { op: 'AND', filters: filters.map((filter) => ({ fieldFilter: { field: { fieldPath: filter.field }, op: 'EQUAL', value: value(filter.value) } })) } };
+  const baseQuery = { from: [{ collectionId: clean }], ...(where ? { where } : {}) };
+  const documents = await paginateRunQueryByDocumentName({
+    baseQuery,
+    pageSize,
+    runPage: async (structuredQuery) => request(
+      `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:runQuery`,
+      { method: 'POST', body: JSON.stringify({ structuredQuery }) },
+    ),
+  });
+  return documents.map((document) => ({
+    name: String(document.name || ''),
+    path: String(document.name || '').split('/documents/')[1] || '',
+    fields: document.fields || {},
+  }));
 }
 
 // Collection-group scan used by destructive staging cleanup. allDescendants=true
