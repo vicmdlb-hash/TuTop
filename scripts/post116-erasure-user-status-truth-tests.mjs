@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { hasTrustedAccountDeletionCompletion } from '../src/services/nationalUserSettings.ts';
+import { hasTrustedAccountDeletionCompletion } from '../src/lib/accountDeletionCompletionTruth.ts';
 
 const base = {
   uid: 'alice',
