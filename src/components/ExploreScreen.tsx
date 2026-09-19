@@ -6,6 +6,7 @@ import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { useAppStore } from '../store/useAppStore';
 import type { Product, ProductCategory } from '../types';
 import ProductCard from './ProductCard';
+import { V2_LISTINGS_BASE_HYDRATED_EVENT } from './V2ListingsHydrator';
 
 type ExploreScope = 'all' | 'nearby' | 'favorites';
 const RADII = [5, 10, 25, 50] as const;
@@ -41,12 +42,23 @@ export default function ExploreScreen() {
   }, []);
 
   useEffect(() => {
+    const onBaseHydrated = () => {
+      if (scope !== 'nearby') return;
+      setNearbyProducts([]);
+      setNearbyError(null);
+      setNearbyRefreshKey((current) => current + 1);
+    };
+    window.addEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, onBaseHydrated);
+    return () => window.removeEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, onBaseHydrated);
+  }, [scope]);
+
+  useEffect(() => {
     if (scope !== 'nearby' || !location) return;
     let active = true;
     setNearbyBusy(true);
     setNearbyError(null);
     const cells = nearbyGeoCells(location);
-    canonicalListingsBackend.loadNearbyProducts({ geoCells: cells, limitPerCell: 15 })
+    canonicalListingsBackend.loadNearbyProducts({ geoCells: cells, limitPerCell: 15, force: true })
       .then((items) => { if (active) setNearbyProducts(items); })
       .catch(() => {
         if (!active) return;
