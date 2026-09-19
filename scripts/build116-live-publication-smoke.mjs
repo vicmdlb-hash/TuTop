@@ -477,6 +477,39 @@ try {
     await parse(response,'ADMIN_SEED_RATE_BUCKET');
   }
 
+  async function runWriteOrderProbe() {
+    async function attempt(name, order) {
+      await clearSyntheticPublication();
+      const fakeAt='2099-01-01T00:00:00.000Z';
+      const probeListing={...listing,created_at:fakeAt,updated_at:fakeAt,published_at:fakeAt};
+      const probeBucket={uid,action:'listing_create',count:1,window_start:fakeAt,updated_at:fakeAt};
+      const listingWrite=serverTimedWrite('listings_v2/'+listingId,probeListing,['created_at','updated_at','published_at']);
+      const rateWrite=serverTimedWrite('rate_limits/'+uid+'-listing_create',probeBucket,['window_start','updated_at']);
+      const writes=order==='listing_first'?[listingWrite,rateWrite]:[rateWrite,listingWrite];
+      let outcome='PASS'; let errorClass='none';
+      try {
+        await commit(writes,idToken,'WRITE_ORDER_'+name);
+        const readback=await getPublic('listings_v2/'+listingId,idToken);
+        if(!readback?.name?.endsWith('/'+listingId)) throw new Error('WRITE_ORDER_READBACK_MISSING');
+      } catch(error) {
+        outcome='DENIED';
+        const raw=String(error instanceof Error?error.message:error);
+        errorClass=/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw)?'permission_denied':'other';
+      }
+      console.log(JSON.stringify({publication_write_order_probe:{name,order,outcome,error_class:errorClass,user_data_logged:false}}));
+      await clearSyntheticPublication();
+      return outcome;
+    }
+    const listingFirst=await attempt('listing_before_bucket','listing_first');
+    const rateFirst=await attempt('bucket_before_listing','rate_first');
+    console.log(JSON.stringify({publication_write_order_probe_summary:{
+      listing_first:listingFirst,
+      rate_first:rateFirst,
+      order_sensitive:listingFirst!==rateFirst,
+      user_data_logged:false
+    }}));
+  }
+
   async function runExistingBucketRepairProof() {
     // Recent existing bucket: preserve server window and increment. No device clock
     // decision is involved.
@@ -579,6 +612,7 @@ try {
   await runServerTimeRepairVariant('device_clock_plus_60m',60*60_000);
   await runServerTimeRepairVariant('device_clock_minus_60m',-60*60_000);
   await runExistingBucketRepairProof();
+  await runWriteOrderProbe();
   await runPayloadVariant('category_electronica',{category_id:'electronica',title:'QA Electrónica'},'PASS');
   await runPayloadVariant('category_ropa-accesorios',{category_id:'ropa-accesorios',title:'QA Ropa & Accesorios'},'PASS');
   await runPayloadVariant('category_libros-apuntes',{category_id:'libros-apuntes',title:'QA Libros & Apuntes'},'PASS');
