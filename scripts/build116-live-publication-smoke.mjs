@@ -334,6 +334,9 @@ try {
     expected_client_getDocument_behavior:missingRateStatus===404?'returns_null':missingRateStatus===403?'throws_permission_denied':'other',
     user_data_logged:false
   }}));
+  if(missingRateStatus!==404) throw new Error('MISSING_RATE_BUCKET_READ_NOT_REPAIRED_'+missingRateStatus);
+  if(liveRulesContract.rate_read_resource_uid_guard) throw new Error('OLD_RATE_READ_RESOURCE_GUARD_STILL_ACTIVE');
+  if(!liveRulesContract.rate_read_deterministic_owner_guard) throw new Error('DETERMINISTIC_RATE_READ_GUARD_MISSING');
 
   stage='PROFILE_BOOTSTRAP';
   const at=new Date().toISOString();
