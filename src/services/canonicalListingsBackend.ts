@@ -207,7 +207,7 @@ export const canonicalListingsBackend = {
     return productsForDocuments(client, [...byId.values()]);
   },
 
-  async loadNearbyProducts(input: { geoCells: string[]; limitPerCell?: number }) {
+  async loadNearbyProducts(input: { geoCells: string[]; limitPerCell?: number; force?: boolean }) {
     const cells = [...new Set(input.geoCells.filter((cell) => /^g1:\d+:\d+$/.test(cell)))].slice(0, 9).sort();
     if (!cells.length) return [] as Product[];
     const limit = Math.max(4, Math.min(15, input.limitPerCell || 10));
@@ -215,7 +215,7 @@ export const canonicalListingsBackend = {
     const uid = client.currentSession!.uid;
     const cacheKey = `${uid}#${cells.join('|')}#${limit}`;
     const cached = nearbyCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) return cached.products;
+    if (!input.force && cached && cached.expiresAt > Date.now()) return cached.products;
 
     const approvedPromise = Promise.all(cells.map((cell) => queryApproved(client, 'attributes.geo_cell', cell, limit)));
     const minePromise = this.loadMine(Math.min(50, Math.max(limit * 3, 20)));
