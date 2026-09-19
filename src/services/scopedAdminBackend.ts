@@ -172,7 +172,7 @@ export const scopedAdminBackend = {
     });
   },
 
-  async updateAccountDeletionRequest(uid: string, status: 'processing' | 'completed' | 'rejected') {
+  async updateAccountDeletionRequest(uid: string, status: 'processing' | 'rejected') {
     const admin = await this.context();
     if (!canProcessAccountRequests(admin)) throw new Error('ROLE_SCOPE_DENIED');
     const firebase = client();
@@ -182,7 +182,7 @@ export const scopedAdminBackend = {
     const allowed = existing === 'pending'
       ? ['processing', 'rejected']
       : existing === 'processing'
-        ? ['completed', 'rejected']
+        ? ['rejected']
         : [];
     if (!allowed.includes(status)) throw new Error('ACCOUNT_DELETION_INVALID_TRANSITION');
     await auditedPatch({
