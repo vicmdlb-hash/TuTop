@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Bell, BookmarkPlus, Building2, Clock3, Globe2, Heart, ListFilter, LocateFixed, MapPin, PlusCircle, Search, SlidersHorizontal, Sparkles, Store, X } from 'lucide-react';
 import { NEARBY_RADIUS_OPTIONS, getCachedApproxLocation, productDistanceKm, requestApproxLocation, withinRadius, type ApproxLocation } from '../lib/nearbyMarketplace';
@@ -93,8 +93,8 @@ export default function Feed() {
   const [sortMode, setSortMode] = useState<SortMode>('relevant');
   const [browseScope, setBrowseScope] = useState<BrowseScope>('nearby');
   const [nearbyRadius, setNearbyRadius] = useState<(typeof NEARBY_RADIUS_OPTIONS)[number]>(10);
-  const [viewerLocation, setViewerLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
-  const [locationStatus, setLocationStatus] = useState<'ready' | 'asking' | 'fallback'>(() => viewerLocation ? 'ready' : 'asking');
+  const [viewerLocation, setViewerLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
+  const [locationStatus, setLocationStatus] = useState<'ready' | 'asking' | 'fallback'>(() => viewerLocation ? 'ready' : 'fallback');
   const [maxPrice, setMaxPrice] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
@@ -106,21 +106,9 @@ export default function Feed() {
   const recentIds = readLocalList(RECENT_KEY, 12);
   const onboardingInterests = readLocalList(ONBOARDING_INTERESTS_KEY, 8);
 
-  useEffect(() => {
-    if (viewerLocation) return;
-    let active = true;
-    setLocationStatus('asking');
-    void requestApproxLocation().then((location) => {
-      if (!active) return;
-      setViewerLocation(location);
-      setLocationStatus(location ? 'ready' : 'fallback');
-    });
-    return () => { active = false; };
-  }, [viewerLocation]);
-
   const requestLocationAgain = async () => {
     setLocationStatus('asking');
-    const location = await requestApproxLocation({ maximumAgeMs: 0 });
+    const location = await requestApproxLocation({ maximumAgeMs: 0, requestPermission: true, ownerUid: user.id });
     setViewerLocation(location);
     setLocationStatus(location ? 'ready' : 'fallback');
   };
@@ -204,7 +192,7 @@ export default function Feed() {
     <div className="page-pad">
       <header className="pt-safe flex items-center justify-between pb-4"><div><div className="wordmark"><span>Tu</span><span>Top</span></div><p className="mt-0.5 text-[11px] text-muted">Tu red universitaria para comprar, vender y encontrar.</p></div><div className="flex items-center gap-2"><div className="coin-pill"><span className="coin-dot">T</span><strong>{user.saldo_ucoins}</strong><span>UCoins</span></div><button onClick={() => setNotificationsOpen(true)} className="icon-button-lg relative" aria-label="Notificaciones"><Bell className="h-5 w-5" />{unreadNotifications > 0 && <span className="nav-badge -right-1 -top-1">{unreadNotifications}</span>}</button></div></header>
 
-      <section className="rounded-2xl border border-violet-400/10 bg-violet-500/[0.04] p-2.5"><div className="mb-2 flex items-center gap-2 px-1"><MapPin className="h-3.5 w-3.5 text-violet-300" /><p className="min-w-0 flex-1 truncate text-[9px] text-slate-500">{locationStatus === 'ready' ? <><strong className="text-emerald-300">Cerca de ti activo</strong> · ubicación aproximada</> : locationStatus === 'asking' ? 'Calculando cercanía…' : <>Sin ubicación · usando <strong className="text-slate-300">{identityLabel}</strong></>}</p>{locationStatus !== 'ready' && <button onClick={() => void requestLocationAgain()} className="rounded-lg bg-violet-500/10 px-2 py-1 text-[8px] font-bold text-violet-300">Activar ubicación</button>}</div><div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">{scopeOptions.map((scope) => <button key={scope.id} onClick={() => setBrowseScope(scope.id)} className={`min-w-[116px] rounded-xl px-3 py-2 text-left transition ${browseScope === scope.id ? 'bg-violet-600/25 text-violet-100 ring-1 ring-violet-400/20' : 'bg-white/[0.025] text-slate-500'}`}><strong className="flex items-center gap-1.5 text-[10px] [&>svg]:h-3.5 [&>svg]:w-3.5">{scope.icon}{scope.label}</strong><span className="mt-0.5 block text-[8px] opacity-70">{scope.hint}</span></button>)}</div>{browseScope === 'nearby' && <div className="mt-2 flex items-center gap-1.5 overflow-x-auto"><span className="mr-1 text-[8px] font-bold uppercase tracking-wider text-slate-600">Radio</span>{NEARBY_RADIUS_OPTIONS.map((radius) => <button key={radius} onClick={() => setNearbyRadius(radius)} className={`rounded-full px-3 py-1.5 text-[9px] font-bold ${nearbyRadius === radius ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20' : 'bg-white/[0.035] text-slate-500'}`}>{radius} km</button>)}</div>}</section>
+      <section className="rounded-2xl border border-violet-400/10 bg-violet-500/[0.04] p-2.5"><div className="mb-2 flex items-center gap-2 px-1"><MapPin className="h-3.5 w-3.5 text-violet-300" /><p className="min-w-0 flex-1 truncate text-[9px] text-slate-500">{locationStatus === 'ready' ? <><strong className="text-emerald-300">Cerca de ti activo</strong> · ubicación aproximada</> : locationStatus === 'asking' ? 'Activando cercanía…' : <>Sin ubicación · usando <strong className="text-slate-300">{identityLabel}</strong></>}</p>{locationStatus !== 'ready' && <button onClick={() => void requestLocationAgain()} className="rounded-lg bg-violet-500/10 px-2 py-1 text-[8px] font-bold text-violet-300">Activar ubicación</button>}</div><div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">{scopeOptions.map((scope) => <button key={scope.id} onClick={() => setBrowseScope(scope.id)} className={`min-w-[116px] rounded-xl px-3 py-2 text-left transition ${browseScope === scope.id ? 'bg-violet-600/25 text-violet-100 ring-1 ring-violet-400/20' : 'bg-white/[0.025] text-slate-500'}`}><strong className="flex items-center gap-1.5 text-[10px] [&>svg]:h-3.5 [&>svg]:w-3.5">{scope.icon}{scope.label}</strong><span className="mt-0.5 block text-[8px] opacity-70">{scope.hint}</span></button>)}</div>{browseScope === 'nearby' && <div className="mt-2 flex items-center gap-1.5 overflow-x-auto"><span className="mr-1 text-[8px] font-bold uppercase tracking-wider text-slate-600">Radio</span>{NEARBY_RADIUS_OPTIONS.map((radius) => <button key={radius} onClick={() => setNearbyRadius(radius)} className={`rounded-full px-3 py-1.5 text-[9px] font-bold ${nearbyRadius === radius ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20' : 'bg-white/[0.035] text-slate-500'}`}>{radius} km</button>)}</div>}</section>
 
       {myActiveProducts.length > 0 && <section className="mt-3 rounded-2xl border border-violet-400/10 bg-gradient-to-r from-violet-500/[0.08] to-fuchsia-500/[0.04] p-3"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-violet-500/15 text-violet-200"><Store className="h-5 w-5" /></div><div className="min-w-0 flex-1"><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-violet-300">Modo vendedor</p><h2 className="mt-0.5 text-xs font-black">{myActiveProducts.length} {myActiveProducts.length === 1 ? 'publicación activa' : 'publicaciones activas'}</h2><p className="mt-0.5 text-[9px] text-slate-500">{sellerUnread ? `${sellerUnread} mensaje${sellerUnread === 1 ? '' : 's'} pendiente${sellerUnread === 1 ? '' : 's'}` : 'Todo al día por ahora'}</p></div><button onClick={() => setActiveTab('bot')} className="rounded-xl bg-violet-600 px-3 py-2 text-[9px] font-black text-white"><PlusCircle className="mx-auto mb-1 h-4 w-4" />Vender</button></div></section>}
 

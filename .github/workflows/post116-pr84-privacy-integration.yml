@@ -1,0 +1,71 @@
+name: Post116 PR84 privacy integration — no APK
+
+on:
+  push:
+    branches: [integration/post116-pr84-privacy]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post116-pr84-privacy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.ref_name == 'integration/post116-pr84-privacy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: PR84 privacy integration contracts
+        run: node --experimental-strip-types scripts/post116-pr84-privacy-integration-tests.mjs
+      - name: Durable publish draft composition
+        run: node --experimental-strip-types scripts/post116-durable-publish-draft-tests.mjs
+      - name: Idempotent publication retry composition
+        run: node scripts/post116-publish-idempotency-tests.mjs
+      - name: Existing build116 feedback regression
+        run: node scripts/build116-deviceA-feedback-tests.mjs
+      - name: Canonical bridge coverage
+        run: node scripts/v2-canonical-bridge-coverage-tests.mjs
+      - name: PR82 publication client contract
+        run: node scripts/post116-publication-client-contract-tests.mjs
+      - name: PR82 server-authoritative rate window
+        run: node scripts/post116-rate-window-runtime-tests.mjs
+      - name: Full existing regression
+        run: npm run check
+      - name: Exact typecheck
+        run: npm run typecheck
+      - name: Production web build
+        run: npm run build
+      - name: Prepare strict V2 Rules
+        run: npm run v2:rules:prepare
+      - name: Emulator dependencies
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
+      - name: Publication + rate-limit Rules regression
+        run: >
+          npx firebase emulators:exec --only firestore
+          --project demo-tutop-post116-pr84-privacy
+          --config firebase.v2.json
+          "node --test --test-concurrency=1
+          tests/firestore.verified-email.test.mjs
+          tests/firestore.v2.post106-verified-identity.test.mjs
+          tests/firestore.v2.runtime-services.test.mjs"
+      - name: No dependency drift
+        run: git diff --exit-code -- package.json package-lock.json
+      - name: Prove no Android candidate work exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs/apk || test -z "$(find android/app/build/outputs/apk -type f -name '*.apk' -print -quit 2>/dev/null)"
+          echo "PASS no APK generated"

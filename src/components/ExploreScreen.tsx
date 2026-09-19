@@ -17,11 +17,12 @@ function normalized(value: string) {
 export default function ExploreScreen() {
   const products = useAppStore((state) => state.products);
   const favorites = useAppStore((state) => state.favorites);
+  const user = useAppStore((state) => state.user);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<ProductCategory | 'Todas'>('Todas');
   const [scope, setScope] = useState<ExploreScope>('all');
   const [radiusKm, setRadiusKm] = useState<(typeof RADII)[number]>(25);
-  const [location, setLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
+  const [location, setLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
   const [nearbyProducts, setNearbyProducts] = useState<Product[]>([]);
@@ -91,12 +92,12 @@ export default function ExploreScreen() {
     setLocationBusy(true);
     setLocationMessage(null);
     try {
-      const cached = getCachedApproxLocation();
+      const cached = getCachedApproxLocation(user.id);
       if (cached) {
         setLocation(cached);
         return;
       }
-      const next = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000 });
+      const next = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000, ownerUid: user.id });
       if (next) {
         setLocation(next);
         return;

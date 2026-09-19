@@ -1,4 +1,4 @@
-import { getCachedApproxLocation, requestApproxLocation } from './nearbyMarketplace';
+import { requestApproxLocation } from './nearbyMarketplace';
 import { queryTopiVoicePermission, requestTopiVoicePermission } from './topiVoice';
 import { isNativeDeviceRuntime, nativeCameraPermission, nativeLocationPermission } from '../services/nativeDeviceCapabilities';
 import { enableNativePushNotifications, nativePushPermission } from '../services/nativeFirebaseSecurity';
@@ -19,7 +19,6 @@ function normalizeNativeState(value: string): PermissionState091 {
 }
 
 export async function queryCapabilityPermission(capability: CapabilityPermission): Promise<PermissionState091> {
-  if (capability === 'location' && getCachedApproxLocation()) return 'granted';
   if (isNativeDeviceRuntime()) {
     if (capability === 'location') return normalizeNativeState(await nativeLocationPermission(false));
     // Camera 8 uses Android's system camera/photo picker and deliberately does
@@ -83,7 +82,7 @@ export async function requestCapabilityPermission(capability: CapabilityPermissi
 }
 
 export const PERMISSION_PRIVACY_COPY: Record<CapabilityPermission, string> = {
-  location: 'Se usa sólo para calcular cercanía. TuTop guarda una ubicación aproximada (~1 km), no tu domicilio exacto.',
+  location: 'El permiso sólo habilita cercanía. TuTop guarda una ubicación aproximada (~1 km) únicamente cuando la activas para tu cuenta; Publicar no la solicita automáticamente.',
   camera: 'TuTop abre la cámara o el selector de fotos del sistema sólo cuando tú lo eliges al publicar. No pide acceso permanente ni almacenamiento legacy.',
   microphone: 'Se solicita sólo cuando tocas el micrófono de Topi. El audio no se guarda ni se sube por TuTop.',
   notifications: 'Se usan para avisarte de mensajes y actividad relevante. Puedes desactivarlas desde Android cuando quieras.',

@@ -39,7 +39,8 @@ export default function V2NearbyListingsHydrator() {
     };
 
     const hydrateCached = () => {
-      const cached = getCachedApproxLocation();
+      const uid = useAppStore.getState().user.id;
+      const cached = uid ? getCachedApproxLocation(uid) : null;
       if (cached) void hydrate(cached);
     };
     hydrateCached();

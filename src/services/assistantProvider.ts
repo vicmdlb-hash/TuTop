@@ -2,6 +2,7 @@ import { cleanTitle, detectCategory, extractPrice, improveDescription, isForbidd
 import { detectDeliveryIntent, detectListingCondition, detectNegotiableIntent, detectVisibilityIntent } from '../lib/publishAssistant';
 import type { ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import type { ListingVisibilityScope, Product, ProductCategory, ProductCondition, ProductFormData } from '../types';
+import { redactTopiRemoteText, type TopiPrivacyRedaction } from '../lib/topiPrivacy';
 import { generateNativeTopiText, nativeTopiAIStatus } from './nativeTopiAI';
 
 export const TOPI_PERSONA = {
@@ -46,6 +47,7 @@ export interface CopilotResult {
   compose?: TopiComposeSuggestion;
   source: TopiSource;
   provider?: TopiProvider;
+  privacyRedactions?: TopiPrivacyRedaction[];
 }
 
 export type TopiAction = 'category' | 'description' | 'price' | 'review' | 'compose';
@@ -74,8 +76,8 @@ function validCategory(value: unknown): ProductCategory | undefined {
 
 function safeDraftForRemote(draft: Partial<ProductFormData>) {
   return {
-    titulo: safeText(draft.titulo, 120),
-    descripcion: safeText(draft.descripcion, 1200),
+    titulo: redactTopiRemoteText(draft.titulo, 120).text,
+    descripcion: redactTopiRemoteText(draft.descripcion, 1200).text,
     precio_mxn: typeof draft.precio_mxn === 'number' && Number.isFinite(draft.precio_mxn) ? draft.precio_mxn : undefined,
     categoria: validCategory(draft.categoria),
     condicion: VALID_CONDITIONS.includes(draft.condicion as ProductCondition) ? draft.condicion : undefined,
@@ -86,7 +88,7 @@ function safeDraftForRemote(draft: Partial<ProductFormData>) {
 
 function safeComparables(products: Product[]) {
   return products.slice(0, 24).map((product) => ({
-    title: safeText(product.titulo, 120),
+    title: redactTopiRemoteText(product.titulo, 120).text,
     category: product.categoria,
     price_mxn: Number(product.precio_mxn),
     condition: product.condicion,
@@ -188,10 +190,20 @@ function localTopi(action: TopiAction, context: CopilotContext): CopilotResult {
   };
 }
 
-function nativePrompt(action: TopiAction, context: CopilotContext) {
+function remotePrivacyContext(context: CopilotContext) {
+  const prompt = redactTopiRemoteText(context.prompt, 1200);
+  const title = redactTopiRemoteText(context.draft.titulo, 120);
+  const description = redactTopiRemoteText(context.draft.descripcion, 1200);
+  return {
+    prompt: prompt.text,
+    redactions: [...new Set([...prompt.redactions, ...title.redactions, ...description.redactions])],
+  };
+}
+
+function nativePrompt(action: TopiAction, context: CopilotContext, userPrompt?: string) {
   const payload = {
     action,
-    user_prompt: safeText(context.prompt, 1200),
+    user_prompt: userPrompt,
     draft: safeDraftForRemote(context.draft),
     comparable_products: action === 'price' || action === 'compose' ? safeComparables(context.products) : [],
   };
@@ -218,9 +230,12 @@ function parseModelJson(text: string) {
 }
 
 async function askNativeFirebaseTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult | null> {
-  const generated = await generateNativeTopiText(nativePrompt(action, context));
+  const privacy = remotePrivacyContext(context);
+  const generated = await generateNativeTopiText(nativePrompt(action, context, privacy.prompt));
   if (!generated) return null;
-  return sanitizeRemoteResult(action, parseModelJson(generated.text), context, 'firebase-ai-logic');
+  const result = sanitizeRemoteResult(action, parseModelJson(generated.text), context, 'firebase-ai-logic');
+  if (result && privacy.redactions.length) result.privacyRedactions = privacy.redactions;
+  return result;
 }
 
 function topiEndpoint() {
@@ -232,6 +247,7 @@ function topiEndpoint() {
 async function askConfiguredTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult | null> {
   const endpoint = topiEndpoint();
   if (!endpoint) return null;
+  const privacy = remotePrivacyContext(context);
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 6500);
   try {
@@ -242,13 +258,15 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
       body: JSON.stringify({
         assistant: TOPI_PERSONA,
         action,
-        prompt: String(context.prompt || '').slice(0, 1200),
+        prompt: privacy.prompt,
         draft: safeDraftForRemote(context.draft),
         comparable_products: safeComparables(context.products),
       }),
     });
     if (!response.ok) return null;
-    return sanitizeRemoteResult(action, await response.json(), context, 'private-endpoint');
+    const result = sanitizeRemoteResult(action, await response.json(), context, 'private-endpoint');
+    if (result && privacy.redactions.length) result.privacyRedactions = privacy.redactions;
+    return result;
   } catch { return null; }
   finally { window.clearTimeout(timer); }
 }

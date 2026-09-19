@@ -52,7 +52,7 @@ assert.equal(envelope.draft.title, 'Calculadora científica');
 assert.equal(envelope.draft.operationId, '550e8400-e29b-41d4-a716-446655440000');
 assert.equal(envelope.draft.attributes.brand, 'Casio');
 assert.equal('images' in envelope.draft, false);
-assert.equal('locationOptIn' in envelope.draft, false);
+assert.equal(envelope.draft.locationOptIn, true, 'durable draft may persist only the per-listing consent boolean');
 assert.equal('exactDeviceLocation' in envelope.draft, false);
 assert.equal('authToken' in envelope.draft, false);
 assert.equal(raw.includes('SECRET'), false);
