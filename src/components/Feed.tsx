@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Bell, BookmarkPlus, Building2, Clock3, Globe2, Heart, ListFilter, LocateFixed, MapPin, PlusCircle, Search, SlidersHorizontal, Sparkles, Store, X } from 'lucide-react';
 import { NEARBY_RADIUS_OPTIONS, getCachedApproxLocation, productDistanceKm, requestApproxLocation, withinRadius, type ApproxLocation } from '../lib/nearbyMarketplace';
