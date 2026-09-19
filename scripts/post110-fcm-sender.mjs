@@ -1,5 +1,6 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
+import { eligibleRecipientTargets, isPermanentFcmTokenError } from './fcm-token-ownership-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -96,6 +97,29 @@ async function markSent(item) {
   });
 }
 
+async function deactivateTokenRecord(target, reason) {
+  if (!target?.id) return false;
+  const at = new Date().toISOString();
+  const name = `projects/${projectId}/databases/(default)/documents/device_tokens/${target.id}`;
+  const fields = encodeFields({
+    active: false,
+    invalidated_at: at,
+    invalidation_reason: String(reason || 'fcm-permanent-error').slice(0, 80),
+    updated_at: at,
+  });
+  await request(`${base}:commit`, {
+    method: 'POST',
+    body: JSON.stringify({
+      writes: [{
+        update: { name, fields },
+        updateMask: { fieldPaths: Object.keys(fields) },
+        currentDocument: { exists: true },
+      }],
+    }),
+  });
+  return true;
+}
+
 const [outbox, tokens] = await Promise.all([query('notification_outbox'), query('device_tokens')]);
 const pending = outbox.filter((item) => item.status === 'pending');
 let planned = 0;
@@ -103,7 +127,7 @@ let delivered = 0;
 let waitingForToken = 0;
 
 for (const item of pending) {
-  const targets = tokens.filter((target) => target.owner_uid === item.recipient_uid && target.active !== false && target.token);
+  const targets = eligibleRecipientTargets(tokens, item.recipient_uid);
   if (!targets.length) {
     waitingForToken += 1;
     continue;
@@ -133,6 +157,9 @@ for (const item of pending) {
       delivered += 1;
     } else {
       const detail = await response.text();
+      if (isPermanentFcmTokenError(response.status, detail)) {
+        await deactivateTokenRecord(target, 'fcm-permanent-token-error').catch(() => false);
+      }
       console.warn(`FCM ${item.id}/${target.id}: ${response.status} ${detail.slice(0, 220)}`);
     }
   }
@@ -147,6 +174,8 @@ console.log(JSON.stringify({
   planned_deliveries: planned,
   delivered,
   waiting_for_device_token: waitingForToken,
+  current_owner_filter: true,
+  permanent_invalid_token_cleanup: apply,
   notification_id_in_payload: true,
   real_fcm_sent: apply && delivered > 0,
 }, null, 2));
