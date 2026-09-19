@@ -74,8 +74,12 @@ jobs:
 
           console.log('PASS exact build116 delegation: screen -> verification -> identity bridge -> canonical create -> rate-limited atomic listing write');
           NODE
+      - name: Exact build116 Topi draft and permission-refresh contract
+        run: node scripts/build116-deviceA-feedback-tests.mjs
       - name: Read exact existing staging client config — no deploy
         run: node scripts/read-existing-staging-build-config.mjs
+      - name: Fresh Firebase AI staging runtime proof
+        run: node scripts/staging-topi-ai-runtime-smoke.mjs
       - name: Execute exact build116 rate-limit and publication path
         run: node --experimental-strip-types --experimental-loader ./scripts/node-ts-extension-loader.mjs scripts/build116-exact-publication-live-proof.mjs
       - name: No dependency drift
