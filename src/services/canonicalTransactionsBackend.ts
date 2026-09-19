@@ -129,11 +129,11 @@ export const canonicalTransactionsBackend = {
     await assertActiveCanonicalListing(client, offer);
     const at = nowIso();
 
-    if (actor !== offer.seller_id) {
-      await client.setDocument(`offers/${offer.id}`, { status: 'accepted', updated_at: at }, { merge: true });
-      return { offer: { ...offer, status: 'accepted' as const, updated_at: at }, transaction: null };
-    }
-
+    // Acceptance by the counterparty always starts the reservation when the
+    // proposer already expressed the commercial intent. This covers both:
+    // - seller accepts a buyer-created offer;
+    // - buyer accepts a seller-created counteroffer.
+    // COUNTERPARTY_REQUIRED above prevents an actor from accepting their own offer.
     const transactionId = `tx-${offer.id}`;
     const transaction: MarketplaceTransaction = {
       id: transactionId,
