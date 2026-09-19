@@ -76,7 +76,18 @@ replaceOnce(freshHelper, rateHelpers, 'rate limit helpers');
 
 const marker = '    match /{document=**} { allow read, write: if false; }';
 const runtimeCollections = `    match /rate_limits/{bucketId} {
-      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      // The client must be able to distinguish an absent *own* deterministic
+      // bucket (404) from a forbidden bucket (403) before the first atomic write.
+      // Authorize only the six rate-limit IDs derivable from the signed-in UID;
+      // this does not grant visibility into any other user's bucket.
+      allow read: if signedIn() && bucketId in [
+        request.auth.uid + '-listing_create',
+        request.auth.uid + '-chat_create',
+        request.auth.uid + '-offer_create',
+        request.auth.uid + '-message_create',
+        request.auth.uid + '-report_create',
+        request.auth.uid + '-demand_create'
+      ];
       allow create: if signedIn() && notSuspended()
         && request.resource.data.keys().hasOnly(['uid','action','window_start','count','updated_at'])
         && request.resource.data.uid == request.auth.uid
