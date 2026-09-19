@@ -17,7 +17,7 @@ assert.match(backend, /return `listing-op-\$\{clean\}`/);
 assert.match(backend, /return \{ id, \.\.\.existing\.data, recovered: true as const \}/, 'recovery must return canonical stored truth, not the retry payload');
 assert.match(backend, /async create\(listing: CanonicalListingV2, category: ProductCategory, operationId\?: string\)/);
 assert.match(backend, /const alreadyCommitted = await recoverCommitted\(\)/);
-assert.match(backend, /if \(alreadyCommitted\) return alreadyCommitted/);
+assert.match(backend, /if \(alreadyCommitted\) \{[\s\S]*nearbyCache\.clear\(\);[\s\S]*return alreadyCommitted;[\s\S]*\}/);
 assert.match(backend, /catch \(error\) \{[\s\S]*const recovered = await recoverCommitted\(\)/);
 assert.match(backend, /currentDocument: \{ exists: false \}/);
 
