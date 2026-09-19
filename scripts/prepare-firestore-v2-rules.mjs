@@ -78,16 +78,15 @@ const strictReputation = `    match /reputation/{uid} {
 
 const isAdminLine = "    function isAdmin() { return signedIn() && exists(adminDoc()) && get(adminDoc()).data.active == true; }";
 const scopedAdminHelpers = `${isAdminLine}
-    function legacyGlobalAdmin() { return isAdmin() && !('role' in get(adminDoc()).data); }
     function adminHasRole(role) { return isAdmin() && ('role' in get(adminDoc()).data) && get(adminDoc()).data.role == role; }
     function globalModerationAdmin() {
-      return legacyGlobalAdmin() || adminHasRole('super_admin') || adminHasRole('trust_safety') || adminHasRole('moderator');
+      return adminHasRole('super_admin') || adminHasRole('trust_safety') || adminHasRole('moderator');
     }
     function canReviewVerification() {
-      return legacyGlobalAdmin() || adminHasRole('super_admin') || adminHasRole('trust_safety') || adminHasRole('verification_reviewer');
+      return adminHasRole('super_admin') || adminHasRole('trust_safety') || adminHasRole('verification_reviewer');
     }
     function canSupportAppeals() {
-      return legacyGlobalAdmin() || adminHasRole('super_admin') || adminHasRole('trust_safety') || adminHasRole('support');
+      return adminHasRole('super_admin') || adminHasRole('trust_safety') || adminHasRole('support');
     }
     function institutionModeratorFor(data) {
       return adminHasRole('institution_moderator')
@@ -284,7 +283,7 @@ const strictModerationAndPrivacy = `    match /moderation_cases/{caseId} {
 
     match /feature_flags/{flagId} {
       allow read: if signedIn();
-      allow create, update: if legacyGlobalAdmin() || adminHasRole('super_admin');
+      allow create, update: if adminHasRole('super_admin');
       allow delete: if false;
     }`;
 requireOnce(generated, permissiveModeration, 'moderation_cases permisivo');
