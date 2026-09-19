@@ -41,14 +41,18 @@ replaceOnce(
 );
 
 replaceOnce(
-  '      allow read: if owner(uid) || isAdmin();',
-  '      allow read: if owner(uid) || canReadIdentityPrivate();',
+  `    match /user_private/{uid} {
+      allow read: if owner(uid) || isAdmin();`,
+  `    match /user_private/{uid} {
+      allow read: if owner(uid) || canReadIdentityPrivate();`,
   'user_private identity scope',
 );
 
 replaceOnce(
-  '      allow read: if owner(uid) || isAdmin();',
-  '      allow read: if owner(uid) || canReadWalletPrivate();',
+  `    match /wallets/{uid} {
+      allow read: if owner(uid) || isAdmin();`,
+  `    match /wallets/{uid} {
+      allow read: if owner(uid) || canReadWalletPrivate();`,
   'wallet scope',
 );
 
@@ -78,14 +82,18 @@ replaceCount(
 );
 
 replaceOnce(
-  '      allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || isAdmin());',
-  '      allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || canReadCommercePrivate());',
+  `    match /offers/{offerId} {
+      allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || isAdmin());`,
+  `    match /offers/{offerId} {
+      allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || canReadCommercePrivate());`,
   'offers private read scope',
 );
 
 replaceOnce(
-  '      allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || isAdmin());',
-  '      allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || canReadCommercePrivate());',
+  `    match /transactions_v2/{transactionId} {
+      allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || isAdmin());`,
+  `    match /transactions_v2/{transactionId} {
+      allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || canReadCommercePrivate());`,
   'transactions private read scope',
 );
 
