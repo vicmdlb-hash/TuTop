@@ -52,6 +52,10 @@ export function saveApproxLocation(location: ApproxLocation) {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ApproxLocation>(NEARBY_LOCATION_EVENT, { detail: location }));
 }
 
+export function clearCachedApproxLocation() {
+  try { localStorage.removeItem(LOCATION_KEY); } catch { /* optional cache */ }
+}
+
 export async function nearbyLocationPermission(): Promise<DevicePermissionState> {
   if (isNativeDeviceRuntime()) return nativeLocationPermission(false);
   if (typeof navigator === 'undefined' || !navigator.geolocation) return 'unavailable';
