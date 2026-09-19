@@ -79,6 +79,20 @@ async function adminList(collection){
   });
   return parse(response,'ADMIN_LIST_'+collection.toUpperCase());
 }
+async function adminListAuth(){
+  const users=[]; let page='';
+  do {
+    const params=new URLSearchParams({maxResults:'1000'});
+    if(page) params.set('nextPageToken',page);
+    const response=await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts:batchGet?'+params,{
+      headers:{Authorization:'Bearer '+oauth,'X-Goog-User-Project':PROJECT}
+    });
+    const raw=await parse(response,'AUTH_BATCH_GET');
+    users.push(...(raw?.users||[]));
+    page=String(raw?.nextPageToken||'');
+  } while(page);
+  return users;
+}
 function stringField(doc,field){ return String(doc?.fields?.[field]?.stringValue||''); }
 function integerField(doc,field){ return Number(doc?.fields?.[field]?.integerValue||0); }
 function timestampField(doc,field){ return String(doc?.fields?.[field]?.timestampValue||''); }
@@ -120,6 +134,10 @@ async function auditLiveState(){
     authModes[mode]=(authModes[mode]||0)+1;
   }
   const suspendedTrue=moderationDocs.filter(d=>d?.fields?.suspended?.booleanValue===true).length;
+  const authUsers=await adminListAuth();
+  const authVerified=authUsers.filter(u=>u.emailVerified===true).length;
+  const authDisabled=authUsers.filter(u=>u.disabled===true).length;
+  const authPhoneAlias=authUsers.filter(u=>/^phone-[a-f0-9]+@auth\.tutop\.app$/i.test(String(u.email||''))).length;
   const verificationLevelKinds={};
   const facultyIdKinds={};
   const careerIdKinds={};
@@ -153,6 +171,12 @@ async function auditLiveState(){
       verification_level_non_integer:verificationLevelNonInteger,
       faculty_id_field_kinds:facultyIdKinds,
       career_id_field_kinds:careerIdKinds,
+      auth_batchget_aggregate:{
+        total:authUsers.length,
+        email_verified_true:authVerified,
+        disabled_true:authDisabled,
+        phone_alias_accounts:authPhoneAlias
+      },
       moderation_status_audit:true,
       identities_logged:false
     }
@@ -196,6 +220,12 @@ try {
   }),'AUTH_ADMIN_CREATE');
   uid=String(create.localId||'');
   if(!uid) throw new Error('AUTH_CREATE_NO_UID');
+
+  stage='AUTH_BATCHGET_SELF_CHECK';
+  const authAfterCreate=await adminListAuth();
+  const syntheticVisible=authAfterCreate.some(u=>String(u.localId||'')===uid);
+  console.log(JSON.stringify({auth_batchget_self_check:{synthetic_visible:syntheticVisible,total_after_create:authAfterCreate.length,identities_logged:false}}));
+  if(!syntheticVisible) throw new Error('AUTH_BATCHGET_INSTRUMENT_INVALID');
 
   stage='AUTH_PUBLIC_SIGNIN';
   const login=await publicPost('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key='+encodeURIComponent(apiKey),{
