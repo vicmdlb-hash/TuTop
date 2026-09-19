@@ -73,7 +73,57 @@ async function listPublic(collection,idToken){
   });
   return parse(response,'LIST_'+collection.toUpperCase());
 }
+async function adminList(collection){
+  const response=await fetch('https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents/'+collection+'?pageSize=300',{
+    headers:{Authorization:'Bearer '+oauth,'X-Goog-User-Project':PROJECT}
+  });
+  return parse(response,'ADMIN_LIST_'+collection.toUpperCase());
+}
 function stringField(doc,field){ return String(doc?.fields?.[field]?.stringValue||''); }
+function integerField(doc,field){ return Number(doc?.fields?.[field]?.integerValue||0); }
+function timestampField(doc,field){ return String(doc?.fields?.[field]?.timestampValue||''); }
+function fieldKind(doc,field){
+  const value=doc?.fields?.[field]||{};
+  return Object.keys(value)[0]||'missing';
+}
+function decodeField(value){
+  if(!value||typeof value!=='object') return value;
+  if('nullValue' in value) return null;
+  if('stringValue' in value) return value.stringValue;
+  if('booleanValue' in value) return value.booleanValue;
+  if('integerValue' in value) return Number(value.integerValue);
+  if('doubleValue' in value) return Number(value.doubleValue);
+  if('timestampValue' in value) return new Date(value.timestampValue).toISOString();
+  if('arrayValue' in value) return (value.arrayValue?.values||[]).map(decodeField);
+  if('mapValue' in value) return Object.fromEntries(Object.entries(value.mapValue?.fields||{}).map(([k,v])=>[k,decodeField(v)]));
+  return undefined;
+}
+function decodeDoc(doc){ return Object.fromEntries(Object.entries(doc?.fields||{}).map(([k,v])=>[k,decodeField(v)])); }
+async function auditLiveState(){
+  const [usersRaw,rateRaw]=await Promise.all([adminList('users'),adminList('rate_limits')]);
+  const users=usersRaw.documents||[];
+  const rates=rateRaw.documents||[];
+  const now=Date.now();
+  const uatx=users.filter(d=>stringField(d,'institution_id')==='uatx'&&stringField(d,'campus_id')==='uatx-riberena');
+  const legacyDate=d=>['created_at','fecha_registro','date','fecha'].some(k=>fieldKind(d,k)==='stringValue'&&/^\\d{4}-\\d{2}-\\d{2}T/.test(stringField(d,k)));
+  const listingRates=rates.filter(d=>stringField(d,'action')==='listing_create');
+  const recentAtBaseCap=listingRates.filter(d=>{
+    const start=Date.parse(timestampField(d,'window_start')||stringField(d,'window_start'));
+    return integerField(d,'count')>=8&&Number.isFinite(start)&&now-start<60*60_000&&now>=start;
+  });
+  console.log(JSON.stringify({
+    live_profile_audit:{
+      users_total:users.length,
+      legacy_date_string_profiles:users.filter(legacyDate).length,
+      uatx_riberena_profiles:uatx.length,
+      uatx_riberena_legacy_date_profiles:uatx.filter(legacyDate).length,
+      invalid_name_profiles:users.filter(d=>stringField(d,'nombre').length<2).length,
+      listing_rate_buckets:listingRates.length,
+      recent_listing_buckets_at_or_above_base_cap:recentAtBaseCap.length,
+      identities_logged:false
+    }
+  }));
+}
 
 function assertSyntheticPath(path) {
   const safe = uid && (
@@ -105,6 +155,7 @@ async function cleanupAuth() {
 try {
   stage='AUTH_ADMIN_CREATE';
   oauth=await firebaseCiAccessToken();
+  await auditLiveState();
   const create=await parse(await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts',{
     method:'POST',headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json'},
     body:JSON.stringify({email,password,emailVerified:true,displayName:'TuTop publication smoke',disabled:false})
@@ -144,6 +195,25 @@ try {
   const staleProfile={...profile,institution_id:alternate.institution_id,campus_id:alternate.campus_id,updated_at:staleAt};
   await commit([overwrite('users/'+uid,staleProfile)],idToken,'PROFILE_STALE_UPDATE');
 
+  stage='PROFILE_CLIENT_RECONCILE';
+  const staleRead=await getPublic('users/'+uid,idToken);
+  const staleDecoded=decodeDoc(staleRead);
+  const reconciledProfile={
+    ...staleDecoded,
+    country_code:'MX',
+    institution_id:'uatx',
+    institution_name:'Universidad Autónoma de Tlaxcala',
+    campus_id:'uatx-riberena',
+    campus_name:'Ribereña',
+    updated_at:new Date().toISOString()
+  };
+  for(const key of ['faculty_id','faculty_name','career_id','career_name']) delete reconciledProfile[key];
+  await commit([overwrite('users/'+uid,reconciledProfile)],idToken,'PROFILE_CLIENT_RECONCILE');
+  const reconciledRead=await getPublic('users/'+uid,idToken);
+  if(stringField(reconciledRead,'institution_id')!=='uatx'||stringField(reconciledRead,'campus_id')!=='uatx-riberena') {
+    throw new Error('PROFILE_CLIENT_RECONCILE_READBACK_MISMATCH');
+  }
+
   stage='LISTING_COMMIT';
   const listingAt=new Date().toISOString();
   const bucket={
@@ -168,6 +238,46 @@ try {
   const readback=await getPublic('listings_v2/'+listingId,idToken);
   if(!readback?.name?.endsWith('/'+listingId)) throw new Error('LISTING_READBACK_MISSING');
 
+  stage='LEGACY_PROFILE_DATE_PROBE';
+  const legacyProfile={...staleProfile,updated_at:new Date().toISOString()};
+  const legacyFields=encodeFields(legacyProfile);
+  legacyFields.created_at={stringValue:String(profile.created_at)};
+  const legacySeed=await fetch('https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents/users/'+uid,{
+    method:'PATCH',
+    headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json','X-Goog-User-Project':PROJECT},
+    body:JSON.stringify({fields:legacyFields})
+  });
+  await parse(legacySeed,'LEGACY_PROFILE_ADMIN_SEED');
+  const legacyRead=await getPublic('users/'+uid,idToken);
+  if(fieldKind(legacyRead,'created_at')!=='stringValue') throw new Error('LEGACY_PROFILE_STRING_DATE_NOT_SEEDED');
+  const legacyDecoded=decodeDoc(legacyRead);
+  const legacyReconciled={
+    ...legacyDecoded,
+    country_code:'MX',
+    institution_id:'uatx',
+    institution_name:'Universidad Autónoma de Tlaxcala',
+    campus_id:'uatx-riberena',
+    campus_name:'Ribereña',
+    updated_at:new Date().toISOString()
+  };
+  for(const key of ['faculty_id','faculty_name','career_id','career_name']) delete legacyReconciled[key];
+  let legacyPermissionDenied=false;
+  try {
+    await commit([overwrite('users/'+uid,legacyReconciled)],idToken,'LEGACY_PROFILE_CLIENT_RECONCILE');
+  } catch(error) {
+    const raw=String(error instanceof Error?error.message:error);
+    legacyPermissionDenied=/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw);
+    if(!legacyPermissionDenied) throw error;
+  }
+  console.log(JSON.stringify({
+    legacy_profile_probe:{
+      created_at_string_seeded:true,
+      client_full_profile_rewrite_permission_denied:legacyPermissionDenied,
+      user_data_logged:false
+    }
+  }));
+  if(!legacyPermissionDenied) throw new Error('LEGACY_PROFILE_RECONCILE_UNEXPECTEDLY_ALLOWED');
+
   stage='PASS';
   console.log(JSON.stringify({
     result:'PASS',
@@ -176,7 +286,9 @@ try {
     verified_claim:true,
     identity:'uatx/uatx-riberena',
     stale_profile_mismatch:true,
+    client_profile_reconciled_before_listing:true,
     listing_created_and_read_back:true,
+    legacy_string_date_reconcile_denied:true,
     user_data_logged:false,
     cleanup_required:true
   }));
