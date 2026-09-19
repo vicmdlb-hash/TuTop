@@ -9,7 +9,7 @@ assert.match(card, /product\.moderation_status === 'pending' \? 'En revisión'/)
 assert.match(card, /product\.moderation_status === 'rejected' \? 'Rechazada'/);
 assert.match(detail, /En revisión · aún no visible para otros/);
 assert.match(detail, /product\.moderation_status !== 'approved'/);
-assert.doesNotMatch(detail, /product\.estado === 'Activo' \? 'Disponible' : product\.estado/);
+assert.match(detail, /product\.moderation_status === 'pending' \? 'En revisión · aún no visible para otros'/);
 
 assert.match(feed, /const myPublicProducts = mySellerProducts\.filter\(\(product\) => product\.moderation_status === 'approved'\)/);
 assert.match(feed, /const myPendingProducts = mySellerProducts\.filter/);
