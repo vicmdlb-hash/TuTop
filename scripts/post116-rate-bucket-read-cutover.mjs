@@ -156,3 +156,5 @@ try{
   }
   throw error;
 }
+
+// guarded trigger marker: post116-rate-bucket-read-20260919-01
