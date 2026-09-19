@@ -120,29 +120,22 @@ async function auditLiveState(){
     authModes[mode]=(authModes[mode]||0)+1;
   }
   const suspendedTrue=moderationDocs.filter(d=>d?.fields?.suspended?.booleanValue===true).length;
+  const verificationLevelKinds={};
+  const facultyIdKinds={};
+  const careerIdKinds={};
+  for(const d of users){
+    const vk=fieldKind(d,'verification_level');
+    const fk=fieldKind(d,'faculty_id');
+    const ck=fieldKind(d,'career_id');
+    verificationLevelKinds[vk]=(verificationLevelKinds[vk]||0)+1;
+    facultyIdKinds[fk]=(facultyIdKinds[fk]||0)+1;
+    careerIdKinds[ck]=(careerIdKinds[ck]||0)+1;
+  }
+  const verificationLevelNonInteger=users.filter(d=>!['integerValue','missing'].includes(fieldKind(d,'verification_level'))).length;
   const recentAtBaseCap=listingRates.filter(d=>{
     const start=Date.parse(timestampField(d,'window_start')||stringField(d,'window_start'));
     return integerField(d,'count')>=8&&Number.isFinite(start)&&now-start<60*60_000&&now>=start;
   });
-  let authTotal=0, authEmail=0, authVerified=0, authPhoneAlias=0, authPage='';
-  do {
-    const body={maxResults:1000,...(authPage?{nextPageToken:authPage}:{})};
-    const response=await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts:query',{
-      method:'POST',
-      headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json','X-Goog-User-Project':PROJECT},
-      body:JSON.stringify(body)
-    });
-    const raw=await parse(response,'AUTH_AGGREGATE');
-    for(const account of raw?.users||[]){
-      authTotal+=1;
-      const email=String(account.email||'');
-      if(email) authEmail+=1;
-      if(account.emailVerified===true) authVerified+=1;
-      if(/^phone-[a-f0-9]+@auth\.tutop\.app$/i.test(email)) authPhoneAlias+=1;
-    }
-    authPage=String(raw?.nextPageToken||'');
-  } while(authPage);
-
   console.log(JSON.stringify({
     live_profile_audit:{
       users_total:users.length,
@@ -156,10 +149,10 @@ async function auditLiveState(){
       user_private_auth_modes:authModes,
       moderation_status_docs:moderationDocs.length,
       moderation_suspended_true:suspendedTrue,
-      auth_accounts_total:authTotal,
-      auth_email_accounts:authEmail,
-      auth_email_verified:authVerified,
-      auth_phone_alias_accounts:authPhoneAlias,
+      verification_level_field_kinds:verificationLevelKinds,
+      verification_level_non_integer:verificationLevelNonInteger,
+      faculty_id_field_kinds:facultyIdKinds,
+      career_id_field_kinds:careerIdKinds,
       moderation_status_audit:true,
       identities_logged:false
     }
@@ -203,23 +196,6 @@ try {
   }),'AUTH_ADMIN_CREATE');
   uid=String(create.localId||'');
   if(!uid) throw new Error('AUTH_CREATE_NO_UID');
-
-  stage='AUTH_QUERY_SELF_CHECK';
-  const queryAfterCreate=await parse(await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts:query',{
-    method:'POST',
-    headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json','X-Goog-User-Project':PROJECT},
-    body:JSON.stringify({maxResults:1000})
-  }),'AUTH_QUERY_SELF_CHECK');
-  const queriedAccounts=queryAfterCreate?.users||[];
-  const syntheticVisible=queriedAccounts.some(account=>String(account.localId||'')===uid);
-  console.log(JSON.stringify({
-    auth_query_self_check:{
-      accounts_visible_after_synthetic_create:queriedAccounts.length,
-      synthetic_auth_query_visible:syntheticVisible,
-      identities_logged:false
-    }
-  }));
-  if(!syntheticVisible) throw new Error('AUTH_QUERY_INSTRUMENT_INVALID');
 
   stage='AUTH_PUBLIC_SIGNIN';
   const login=await publicPost('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key='+encodeURIComponent(apiKey),{
