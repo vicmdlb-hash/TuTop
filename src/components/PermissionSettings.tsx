@@ -45,6 +45,7 @@ export default function PermissionSettings() {
   const [busy, setBusy] = useState<CapabilityPermission | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [pushTokenRegistered, setPushTokenRegistered] = useState<boolean | null>(null);
+  const [pushOwnershipPending, setPushOwnershipPending] = useState(false);
 
   const refresh = async () => {
     const [entries, pushHealth] = await Promise.all([
@@ -53,6 +54,7 @@ export default function PermissionSettings() {
     ]);
     setStates(Object.fromEntries(entries) as Record<CapabilityPermission, PermissionState091>);
     setPushTokenRegistered(pushHealth?.permission === 'granted' ? pushHealth.tokenRegistered : null);
+    setPushOwnershipPending(Boolean(pushHealth?.ownershipReconciliationPending));
   };
 
   useEffect(() => {
@@ -65,6 +67,7 @@ export default function PermissionSettings() {
         if (!active) return;
         setStates(Object.fromEntries(entries) as Record<CapabilityPermission, PermissionState091>);
         setPushTokenRegistered(pushHealth?.permission === 'granted' ? pushHealth.tokenRegistered : null);
+        setPushOwnershipPending(Boolean(pushHealth?.ownershipReconciliationPending));
       }).catch(() => undefined);
     };
     update();
@@ -91,10 +94,14 @@ export default function PermissionSettings() {
       if (id === 'notifications' && result === 'granted') {
         const health = await nativePushRegistrationHealth().catch(() => null);
         const registered = health?.permission === 'granted' ? health.tokenRegistered : false;
+        const ownershipPending = Boolean(health?.ownershipReconciliationPending);
         setPushTokenRegistered(registered);
-        setNote(registered
-          ? 'Permiso Android activo y token FCM registrado para esta cuenta. La entrega real se confirma sólo cuando llegue y se abra una notificación de prueba.'
-          : 'Permiso Android activo, pero TuTop todavía no pudo registrar el token FCM. Reintentará al volver a la app o recuperar conexión.');
+        setPushOwnershipPending(ownershipPending);
+        setNote(ownershipPending
+          ? 'Permiso Android activo, pero TuTop está invalidando un token que pertenecía a la cuenta anterior. No registrará ese mismo token para esta cuenta hasta completar la reconciliación.'
+          : registered
+            ? 'Permiso Android activo y token FCM registrado para esta cuenta. La entrega real se confirma sólo cuando llegue y se abra una notificación de prueba.'
+            : 'Permiso Android activo, pero TuTop todavía no pudo registrar el token FCM. Reintentará al volver a la app o recuperar conexión.');
       } else if (id === 'camera' && result === 'granted') {
         setNote('Cámara/galería disponible. La prueba real se hace desde Publicar: toca Cámara o Galería y Android abrirá su selector del sistema.');
       } else if (id === 'location' && result !== 'granted') {
@@ -130,7 +137,9 @@ export default function PermissionSettings() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <strong className="text-[11px]">{label}</strong>
                       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[8px] font-black ${active ? 'bg-emerald-500/10 text-emerald-400' : blocked ? 'bg-rose-500/10 text-rose-300' : 'bg-violet-500/10 text-violet-300'}`}>
-                        {active ? <CheckCircle2 className="h-2.5 w-2.5" /> : blocked ? <TriangleAlert className="h-2.5 w-2.5" /> : null}{id === 'notifications' && state === 'granted' ? (pushTokenRegistered ? 'Permiso + token' : 'Permiso activo') : stateLabel(id, state)}
+                        {active ? <CheckCircle2 className="h-2.5 w-2.5" /> : blocked ? <TriangleAlert className="h-2.5 w-2.5" /> : null}{id === 'notifications' && state === 'granted'
+                          ? (pushOwnershipPending ? 'Reconciliando cuenta' : pushTokenRegistered ? 'Permiso + token' : 'Permiso activo')
+                          : stateLabel(id, state)}
                       </span>
                     </div>
                     <p className="mt-0.5 text-[9px] text-slate-500">{hint}</p>
@@ -140,7 +149,7 @@ export default function PermissionSettings() {
                   </button>
                 </div>
                 <p className="mt-2 text-[8px] leading-4 text-slate-600">{PERMISSION_PRIVACY_COPY[id]}</p>
-                {id === 'notifications' && state === 'granted' && <p className="mt-1 text-[8px] leading-4 text-slate-500">Token FCM: <strong className={pushTokenRegistered ? 'text-emerald-300' : 'text-amber-300'}>{pushTokenRegistered ? 'registrado' : 'pendiente de registro'}</strong> · entrega/tap todavía requiere prueba E2E real.</p>}
+                {id === 'notifications' && state === 'granted' && <p className="mt-1 text-[8px] leading-4 text-slate-500">Token FCM: <strong className={pushTokenRegistered ? 'text-emerald-300' : 'text-amber-300'}>{pushOwnershipPending ? 'reconciliando cuenta anterior' : pushTokenRegistered ? 'registrado' : 'pendiente de registro'}</strong> · entrega/tap todavía requiere prueba E2E real.</p>}
               </div>
             );
           })}

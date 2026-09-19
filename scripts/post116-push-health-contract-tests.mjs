@@ -6,7 +6,7 @@ const permissions = fs.readFileSync('src/components/PermissionSettings.tsx', 'ut
 
 assert.match(native, /export async function nativePushRegistrationHealth\(\)/);
 assert.match(native, /const tokenRegistered = await syncGrantedPushToken\(\)\.catch\(\(\) => false\)/);
-assert.match(native, /return \{ permission, tokenRegistered \}/);
+assert.match(native, /return \{ permission, tokenRegistered, ownershipReconciliationPending: false \}/);
 
 assert.match(permissions, /nativePushRegistrationHealth/);
 assert.match(permissions, /window\.addEventListener\('online', update\)/);
