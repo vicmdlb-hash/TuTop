@@ -46,6 +46,14 @@ function serverTimedWrite(path,data,serverFields){
     currentDocument:{exists:false}
   };
 }
+function serverTimedOverwrite(path,data,serverFields){
+  const filtered=Object.fromEntries(Object.entries(data).filter(([key])=>!serverFields.includes(key)));
+  return {
+    update:{name:docName(path),fields:encodeFields(filtered)},
+    updateTransforms:serverFields.map(fieldPath=>({fieldPath,setToServerValue:'REQUEST_TIME'})),
+    currentDocument:{exists:true}
+  };
+}
 function overwrite(path,data){return {update:{name:docName(path),fields:encodeFields(data)},currentDocument:{exists:true}};}
 async function parse(response,label){
   const text=await response.text(); let body={};
@@ -423,6 +431,84 @@ try {
     if(!ok) throw new Error('SERVER_TIME_REPAIR_FAILED_'+name+'_'+errorCode);
   }
 
+  async function adminSeedRateBucket(windowStartIso,count) {
+    const payload={uid,action:'listing_create',window_start:windowStartIso,count,updated_at:windowStartIso};
+    const response=await fetch('https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents/rate_limits/'+uid+'-listing_create',{
+      method:'PATCH',
+      headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json','X-Goog-User-Project':PROJECT},
+      body:JSON.stringify({fields:encodeFields(payload)})
+    });
+    await parse(response,'ADMIN_SEED_RATE_BUCKET');
+  }
+
+  async function runExistingBucketRepairProof() {
+    // Recent existing bucket: preserve server window and increment. No device clock
+    // decision is involved.
+    await clearSyntheticPublication();
+    await commit([
+      serverTimedWrite('rate_limits/'+uid+'-listing_create',{uid,action:'listing_create',count:1},['window_start','updated_at'])
+    ],idToken,'EXISTING_BUCKET_RECENT_SEED');
+    const recentBucket=await getPublic('rate_limits/'+uid+'-listing_create',idToken);
+    const recentStart=timestampField(recentBucket,'window_start');
+    if(!recentStart) throw new Error('RECENT_BUCKET_WINDOW_MISSING');
+
+    const recentAt='2099-01-01T00:00:00.000Z';
+    const recentListing={...listing,created_at:recentAt,updated_at:recentAt,published_at:recentAt};
+    await commit([
+      serverTimedOverwrite('rate_limits/'+uid+'-listing_create',{
+        uid,action:'listing_create',window_start:recentStart,count:2,updated_at:recentAt
+      },['updated_at']),
+      serverTimedWrite('listings_v2/'+listingId,recentListing,['created_at','updated_at','published_at'])
+    ],idToken,'EXISTING_BUCKET_RECENT_INCREMENT');
+    const recentListingRead=await getPublic('listings_v2/'+listingId,idToken);
+    if(!recentListingRead?.name?.endsWith('/'+listingId)) throw new Error('RECENT_INCREMENT_LISTING_MISSING');
+    await clearSyntheticPublication();
+
+    // Expired existing bucket: increment must be rejected by Rules, then the
+    // patched algorithm retries reset using REQUEST_TIME and succeeds.
+    const oldIso=new Date(Date.now()-2*60*60_000).toISOString();
+    await adminSeedRateBucket(oldIso,2);
+    const expiredAt='1900-01-01T00:00:00.000Z';
+    const expiredListing={...listing,created_at:expiredAt,updated_at:expiredAt,published_at:expiredAt};
+
+    let incrementDenied=false;
+    try {
+      await commit([
+        serverTimedOverwrite('rate_limits/'+uid+'-listing_create',{
+          uid,action:'listing_create',window_start:oldIso,count:3,updated_at:expiredAt
+        },['updated_at']),
+        serverTimedWrite('listings_v2/'+listingId,expiredListing,['created_at','updated_at','published_at'])
+      ],idToken,'EXISTING_BUCKET_EXPIRED_INCREMENT');
+    } catch(error) {
+      const raw=String(error instanceof Error?error.message:error);
+      incrementDenied=/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw);
+      if(!incrementDenied) throw error;
+    }
+    if(!incrementDenied) throw new Error('EXPIRED_INCREMENT_UNEXPECTEDLY_ALLOWED');
+
+    await commit([
+      serverTimedOverwrite('rate_limits/'+uid+'-listing_create',{
+        uid,action:'listing_create',count:1
+      },['window_start','updated_at']),
+      serverTimedWrite('listings_v2/'+listingId,expiredListing,['created_at','updated_at','published_at'])
+    ],idToken,'EXISTING_BUCKET_EXPIRED_RESET');
+    const resetListingRead=await getPublic('listings_v2/'+listingId,idToken);
+    const resetBucketRead=await getPublic('rate_limits/'+uid+'-listing_create',idToken);
+    if(!resetListingRead?.name?.endsWith('/'+listingId)) throw new Error('EXPIRED_RESET_LISTING_MISSING');
+    if(integerField(resetBucketRead,'count')!==1) throw new Error('EXPIRED_RESET_COUNT_MISMATCH');
+
+    console.log(JSON.stringify({
+      publication_existing_bucket_repair:{
+        recent_existing_increment:'PASS',
+        expired_increment_denied:true,
+        expired_server_time_reset:'PASS',
+        simulated_device_clock_dependency:false,
+        user_data_logged:false
+      }
+    }));
+    await clearSyntheticPublication();
+  }
+
   const longPhoto='data:image/jpeg;base64,'+'A'.repeat(110000);
   await runPayloadVariant('city_location',{
     city_id:'TLAX-tlaxcala',
@@ -450,6 +536,7 @@ try {
   await runTimeIsolationVariant('clock_bucket_only_minus_11m',0,-11*60_000,'DENIED');
   await runServerTimeRepairVariant('device_clock_plus_60m',60*60_000);
   await runServerTimeRepairVariant('device_clock_minus_60m',-60*60_000);
+  await runExistingBucketRepairProof();
   await runPayloadVariant('category_electronica',{category_id:'electronica',title:'QA Electrónica'},'PASS');
   await runPayloadVariant('category_ropa-accesorios',{category_id:'ropa-accesorios',title:'QA Ropa & Accesorios'},'PASS');
   await runPayloadVariant('category_libros-apuntes',{category_id:'libros-apuntes',title:'QA Libros & Apuntes'},'PASS');
@@ -516,6 +603,7 @@ try {
     legacy_string_date_reconcile_denied:true,
     server_request_time_skew_plus_60m_pass:true,
     server_request_time_skew_minus_60m_pass:true,
+    existing_bucket_server_authoritative_rollover_pass:true,
     user_data_logged:false,
     cleanup_required:true
   }));
