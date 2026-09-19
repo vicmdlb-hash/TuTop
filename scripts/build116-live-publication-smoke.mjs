@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { adminDeleteDocument, adminDeleteTestUsers } from './staging-v2-admin.mjs';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
 const BRANCH='probe/build116-publication-live-smoke';
@@ -20,6 +19,7 @@ const email='synthetic-publication-'+run+'@example.com';
 const password='TuTopSmoke!'+run+'Aa9';
 const listingId='synthetic-publication-'+run;
 let uid='';
+let oauth='';
 let stage='INIT';
 const createdPaths=[];
 
@@ -67,9 +67,36 @@ async function getPublic(path,idToken){
   return parse(response,'READBACK');
 }
 
+function assertSyntheticPath(path) {
+  const safe = uid && (
+    path === 'users/'+uid
+    || path === 'user_private/'+uid
+    || path === 'rate_limits/'+uid+'-listing_create'
+    || path === 'listings_v2/'+listingId
+  );
+  if(!safe) throw new Error('CLEANUP_PATH_GUARD:'+path);
+}
+async function cleanupFirestore(path) {
+  assertSyntheticPath(path);
+  const response=await fetch('https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents/'+path,{
+    method:'DELETE',
+    headers:{Authorization:'Bearer '+oauth,'X-Goog-User-Project':PROJECT}
+  });
+  if(!response.ok && response.status!==404) throw new Error('CLEANUP_FIRESTORE_'+response.status);
+}
+async function cleanupAuth() {
+  if(!uid) return;
+  const response=await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts:batchDelete',{
+    method:'POST',
+    headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json','X-Goog-User-Project':PROJECT},
+    body:JSON.stringify({localIds:[uid],force:true})
+  });
+  if(!response.ok) throw new Error('CLEANUP_AUTH_'+response.status);
+}
+
 try {
   stage='AUTH_ADMIN_CREATE';
-  const oauth=await firebaseCiAccessToken();
+  oauth=await firebaseCiAccessToken();
   const create=await parse(await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts?key='+encodeURIComponent(apiKey),{
     method:'POST',headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json'},
     body:JSON.stringify({email,password,emailVerified:true,displayName:'TuTop publication smoke',disabled:false})
@@ -146,11 +173,14 @@ try {
     'listings_v2/'+listingId,
     ...(uid?['rate_limits/'+uid+'-listing_create','user_private/'+uid,'users/'+uid]:[]),
   ])];
-  for(const path of cleanup) {
-    try { await adminDeleteDocument(path); } catch { /* idempotent cleanup */ }
+  let cleanupErrors=0;
+  if(oauth) {
+    for(const path of cleanup) {
+      try { await cleanupFirestore(path); } catch { cleanupErrors+=1; }
+    }
+    if(uid) {
+      try { await cleanupAuth(); } catch { cleanupErrors+=1; }
+    }
   }
-  if(uid) {
-    try { await adminDeleteTestUsers([uid]); } catch { /* cleanup evidence checked below */ }
-  }
-  console.log(JSON.stringify({cleanup_attempted:true,synthetic_paths:cleanup.length,auth_cleanup_attempted:Boolean(uid)}));
+  console.log(JSON.stringify({cleanup_attempted:true,synthetic_paths:cleanup.length,auth_cleanup_attempted:Boolean(uid),cleanup_errors:cleanupErrors}));
 }
