@@ -3,7 +3,7 @@ import { BellRing, ChevronDown, ChevronUp, ExternalLink, KeyRound, Loader2, Shie
 import { DEFAULT_NOTIFICATION_PREFERENCES, NOTIFICATION_PRIORITY, type NotificationPreferenceKey, type NotificationPreferences } from '../lib/notificationPreferences.ts';
 import { nationalSchemaEnabled } from '../services/nationalBackend.ts';
 import { disableNativePushNotifications, enableNativePushNotifications, nativePushPermission } from '../services/nativeFirebaseSecurity.ts';
-import { nationalUserSettings, type AccountDeletionRequest } from '../services/nationalUserSettings.ts';
+import { hasTrustedAccountDeletionCompletion, nationalUserSettings, type AccountDeletionRequest } from '../services/nationalUserSettings.ts';
 
 const LABELS: Record<NotificationPreferenceKey, string> = {
   new_message: 'Nuevo mensaje',
@@ -53,6 +53,11 @@ export default function NationalAccountControls() {
     });
     return () => { active = false; };
   }, [enabled]);
+
+  const trustedDeletionCompletion = hasTrustedAccountDeletionCompletion(deletion);
+  const deletionStatusLabel = deletion?.status === 'completed'
+    ? trustedDeletionCompletion ? 'completada con evidencia verificada' : 'procesamiento pendiente de verificación'
+    : deletion?.status || '';
 
   const highPriority = useMemo(() => (Object.keys(preferences) as NotificationPreferenceKey[]).filter((key) => NOTIFICATION_PRIORITY[key] === 'high'), [preferences]);
   const optional = useMemo(() => (Object.keys(preferences) as NotificationPreferenceKey[]).filter((key) => NOTIFICATION_PRIORITY[key] !== 'high'), [preferences]);
@@ -169,7 +174,7 @@ export default function NationalAccountControls() {
 
         <div className="mt-4 rounded-xl border border-rose-400/10 bg-rose-500/[0.04] p-3">
           <div className="flex gap-2"><ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-300" /><div><strong className="block text-[10px] text-rose-200">Eliminar cuenta y datos</strong><p className="mt-1 text-[9px] leading-relaxed text-slate-500">La solicitud es distinta de cerrar sesión o desactivar la cuenta. Datos necesarios para disputas, fraude u obligaciones justificadas pueden conservarse temporalmente.</p></div></div>
-          {deletion ? <div className="mt-3 rounded-lg bg-white/[0.04] px-3 py-2 text-[9px] text-slate-300">Estado de solicitud: <strong>{deletion.status}</strong></div> : <button type="button" onClick={() => void requestDeletion()} disabled={deletionBusy} className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-rose-500/10 text-[9px] font-black text-rose-300 disabled:opacity-50">{deletionBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}Solicitar eliminación</button>}
+          {deletion ? <div className="mt-3 rounded-lg bg-white/[0.04] px-3 py-2 text-[9px] text-slate-300">Estado de solicitud: <strong>{deletionStatusLabel}</strong>{deletion.status === 'completed' && !trustedDeletionCompletion && <p className="mt-1 text-[8px] leading-4 text-amber-200/75">TuTop no mostrará esta solicitud como completada hasta que el procesador aporte la atestación técnica de borrado.</p>}</div> : <button type="button" onClick={() => void requestDeletion()} disabled={deletionBusy} className="mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-rose-500/10 text-[9px] font-black text-rose-300 disabled:opacity-50">{deletionBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}Solicitar eliminación</button>}
         </div>
         {message && <p className="rounded-xl bg-white/[0.03] px-3 py-2 text-[9px] text-slate-300">{message}</p>}
       </div>}
