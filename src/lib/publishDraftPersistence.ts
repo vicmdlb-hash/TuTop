@@ -1,5 +1,6 @@
 import type { ListingDeliveryMethod } from './listingSchemaV2.ts';
 import type { ListingVisibilityScope, ProductCategory } from '../types/index.ts';
+import { MARKETPLACE_CATEGORIES } from './productAssistant.ts';
 
 export const DURABLE_PUBLISH_DRAFT_PREFIX = 'tutop.publish.durable.v2.';
 export const DURABLE_PUBLISH_DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -67,7 +68,10 @@ export function sanitizeDurablePublishDraft(input: Record<string, unknown>): Dur
     ? input.deliveryMethods.filter((item): item is ListingDeliveryMethod =>
         ['campus_meetup', 'pickup', 'local_delivery', 'shipping'].includes(String(item))).slice(0, 4)
     : undefined;
-  const category = cleanText(input.category, 80) as ProductCategory | '' | undefined;
+  const rawCategory = cleanText(input.category, 80);
+  const category = rawCategory === '' || MARKETPLACE_CATEGORIES.includes(rawCategory as ProductCategory)
+    ? rawCategory as ProductCategory | ''
+    : undefined;
   const scope = ['campus', 'institution', 'university-zone', 'city', 'national'].includes(String(input.scope))
     ? input.scope as ListingVisibilityScope
     : undefined;
