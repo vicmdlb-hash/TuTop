@@ -203,6 +203,84 @@ async function proveRuntime(ai) {
   throw lastError || new Error('STAGING_TOPI_AI_RUNTIME_NOT_PROVEN');
 }
 
+function parseModelObject(text) {
+  const clean=String(text||'').trim().replace(/^\`\`\`(?:json)?\\s*/i,'').replace(/\\s*\`\`\`$/i,'');
+  const start=clean.indexOf('{');
+  const end=clean.lastIndexOf('}');
+  if(start<0||end<=start) return null;
+  try{return JSON.parse(clean.slice(start,end+1));}catch{return null;}
+}
+
+async function generatePromptWithTimeout(model,prompt) {
+  let timeoutId;
+  try {
+    const request=model.generateContent(prompt);
+    const timeout=new Promise((_,reject)=>{
+      timeoutId=setTimeout(()=>reject(new Error('STAGING_TOPI_COMPOSE_TIMEOUT')),30_000);
+    });
+    return await Promise.race([request,timeout]);
+  } finally {
+    if(timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function proveCompose(ai, modelName) {
+  const model=runtimeModel(ai,modelName);
+  const syntheticPrompt='Vendo audífonos Sony como nuevos, $2500 negociables, entrego en campus Ribereña.';
+  const prompt=[
+    'Eres Topi, asistente de TuTop para un marketplace universitario en México.',
+    'Responde SOLO JSON válido, sin markdown ni explicaciones fuera del JSON.',
+    'Nunca inventes identidad, dirección o ubicación exacta.',
+    'Categorías válidas: Electrónica | Ropa & Accesorios | Libros & Apuntes | Comida | Postres | Servicios | Transporte | Cuartos & Renta | Eventos | Arte & Manualidades | Otros',
+    'Condiciones válidas: Nuevo | Como nuevo | Buen estado | Uso visible | Para reparar | No aplica',
+    'Para compose usa {"compose":{"title":string?,"category":string?,"condition":string?,"price":number?,"negotiable":boolean?,"visibilityScope":string?,"deliveryMethods":string[]?,"description":string?}}.',
+    'ENTRADA_SEGURA='+JSON.stringify({action:'compose',user_prompt:syntheticPrompt,draft:{},comparable_products:[]})
+  ].join('\n');
+
+  let lastError=null;
+  for(let attempt=1;attempt<=2;attempt+=1){
+    try{
+      const result=await generatePromptWithTimeout(model,prompt);
+      const text=result?.response?.text?.()||'';
+      const parsed=parseModelObject(text);
+      const compose=parsed&&typeof parsed==='object'&&parsed.compose&&typeof parsed.compose==='object'?parsed.compose:null;
+      const title=String(compose?.title||'').trim();
+      const category=String(compose?.category||'').trim();
+      const price=Number(compose?.price);
+      const description=String(compose?.description||'').trim();
+      const negotiable=compose?.negotiable;
+      const conditions=new Set(['Nuevo','Como nuevo','Buen estado','Uso visible','Para reparar','No aplica']);
+      const categories=new Set(['Electrónica','Ropa & Accesorios','Libros & Apuntes','Comida','Postres','Servicios','Transporte','Cuartos & Renta','Eventos','Arte & Manualidades','Otros']);
+
+      if(title.length<2||title.length>120) throw new Error('STAGING_TOPI_COMPOSE_TITLE_INVALID');
+      if(!categories.has(category)) throw new Error('STAGING_TOPI_COMPOSE_CATEGORY_INVALID');
+      if(!Number.isFinite(price)||Math.abs(price-2500)>0.01) throw new Error('STAGING_TOPI_COMPOSE_PRICE_INVALID');
+      if(description.length<8||description.length>1200) throw new Error('STAGING_TOPI_COMPOSE_DESCRIPTION_INVALID');
+      if(negotiable!==true) throw new Error('STAGING_TOPI_COMPOSE_NEGOTIABLE_INVALID');
+      if(compose.condition!==undefined&&!conditions.has(String(compose.condition))) throw new Error('STAGING_TOPI_COMPOSE_CONDITION_INVALID');
+
+      return {
+        title:true,
+        category:true,
+        explicit_price:true,
+        description:true,
+        negotiable:true,
+        condition_valid:compose.condition===undefined||conditions.has(String(compose.condition)),
+        raw_content_logged:false
+      };
+    }catch(error){
+      lastError=error;
+      const message=safeError(error);
+      if(attempt<2&&isCapacityError(message)){
+        await sleep(RETRY_DELAY_MS);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError||new Error('STAGING_TOPI_COMPOSE_FIELDS_INCOMPLETE');
+}
+
 let app = null;
 let oauthToken = null;
 let debugTokenName = null;
@@ -241,8 +319,10 @@ try {
 
   const ai = getAI(app, { backend: new GoogleAIBackend() });
   const proof = await proveRuntime(ai);
+  const composeProof = await proveCompose(ai, proof.modelName);
 
   console.log(`✅ Firebase AI Logic runtime PASS · project=${EXPECTED_PROJECT} · model=${proof.modelName} · fallback_used=${proof.fallbackUsed} · app_check=true · response_marker_observed=true`);
+  console.log(JSON.stringify({topi_compose_staging_proof:{...composeProof,model:proof.modelName,fallback_used:proof.fallbackUsed}}));
 } catch (error) {
   console.error(`DETENIDO: Firebase AI Logic runtime proof falló: ${safeError(error)}`);
   process.exitCode = 1;
