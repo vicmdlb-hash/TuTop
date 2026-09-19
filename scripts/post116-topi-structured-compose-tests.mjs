@@ -60,7 +60,7 @@ const transport = sanitizeTopiStructuredAttributes({
   extra: 'ignored',
 }, 'Transporte', 'Salgo del centro al campus principal entre 06:45 y 07:00, cooperación 35, tengo 3 lugares.');
 assert.equal(transport?.rideshare_cost_share, 35);
-assert.equal((transport as any)?.extra, undefined);
+assert.equal(transport?.extra, undefined);
 
 const assistant = fs.readFileSync('src/services/assistantProvider.ts','utf8');
 const publish = fs.readFileSync('src/components/NationalPublishScreen.tsx','utf8');
