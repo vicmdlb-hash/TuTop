@@ -31,6 +31,12 @@ export default function ProductCard({ product }: { product: Product }) {
   const { favorites, toggleFavorite, contactProduct, openProduct, user, reviews, chats } = useAppStore();
   const favorite = favorites.includes(product.id);
   const ownProduct = product.vendedor_id === user.id;
+  const ownerModerationLabel = ownProduct
+    ? product.moderation_status === 'pending' ? 'En revisión'
+      : product.moderation_status === 'rejected' ? 'Rechazada'
+        : product.moderation_status === 'review' ? 'Revisión necesaria'
+          : null
+    : null;
   const parsed = parseListingDescription(product.descripcion);
   const negotiable = product.precio_negociable === true || parsed.details['Precio negociable']?.toLowerCase() === 'sí';
   const delivery = parsed.details['Entrega'] || parsed.details['Horario'] || parsed.details['Disponibilidad'];
@@ -68,7 +74,7 @@ export default function ProductCard({ product }: { product: Product }) {
         <img src={product.imagen_url} alt={product.titulo} className="h-full w-full object-cover" loading="lazy" />
         <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 to-transparent" />
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-medium backdrop-blur">{product.categoria}</span>{negotiable && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/80 px-2 py-1 text-[9px] font-black text-white backdrop-blur"><CircleDollarSign className="h-3 w-3" />Negociable</span>}</div>
-        <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5">{proximity && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-[9px] font-black text-white shadow-lg backdrop-blur"><MapPin className="h-3 w-3" />{proximity}</span>}{(product.imagenes_url?.length || 0) > 1 && <span className="rounded-full bg-black/55 px-2 py-1 text-[9px] font-bold backdrop-blur">{product.imagenes_url?.length} fotos</span>}</div>
+        <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5">{ownerModerationLabel && <span className="rounded-full bg-amber-500/90 px-2.5 py-1 text-[9px] font-black text-white shadow-lg backdrop-blur">{ownerModerationLabel}</span>}{proximity && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-[9px] font-black text-white shadow-lg backdrop-blur"><MapPin className="h-3 w-3" />{proximity}</span>}{(product.imagenes_url?.length || 0) > 1 && <span className="rounded-full bg-black/55 px-2 py-1 text-[9px] font-bold backdrop-blur">{product.imagenes_url?.length} fotos</span>}</div>
       </button>
 
       <div className="p-3.5">
