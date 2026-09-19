@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole, Mail, MapPin, Phone, RefreshCw, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
 import { CAMPUSES, INSTITUTIONS } from '../lib/universityNetwork';
 import { nationalSchemaEnabled } from '../services/nationalBackend';
+import { clearApproxLocation } from '../lib/nearbyMarketplace';
 import { onlineBackend } from '../services/onlineBackend';
 import { completePendingUniversityIdentity } from '../services/v2OnboardingRecovery';
 import { verifiedEmailBetaAuth, type VerifiedEmailBetaStatus } from '../services/verifiedEmailBetaAuth';
@@ -35,6 +36,8 @@ export default function BackendGate({ children }: { children: ReactNode }) {
   const syncInFlight = useRef(false);
 
   const signOutAll = () => {
+    const currentUid = useAppStore.getState().user.id;
+    clearApproxLocation(currentUid || undefined);
     try { onlineBackend.signOut(); } catch { /* no configured client */ }
     verifiedEmailBetaAuth.signOut();
     clearOnline();
