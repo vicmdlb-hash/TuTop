@@ -308,6 +308,59 @@ try {
   const readback=await getPublic('listings_v2/'+listingId,idToken);
   if(!readback?.name?.endsWith('/'+listingId)) throw new Error('LISTING_READBACK_MISSING');
 
+
+  stage='PUBLICATION_PAYLOAD_MATRIX';
+  async function clearSyntheticPublication() {
+    await cleanupFirestore('listings_v2/'+listingId);
+    await cleanupFirestore('rate_limits/'+uid+'-listing_create');
+  }
+  async function runPayloadVariant(name, overrides, expected) {
+    await clearSyntheticPublication();
+    const variantAt=new Date().toISOString();
+    const variantListing={
+      ...listing,
+      ...overrides,
+      published_at:variantAt,
+      created_at:variantAt,
+      updated_at:variantAt
+    };
+    const variantBucket={uid,action:'listing_create',window_start:variantAt,count:1,updated_at:variantAt};
+    let outcome='PASS';
+    let errorCode='';
+    try {
+      await commit([
+        write('rate_limits/'+uid+'-listing_create',variantBucket),
+        write('listings_v2/'+listingId,variantListing)
+      ],idToken,'MATRIX_'+name);
+      const check=await getPublic('listings_v2/'+listingId,idToken);
+      if(!check?.name?.endsWith('/'+listingId)) throw new Error('MATRIX_READBACK_MISSING');
+    } catch(error) {
+      outcome='DENIED';
+      errorCode=String(error instanceof Error?error.message:error).slice(0,160);
+    }
+    const ok=outcome===expected;
+    console.log(JSON.stringify({publication_payload_matrix:{name,outcome,expected,ok,error_class:/Missing or insufficient permissions|PERMISSION_DENIED/i.test(errorCode)?'permission_denied':(errorCode?'other':'none'),user_data_logged:false}}));
+    if(!ok) throw new Error('MATRIX_UNEXPECTED_'+name+'_'+outcome);
+  }
+
+  const longPhoto='data:image/jpeg;base64,'+'A'.repeat(110000);
+  await runPayloadVariant('city_location',{
+    city_id:'TLAX-tlaxcala',
+    attributes:{approx_latitude:19.31,approx_longitude:-98.24,geo_cell:'g1:109:81'}
+  },'PASS');
+  await runPayloadVariant('decimal_price',{price_mxn:123.45},'PASS');
+  await runPayloadVariant('four_compressed_size_photos',{photo_urls:[longPhoto,longPhoto,longPhoto,longPhoto]},'PASS');
+  await runPayloadVariant('national_without_shipping',{visibility_scope:'national',shipping_available:false},'PASS');
+  await runPayloadVariant('delivery_meeting_point',{
+    delivery_methods:['campus_meetup','pickup','local_delivery'],
+    meeting_point_ids:['uatx-riberena-cafeteria']
+  },'PASS');
+  await runPayloadVariant('rich_attributes',{
+    attributes:{brand:'TuTop',model:'QA',approx_latitude:19.31,approx_longitude:-98.24,geo_cell:'g1:109:81',student_sale:true}
+  },'PASS');
+  await runPayloadVariant('decimal_quantity',{quantity:1.5},'DENIED');
+  await clearSyntheticPublication();
+
   stage='LEGACY_PROFILE_DATE_PROBE';
   const legacyProfile={...staleProfile,updated_at:new Date().toISOString()};
   const legacyFields=encodeFields(legacyProfile);
