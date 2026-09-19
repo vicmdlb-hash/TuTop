@@ -76,6 +76,9 @@ function intentFromEvent(event: any, source: NativeNotificationIntent['source'])
 
 function emitNotificationIntent(intent: NativeNotificationIntent) {
   if (typeof window === 'undefined') return;
+  // After a fully-offline account switch, do not route any stale push inside
+  // TuTop until the native registration token has been invalidated/reconciled.
+  if (pendingPushOwnershipReset()) return;
   window.dispatchEvent(new CustomEvent<NativeNotificationIntent>(NATIVE_NOTIFICATION_EVENT, { detail: intent }));
 }
 
