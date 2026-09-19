@@ -38,6 +38,41 @@ jobs:
           test "$(git rev-parse 8a4368ba0fce34d0a87acc8eccf38bf5dc019bc2:src/services/firebaseRest.ts)" = "$(git rev-parse HEAD:src/services/firebaseRest.ts)"
           test "$(git rev-parse 8a4368ba0fce34d0a87acc8eccf38bf5dc019bc2:src/services/canonicalListingsBackend.ts)" = "$(git rev-parse HEAD:src/services/canonicalListingsBackend.ts)"
           echo "PASS production sources exactly match build116 SHA"
+      - name: Prove exact build116 screen-to-backend publication delegation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('fs');
+          const screen=fs.readFileSync('src/components/NationalPublishScreen.tsx','utf8');
+          const bridge=fs.readFileSync('src/services/nationalIdentityHydrationBridge.ts','utf8');
+          const backend=fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8');
+          const rate=fs.readFileSync('src/services/rateLimit.ts','utf8');
+
+          function must(text,re,label){
+            if(!re.test(text)) throw new Error('DELEGATION_DRIFT:'+label);
+          }
+
+          must(screen,/verifiedEmailBetaAuth\.refreshVerificationStatus\(\)/,'screen refreshes verification');
+          must(screen,/if \(!verification\.emailVerified\)/,'screen blocks unverified account');
+          must(screen,/await canonicalListingsBackend\.create\(listing, category\)/,'screen delegates canonical create');
+
+          must(bridge,/const originalCreateListing = canonicalListingsBackend\.create\.bind\(canonicalListingsBackend\)/,'bridge captures canonical create');
+          must(bridge,/canonicalListingsBackend\.create = async \(listing, category\) =>/,'bridge wraps canonical create');
+          must(bridge,/validateResolvedIdentityInFirestore\(firebase, selected\)/,'bridge validates live catalog');
+          must(bridge,/await migrateLegacyIdentity\(firebase, uid, profile\.data, resolved\)/,'bridge reconciles profile when needed');
+          must(bridge,/return originalCreateListing\(\{/,'bridge returns to canonical authority');
+
+          must(backend,/validateCanonicalListingPolicy\(listing, category\)/,'canonical policy runs');
+          must(backend,/await commitWithRateLimit\(client, 'listing_create'/,'canonical create consumes listing rate bucket');
+          must(backend,/client\.encodeDocumentForWrite\(`listings_v2\/\$\{id\}`/,'canonical create serializes listings_v2');
+
+          must(rate,/client\.getDocument<RateLimitBucket>\(path\)/,'rate path reads deterministic bucket');
+          must(rate,/if \(!existing\)/,'missing bucket has create branch');
+          must(rate,/currentDocument: \{ exists: false \}/,'first bucket uses create precondition');
+
+          console.log('PASS exact build116 delegation: screen -> verification -> identity bridge -> canonical create -> rate-limited atomic listing write');
+          NODE
       - name: Read exact existing staging client config — no deploy
         run: node scripts/read-existing-staging-build-config.mjs
       - name: Execute exact build116 rate-limit and publication path
