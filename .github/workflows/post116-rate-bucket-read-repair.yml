@@ -1,0 +1,72 @@
+name: Post116 rate bucket read repair — no APK
+
+on:
+  push:
+    branches: [fix/post116-rate-bucket-read-repair]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post116-rate-bucket-read-repair
+  cancel-in-progress: true
+
+jobs:
+  rules-proof:
+    if: github.ref_name == 'fix/post116-rate-bucket-read-repair'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run check
+      - run: npm run typecheck
+      - name: Prepare exact V2 Rules
+        run: npm run v2:rules:prepare
+      - name: Assert deterministic owner-only read guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('fs');
+          const r=fs.readFileSync('firebase/firestore.v2.generated.rules','utf8');
+          const start=r.indexOf('match /rate_limits/{bucketId}');
+          const end=r.indexOf('match /device_tokens/{tokenId}',start);
+          if(start<0||end<0) throw new Error('RATE_LIMIT_BLOCK_MISSING');
+          const block=r.slice(start,end);
+          if(block.includes('allow read: if signedIn() && resource.data.uid == request.auth.uid;')) throw new Error('MISSING_BUCKET_403_GUARD_STILL_PRESENT');
+          for(const action of ['listing_create','chat_create','offer_create','message_create','report_create','demand_create']){
+            if(!block.includes("request.auth.uid + '-"+action+"'")) throw new Error('OWNER_BUCKET_ID_MISSING_'+action);
+          }
+          if(!block.includes('bucketId in [')) throw new Error('DETERMINISTIC_OWNER_LIST_MISSING');
+          console.log('PASS deterministic owner-only missing bucket read guard');
+          NODE
+      - name: Emulator dependencies
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
+      - name: Rate bucket and publication Rules regression
+        run: >
+          npx firebase emulators:exec --only firestore
+          --project demo-tutop-rate-read-repair
+          --config firebase.v2.json
+          "node --test --test-concurrency=1
+          tests/firestore.v2.runtime-services.test.mjs
+          tests/firestore.v2.post106-verified-identity.test.mjs
+          tests/firestore.v2.publication-profile-coupling.test.mjs"
+      - name: Prove no Android candidate work exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs/apk || test -z "$(find android/app/build/outputs/apk -type f -name '*.apk' -print -quit 2>/dev/null)"
+          echo "PASS no APK generated"
+      - name: No dependency drift
+        if: always()
+        run: git diff --exit-code -- package.json package-lock.json
