@@ -3,7 +3,8 @@ import { BellRing, ChevronDown, ChevronUp, ExternalLink, KeyRound, Loader2, Shie
 import { DEFAULT_NOTIFICATION_PREFERENCES, NOTIFICATION_PRIORITY, type NotificationPreferenceKey, type NotificationPreferences } from '../lib/notificationPreferences.ts';
 import { nationalSchemaEnabled } from '../services/nationalBackend.ts';
 import { disableNativePushNotifications, enableNativePushNotifications, nativePushPermission } from '../services/nativeFirebaseSecurity.ts';
-import { hasTrustedAccountDeletionCompletion, nationalUserSettings, type AccountDeletionRequest } from '../services/nationalUserSettings.ts';
+import { hasTrustedAccountDeletionCompletion } from '../lib/accountDeletionCompletionTruth.ts';
+import { nationalUserSettings, type AccountDeletionRequest } from '../services/nationalUserSettings.ts';
 
 const LABELS: Record<NotificationPreferenceKey, string> = {
   new_message: 'Nuevo mensaje',
