@@ -30,6 +30,8 @@ jobs:
       - run: npm ci
       - name: Publication client contract regression
         run: node scripts/post116-publication-client-contract-tests.mjs
+      - name: Server-authoritative rate-window runtime regression
+        run: node scripts/post116-rate-window-runtime-tests.mjs
       - name: Existing regression
         run: npm run check
       - name: Exact typecheck
