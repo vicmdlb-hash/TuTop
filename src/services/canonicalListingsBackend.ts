@@ -172,6 +172,33 @@ async function productsForDocuments(client: FirebaseRestClient, docs: FirestoreD
     .sort((a, b) => Date.parse(b.updated_at || b.fecha_creacion) - Date.parse(a.updated_at || a.fecha_creacion));
 }
 
+export function buildCanonicalListingCreateWrite(
+  client: FirebaseRestClient,
+  id: string,
+  listing: CanonicalListingV2,
+) {
+  const {
+    created_at: _clientCreatedAt,
+    updated_at: _clientUpdatedAt,
+    published_at: _clientPublishedAt,
+    ...serverTimedListing
+  } = listing;
+  const payload = {
+    ...serverTimedListing,
+    moderation_status: 'pending' as const,
+  };
+  const updateTransforms = [
+    { fieldPath: 'created_at', setToServerValue: 'REQUEST_TIME' as const },
+    { fieldPath: 'updated_at', setToServerValue: 'REQUEST_TIME' as const },
+    ...(listing.published_at ? [{ fieldPath: 'published_at', setToServerValue: 'REQUEST_TIME' as const }] : []),
+  ];
+  return {
+    update: client.encodeDocumentForWrite(`listings_v2/${id}`, payload),
+    updateTransforms,
+    currentDocument: { exists: false },
+  };
+}
+
 export const canonicalListingsBackend = {
   async create(listing: CanonicalListingV2, category: ProductCategory) {
     const client = getClient();
@@ -179,27 +206,8 @@ export const canonicalListingsBackend = {
     if (listing.seller_id !== uid) throw new Error('SELLER_MISMATCH');
     validateCanonicalListingPolicy(listing, category);
     const id = localId();
-    const {
-      created_at: _clientCreatedAt,
-      updated_at: _clientUpdatedAt,
-      published_at: _clientPublishedAt,
-      ...serverTimedListing
-    } = listing;
-    const payload = {
-      ...serverTimedListing,
-      moderation_status: 'pending' as const,
-    };
-    const updateTransforms = [
-      { fieldPath: 'created_at', setToServerValue: 'REQUEST_TIME' as const },
-      { fieldPath: 'updated_at', setToServerValue: 'REQUEST_TIME' as const },
-      ...(listing.published_at ? [{ fieldPath: 'published_at', setToServerValue: 'REQUEST_TIME' as const }] : []),
-    ];
     await commitWithRateLimit(client, 'listing_create', [
-      {
-        update: client.encodeDocumentForWrite(`listings_v2/${id}`, payload),
-        updateTransforms,
-        currentDocument: { exists: false },
-      },
+      buildCanonicalListingCreateWrite(client, id, listing),
     ]);
     nearbyCache.clear();
     return { id, ...listing, moderation_status: 'pending' as const };
