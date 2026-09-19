@@ -132,7 +132,7 @@ test('preferencias de notificación son privadas del propietario', async () => {
   await assertFails(setDoc(doc(stranger, 'notification_preferences/alice'), preferences()));
 });
 
-test('solicitud de eliminación la crea el usuario y soporte puede procesarla', async () => {
+test('solicitud de eliminación la crea el usuario y soporte sólo puede iniciar/rechazar; completed es trusted-only', async () => {
   await seedBase();
   const owner = verifiedContext(env, 'alice').firestore();
   const support = verifiedContext(env, 'support').firestore();
@@ -141,6 +141,7 @@ test('solicitud de eliminación la crea el usuario y soporte puede procesarla', 
   await assertFails(getDoc(doc(stranger, 'account_deletion_requests/alice')));
   await assertSucceeds(getDoc(doc(support, 'account_deletion_requests/alice')));
   await assertSucceeds(updateDoc(doc(support, 'account_deletion_requests/alice'), { status: 'processing', updated_at: now() }));
+  await assertFails(updateDoc(doc(support, 'account_deletion_requests/alice'), { status: 'completed', updated_at: now() }));
 });
 
 test('reviewer de verificación no obtiene permisos generales de moderación', async () => {
@@ -158,7 +159,7 @@ test('listings_v2 requiere identidad de campus y propietario real', async () => 
   await assertFails(createListingWithRate(seller, 'l3', { ...canonicalListing(), seller_id: 'buap-user' }, 2, windowStart));
 });
 
-test('listing pendiente es privado hasta aprobación y moderación respeta institución', async () => {
+test('listing pendiente es privado hasta aprobación y seller content edit siempre vuelve a pending', async () => {
   await seedBase();
   const seller = verifiedContext(env, 'uatx-user').firestore();
   const stranger = verifiedContext(env, 'viewer').firestore();
@@ -171,6 +172,16 @@ test('listing pendiente es privado hasta aprobación y moderación respeta insti
   await assertFails(getDoc(doc(buapMod, 'listings_v2/l1')));
   await assertSucceeds(updateDoc(doc(uatxMod, 'listings_v2/l1'), { moderation_status: 'approved', updated_at: now() }));
   await assertSucceeds(getDoc(doc(stranger, 'listings_v2/l1')));
+
+  // Simula el write tardío de un seller que leyó el listing cuando aún estaba pending:
+  // cambia contenido pero omite moderation_status. Con Rules inseguras conservaría approved.
+  await assertFails(updateDoc(doc(seller, 'listings_v2/l1'), { title: 'Contenido nuevo no revisado', updated_at: now() }));
+  await assertSucceeds(updateDoc(doc(seller, 'listings_v2/l1'), {
+    title: 'Contenido nuevo para revisión',
+    moderation_status: 'pending',
+    updated_at: now(),
+  }));
+  await assertFails(getDoc(doc(stranger, 'listings_v2/l1')));
 });
 
 test('reserva no existe como estado canónico de listings_v2', async () => {
