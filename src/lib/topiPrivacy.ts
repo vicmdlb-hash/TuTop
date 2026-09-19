@@ -27,7 +27,7 @@ export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText
   // Phone redaction is deliberately conservative: redact international MX numbers,
   // formatted 10-digit numbers, or plain numbers only when introduced as contact data.
   replace(/\+?52[\s.-]?(?:\d[\s().-]?){10}(?!\d)/g, 'phone', '[teléfono omitido]');
-  replace(/(?<!\d)(?:\d[\s().-]){9}\d(?!\d)/g, 'phone', '[teléfono omitido]');
+  replace(/(?<!\d)(?:\d[\s().-]?){9}\d(?!\d)/g, 'phone', '[teléfono omitido]');
   replace(/\b(?:tel(?:e|é)fono|celular|m[oó]vil|whatsapp|contacto)\s*[:=-]?\s*\d{10,14}\b/gi, 'phone', '[teléfono omitido]');
 
   replace(/\b(?:otp|c[oó]digo(?:\s+de)?\s+verificaci[oó]n|verification\s+code)\s*[:=-]?\s*[A-Z0-9._-]{4,32}\b/gi, 'otp', '[código omitido]');
