@@ -38,6 +38,14 @@ function jsonValue(value, field='') {
 function encodeFields(data){return Object.fromEntries(Object.entries(data).filter(([,v])=>v!==undefined).map(([k,v])=>[k,jsonValue(v,k)]));}
 function docName(path){return 'projects/'+PROJECT+'/databases/(default)/documents/'+path;}
 function write(path,data){return {update:{name:docName(path),fields:encodeFields(data)},currentDocument:{exists:false}};}
+function serverTimedWrite(path,data,serverFields){
+  const filtered=Object.fromEntries(Object.entries(data).filter(([key])=>!serverFields.includes(key)));
+  return {
+    update:{name:docName(path),fields:encodeFields(filtered)},
+    updateTransforms:serverFields.map(fieldPath=>({fieldPath,setToServerValue:'REQUEST_TIME'})),
+    currentDocument:{exists:false}
+  };
+}
 function overwrite(path,data){return {update:{name:docName(path),fields:encodeFields(data)},currentDocument:{exists:true}};}
 async function parse(response,label){
   const text=await response.text(); let body={};
@@ -388,6 +396,33 @@ try {
     if(!ok) throw new Error('TIME_UNEXPECTED_'+name+'_'+outcome);
   }
 
+  async function runServerTimeRepairVariant(name, localOffsetMs) {
+    await clearSyntheticPublication();
+    const fakeDeviceAt=new Date(Date.now()+localOffsetMs).toISOString();
+    const variantListing={...listing,published_at:fakeDeviceAt,created_at:fakeDeviceAt,updated_at:fakeDeviceAt};
+    const variantBucket={uid,action:'listing_create',window_start:fakeDeviceAt,count:1,updated_at:fakeDeviceAt};
+    let outcome='PASS'; let errorCode='';
+    try {
+      await commit([
+        serverTimedWrite('rate_limits/'+uid+'-listing_create',variantBucket,['window_start','updated_at']),
+        serverTimedWrite('listings_v2/'+listingId,variantListing,['created_at','updated_at','published_at'])
+      ],idToken,'SERVER_TIME_'+name);
+      const check=await getPublic('listings_v2/'+listingId,idToken);
+      if(!check?.name?.endsWith('/'+listingId)) throw new Error('SERVER_TIME_READBACK_MISSING');
+      const bucket=await getPublic('rate_limits/'+uid+'-listing_create',idToken);
+      const serverListingAt=Date.parse(timestampField(check,'created_at'));
+      const serverBucketAt=Date.parse(timestampField(bucket,'updated_at'));
+      if(!Number.isFinite(serverListingAt)||!Number.isFinite(serverBucketAt)) throw new Error('SERVER_TIME_TIMESTAMP_MISSING');
+      if(Math.abs(serverListingAt-Date.now())>2*60_000||Math.abs(serverBucketAt-Date.now())>2*60_000) throw new Error('SERVER_TIME_NOT_AUTHORITATIVE');
+    } catch(error) {
+      outcome='DENIED';
+      errorCode=String(error instanceof Error?error.message:error).slice(0,180);
+    }
+    const ok=outcome==='PASS';
+    console.log(JSON.stringify({publication_server_time_repair:{name,simulated_device_clock_offset_minutes:localOffsetMs/60_000,outcome,ok,error_class:/Missing or insufficient permissions|PERMISSION_DENIED/i.test(errorCode)?'permission_denied':(errorCode?'other':'none'),user_data_logged:false}}));
+    if(!ok) throw new Error('SERVER_TIME_REPAIR_FAILED_'+name+'_'+errorCode);
+  }
+
   const longPhoto='data:image/jpeg;base64,'+'A'.repeat(110000);
   await runPayloadVariant('city_location',{
     city_id:'TLAX-tlaxcala',
@@ -413,6 +448,8 @@ try {
   await runTimeIsolationVariant('clock_bucket_only_plus_6m',0,6*60_000,'DENIED');
   await runTimeIsolationVariant('clock_listing_only_minus_11m',-11*60_000,0,'DENIED');
   await runTimeIsolationVariant('clock_bucket_only_minus_11m',0,-11*60_000,'DENIED');
+  await runServerTimeRepairVariant('device_clock_plus_60m',60*60_000);
+  await runServerTimeRepairVariant('device_clock_minus_60m',-60*60_000);
   await runPayloadVariant('category_electronica',{category_id:'electronica',title:'QA Electrónica'},'PASS');
   await runPayloadVariant('category_ropa-accesorios',{category_id:'ropa-accesorios',title:'QA Ropa & Accesorios'},'PASS');
   await runPayloadVariant('category_libros-apuntes',{category_id:'libros-apuntes',title:'QA Libros & Apuntes'},'PASS');
@@ -477,6 +514,8 @@ try {
     client_profile_reconciled_before_listing:true,
     listing_created_and_read_back:true,
     legacy_string_date_reconcile_denied:true,
+    server_request_time_skew_plus_60m_pass:true,
+    server_request_time_skew_minus_60m_pass:true,
     user_data_logged:false,
     cleanup_required:true
   }));
