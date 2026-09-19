@@ -1,4 +1,4 @@
-import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminPatchDocument, adminRunQuery } from './staging-v2-admin.mjs';
+import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminListDocuments, adminPatchDocument, adminRunQuery } from './staging-v2-admin.mjs';
 import { buildAccountErasurePlan } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -63,9 +63,28 @@ for (const [collection, field] of withdrawals) {
 }
 
 const retained = [];
+const retainedChatPaths = new Set();
 for (const [collection, field] of retainedOperational) {
   const docs = await adminRunQuery(collection, [{ field, value: uid }], 1000);
   if (docs.length) retained.push({ collection, field, count: docs.length });
+  if (collection === 'chats') {
+    for (const document of docs) retainedChatPaths.add(document.path);
+  }
+}
+
+// Firestore parent deletion does not delete subcollections. Retained transaction
+// chats may keep message text/images and read/confirmation identifiers, so the
+// residual manifest must count them explicitly even though legal retention still
+// decides how long they remain.
+for (const chatPath of [...retainedChatPaths].sort()) {
+  for (const nested of ['messages', 'reads', 'confirmations']) {
+    const docs = await adminListDocuments(`${chatPath}/${nested}`, 1000);
+    if (docs.length) retained.push({
+      collection: `chats/*/${nested}`,
+      field: chatPath,
+      count: docs.length,
+    });
+  }
 }
 
 // A deletion request may exist while a marketplace operation is still in flight,
@@ -118,7 +137,11 @@ for (const path of plan.delete_paths) await adminDeleteDocument(path);
 await adminDeleteDocument(`users/${uid}`);
 
 await adminPatchDocument(`account_deletion_requests/${uid}`, {
-  status: 'completed', updated_at: new Date(), processing_note: 'staging-controlled-erasure-v1',
+  status: 'completed',
+  updated_at: new Date(),
+  processing_note: 'staging-controlled-erasure-v1',
+  residual_manifest_version: 'staging-erasure-residual-v2',
+  retained_count: plan.retained_count,
 });
 await adminPatchDocument(`audit_log/account-erasure-${uid}-${Date.now()}`, {
   admin_uid: 'trusted-runner', actor_type: 'trusted_runner', role: 'trust_safety', action: 'account_erasure_completed',
