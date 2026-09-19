@@ -514,9 +514,15 @@ try {
     city_id:'TLAX-tlaxcala',
     attributes:{approx_latitude:19.31,approx_longitude:-98.24,geo_cell:'g1:109:81'}
   },'PASS');
+  await runPayloadVariant('title_one_char',{title:'A'},'DENIED');
+  await runPayloadVariant('title_two_chars',{title:'AB'},'PASS');
   await runPayloadVariant('decimal_price',{price_mxn:123.45},'PASS');
   await runPayloadVariant('four_compressed_size_photos',{photo_urls:[longPhoto,longPhoto,longPhoto,longPhoto]},'PASS');
+  // Behavioral audit: current live rules still allow this even though the generated
+  // source contract requires national => shipping_available=true. Keep this as
+  // an explicit drift sentinel until live Rules are intentionally reconciled.
   await runPayloadVariant('national_without_shipping',{visibility_scope:'national',shipping_available:false},'PASS');
+  await runPayloadVariant('national_with_shipping',{visibility_scope:'national',shipping_available:true,delivery_methods:['shipping']},'PASS');
   await runPayloadVariant('delivery_meeting_point',{
     delivery_methods:['campus_meetup','pickup','local_delivery'],
     meeting_point_ids:['uatx-riberena-cafeteria']
@@ -604,6 +610,8 @@ try {
     server_request_time_skew_plus_60m_pass:true,
     server_request_time_skew_minus_60m_pass:true,
     existing_bucket_server_authoritative_rollover_pass:true,
+    title_minimum_live_boundary_pass:true,
+    live_source_drift_national_without_shipping:true,
     user_data_logged:false,
     cleanup_required:true
   }));
