@@ -100,17 +100,49 @@ function decodeField(value){
 }
 function decodeDoc(doc){ return Object.fromEntries(Object.entries(doc?.fields||{}).map(([k,v])=>[k,decodeField(v)])); }
 async function auditLiveState(){
-  const [usersRaw,rateRaw]=await Promise.all([adminList('users'),adminList('rate_limits')]);
+  const [usersRaw,rateRaw,privateRaw,moderationRaw]=await Promise.all([
+    adminList('users'),
+    adminList('rate_limits'),
+    adminList('user_private'),
+    adminList('moderationStatus')
+  ]);
   const users=usersRaw.documents||[];
   const rates=rateRaw.documents||[];
+  const privateDocs=privateRaw.documents||[];
+  const moderationDocs=moderationRaw.documents||[];
   const now=Date.now();
   const uatx=users.filter(d=>stringField(d,'institution_id')==='uatx'&&stringField(d,'campus_id')==='uatx-riberena');
   const legacyDate=d=>['created_at','fecha_registro','date','fecha'].some(k=>fieldKind(d,k)==='stringValue'&&/^\\d{4}-\\d{2}-\\d{2}T/.test(stringField(d,k)));
   const listingRates=rates.filter(d=>stringField(d,'action')==='listing_create');
+  const authModes={};
+  for(const d of privateDocs){
+    const mode=stringField(d,'auth_mode')||'missing';
+    authModes[mode]=(authModes[mode]||0)+1;
+  }
+  const suspendedTrue=moderationDocs.filter(d=>d?.fields?.suspended?.booleanValue===true).length;
   const recentAtBaseCap=listingRates.filter(d=>{
     const start=Date.parse(timestampField(d,'window_start')||stringField(d,'window_start'));
     return integerField(d,'count')>=8&&Number.isFinite(start)&&now-start<60*60_000&&now>=start;
   });
+  let authTotal=0, authEmail=0, authVerified=0, authPhoneAlias=0, authPage='';
+  do {
+    const body={maxResults:1000,...(authPage?{nextPageToken:authPage}:{})};
+    const response=await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts:query',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json','X-Goog-User-Project':PROJECT},
+      body:JSON.stringify(body)
+    });
+    const raw=await parse(response,'AUTH_AGGREGATE');
+    for(const account of raw?.users||[]){
+      authTotal+=1;
+      const email=String(account.email||'');
+      if(email) authEmail+=1;
+      if(account.emailVerified===true) authVerified+=1;
+      if(/^phone-[a-f0-9]+@auth\.tutop\.app$/i.test(email)) authPhoneAlias+=1;
+    }
+    authPage=String(raw?.nextPageToken||'');
+  } while(authPage);
+
   console.log(JSON.stringify({
     live_profile_audit:{
       users_total:users.length,
@@ -120,6 +152,15 @@ async function auditLiveState(){
       invalid_name_profiles:users.filter(d=>stringField(d,'nombre').length<2).length,
       listing_rate_buckets:listingRates.length,
       recent_listing_buckets_at_or_above_base_cap:recentAtBaseCap.length,
+      user_private_total:privateDocs.length,
+      user_private_auth_modes:authModes,
+      moderation_status_docs:moderationDocs.length,
+      moderation_suspended_true:suspendedTrue,
+      auth_accounts_total:authTotal,
+      auth_email_accounts:authEmail,
+      auth_email_verified:authVerified,
+      auth_phone_alias_accounts:authPhoneAlias,
+      moderation_status_audit:true,
       identities_logged:false
     }
   }));
