@@ -26,6 +26,7 @@ async function seedBase() {
     await setDoc(doc(db, 'admins/support'), { active: true, role: 'support' });
     await setDoc(doc(db, 'admins/verify'), { active: true, role: 'verification_reviewer' });
     await setDoc(doc(db, 'admins/legacy'), { active: true });
+    await setDoc(doc(db, 'admins/unknown'), { active: true, role: 'typo_role' });
     await setDoc(doc(db, 'institutions/uatx'), { id: 'uatx', active: true });
     await setDoc(doc(db, 'institutions/buap'), { id: 'buap', active: true });
     await setDoc(doc(db, 'campuses/uatx-riberena'), { id: 'uatx-riberena', institution_id: 'uatx', active: true });
@@ -107,13 +108,15 @@ test('moderador institucional sólo puede leer y resolver reportes de su institu
   await assertFails(updateDoc(doc(uatx, 'reports/r-buap'), { status: 'reviewing', updated_at: now() }));
 });
 
-test('trust safety y admin legacy conservan alcance global', async () => {
+test('trust safety conserva alcance global; admins sin rol válido fallan cerrado', async () => {
   await seedBase();
   const global = verifiedContext(env, 'global').firestore();
   const legacy = verifiedContext(env, 'legacy').firestore();
+  const unknown = verifiedContext(env, 'unknown').firestore();
   await assertSucceeds(getDoc(doc(global, 'reports/r-uatx')));
   await assertSucceeds(getDoc(doc(global, 'reports/r-global')));
-  await assertSucceeds(getDoc(doc(legacy, 'reports/r-buap')));
+  await assertFails(getDoc(doc(legacy, 'reports/r-buap')));
+  await assertFails(getDoc(doc(unknown, 'reports/r-uatx')));
 });
 
 test('moderador institucional sólo puede suspender usuarios de su institución', async () => {
@@ -171,6 +174,32 @@ test('listing pendiente es privado hasta aprobación y moderación respeta insti
   await assertFails(getDoc(doc(buapMod, 'listings_v2/l1')));
   await assertSucceeds(updateDoc(doc(uatxMod, 'listings_v2/l1'), { moderation_status: 'approved', updated_at: now() }));
   await assertSucceeds(getDoc(doc(stranger, 'listings_v2/l1')));
+});
+
+test('edición sensible del vendedor después de aprobación vuelve obligatoriamente a pending', async () => {
+  await seedBase();
+  const seller = verifiedContext(env, 'uatx-user').firestore();
+  const viewer = verifiedContext(env, 'viewer').firestore();
+  const moderator = verifiedContext(env, 'uatxmod').firestore();
+  await assertSucceeds(createListingWithRate(seller, 'race-listing', canonicalListing()));
+  await assertSucceeds(updateDoc(doc(moderator, 'listings_v2/race-listing'), { moderation_status: 'approved', updated_at: now() }));
+  await assertSucceeds(getDoc(doc(viewer, 'listings_v2/race-listing')));
+
+  await assertFails(updateDoc(doc(seller, 'listings_v2/race-listing'), {
+    title: 'Contenido cambiado sin revisión',
+    updated_at: now(),
+  }));
+
+  await assertSucceeds(updateDoc(doc(seller, 'listings_v2/race-listing'), {
+    title: 'Contenido cambiado para nueva revisión',
+    moderation_status: 'pending',
+    updated_at: now(),
+  }));
+  await assertFails(getDoc(doc(viewer, 'listings_v2/race-listing')));
+
+  await assertSucceeds(updateDoc(doc(moderator, 'listings_v2/race-listing'), { moderation_status: 'approved', updated_at: now() }));
+  await assertSucceeds(updateDoc(doc(seller, 'listings_v2/race-listing'), { price_mxn: 425, updated_at: now() }));
+  await assertSucceeds(getDoc(doc(viewer, 'listings_v2/race-listing')));
 });
 
 test('reserva no existe como estado canónico de listings_v2', async () => {
