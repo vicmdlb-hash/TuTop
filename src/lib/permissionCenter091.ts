@@ -1,4 +1,4 @@
-import { getCachedApproxLocation, requestApproxLocation } from './nearbyMarketplace';
+import { requestApproxLocation } from './nearbyMarketplace';
 import { queryTopiVoicePermission, requestTopiVoicePermission } from './topiVoice';
 import { isNativeDeviceRuntime, nativeCameraPermission, nativeLocationPermission } from '../services/nativeDeviceCapabilities';
 import { enableNativePushNotifications, nativePushPermission } from '../services/nativeFirebaseSecurity';
@@ -19,7 +19,6 @@ function normalizeNativeState(value: string): PermissionState091 {
 }
 
 export async function queryCapabilityPermission(capability: CapabilityPermission): Promise<PermissionState091> {
-  if (capability === 'location' && getCachedApproxLocation()) return 'granted';
   if (isNativeDeviceRuntime()) {
     if (capability === 'location') return normalizeNativeState(await nativeLocationPermission(false));
     // Camera 8 uses Android's system camera/photo picker and deliberately does
