@@ -12,6 +12,7 @@ const locks = fs.readFileSync('scripts/harden-transaction-lock-rules.mjs', 'utf8
 const nearby = fs.readFileSync('scripts/harden-nearby-v2-rules.mjs', 'utf8');
 const video = fs.readFileSync('scripts/harden-listing-video-rules.mjs', 'utf8');
 const verifiedEmail = fs.readFileSync('scripts/harden-verified-email-beta-rules.mjs', 'utf8');
+const privateReads = fs.readFileSync('scripts/harden-private-admin-read-rules.mjs', 'utf8');
 
 const expected = [
   'node scripts/prepare-firestore-v2-rules.mjs',
@@ -24,6 +25,7 @@ const expected = [
   'node scripts/harden-nearby-v2-rules.mjs',
   'node scripts/harden-listing-video-rules.mjs',
   'node scripts/harden-verified-email-beta-rules.mjs',
+  'node scripts/harden-private-admin-read-rules.mjs',
 ].join(' && ');
 assert.equal(pkg.scripts['v2:rules:prepare'], expected, 'V2 Rules composition order changed');
 assert.doesNotMatch(pkg.scripts['v2:rules:prepare'], /harden-favorite-v2-rules/);
@@ -55,7 +57,7 @@ assert.match(locks, /cancellation releases reservation lock/);
 
 // Independent post-runtime hardeners must remain narrowly scoped and fail closed.
 for (const [name, source] of [
-  ['canonical', canonical], ['runtime', runtime], ['optimize', optimize], ['account', account], ['receipts', receipts], ['locks', locks], ['video', video], ['verified-email', verifiedEmail],
+  ['canonical', canonical], ['runtime', runtime], ['optimize', optimize], ['account', account], ['receipts', receipts], ['locks', locks], ['video', video], ['verified-email', verifiedEmail], ['private-reads', privateReads],
 ]) {
   assert.match(source, /const path = 'firebase\/firestore\.v2\.generated\.rules'/, `${name} must target generated rules only`);
   assert.match(source, /encontró \$\{count\}|encontró \$\{occurrences\}|esperaba 1 coincidencia/, `${name} must fail closed on marker drift`);
@@ -91,12 +93,18 @@ assert.match(locks, /reservation lock collection/);
 assert.match(verifiedEmail, /function verifiedIdentity/);
 assert.match(verifiedEmail, /email_verified == true/);
 assert.match(verifiedEmail, /email_password_verified_beta/);
+assert.match(privateReads, /canReadIdentityPrivate/);
+assert.match(privateReads, /canReadWalletPrivate/);
+assert.match(privateReads, /canReadCommercePrivate/);
+assert.match(privateReads, /favorites owner-only scope/);
+assert.match(privateReads, /saved searches owner-only scope/);
+assert.match(privateReads, /reservation lock private read scope/);
 
 console.log('PASS V2 Rules pipeline order is explicit and frozen, including nearby + 0.9.2 video + verified-email semantics');
 console.log('PASS canonical listing conversion precedes runtime rules that depend on listingDoc');
 console.log('PASS runtime markers precede listing optimization, notification receipts, reservation-lock and verified-email hardeners');
 console.log('PASS nearby hardener removes canonical and legacy shipping mandates fail-closed');
 console.log('PASS video hardener uses one helper and two fail-closed create/update calls');
-console.log('PASS verified-email hardener runs last so all sensitive marketplace write surfaces are already canonical');
+console.log('PASS verified-email write hardening precedes final least-privilege private-read scoping');
 console.log('PASS duplicate favorites hardener is absent; canonical conversion owns V2 listing identity');
 console.log('V2 Rules composition contract: PASS');
