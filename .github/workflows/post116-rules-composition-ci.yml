@@ -1,0 +1,89 @@
+name: Post-build116 Rules composition CI
+
+on:
+  push:
+    branches: [integration/post116-rules-composition-ci]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compose-and-validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      ADMIN_SHA: 582734734c0da52f5170d00f96436980c16e1ad3
+      ERASURE_SHA: 0c9e35f23248cc9dbd3dcc23c5c608151aa68929
+      RESERVATION_SHA: 9ce4eb1bf2de191fbb81ec90dab4cf795a6a276b
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Fetch exact integration heads
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin             refs/heads/hardening/post116-private-admin-read-scope:refs/remotes/origin/post116-admin             refs/heads/hardening/post116-erasure-query-pagination:refs/remotes/origin/post116-erasure             refs/heads/hardening/post116-counteroffer-atomic-reservation:refs/remotes/origin/post116-reservation
+          test "$(git rev-parse refs/remotes/origin/post116-admin)" = "$ADMIN_SHA"
+          test "$(git rev-parse refs/remotes/origin/post116-erasure)" = "$ERASURE_SHA"
+          test "$(git rev-parse refs/remotes/origin/post116-reservation)" = "$RESERVATION_SHA"
+
+      - name: Ephemeral merge — no push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "tutop-integration-ci"
+          git config user.email "tutop-integration-ci@users.noreply.github.com"
+          git merge --no-edit "$ADMIN_SHA"
+          git merge --no-edit "$ERASURE_SHA"
+          git merge --no-edit "$RESERVATION_SHA"
+          echo "COMPOSED_HEAD=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          git --no-pager log --oneline -8
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm run typecheck
+
+      - name: Erasure composition contracts
+        run: |
+          node scripts/firestore-query-pagination-tests.mjs
+          node scripts/post116-erasure-completion-attestation-tests.mjs
+          node scripts/account-erasure-tests.mjs
+          npm run account-erasure:synthetic:test
+
+      - name: Reservation composition contract
+        run: node scripts/post116-counteroffer-atomic-reservation-tests.mjs
+
+      - name: Generate composed Rules
+        run: npm run v2:rules:prepare
+
+      - name: Rules composition contract
+        run: node scripts/v2-rules-composition-contract-tests.mjs
+
+      - name: Emulator dependencies
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
+
+      - name: Least-privilege role matrix
+        run: npx firebase emulators:exec --only firestore --project demo-tutop-compose-admin --config firebase.v2.json "node --test --test-concurrency=1 tests/firestore.v2.private-admin-reads.test.mjs"
+
+      - name: Moderation governance regression
+        run: npx firebase emulators:exec --only firestore --project demo-tutop-compose-governance --config firebase.v2.json "node --test --test-concurrency=1 tests/firestore.v2.governance.test.mjs"
+
+      - name: Erasure/account operations regression
+        run: npx firebase emulators:exec --only firestore --project demo-tutop-compose-erasure --config firebase.v2.json "node --test --test-concurrency=1 tests/firestore.v2.account-operations.test.mjs"
+
+      - name: Reservation transaction regression
+        run: npx firebase emulators:exec --only firestore --project demo-tutop-compose-reservation --config firebase.v2.json "node --test --test-concurrency=1 tests/firestore.v2.transaction-lock.test.mjs"
+
+      - run: npm run build
