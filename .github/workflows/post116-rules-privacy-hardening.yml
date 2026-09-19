@@ -1,0 +1,43 @@
+name: TuTop post116 Rules privacy hardening
+
+on:
+  push:
+    branches: [fix/post116-rules-privacy-hardening]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post116-rules-privacy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Full existing regression
+        run: npm run check
+      - name: Exact TypeScript
+        run: npm run typecheck
+      - name: Post116 security/privacy static contract
+        run: node scripts/post116-rules-privacy-contract-tests.mjs
+      - name: Generate exact V2 Rules
+        run: npm run v2:rules:prepare
+      - name: Emulator dependencies
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
+      - name: Governance emulator — moderation race and erasure completion
+        run: npx firebase emulators:exec --only firestore --project demo-tutop-post116 --config firebase.v2.json "node --test --test-concurrency=1 tests/firestore.v2.governance.test.mjs"
+      - name: No dependency drift
+        run: git diff --exit-code -- package.json package-lock.json
