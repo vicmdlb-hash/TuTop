@@ -35,6 +35,9 @@ export default function ProductCard({ product }: { product: Product }) {
   const negotiable = product.precio_negociable === true || parsed.details['Precio negociable']?.toLowerCase() === 'sí';
   const delivery = parsed.details['Entrega'] || parsed.details['Horario'] || parsed.details['Disponibilidad'];
   const reputation = sellerReputationEvidence(product.vendedor_id, reviews, chats);
+  const existingBuyerChat = chats.some((chat) => chat.producto_id === product.id && chat.comprador_id === user.id && chat.vendedor_id === product.vendedor_id);
+  const reserved = product.availability_status === 'reserved';
+  const reservedForViewer = reserved && !ownProduct && !existingBuyerChat;
   const [viewerLocation, setViewerLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
 
   useEffect(() => {
@@ -67,7 +70,7 @@ export default function ProductCard({ product }: { product: Product }) {
       <button onClick={() => openProduct(product.id)} className="relative block aspect-[1.5/1] w-full overflow-hidden bg-[#101827] text-left">
         <img src={product.imagen_url} alt={product.titulo} className="h-full w-full object-cover" loading="lazy" />
         <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 to-transparent" />
-        <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-medium backdrop-blur">{product.categoria}</span>{negotiable && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/80 px-2 py-1 text-[9px] font-black text-white backdrop-blur"><CircleDollarSign className="h-3 w-3" />Negociable</span>}</div>
+        <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-medium backdrop-blur">{product.categoria}</span>{reserved && <span className="rounded-full bg-amber-500/90 px-2 py-1 text-[9px] font-black text-black backdrop-blur">Reservado temporalmente</span>}{negotiable && !reserved && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/80 px-2 py-1 text-[9px] font-black text-white backdrop-blur"><CircleDollarSign className="h-3 w-3" />Negociable</span>}</div>
         <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5">{proximity && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-[9px] font-black text-white shadow-lg backdrop-blur"><MapPin className="h-3 w-3" />{proximity}</span>}{(product.imagenes_url?.length || 0) > 1 && <span className="rounded-full bg-black/55 px-2 py-1 text-[9px] font-bold backdrop-blur">{product.imagenes_url?.length} fotos</span>}</div>
       </button>
 
@@ -82,7 +85,7 @@ export default function ProductCard({ product }: { product: Product }) {
         </button>
 
         <div className="mt-3 flex items-center gap-2">
-          <button onClick={() => { feedbackTap(); ownProduct ? openProduct(product.id) : contactProduct(product.id); }} className="contact-button"><MessageCircle className="h-4 w-4" />{ownProduct ? 'Ver publicación' : 'Contactar'}</button>
+          <button disabled={reservedForViewer} onClick={() => { feedbackTap(); ownProduct ? openProduct(product.id) : contactProduct(product.id); }} className="contact-button disabled:cursor-not-allowed disabled:opacity-45"><MessageCircle className="h-4 w-4" />{ownProduct ? 'Ver publicación' : reservedForViewer ? 'Reservado' : existingBuyerChat ? 'Volver al chat' : 'Contactar'}</button>
           <button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`favorite-button ${favorite ? 'favorite-button-active' : ''}`} aria-label="Guardar producto">
             <Heart className="h-5 w-5" fill={favorite ? 'currentColor' : 'none'} />
             <span>{favorite ? 'Guardado' : 'Guardar'}</span>
