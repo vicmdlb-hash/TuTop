@@ -20,6 +20,7 @@ export type DurablePublishDraft = {
   deliveryMethods?: ListingDeliveryMethod[];
   meetingPointId?: string;
   attributes?: Record<string, string | number | boolean>;
+  locationOptIn?: boolean;
 };
 
 type DurableEnvelope = {
@@ -92,6 +93,7 @@ export function sanitizeDurablePublishDraft(input: Record<string, unknown>): Dur
     deliveryMethods,
     meetingPointId: cleanText(input.meetingPointId, 160),
     attributes: cleanAttributes(input.attributes),
+    locationOptIn: typeof input.locationOptIn === 'boolean' ? input.locationOptIn : undefined,
   };
 }
 
