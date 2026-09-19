@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Loader2, RefreshCw, ShieldAlert, XCircle } from 'lucide-react';
+import { Loader2, RefreshCw, ShieldAlert, XCircle } from 'lucide-react';
 import { scopedAdminBackend } from '../services/scopedAdminBackend';
 
 type RequestDoc = { id: string; data: { uid?: string; status?: string; requested_at?: string; updated_at?: string } };
