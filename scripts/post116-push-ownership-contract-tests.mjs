@@ -17,6 +17,7 @@ assert.match(native, /if \(ownership\.pending\) return \{ permission, tokenRegis
 assert.match(native, /!serverDeactivated && !tokenDeleted/);
 assert.match(native, /setPendingPushOwnershipReset\(true\)/);
 assert.match(native, /window\.addEventListener\('online'/);
+assert.match(native, /if \(pendingPushOwnershipReset\(\)\) return;/);
 
 assert.match(gate, /prepareNativePushForAccountSignOut/);
 const cleanup = gate.indexOf('await prepareNativePushForAccountSignOut');
