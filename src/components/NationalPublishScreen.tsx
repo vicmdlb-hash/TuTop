@@ -89,6 +89,8 @@ function publicationFailureCode(raw: string) {
   if (/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw)) return 'publish_permission_denied';
   if (/RESOURCE_EXHAUSTED|rate.?limit|too many/i.test(raw)) return 'publish_rate_limited';
   if (/MEDIA_STORAGE_/.test(raw)) return 'publish_media_failed';
+  if (raw.startsWith('LISTING_PRICE_INVALID')) return 'publish_price_invalid';
+  if (raw.startsWith('LISTING_QUANTITY_INVALID')) return 'publish_quantity_invalid';
   if (raw.startsWith('PROHIBITED_LISTING:')) return 'publish_prohibited';
   if (raw.startsWith('PRIVATE_FIELD_EXPOSED:')) return 'publish_private_field_blocked';
   return 'publish_unknown_failed';
@@ -416,7 +418,11 @@ export default function NationalPublishScreen() {
       const failureCode = publicationFailureCode(raw);
       recordDiagnostic('publication', failureCode);
       if (failureCode === 'publish_permission_denied') {
-        setMessage('No pudimos publicar con esta cuenta. Verifica tu universidad, campus y sesión, y vuelve a intentarlo.');
+        setMessage('Una validación de seguridad rechazó la publicación. El anuncio no se creó. Código: PUBLISH_PERMISSION_DENIED.');
+      } else if (failureCode === 'publish_price_invalid') {
+        setMessage('El precio debe estar entre $0.01 y $1,000,000.');
+      } else if (failureCode === 'publish_quantity_invalid') {
+        setMessage('La cantidad debe ser un número entero entre 1 y 99.');
       } else if (failureCode === 'publish_rate_limited') {
         setMessage('Alcanzaste temporalmente el límite de publicaciones de seguridad. Espera antes de volver a intentar.');
       } else if (failureCode === 'publish_media_failed') {
