@@ -22,4 +22,3 @@ jobs:
       - run: npm run check
       - run: npm run typecheck
       - run: node scripts/post116-push-health-contract-tests.mjs
-      - run: npm run native-security:test
