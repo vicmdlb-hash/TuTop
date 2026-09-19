@@ -73,8 +73,8 @@ async function adminDeleteAuth(){
 }
 async function adminSeedExpiredBucket(){
   const path='rate_limits/'+uid+'-listing_create';
-  const oldIso=new Date(Date.now()-2*60*60_000).toISOString();
-  const data={uid,action:'listing_create',window_start:oldIso,count:2,updated_at:oldIso};
+  const oldDate=new Date(Date.now()-2*60*60_000);
+  const data={uid,action:'listing_create',window_start:oldDate,count:2,updated_at:oldDate};
   const encoded=client.encodeDocumentForWrite(path,data);
   const response=await fetch('https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents/'+path,{
     method:'PATCH',headers:adminHeaders(true),body:JSON.stringify({fields:encoded.fields})
