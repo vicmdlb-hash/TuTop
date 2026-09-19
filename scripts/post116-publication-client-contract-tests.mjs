@@ -10,6 +10,10 @@ assert.match(screen,/Number\.isInteger\(parsedQuantity\)/);
 assert.match(screen,/parsedQuantity >= 1 && parsedQuantity <= 99/);
 assert.match(screen,/quantity: parsedQuantity/);
 assert.match(screen,/step="1"/);
+assert.match(screen,/PUBLISH_PERMISSION_DENIED/);
+assert.match(screen,/publish_price_invalid/);
+assert.match(screen,/publish_quantity_invalid/);
+assert.doesNotMatch(screen,/Verifica tu universidad, campus y sesión/);
 
 assert.match(listings,/LISTING_PRICE_INVALID/);
 assert.match(listings,/listing\.price_mxn > 1_000_000/);
