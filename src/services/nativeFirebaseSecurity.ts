@@ -115,6 +115,13 @@ export async function initializeNativeFirebaseSecurity() {
   return initialization;
 }
 
+export async function nativePushRegistrationHealth() {
+  const permission = await nativePushPermission();
+  if (permission !== 'granted') return { permission, tokenRegistered: false };
+  const tokenRegistered = await syncGrantedPushToken().catch(() => false);
+  return { permission, tokenRegistered };
+}
+
 export async function enableNativePushNotifications() {
   if (!isNativeFirebaseRuntime()) return { enabled: false, permission: 'unavailable' as PushPermission };
   const messaging = capacitorPlugin('FirebaseMessaging');
