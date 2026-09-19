@@ -89,6 +89,10 @@ function publicationFailureCode(raw: string) {
   if (/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw)) return 'publish_permission_denied';
   if (/RESOURCE_EXHAUSTED|rate.?limit|too many/i.test(raw)) return 'publish_rate_limited';
   if (/MEDIA_STORAGE_/.test(raw)) return 'publish_media_failed';
+  if (raw.startsWith('LISTING_TITLE_INVALID')) return 'publish_title_invalid';
+  if (raw.startsWith('LISTING_PRICE_INVALID')) return 'publish_price_invalid';
+  if (raw.startsWith('LISTING_QUANTITY_INVALID')) return 'publish_quantity_invalid';
+  if (raw.startsWith('LISTING_NATIONAL_SHIPPING_REQUIRED')) return 'publish_national_shipping_required';
   if (raw.startsWith('PROHIBITED_LISTING:')) return 'publish_prohibited';
   if (raw.startsWith('PRIVATE_FIELD_EXPOSED:')) return 'publish_private_field_blocked';
   return 'publish_unknown_failed';
@@ -136,15 +140,21 @@ export default function NationalPublishScreen() {
   const required = useMemo(() => categorySafetyRequirements(category || undefined).required, [category]);
   const missing = required.filter((key) => normalizedAttributes[key] === undefined || normalizedAttributes[key] === null || normalizedAttributes[key] === '');
   const parsedPrice = Number(price);
-  const hasValidPrice = price.trim() !== '' && Number.isFinite(parsedPrice) && parsedPrice > 0;
+  const parsedQuantity = Number(quantity);
+  const hasValidPrice = price.trim() !== '' && Number.isFinite(parsedPrice) && parsedPrice >= 0.01 && parsedPrice <= 1_000_000;
+  const hasValidQuantity = quantity.trim() !== '' && Number.isInteger(parsedQuantity) && parsedQuantity >= 1 && parsedQuantity <= 99;
+  const hasValidTitle = title.trim().length >= 2;
   const shippingAvailable = deliveryMethods.includes('shipping');
+  const nationalShippingValid = scope !== 'national' || shippingAvailable;
   const prohibitedDraft = isForbiddenProductText(`${title} ${description}`);
   const publishIssues: string[] = [];
   if (!institutionId || !campusId) publishIssues.push('universidad/campus');
-  if (!title.trim()) publishIssues.push('título');
+  if (!hasValidTitle) publishIssues.push('título de al menos 2 caracteres');
   if (!category) publishIssues.push('categoría');
-  if (!hasValidPrice) publishIssues.push('precio mayor a $0');
+  if (!hasValidPrice) publishIssues.push('precio entre $0.01 y $1,000,000');
+  if (!hasValidQuantity) publishIssues.push('cantidad entera entre 1 y 99');
   if (!deliveryMethods.length) publishIssues.push('forma de entrega');
+  if (!nationalShippingValid) publishIssues.push('envío para alcance nacional');
   if (prohibitedDraft) publishIssues.push('artículo o servicio no permitido');
   if (missing.length) publishIssues.push(`${missing.length} dato${missing.length === 1 ? '' : 's'} obligatorio${missing.length === 1 ? '' : 's'}`);
   if (videoFile && !videoInfraEnabled) publishIssues.push('video no disponible en esta beta');
@@ -321,9 +331,12 @@ export default function NationalPublishScreen() {
   const publish = async () => {
     setMessage(null);
     if (!institutionId || !campusId) return setMessage('Primero selecciona tu universidad y campus.');
-    if (!title.trim() || !category || !hasValidPrice) return setMessage('Completa título, categoría y un precio mayor a $0.');
+    if (!hasValidTitle) return setMessage('El título debe tener al menos 2 caracteres.');
+    if (!category || !hasValidPrice) return setMessage('Completa categoría y un precio entre $0.01 y $1,000,000.');
+    if (!hasValidQuantity) return setMessage('La cantidad debe ser un número entero entre 1 y 99.');
     if (prohibitedDraft) return setMessage('Ese artículo o servicio no está permitido en TuTop. Revisa el título y la descripción.');
     if (!deliveryMethods.length) return setMessage('Selecciona al menos una forma de entrega.');
+    if (!nationalShippingValid) return setMessage('Para publicar en Todo México debes activar Envío externo acordado.');
     if (missing.length) {
       setAdvancedOpen(true);
       return setMessage('Completa los campos obligatorios marcados con * antes de publicar.');
@@ -371,7 +384,7 @@ export default function NationalPublishScreen() {
         attributes: { ...normalizedAttributes, ...locationAttributes(location) },
         price_mxn: Math.round(parsedPrice * 100) / 100,
         negotiable,
-        quantity: Math.max(1, Math.min(99, Number(quantity) || 1)),
+        quantity: parsedQuantity,
         condition,
         delivery_methods: deliveryMethods,
         meeting_point_ids: meetingPointId ? [meetingPointId] : [],
@@ -412,7 +425,15 @@ export default function NationalPublishScreen() {
       const failureCode = publicationFailureCode(raw);
       recordDiagnostic('publication', failureCode);
       if (failureCode === 'publish_permission_denied') {
-        setMessage('No pudimos publicar con esta cuenta. Verifica tu universidad, campus y sesión, y vuelve a intentarlo.');
+        setMessage('Una validación de seguridad rechazó la publicación. El anuncio no se creó. Código: PUBLISH_PERMISSION_DENIED.');
+      } else if (failureCode === 'publish_title_invalid') {
+        setMessage('El título debe tener al menos 2 caracteres.');
+      } else if (failureCode === 'publish_price_invalid') {
+        setMessage('El precio debe estar entre $0.01 y $1,000,000.');
+      } else if (failureCode === 'publish_quantity_invalid') {
+        setMessage('La cantidad debe ser un número entero entre 1 y 99.');
+      } else if (failureCode === 'publish_national_shipping_required') {
+        setMessage('Para publicar en Todo México debes activar Envío externo acordado.');
       } else if (failureCode === 'publish_rate_limited') {
         setMessage('Alcanzaste temporalmente el límite de publicaciones de seguridad. Espera antes de volver a intentar.');
       } else if (failureCode === 'publish_media_failed') {
@@ -499,7 +520,7 @@ export default function NationalPublishScreen() {
       <button type="button" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((open) => !open)} className="flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.025] px-4 py-3 text-left"><span><strong className="block text-xs">Más opciones</strong><small className="mt-0.5 block text-[9px] text-slate-500">Condición, cantidad, alcance, entrega y datos opcionales.</small></span><ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} /></button>
 
       {advancedOpen && <>
-        <section className="publish-card"><p className="eyebrow">DETALLES</p><div className="mt-2 grid grid-cols-2 gap-2"><select className="publish-input" value={condition} onChange={(e) => setCondition(e.target.value)}><option>Nuevo</option><option>Como nuevo</option><option>Buen estado</option><option>Uso visible</option><option>Para reparar</option><option>No aplica</option></select><input className="publish-input" type="number" min="1" max="99" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="Cantidad" /></div><label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={negotiable} onChange={(e) => setNegotiable(e.target.checked)} />Precio negociable</label>{fields.some((field) => !field.required) && <div className="mt-3 grid grid-cols-2 gap-2">{fields.filter((field) => !field.required).map((field) => <label key={field.key} className="text-[9px] text-slate-500">{field.label}{field.kind === 'boolean' ? <input className="ml-2" type="checkbox" checked={Boolean(attributes[field.key])} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.checked }))} /> : <input className="publish-input mt-1" type={field.kind === 'number' ? 'number' : 'text'} value={String(attributes[field.key] ?? '')} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.value.slice(0, 300) }))} placeholder={field.placeholder} />}</label>)}</div>}{category === 'Cuartos & Renta' && <p className="mt-2 text-[9px] text-amber-200/70">Nunca publiques la dirección exacta; sólo zona aproximada.</p>}</section>
+        <section className="publish-card"><p className="eyebrow">DETALLES</p><div className="mt-2 grid grid-cols-2 gap-2"><select className="publish-input" value={condition} onChange={(e) => setCondition(e.target.value)}><option>Nuevo</option><option>Como nuevo</option><option>Buen estado</option><option>Uso visible</option><option>Para reparar</option><option>No aplica</option></select><input className="publish-input" type="number" min="1" max="99" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="Cantidad" /></div><label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={negotiable} onChange={(e) => setNegotiable(e.target.checked)} />Precio negociable</label>{fields.some((field) => !field.required) && <div className="mt-3 grid grid-cols-2 gap-2">{fields.filter((field) => !field.required).map((field) => <label key={field.key} className="text-[9px] text-slate-500">{field.label}{field.kind === 'boolean' ? <input className="ml-2" type="checkbox" checked={Boolean(attributes[field.key])} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.checked }))} /> : <input className="publish-input mt-1" type={field.kind === 'number' ? 'number' : 'text'} value={String(attributes[field.key] ?? '')} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.value.slice(0, 300) }))} placeholder={field.placeholder} />}</label>)}</div>}{category === 'Cuartos & Renta' && <p className="mt-2 text-[9px] text-amber-200/70">Nunca publiques la dirección exacta; sólo zona aproximada.</p>}</section>
 
         <section className="publish-card"><p className="eyebrow">ALCANCE Y ENTREGA</p><div className="mt-2 grid gap-2">{VISIBILITY_SCOPES.map((item) => <button key={item.id} type="button" onClick={() => setScope(item.id)} className={`rounded-xl p-3 text-left ${scope === item.id ? 'bg-violet-500/10 ring-1 ring-violet-400/20' : 'bg-white/[0.02]'}`}><strong className="text-[10px]">{item.label}</strong><p className="text-[9px] text-slate-600">{item.hint}</p></button>)}</div><div className="mt-3 flex flex-wrap gap-2">{DELIVERY.map((item) => <button key={item.id} type="button" onClick={() => toggleDelivery(item.id)} className={`filter-chip ${deliveryMethods.includes(item.id) ? 'filter-chip-active' : ''}`}>{item.label}</button>)}</div><p className="mt-2 rounded-xl bg-sky-500/[0.05] px-3 py-2 text-[9px] text-sky-200/80"><strong>TuTop no hace envíos.</strong> Si vendedor y comprador acuerdan mensajería o paquetería, se coordina directamente entre ellos.</p>{safePoints.length > 0 && <select className="publish-input mt-3" value={meetingPointId} onChange={(e) => setMeetingPointId(e.target.value)}><option value="">Punto a coordinar</option>{safePoints.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select>}</section>
       </>}

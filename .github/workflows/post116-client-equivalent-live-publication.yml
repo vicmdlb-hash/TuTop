@@ -1,0 +1,44 @@
+name: Post116 client-equivalent live publication — no APK
+
+on:
+  push:
+    branches: [fix/post116-publication-client-contract]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post116-client-equivalent-live-publication
+  cancel-in-progress: true
+
+jobs:
+  live-client-path:
+    if: github.ref_name == 'fix/post116-publication-client-contract'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_CLIENT_EQUIVALENT_ACK: POST116_CLIENT_EQUIVALENT_PUBLICATION_ONLY
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Read exact existing staging client config — no deploy
+        run: node scripts/read-existing-staging-build-config.mjs
+      - name: Execute actual client serializer/write/rate-limit path against staging
+        run: node --experimental-strip-types --experimental-loader ./scripts/node-ts-extension-loader.mjs scripts/post116-client-equivalent-live-smoke.mjs
+      - name: No dependency drift
+        run: git diff --exit-code -- package.json package-lock.json
+      - name: Prove no Android candidate work exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs/apk || test -z "$(find android/app/build/outputs/apk -type f -name '*.apk' -print -quit 2>/dev/null)"
+          echo "PASS no APK generated"

@@ -92,6 +92,23 @@ test('acción protegida exige bucket atómico y reportes se limitan a 10 por hor
   if (bucket.data()?.count !== 10) throw new Error(`RATE_LIMIT_COUNTER_CORRUPTED:${bucket.data()?.count}`);
 });
 
+test('bucket propio determinista ausente es legible como NOT_FOUND sin exponer buckets ajenos', async () => {
+  const alice = verifiedContext(env, 'alice').firestore();
+  const bob = verifiedContext(env, 'bob').firestore();
+
+  const missing = await assertSucceeds(getDoc(doc(alice, 'rate_limits/alice-listing_create')));
+  if (missing.exists()) throw new Error('MISSING_RATE_BUCKET_UNEXPECTEDLY_EXISTS');
+
+  await assertFails(getDoc(doc(alice, 'rate_limits/bob-listing_create')));
+  await assertFails(getDoc(doc(bob, 'rate_limits/alice-listing_create')));
+  await assertFails(getDoc(doc(alice, 'rate_limits/alice-unknown_action')));
+
+  const windowStart = now();
+  await assertSucceeds(setDoc(doc(alice, 'rate_limits/alice-listing_create'), ratePayload('alice', 'listing_create', 1, windowStart)));
+  await assertSucceeds(getDoc(doc(alice, 'rate_limits/alice-listing_create')));
+  await assertFails(getDoc(doc(bob, 'rate_limits/alice-listing_create')));
+});
+
 test('bucket horario no puede reducirse ni reiniciarse antes de una hora', async () => {
   const alice = verifiedContext(env, 'alice').firestore();
   const windowStart = now();

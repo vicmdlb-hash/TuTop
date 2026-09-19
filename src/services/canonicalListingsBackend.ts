@@ -133,6 +133,13 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
 
 export function validateCanonicalListingPolicy(listing: CanonicalListingV2, category: ProductCategory) {
   if (!listingV2HasNoLegacyDescriptionPacking(listing)) throw new Error('LISTING_V2_SCHEMA_INCOMPLETE');
+  if (listing.title.trim().length < 2 || listing.title.length > 120) throw new Error('LISTING_TITLE_INVALID');
+  if (!Number.isFinite(listing.price_mxn) || listing.price_mxn < 0.01 || listing.price_mxn > 1_000_000) throw new Error('LISTING_PRICE_INVALID');
+  if (!Number.isInteger(listing.quantity) || listing.quantity < 1 || listing.quantity > 99) throw new Error('LISTING_QUANTITY_INVALID');
+  if (listing.visibility_scope === 'national' && !listing.shipping_available) throw new Error('LISTING_NATIONAL_SHIPPING_REQUIRED');
+  if (!Array.isArray(listing.delivery_methods) || listing.delivery_methods.length < 1 || listing.delivery_methods.length > 4) throw new Error('LISTING_DELIVERY_INVALID');
+  if (!Array.isArray(listing.meeting_point_ids) || listing.meeting_point_ids.length > 8) throw new Error('LISTING_MEETING_POINTS_INVALID');
+  if (!Array.isArray(listing.photo_urls) || listing.photo_urls.length < 1 || listing.photo_urls.length > 4 || listing.photo_urls.some((url) => typeof url !== 'string' || url.length > 180000)) throw new Error('LISTING_PHOTO_INVALID');
   if (listing.video_urls && (listing.video_urls.length > 1 || !listing.video_urls.every(validCanonicalVideoUri))) {
     throw new Error('LISTING_VIDEO_REFERENCE_INVALID');
   }
@@ -165,6 +172,33 @@ async function productsForDocuments(client: FirebaseRestClient, docs: FirestoreD
     .sort((a, b) => Date.parse(b.updated_at || b.fecha_creacion) - Date.parse(a.updated_at || a.fecha_creacion));
 }
 
+export function buildCanonicalListingCreateWrite(
+  client: FirebaseRestClient,
+  id: string,
+  listing: CanonicalListingV2,
+) {
+  const {
+    created_at: _clientCreatedAt,
+    updated_at: _clientUpdatedAt,
+    published_at: _clientPublishedAt,
+    ...serverTimedListing
+  } = listing;
+  const payload = {
+    ...serverTimedListing,
+    moderation_status: 'pending' as const,
+  };
+  const updateTransforms = [
+    { fieldPath: 'created_at', setToServerValue: 'REQUEST_TIME' as const },
+    { fieldPath: 'updated_at', setToServerValue: 'REQUEST_TIME' as const },
+    ...(listing.published_at ? [{ fieldPath: 'published_at', setToServerValue: 'REQUEST_TIME' as const }] : []),
+  ];
+  return {
+    update: client.encodeDocumentForWrite(`listings_v2/${id}`, payload),
+    updateTransforms,
+    currentDocument: { exists: false },
+  };
+}
+
 export const canonicalListingsBackend = {
   async create(listing: CanonicalListingV2, category: ProductCategory) {
     const client = getClient();
@@ -172,15 +206,8 @@ export const canonicalListingsBackend = {
     if (listing.seller_id !== uid) throw new Error('SELLER_MISMATCH');
     validateCanonicalListingPolicy(listing, category);
     const id = localId();
-    const payload = {
-      ...listing,
-      moderation_status: 'pending' as const,
-      created_at: new Date(listing.created_at),
-      updated_at: new Date(listing.updated_at),
-      ...(listing.published_at ? { published_at: new Date(listing.published_at) } : {}),
-    };
     await commitWithRateLimit(client, 'listing_create', [
-      { update: client.encodeDocumentForWrite(`listings_v2/${id}`, payload), currentDocument: { exists: false } },
+      buildCanonicalListingCreateWrite(client, id, listing),
     ]);
     nearbyCache.clear();
     return { id, ...listing, moderation_status: 'pending' as const };
