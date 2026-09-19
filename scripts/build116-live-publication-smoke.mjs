@@ -532,6 +532,56 @@ try {
     }}));
   }
 
+  async function runExpiredResetPreconditionProbe() {
+    async function attempt(label,preconditionKind) {
+      await clearSyntheticPublication();
+      const oldIso=new Date(Date.now()-2*60*60_000).toISOString();
+      await adminSeedRateBucket(oldIso,2);
+      const existing=await getPublic('rate_limits/'+uid+'-listing_create',idToken);
+      const updateTime=String(existing?.updateTime||'');
+      if(!updateTime) throw new Error('EXPIRED_RESET_UPDATE_TIME_MISSING');
+      const fakeAt='2099-01-01T00:00:00.000Z';
+      const probeListing={...listing,created_at:fakeAt,updated_at:fakeAt,published_at:fakeAt};
+      const listingWrite=serverTimedWrite('listings_v2/'+listingId,probeListing,['created_at','updated_at','published_at']);
+      const rateWrite={
+        update:{name:docName('rate_limits/'+uid+'-listing_create'),fields:encodeFields({uid,action:'listing_create',count:1})},
+        updateTransforms:[
+          {fieldPath:'window_start',setToServerValue:'REQUEST_TIME'},
+          {fieldPath:'updated_at',setToServerValue:'REQUEST_TIME'}
+        ],
+        currentDocument:preconditionKind==='update_time'?{updateTime}:{exists:true}
+      };
+      let outcome='PASS'; let errorClass='none';
+      try{
+        await commit([listingWrite,rateWrite],idToken,'EXPIRED_RESET_PRECONDITION_'+label);
+        const check=await getPublic('listings_v2/'+listingId,idToken);
+        if(!check?.name?.endsWith('/'+listingId)) throw new Error('EXPIRED_RESET_PRECONDITION_READBACK_MISSING');
+      }catch(error){
+        outcome='DENIED';
+        const raw=String(error instanceof Error?error.message:error);
+        errorClass=/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw)?'permission_denied':'other';
+      }
+      console.log(JSON.stringify({publication_expired_reset_precondition_probe:{
+        label,
+        precondition_kind:preconditionKind,
+        bucket_has_update_time:Boolean(updateTime),
+        outcome,
+        error_class:errorClass,
+        user_data_logged:false
+      }}));
+      await clearSyntheticPublication();
+      return outcome;
+    }
+    const updateTimeOutcome=await attempt('update_time','update_time');
+    const existsOutcome=await attempt('exists_true','exists_true');
+    console.log(JSON.stringify({publication_expired_reset_precondition_summary:{
+      update_time:updateTimeOutcome,
+      exists_true:existsOutcome,
+      precondition_sensitive:updateTimeOutcome!==existsOutcome,
+      user_data_logged:false
+    }}));
+  }
+
   async function runExistingBucketRepairProof() {
     // Recent existing bucket: preserve server window and increment. No device clock
     // decision is involved.
@@ -634,6 +684,7 @@ try {
   await runServerTimeRepairVariant('device_clock_plus_60m',60*60_000);
   await runServerTimeRepairVariant('device_clock_minus_60m',-60*60_000);
   await runExistingBucketRepairProof();
+  await runExpiredResetPreconditionProbe();
   await runWriteOrderProbe();
   await runPayloadVariant('category_electronica',{category_id:'electronica',title:'QA Electrónica'},'PASS');
   await runPayloadVariant('category_ropa-accesorios',{category_id:'ropa-accesorios',title:'QA Ropa & Accesorios'},'PASS');
