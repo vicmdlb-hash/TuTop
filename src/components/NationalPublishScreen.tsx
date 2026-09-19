@@ -200,9 +200,16 @@ export default function NationalPublishScreen() {
       if (suggestion.price && suggestion.price > 0) setPrice(String(suggestion.price));
       if (suggestion.description) setDescription(suggestion.description);
       if (suggestion.category) {
-        if (suggestion.category !== category) setAttributes({});
+        if (suggestion.category !== category) {
+          setAttributes(suggestion.attributes || {});
+        } else if (suggestion.attributes) {
+          setAttributes((current) => ({ ...suggestion.attributes, ...current }));
+        }
         setCategory(suggestion.category);
+      } else if (suggestion.attributes) {
+        setAttributes((current) => ({ ...suggestion.attributes, ...current }));
       }
+      if (suggestion.attributes && Object.keys(suggestion.attributes).length) setAdvancedOpen(true);
       if (suggestion.condition) setCondition(suggestion.condition);
       if (suggestion.negotiable !== undefined) setNegotiable(suggestion.negotiable);
       if (suggestion.visibilityScope) setScope(suggestion.visibilityScope);
@@ -214,8 +221,11 @@ export default function NationalPublishScreen() {
       const privacyNote = result.privacyRedactions?.length
         ? ' Por privacidad, omitimos del envío remoto datos de contacto o códigos sensibles detectados; revisa el borrador.'
         : '';
-      if (result.provider === 'firebase-ai-logic') setMessage(`Topi IA real (Firebase AI) completó el borrador. Revisa los datos antes de publicar.${privacyNote}`);
-      else if (result.provider === 'private-endpoint') setMessage(`Topi conectado completó el borrador mediante el endpoint privado. Revisa los datos antes de publicar.${privacyNote}`);
+      const structuredNote = suggestion.attributes && Object.keys(suggestion.attributes).length
+        ? ' También propuso datos estructurados permitidos para la categoría; tus valores manuales tienen prioridad y debes revisarlos.'
+        : '';
+      if (result.provider === 'firebase-ai-logic') setMessage(`Topi IA real (Firebase AI) completó el borrador. Revisa los datos antes de publicar.${privacyNote}${structuredNote}`);
+      else if (result.provider === 'private-endpoint') setMessage(`Topi conectado completó el borrador mediante el endpoint privado. Revisa los datos antes de publicar.${privacyNote}${structuredNote}`);
       else setMessage('Topi usó la guía local. Esta respuesta no se presenta como Firebase AI.');
     } catch (error) {
       setTopiSource(null);

@@ -3,6 +3,8 @@ import { detectDeliveryIntent, detectListingCondition, detectNegotiableIntent, d
 import type { ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import type { ListingVisibilityScope, Product, ProductCategory, ProductCondition, ProductFormData } from '../types';
 import { redactTopiRemoteText, type TopiPrivacyRedaction } from '../lib/topiPrivacy';
+import { sanitizeTopiStructuredAttributes } from '../lib/topiStructuredAttributes';
+import { nationalFieldsFor } from '../lib/nationalListingFields';
 import { generateNativeTopiText, nativeTopiAIStatus } from './nativeTopiAI';
 
 export const TOPI_PERSONA = {
@@ -33,6 +35,7 @@ export interface TopiComposeSuggestion {
   visibilityScope?: ListingVisibilityScope;
   deliveryMethods?: ListingDeliveryMethod[];
   description?: string;
+  attributes?: Record<string, string | number | boolean>;
 }
 
 // Keep component compatibility while exposing which connected provider actually answered.
@@ -115,6 +118,12 @@ function sanitizeCompose(raw: unknown, context: CopilotContext): TopiComposeSugg
     .filter((method): method is ListingDeliveryMethod => VALID_DELIVERY.includes(method as ListingDeliveryMethod))
     .filter((method) => method !== 'shipping' || explicitShipping))];
 
+  const structuredCategory = category
+    || validCategory(context.draft.categoria)
+    || detectCategory(String(context.prompt || ''))
+    || undefined;
+  const attributes = sanitizeTopiStructuredAttributes(value.attributes, structuredCategory, String(context.prompt || ''));
+
   if (isForbiddenProductText(`${title || ''} ${description || ''}`)) return undefined;
   const suggestion: TopiComposeSuggestion = {
     title,
@@ -125,6 +134,7 @@ function sanitizeCompose(raw: unknown, context: CopilotContext): TopiComposeSugg
     visibilityScope,
     deliveryMethods: deliveryMethods.length ? deliveryMethods : undefined,
     description,
+    attributes,
   };
   return Object.values(suggestion).some((item) => item !== undefined) ? suggestion : undefined;
 }
@@ -201,10 +211,19 @@ function remotePrivacyContext(context: CopilotContext) {
 }
 
 function nativePrompt(action: TopiAction, context: CopilotContext, userPrompt?: string) {
+  const categoryHint = validCategory(context.draft.categoria)
+    || detectCategory(String(context.prompt || ''))
+    || undefined;
+  const structuredFields = nationalFieldsFor(categoryHint).map((field) => ({
+    key: field.key,
+    kind: field.kind || 'text',
+    required: field.required === true,
+  }));
   const payload = {
     action,
     user_prompt: userPrompt,
     draft: safeDraftForRemote(context.draft),
+    structured_fields: structuredFields,
     comparable_products: action === 'price' || action === 'compose' ? safeComparables(context.products) : [],
   };
   return [
@@ -215,7 +234,8 @@ function nativePrompt(action: TopiAction, context: CopilotContext, userPrompt?: 
     `Categorías válidas: ${MARKETPLACE_CATEGORIES.join(' | ')}`,
     `Condiciones válidas: ${VALID_CONDITIONS.join(' | ')}`,
     `Alcances válidos: ${VALID_SCOPES.join(' | ')}`,
-    'Para compose usa {"compose":{"title":string?,"category":string?,"condition":string?,"price":number?,"negotiable":boolean?,"visibilityScope":string?,"deliveryMethods":string[]?,"description":string?}}.',
+    'Para compose usa {"compose":{"title":string?,"category":string?,"condition":string?,"price":number?,"negotiable":boolean?,"visibilityScope":string?,"deliveryMethods":string[]?,"description":string?,"attributes":object?}}.',
+    'attributes sólo puede usar structured_fields y sólo cuando el usuario dio evidencia explícita. Nunca inventes alérgenos, dirección/zona, marca, modelo, disponibilidad ni datos obligatorios.',
     'Para category usa {"category":string}; description usa {"description":string}; review usa {"issues":string[]}; price usa {"priceSuggestion":{"low":number,"high":number,"median":number,"samples":number}} sólo si hay comparables reales suficientes.',
     `ENTRADA_SEGURA=${JSON.stringify(payload)}`,
   ].join('\n').slice(0, 6000);
