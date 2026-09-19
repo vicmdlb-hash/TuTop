@@ -15,16 +15,21 @@ function replaceOnce(from, to, label) {
 const loose = `      allow update: if canSupportAppeals()
         && request.resource.data.uid == uid
         && request.resource.data.requested_at == resource.data.requested_at
-        && request.resource.data.status in ['pending','processing','completed','rejected']
+        && (
+          (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
+          || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
         && fresh(request.resource.data.updated_at);`;
 
 const strict = `      allow update: if canSupportAppeals()
         && request.resource.data.uid == uid
         && request.resource.data.requested_at == resource.data.requested_at
+        && request.resource.data.status != 'completed'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
         && (
           (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
-          || (resource.data.status == 'processing' && request.resource.data.status in ['completed','rejected'])
+          || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
         )
         && fresh(request.resource.data.updated_at);`;
 
