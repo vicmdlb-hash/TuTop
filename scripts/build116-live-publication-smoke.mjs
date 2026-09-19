@@ -38,6 +38,7 @@ function jsonValue(value, field='') {
 function encodeFields(data){return Object.fromEntries(Object.entries(data).filter(([,v])=>v!==undefined).map(([k,v])=>[k,jsonValue(v,k)]));}
 function docName(path){return 'projects/'+PROJECT+'/databases/(default)/documents/'+path;}
 function write(path,data){return {update:{name:docName(path),fields:encodeFields(data)},currentDocument:{exists:false}};}
+function overwrite(path,data){return {update:{name:docName(path),fields:encodeFields(data)},currentDocument:{exists:true}};}
 async function parse(response,label){
   const text=await response.text(); let body={};
   try{body=text?JSON.parse(text):{};}catch{body={raw:text.slice(0,200)};}
@@ -66,6 +67,13 @@ async function getPublic(path,idToken){
   });
   return parse(response,'READBACK');
 }
+async function listPublic(collection,idToken){
+  const response=await fetch('https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents/'+collection+'?pageSize=100',{
+    headers:{Authorization:'Bearer '+idToken}
+  });
+  return parse(response,'LIST_'+collection.toUpperCase());
+}
+function stringField(doc,field){ return String(doc?.fields?.[field]?.stringValue||''); }
 
 function assertSyntheticPath(path) {
   const safe = uid && (
@@ -97,7 +105,7 @@ async function cleanupAuth() {
 try {
   stage='AUTH_ADMIN_CREATE';
   oauth=await firebaseCiAccessToken();
-  const create=await parse(await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts?key='+encodeURIComponent(apiKey),{
+  const create=await parse(await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts',{
     method:'POST',headers:{Authorization:'Bearer '+oauth,'Content-Type':'application/json'},
     body:JSON.stringify({email,password,emailVerified:true,displayName:'TuTop publication smoke',disabled:false})
   }),'AUTH_ADMIN_CREATE');
@@ -124,6 +132,17 @@ try {
   const privateData={uid,institutional_email:email,auth_mode:'email_password_verified_beta',created_at:at,updated_at:at};
   await commit([write('users/'+uid,profile),write('user_private/'+uid,privateData)],idToken,'PROFILE_BOOTSTRAP');
   createdPaths.push('user_private/'+uid,'users/'+uid);
+
+  stage='PROFILE_STALE_UPDATE';
+  const campusList=await listPublic('campuses',idToken);
+  const alternate=(campusList.documents||[]).map(d=>({
+    campus_id:String(d?.name||'').split('/').at(-1)||'',
+    institution_id:stringField(d,'institution_id')
+  })).find(x=>x.campus_id && x.institution_id && (x.campus_id!=='uatx-riberena' || x.institution_id!=='uatx'));
+  if(!alternate) throw new Error('NO_ALTERNATE_VALID_CAMPUS_FOR_STALE_PROFILE_PROBE');
+  const staleAt=new Date().toISOString();
+  const staleProfile={...profile,institution_id:alternate.institution_id,campus_id:alternate.campus_id,updated_at:staleAt};
+  await commit([overwrite('users/'+uid,staleProfile)],idToken,'PROFILE_STALE_UPDATE');
 
   stage='LISTING_COMMIT';
   const listingAt=new Date().toISOString();
@@ -156,6 +175,7 @@ try {
     project:PROJECT,
     verified_claim:true,
     identity:'uatx/uatx-riberena',
+    stale_profile_mismatch:true,
     listing_created_and_read_back:true,
     user_data_logged:false,
     cleanup_required:true
