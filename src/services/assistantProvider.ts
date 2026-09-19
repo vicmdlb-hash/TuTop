@@ -3,6 +3,7 @@ import { detectDeliveryIntent, detectListingCondition, detectNegotiableIntent, d
 import type { ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import type { ListingVisibilityScope, Product, ProductCategory, ProductCondition, ProductFormData } from '../types';
 import { generateNativeTopiText, nativeTopiAIStatus } from './nativeTopiAI';
+import { recordDiagnostic } from './localDiagnostics';
 
 export const TOPI_PERSONA = {
   name: 'Topi',
@@ -66,16 +67,70 @@ function safeText(value: unknown, max: number) {
   return text || undefined;
 }
 
+type RemoteRedactionCategory = 'email' | 'phone' | 'secret' | 'bearer' | 'jwt';
+
+function redactRemoteInputText(value: unknown, max: number) {
+  if (typeof value !== 'string') return { text: undefined as string | undefined, counts: {} as Record<RemoteRedactionCategory, number> };
+  let text = value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim();
+  const counts: Record<RemoteRedactionCategory, number> = { email: 0, phone: 0, secret: 0, bearer: 0, jwt: 0 };
+
+  const replace = (pattern: RegExp, category: RemoteRedactionCategory, replacement: string | ((match: string, ...groups: string[]) => string)) => {
+    text = text.replace(pattern, (...args: any[]) => {
+      counts[category] += 1;
+      return typeof replacement === 'function' ? replacement(args[0], ...args.slice(1, -2)) : replacement;
+    });
+  };
+
+  replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'email', '[correo omitido]');
+  replace(/\bBearer\s+[A-Za-z0-9._~+\/-]{12,}={0,2}\b/gi, 'bearer', '[token omitido]');
+  replace(/\beyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]{8,})?\b/g, 'jwt', '[token omitido]');
+  replace(/\b(otp|c[oó]digo(?:\s+de\s+verificaci[oó]n)?|token|contrase(?:ñ|n)a|clave)\s*[:=\-]?\s*([A-Za-z0-9._-]{4,})/gi, 'secret',
+    (_match, label) => `${label} [secreto omitido]`);
+
+  text = text.replace(/\+?\d[\d\s().-]{8,}\d/g, (candidate) => {
+    const digits = candidate.replace(/\D/g, '');
+    if (digits.length < 10 || digits.length > 15) return candidate;
+    counts.phone += 1;
+    return '[teléfono omitido]';
+  });
+
+  text = text.slice(0, max);
+  return { text: text || undefined, counts };
+}
+
+function mergeRedactionCounts(target: Record<RemoteRedactionCategory, number>, source: Record<RemoteRedactionCategory, number>) {
+  for (const key of Object.keys(target) as RemoteRedactionCategory[]) target[key] += source[key] || 0;
+}
+
+function logRemoteRedactions(counts: Record<RemoteRedactionCategory, number>) {
+  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  if (!total) return;
+  recordDiagnostic('ai', 'remote_input_redacted', {
+    total,
+    email: counts.email,
+    phone: counts.phone,
+    secret: counts.secret,
+    bearer: counts.bearer,
+    jwt: counts.jwt,
+  });
+}
+
 function validCategory(value: unknown): ProductCategory | undefined {
   return typeof value === 'string' && MARKETPLACE_CATEGORIES.includes(value as ProductCategory)
     ? value as ProductCategory
     : undefined;
 }
 
-function safeDraftForRemote(draft: Partial<ProductFormData>) {
+function safeDraftForRemote(draft: Partial<ProductFormData>, counts?: Record<RemoteRedactionCategory, number>) {
+  const title = redactRemoteInputText(draft.titulo, 120);
+  const description = redactRemoteInputText(draft.descripcion, 1200);
+  if (counts) {
+    mergeRedactionCounts(counts, title.counts);
+    mergeRedactionCounts(counts, description.counts);
+  }
   return {
-    titulo: safeText(draft.titulo, 120),
-    descripcion: safeText(draft.descripcion, 1200),
+    titulo: title.text,
+    descripcion: description.text,
     precio_mxn: typeof draft.precio_mxn === 'number' && Number.isFinite(draft.precio_mxn) ? draft.precio_mxn : undefined,
     categoria: validCategory(draft.categoria),
     condicion: VALID_CONDITIONS.includes(draft.condicion as ProductCondition) ? draft.condicion : undefined,
@@ -84,13 +139,31 @@ function safeDraftForRemote(draft: Partial<ProductFormData>) {
   };
 }
 
-function safeComparables(products: Product[]) {
-  return products.slice(0, 24).map((product) => ({
-    title: safeText(product.titulo, 120),
-    category: product.categoria,
-    price_mxn: Number(product.precio_mxn),
-    condition: product.condicion,
-  }));
+function safeComparables(products: Product[], counts?: Record<RemoteRedactionCategory, number>) {
+  return products.slice(0, 24).map((product) => {
+    const title = redactRemoteInputText(product.titulo, 120);
+    if (counts) mergeRedactionCounts(counts, title.counts);
+    return {
+      title: title.text,
+      category: product.categoria,
+      price_mxn: Number(product.precio_mxn),
+      condition: product.condicion,
+    };
+  });
+}
+
+function safeRemotePayload(action: TopiAction, context: CopilotContext) {
+  const counts: Record<RemoteRedactionCategory, number> = { email: 0, phone: 0, secret: 0, bearer: 0, jwt: 0 };
+  const prompt = redactRemoteInputText(context.prompt, 1200);
+  mergeRedactionCounts(counts, prompt.counts);
+  const payload = {
+    action,
+    user_prompt: prompt.text,
+    draft: safeDraftForRemote(context.draft, counts),
+    comparable_products: action === 'price' || action === 'compose' ? safeComparables(context.products, counts) : [],
+  };
+  logRemoteRedactions(counts);
+  return payload;
 }
 
 function sanitizeCompose(raw: unknown, context: CopilotContext): TopiComposeSuggestion | undefined {
@@ -189,12 +262,7 @@ function localTopi(action: TopiAction, context: CopilotContext): CopilotResult {
 }
 
 function nativePrompt(action: TopiAction, context: CopilotContext) {
-  const payload = {
-    action,
-    user_prompt: safeText(context.prompt, 1200),
-    draft: safeDraftForRemote(context.draft),
-    comparable_products: action === 'price' || action === 'compose' ? safeComparables(context.products) : [],
-  };
+  const payload = safeRemotePayload(action, context);
   return [
     'Eres Topi, asistente de TuTop para un marketplace universitario en México.',
     'Responde SOLO JSON válido, sin markdown, sin explicaciones fuera del JSON.',
@@ -241,10 +309,7 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
       signal: controller.signal,
       body: JSON.stringify({
         assistant: TOPI_PERSONA,
-        action,
-        prompt: String(context.prompt || '').slice(0, 1200),
-        draft: safeDraftForRemote(context.draft),
-        comparable_products: safeComparables(context.products),
+        ...safeRemotePayload(action, context),
       }),
     });
     if (!response.ok) return null;
