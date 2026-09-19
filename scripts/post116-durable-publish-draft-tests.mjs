@@ -91,7 +91,9 @@ assert.equal(readDurablePublishDraft(uidA, invalidCategory, now)?.category, unde
 const screen = fs.readFileSync('src/components/NationalPublishScreen.tsx','utf8');
 const app = fs.readFileSync('src/App.tsx','utf8');
 assert.match(screen, /readDurablePublishDraft\(uid\)/);
-assert.match(screen, /writeDurablePublishDraft\(uid/);\nassert.match(screen, /operationId: publishOperationId/);\nassert.match(screen, /setPublishOperationId\(newPublishOperationId\(\)\)/);
+assert.match(screen, /writeDurablePublishDraft\(uid/);
+assert.match(screen, /operationId: publishOperationId/);
+assert.match(screen, /setPublishOperationId\(newPublishOperationId\(\)\)/);
 assert.match(screen, /clearDurablePublishDraft\(uid\)/);
 assert.match(screen, /Guardar borrador/);
 assert.match(screen, /Descartar borrador/);
