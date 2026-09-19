@@ -6,7 +6,7 @@ function harness() {
   let session = null;
   let privateEmail = '';
   const calls = [];
-  let commitError, sendError, lookupWait, signInWait, profileWait, lookupVerified=true, lookupEmail='a@example.test';
+  let commitError, sendError, lookupWait, signInWait, profileWait, lookupVerified=true, lookupEmail='a@example.test', bootstrapReadback='complete', bootstrapReadError=false;
   class Client {
     get currentSession() { return session && {...session}; }
     persistSession(value) { session = value; }
@@ -15,7 +15,13 @@ function harness() {
     async commit(writes) { calls.push({kind:'commit',writes}); if(commitError) throw new Error(commitError); }
     async getDocument(path) {
       if(profileWait) await profileWait;
-      if(String(path).startsWith('user_private/')) return {data:{uid:'u1',telefono:'+522461234567',auth_mode:'phone_password_beta',...(privateEmail?{institutional_email:privateEmail}:{})}};
+      if(bootstrapReadError) throw new Error('NETWORK_READBACK_FAILED');
+      const p=String(path);
+      if(['users/u1','user_private/u1','wallets/u1'].includes(p)) {
+        if(bootstrapReadback==='absent') return null;
+        if(bootstrapReadback==='partial' && p!=='users/u1') return null;
+      }
+      if(p.startsWith('user_private/')) return {data:{uid:'u1',telefono:'+522461234567',auth_mode:'phone_password_beta',...(privateEmail?{institutional_email:privateEmail}:{})}};
       return {data:{uid:'u1'}};
     }
     async setDocument(path,data,options) { calls.push({kind:'setDocument',path,data,options}); if(data?.institutional_email) privateEmail=String(data.institutional_email); }
@@ -42,7 +48,7 @@ function harness() {
   };
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
   const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch);
-  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set profileWait(v){profileWait=v;}};
+  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set profileWait(v){profileWait=v;},set bootstrapReadback(v){bootstrapReadback=v;},set bootstrapReadError(v){bootstrapReadError=v;}};
 }
 const profile={nombre:'Tester',facultad:'Campus',institution_id:'inst',institution_name:'Institution',campus_id:'camp',campus_name:'Campus'};
 const tests = [
@@ -60,9 +66,30 @@ const tests = [
    assert.equal(h.calls.some(c=>c.kind.includes('accounts:delete')),false);
    h.sendError=null; await h.auth.resendVerificationEmail();
  }],
- ['definite denied profile commit still rolls back Auth',async()=>{
-   const h=harness(); h.commitError='PERMISSION_DENIED'; await assert.rejects(h.auth.register('a@example.test','password123',profile),/PERMISSION_DENIED/);
+ ['definite denied profile commit rolls back Auth only after authoritative absence readback',async()=>{
+   const h=harness(); h.commitError='PERMISSION_DENIED'; h.bootstrapReadback='absent';
+   await assert.rejects(h.auth.register('a@example.test','password123',profile),/PERMISSION_DENIED/);
    assert.equal(h.session,null); assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,1);
+ }],
+ ['ambiguous commit error with complete bootstrap readback preserves Auth and completes registration',async()=>{
+   const h=harness(); h.commitError='NETWORK_AFTER_COMMIT'; h.bootstrapReadback='complete';
+   const result=await h.auth.register('a@example.test','password123',profile);
+   assert.equal(result.emailVerified,false);
+   assert.equal(h.session.uid,'u1');
+   assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,0);
+   assert.equal(h.calls.filter(c=>c.kind.includes('sendOobCode')).length,1);
+ }],
+ ['unavailable bootstrap readback never deletes Auth blindly',async()=>{
+   const h=harness(); h.commitError='NETWORK_UNKNOWN'; h.bootstrapReadError=true;
+   await assert.rejects(h.auth.register('a@example.test','password123',profile),/REGISTRATION_BOOTSTRAP_UNCERTAIN/);
+   assert.equal(h.session.uid,'u1');
+   assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,0);
+ }],
+ ['partial bootstrap readback fails closed without deleting Auth',async()=>{
+   const h=harness(); h.commitError='NETWORK_UNKNOWN'; h.bootstrapReadback='partial';
+   await assert.rejects(h.auth.register('a@example.test','password123',profile),/REGISTRATION_BOOTSTRAP_PARTIAL_REQUIRES_REPAIR/);
+   assert.equal(h.session.uid,'u1');
+   assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,0);
  }],
  ['lookup response after sign-out cannot restore session',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',profile);
