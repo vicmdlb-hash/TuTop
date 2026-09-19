@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           npx --yes firebase-tools@15.30.1 auth:export /tmp/tutop-auth-export.json --project "$TUTOP_FIREBASE_PROJECT_ID" --format=json >/tmp/auth-export.log
-          node -e "const fs=require('fs');const raw=JSON.parse(fs.readFileSync('/tmp/tutop-auth-export.json','utf8')); console.log(JSON.stringify({firebase_cli_auth_users:(raw.users||[]).length,no_user_fields_logged:true}))"
+          node -e "const fs=require('fs');const raw=JSON.parse(fs.readFileSync('/tmp/tutop-auth-export.json','utf8'));const u=raw.users||[];console.log(JSON.stringify({firebase_cli_auth_users:u.length,email_verified:u.filter(x=>x.emailVerified===true).length,disabled:u.filter(x=>x.disabled===true).length,phone_alias:u.filter(x=>/^phone-[a-f0-9]+@auth\\.tutop\\.app$/i.test(String(x.email||''))).length,no_user_fields_logged:true}))"
           rm -f /tmp/tutop-auth-export.json /tmp/auth-export.log
       - name: Prove no tracked mutation
         run: git diff --exit-code -- package.json package-lock.json
