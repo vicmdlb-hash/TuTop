@@ -32,14 +32,14 @@ function explicitZoneEvidence(prompt: string) {
 }
 
 function explicitAllergenEvidence(prompt: string) {
-  return /\b(?:alergen|contiene|sin\s+(?:gluten|lactosa|nuez|nueces|cacahuate|cacahuates|huevo|huevos|leche|soya|soja)|no\s+(?:contiene|tiene)\s+alergen)\b/i.test(normalized(prompt));
+  return /\b(?:alergen(?:o|os)?|contiene|sin\s+(?:gluten|lactosa|nuez|nueces|cacahuate|cacahuates|huevo|huevos|leche|soya|soja)|no\s+(?:contiene|tiene)\s+alergen(?:o|os)?)\b/i.test(normalized(prompt));
 }
 
 function supportedAllergenValue(value: string, prompt: string) {
   const v = normalized(value);
   const p = normalized(prompt);
   if (/^(?:ninguno|ninguno conocido|sin alergen)/.test(v)) {
-    return /\b(?:sin\s+alergen|no\s+(?:contiene|tiene)\s+alergen|ninguno)\b/.test(p);
+    return /\b(?:sin\s+alergen(?:o|os)?|no\s+(?:contiene|tiene)\s+alergen(?:o|os)?|ninguno)\b/.test(p);
   }
   const stop = new Set(['contiene','puede','tener','trazas','alergenos','alergeno','conocido','conocidos']);
   const tokens = v.split(/[^a-z0-9ñ]+/i).filter((token) => token.length >= 3 && !stop.has(token));
