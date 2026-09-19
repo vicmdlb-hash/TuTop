@@ -12,6 +12,20 @@ function replaceOnce(from, to, label) {
   rules = rules.replace(from, to);
 }
 
+const offerCreateNeedle = `        && listingDoc(request.resource.data.listing_id).data.seller_id == request.resource.data.seller_id
+        && listingDoc(request.resource.data.listing_id).data.status == 'active'
+        && listingDoc(request.resource.data.listing_id).data.moderation_status == 'approved'
+        && request.resource.data.listing_id == chatDoc(request.resource.data.chat_id).data.product_id`;
+replaceOnce(
+  offerCreateNeedle,
+  `        && listingDoc(request.resource.data.listing_id).data.seller_id == request.resource.data.seller_id
+        && listingDoc(request.resource.data.listing_id).data.status == 'active'
+        && listingDoc(request.resource.data.listing_id).data.moderation_status == 'approved'
+        && !exists(/databases/$(database)/documents/listing_reservation_locks/$(request.resource.data.listing_id))
+        && request.resource.data.listing_id == chatDoc(request.resource.data.chat_id).data.product_id`,
+  'offer create denied while reservation lock exists',
+);
+
 const agreedAmount = "        && request.resource.data.agreed_amount_mxn == getAfter(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.amount_mxn";
 replaceOnce(
   agreedAmount,
