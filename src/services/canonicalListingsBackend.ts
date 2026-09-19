@@ -250,7 +250,9 @@ export const canonicalListingsBackend = {
     if (updates.attributes !== undefined) { patch.attributes = updates.attributes; contentChanged = true; }
     if (updates.precio_negociable !== undefined) patch.negotiable = Boolean(updates.precio_negociable);
     if (updates.estado !== undefined) patch.status = canonicalStatus(updates.estado);
-    if (contentChanged && current.data.moderation_status !== 'pending') patch.moderation_status = 'pending';
+    // Content edits must always return to moderation. Do not depend on the
+    // stale read snapshot: a moderator may approve between this read and write.
+    if (contentChanged) patch.moderation_status = 'pending';
 
     const next = { ...current.data, ...patch, updated_at: new Date().toISOString() } as CanonicalListingV2;
     validateCanonicalListingPolicy(next, updates.categoria || categoryLabel(current.data.category_id));
