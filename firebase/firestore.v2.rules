@@ -403,7 +403,14 @@ service cloud.firestore {
       allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || isAdmin());
       allow create: if signedIn() && notSuspended()
         && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','accepted_offer_id','agreed_amount_mxn','status','reservation_expires_at','meeting_point_id','meetup_at','buyer_confirmed_at','seller_confirmed_at','created_at','updated_at'])
-        && request.auth.uid == request.resource.data.seller_id
+        && (
+          request.auth.uid == request.resource.data.seller_id
+          ||
+          (
+            request.auth.uid == request.resource.data.buyer_id
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.created_by == request.resource.data.seller_id
+          )
+        )
         && request.resource.data.buyer_id != request.resource.data.seller_id
         && transactionId == 'tx-' + request.resource.data.accepted_offer_id
         && request.resource.data.status == 'reserved'
