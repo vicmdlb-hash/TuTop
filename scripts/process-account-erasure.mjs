@@ -1,4 +1,4 @@
-import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminPatchDocument, adminRunQuery } from './staging-v2-admin.mjs';
+import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminPatchDocument, adminRunQueryAll } from './staging-v2-admin.mjs';
 import { buildAccountErasurePlan } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -54,17 +54,17 @@ const retainedOperational = [
 
 const queryDeletePaths = [];
 for (const [collection, field] of queryDeletes) {
-  for (const doc of await adminRunQuery(collection, [{ field, value: uid }], 1000)) queryDeletePaths.push(doc.path);
+  for (const doc of await adminRunQueryAll(collection, [{ field, value: uid }], 1000)) queryDeletePaths.push(doc.path);
 }
 
 const withdrawDocs = [];
 for (const [collection, field] of withdrawals) {
-  for (const doc of await adminRunQuery(collection, [{ field, value: uid }], 1000)) withdrawDocs.push({ collection, path: doc.path });
+  for (const doc of await adminRunQueryAll(collection, [{ field, value: uid }], 1000)) withdrawDocs.push({ collection, path: doc.path });
 }
 
 const retained = [];
 for (const [collection, field] of retainedOperational) {
-  const docs = await adminRunQuery(collection, [{ field, value: uid }], 1000);
+  const docs = await adminRunQueryAll(collection, [{ field, value: uid }], 1000);
   if (docs.length) retained.push({ collection, field, count: docs.length });
 }
 
@@ -73,7 +73,7 @@ for (const [collection, field] of retainedOperational) {
 // the counterpart could lose the account/listing context needed to finish or dispute.
 const transactionDocs = new Map();
 for (const field of ['buyer_id', 'seller_id']) {
-  for (const document of await adminRunQuery('transactions_v2', [{ field, value: uid }], 1000)) transactionDocs.set(document.path, document);
+  for (const document of await adminRunQueryAll('transactions_v2', [{ field, value: uid }], 1000)) transactionDocs.set(document.path, document);
 }
 const terminalStatuses = new Set(['completed', 'cancelled', 'expired', 'no_show']);
 const blockers = [...transactionDocs.values()]
@@ -116,6 +116,30 @@ for (const path of plan.delete_paths) await adminDeleteDocument(path);
 // El perfil público se elimina después de retirar contenido; referencias históricas
 // permanecen sólo en colecciones operativas retenidas para transacciones/disputas.
 await adminDeleteDocument(`users/${uid}`);
+
+// Fail closed before declaring completion: every delete-disposition query must be
+// exhausted, direct private docs must be gone, and withdrawn public content must
+// be non-active. This catches both pagination bugs and partial destructive runs.
+for (const path of directDeletes) {
+  if (await adminGetDocument(path)) throw new Error(`ACCOUNT_ERASURE_RESIDUAL_DIRECT:${path}`);
+}
+if (await adminGetDocument(`users/${uid}`)) throw new Error('ACCOUNT_ERASURE_RESIDUAL_DIRECT:users');
+for (const [collection, field] of queryDeletes) {
+  const residual = await adminRunQueryAll(collection, [{ field, value: uid }], 500);
+  if (residual.length) throw new Error(`ACCOUNT_ERASURE_RESIDUAL_QUERY:${collection}:${residual.length}`);
+}
+for (const [collection, field] of withdrawals) {
+  const docs = await adminRunQueryAll(collection, [{ field, value: uid }], 500);
+  for (const document of docs) {
+    const state = fieldString(document, 'status');
+    if (collection === 'listings_v2') {
+      const moderation = fieldString(document, 'moderation_status');
+      if (state !== 'archived' || moderation !== 'rejected') throw new Error(`ACCOUNT_ERASURE_WITHDRAWAL_NOT_FINAL:${document.path}`);
+    } else if (collection === 'demand_requests' && state !== 'expired') {
+      throw new Error(`ACCOUNT_ERASURE_WITHDRAWAL_NOT_FINAL:${document.path}`);
+    }
+  }
+}
 
 await adminPatchDocument(`account_deletion_requests/${uid}`, {
   status: 'completed', updated_at: new Date(), processing_note: 'staging-controlled-erasure-v1',
