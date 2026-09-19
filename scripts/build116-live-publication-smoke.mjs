@@ -336,9 +336,9 @@ try {
     await cleanupFirestore('listings_v2/'+listingId);
     await cleanupFirestore('rate_limits/'+uid+'-listing_create');
   }
-  async function runPayloadVariant(name, overrides, expected) {
+  async function runPayloadVariant(name, overrides, expected, atOffsetMs=0) {
     await clearSyntheticPublication();
-    const variantAt=new Date().toISOString();
+    const variantAt=new Date(Date.now()+atOffsetMs).toISOString();
     const variantListing={
       ...listing,
       ...overrides,
@@ -381,6 +381,11 @@ try {
     attributes:{brand:'TuTop',model:'QA',approx_latitude:19.31,approx_longitude:-98.24,geo_cell:'g1:109:81',student_sale:true}
   },'PASS');
   await runPayloadVariant('decimal_quantity',{quantity:1.5},'DENIED');
+  await runPayloadVariant('price_over_rules_max',{price_mxn:1000000.01},'DENIED');
+  await runPayloadVariant('clock_plus_4m',{},'PASS',4*60_000);
+  await runPayloadVariant('clock_minus_9m',{},'PASS',-9*60_000);
+  await runPayloadVariant('clock_plus_6m',{},'DENIED',6*60_000);
+  await runPayloadVariant('clock_minus_11m',{},'DENIED',-11*60_000);
   await clearSyntheticPublication();
 
   stage='LEGACY_PROFILE_DATE_PROBE';
