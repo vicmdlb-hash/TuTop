@@ -93,7 +93,7 @@ export default function Feed() {
   const [sortMode, setSortMode] = useState<SortMode>('relevant');
   const [browseScope, setBrowseScope] = useState<BrowseScope>('nearby');
   const [nearbyRadius, setNearbyRadius] = useState<(typeof NEARBY_RADIUS_OPTIONS)[number]>(10);
-  const [viewerLocation, setViewerLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
+  const [viewerLocation, setViewerLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
   const [locationStatus, setLocationStatus] = useState<'ready' | 'asking' | 'fallback'>(() => viewerLocation ? 'ready' : 'asking');
   const [maxPrice, setMaxPrice] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -106,21 +106,15 @@ export default function Feed() {
   const recentIds = readLocalList(RECENT_KEY, 12);
   const onboardingInterests = readLocalList(ONBOARDING_INTERESTS_KEY, 8);
 
+  // Location is opt-in. Without an account-scoped cache, Nearby falls back to
+  // campus/city until the user explicitly taps “Activar ubicación”.
   useEffect(() => {
-    if (viewerLocation) return;
-    let active = true;
-    setLocationStatus('asking');
-    void requestApproxLocation().then((location) => {
-      if (!active) return;
-      setViewerLocation(location);
-      setLocationStatus(location ? 'ready' : 'fallback');
-    });
-    return () => { active = false; };
+    setLocationStatus(viewerLocation ? 'ready' : 'fallback');
   }, [viewerLocation]);
 
   const requestLocationAgain = async () => {
     setLocationStatus('asking');
-    const location = await requestApproxLocation({ maximumAgeMs: 0 });
+    const location = await requestApproxLocation({ requestPermission: true, maximumAgeMs: 0, ownerUid: user.id });
     setViewerLocation(location);
     setLocationStatus(location ? 'ready' : 'fallback');
   };
