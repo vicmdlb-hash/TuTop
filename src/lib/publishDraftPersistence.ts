@@ -7,6 +7,7 @@ export const DURABLE_PUBLISH_DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const DURABLE_PUBLISH_DRAFT_MAX_BYTES = 48 * 1024;
 
 export type DurablePublishDraft = {
+  operationId?: string;
   assistantText?: string;
   title?: string;
   description?: string;
@@ -75,7 +76,10 @@ export function sanitizeDurablePublishDraft(input: Record<string, unknown>): Dur
   const scope = ['campus', 'institution', 'university-zone', 'city', 'national'].includes(String(input.scope))
     ? input.scope as ListingVisibilityScope
     : undefined;
+  const rawOperationId = cleanText(input.operationId, 120)?.trim();
+  const operationId = rawOperationId && /^[A-Za-z0-9_-]{16,120}$/.test(rawOperationId) ? rawOperationId : undefined;
   return {
+    operationId,
     assistantText: cleanText(input.assistantText, 700),
     title: cleanText(input.title, 120),
     description: cleanText(input.description, 3000),
