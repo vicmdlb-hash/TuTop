@@ -37,6 +37,7 @@ let oauth='';
 let uid='';
 let client=null;
 let cleanupErrors=0;
+let stage='INIT';
 
 async function parse(response,label){
   const text=await response.text(); let body={};
@@ -122,6 +123,7 @@ async function publishExact(id,title,clientIso,callerClock){
 }
 
 try{
+  stage='AUTH_ADMIN_CREATE';
   oauth=await firebaseCiAccessToken();
   const created=await parse(await fetch('https://identitytoolkit.googleapis.com/v1/projects/'+PROJECT+'/accounts',{
     method:'POST',headers:adminHeaders(true),
@@ -130,6 +132,7 @@ try{
   uid=String(created.localId||'');
   if(!uid) throw new Error('CLIENT_EQ_UID_MISSING');
 
+  stage='AUTH_PUBLIC_SIGNIN';
   const login=await parse(await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key='+encodeURIComponent(config.apiKey),{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({email,password,returnSecureToken:true})
@@ -146,9 +149,11 @@ try{
   if(!session.idToken||!session.refreshToken) throw new Error('CLIENT_EQ_SESSION_INCOMPLETE');
   localStorage.setItem('tutop.firebase.session.v2.'+PROJECT,JSON.stringify(session));
 
+  stage='SESSION_CLIENT_INIT';
   client=new FirebaseRestClient(config);
   if(client.currentSession?.uid!==uid) throw new Error('CLIENT_EQ_SESSION_STORAGE_DRIFT');
 
+  stage='PROFILE_BOOTSTRAP';
   const at=new Date().toISOString();
   await client.commit([
     {
@@ -171,10 +176,14 @@ try{
   const fakeFuture='2099-01-01T00:00:00.000Z';
   const fakePast='1900-01-01T00:00:00.000Z';
 
+  stage='FIRST_CREATE';
   await publishExact(listingIds[0],'Cliente real A',fakeFuture,new Date(fakeFuture));
+  stage='SECOND_CREATE_EXISTING_RECENT_BUCKET';
   await publishExact(listingIds[1],'Cliente real B',fakePast,new Date(fakePast));
 
+  stage='ADMIN_SEED_EXPIRED_BUCKET';
   await adminSeedExpiredBucket();
+  stage='THIRD_CREATE_EXPIRED_BUCKET_ROLLOVER';
   await publishExact(listingIds[2],'Cliente real C',fakeFuture,new Date(fakePast));
 
   const bucket=await client.getDocument('rate_limits/'+uid+'-listing_create');
@@ -199,6 +208,7 @@ try{
 }catch(error){
   console.error(JSON.stringify({
     result:'FAIL',
+    stage,
     error_code:String(error instanceof Error?error.message:error).slice(0,500),
     user_data_logged:false
   }));
