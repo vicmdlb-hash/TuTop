@@ -20,21 +20,6 @@ export type AccountDeletionRequest = {
   auth_deleted?: boolean;
 };
 
-function nonNegativeInteger(value: unknown) {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
-}
-
-export function hasTrustedAccountDeletionCompletion(request: AccountDeletionRequest | null | undefined) {
-  if (!request || request.status !== 'completed' || request.auth_deleted !== true) return false;
-  if (!request.completed_at || Number.isNaN(Date.parse(request.completed_at))) return false;
-  if (!String(request.processor_run_id || '').trim()) return false;
-  if (!String(request.erasure_policy_version || '').trim()) return false;
-  if (!String(request.residual_manifest_version || '').trim()) return false;
-  return nonNegativeInteger(request.deleted_count)
-    && nonNegativeInteger(request.withdrawn_count)
-    && nonNegativeInteger(request.retained_count);
-}
-
 function client() {
   if (!nationalSchemaEnabled()) throw new Error('SCHEMA_V2_DISABLED');
   return new FirebaseRestClient(getFirebaseConfig());
