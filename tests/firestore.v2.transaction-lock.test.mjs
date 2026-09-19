@@ -58,6 +58,19 @@ async function seed() {
       await setDoc(doc(db, `chats/chat-${suffix}`), { product_id: 'listing-1', buyer_id: buyer, seller_id: 'seller', participants: [buyer, 'seller'], last_message: '', updated_at: now(), last_message_at: now() });
       await setDoc(doc(db, `offers/offer-${suffix}`), { listing_id: 'listing-1', chat_id: `chat-${suffix}`, buyer_id: buyer, seller_id: 'seller', created_by: buyer, amount_mxn: 400 + (suffix === 'b' ? 10 : 0), status: 'pending', created_at: now(), updated_at: now() });
     }
+    await setDoc(doc(db, 'offers/seller-counter-a'), {
+      listing_id: 'listing-1',
+      chat_id: 'chat-a',
+      buyer_id: 'buyer-a',
+      seller_id: 'seller',
+      created_by: 'seller',
+      amount_mxn: 390,
+      status: 'pending',
+      parent_offer_id: 'offer-a',
+      expires_at: future(1440),
+      created_at: now(),
+      updated_at: now(),
+    });
   });
 }
 
@@ -104,6 +117,37 @@ function reserveBatch(db, suffix, buyer, amount) {
   return batch;
 }
 
+function buyerAcceptSellerCounterBatch(db) {
+  const at = now();
+  const txId = 'tx-seller-counter-a';
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'offers/seller-counter-a'), { status: 'accepted', updated_at: at });
+  batch.set(doc(db, `transactions_v2/${txId}`), {
+    listing_id: 'listing-1',
+    chat_id: 'chat-a',
+    buyer_id: 'buyer-a',
+    seller_id: 'seller',
+    accepted_offer_id: 'seller-counter-a',
+    agreed_amount_mxn: 390,
+    status: 'reserved',
+    reservation_expires_at: future(),
+    created_at: at,
+    updated_at: at,
+  });
+  batch.set(doc(db, 'listing_reservation_locks/listing-1'), {
+    listing_id: 'listing-1',
+    transaction_id: txId,
+    buyer_id: 'buyer-a',
+    seller_id: 'seller',
+    created_at: at,
+    updated_at: at,
+  });
+  batch.update(doc(db, 'listings_v2/listing-1'), { availability_status: 'reserved', updated_at: at });
+  batch.update(doc(db, 'chats/chat-a'), { transaction_id: txId, current_offer_id: 'seller-counter-a', updated_at: at });
+  return batch;
+}
+
+
 async function seedCompletionState({ txStatus = 'meetup_scheduled', listingStatus = 'active', preconfirmed = 'buyer' } = {}) {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
@@ -145,6 +189,79 @@ function completionPhaseOne(db, { sellOut = true, completeTx = true, actor = 'se
   if (sellOut) batch.update(doc(db, 'listings_v2/listing-1'), { status: 'sold_out', updated_at: at });
   return batch;
 }
+
+test('comprador acepta contraoferta creada por vendedor y reserva atómicamente', async () => {
+  await seed();
+  const buyer = verifiedContext(env, 'buyer-a').firestore();
+  await assertSucceeds(buyerAcceptSellerCounterBatch(buyer).commit());
+
+  const tx = await getDoc(doc(buyer, 'transactions_v2/tx-seller-counter-a'));
+  if (!tx.exists() || tx.data()?.status !== 'reserved') throw new Error('buyer acceptance must create reserved transaction');
+  const lock = await getDoc(doc(buyer, 'listing_reservation_locks/listing-1'));
+  if (lock.data()?.transaction_id !== 'tx-seller-counter-a') throw new Error('buyer acceptance must create reservation lock');
+  const listing = await getDoc(doc(buyer, 'listings_v2/listing-1'));
+  if (listing.data()?.availability_status !== 'reserved') throw new Error('buyer acceptance must project reserved availability');
+});
+
+test('comprador no puede auto-reservar una oferta creada por comprador', async () => {
+  await seed();
+  const buyer = verifiedContext(env, 'buyer-a').firestore();
+  const at = now();
+  const batch = writeBatch(buyer);
+  batch.update(doc(buyer, 'offers/offer-a'), { status: 'accepted', updated_at: at });
+  batch.set(doc(buyer, 'transactions_v2/tx-offer-a'), {
+    listing_id: 'listing-1',
+    chat_id: 'chat-a',
+    buyer_id: 'buyer-a',
+    seller_id: 'seller',
+    accepted_offer_id: 'offer-a',
+    agreed_amount_mxn: 400,
+    status: 'reserved',
+    reservation_expires_at: future(),
+    created_at: at,
+    updated_at: at,
+  });
+  batch.set(doc(buyer, 'listing_reservation_locks/listing-1'), {
+    listing_id: 'listing-1',
+    transaction_id: 'tx-offer-a',
+    buyer_id: 'buyer-a',
+    seller_id: 'seller',
+    created_at: at,
+    updated_at: at,
+  });
+  batch.update(doc(buyer, 'listings_v2/listing-1'), { availability_status: 'reserved', updated_at: at });
+  batch.update(doc(buyer, 'chats/chat-a'), { transaction_id: 'tx-offer-a', current_offer_id: 'offer-a', updated_at: at });
+  await assertFails(batch.commit());
+});
+
+test('comprador no puede crear reserva de contraoferta sin aceptar la oferta en el mismo commit', async () => {
+  await seed();
+  const buyer = verifiedContext(env, 'buyer-a').firestore();
+  const at = now();
+  const batch = writeBatch(buyer);
+  batch.set(doc(buyer, 'transactions_v2/tx-seller-counter-a'), {
+    listing_id: 'listing-1',
+    chat_id: 'chat-a',
+    buyer_id: 'buyer-a',
+    seller_id: 'seller',
+    accepted_offer_id: 'seller-counter-a',
+    agreed_amount_mxn: 390,
+    status: 'reserved',
+    reservation_expires_at: future(),
+    created_at: at,
+    updated_at: at,
+  });
+  batch.set(doc(buyer, 'listing_reservation_locks/listing-1'), {
+    listing_id: 'listing-1',
+    transaction_id: 'tx-seller-counter-a',
+    buyer_id: 'buyer-a',
+    seller_id: 'seller',
+    created_at: at,
+    updated_at: at,
+  });
+  batch.update(doc(buyer, 'listings_v2/listing-1'), { availability_status: 'reserved', updated_at: at });
+  await assertFails(batch.commit());
+});
 
 test('buyer puede ofertar antes del lock pero no crear nuevas ofertas mientras listing está reservado', async () => {
   await seed();

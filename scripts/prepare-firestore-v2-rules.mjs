@@ -192,9 +192,16 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
             (
               (!('availability_status' in resource.data) || resource.data.availability_status == 'available')
               && request.resource.data.availability_status == 'reserved'
-              && request.auth.uid == resource.data.seller_id
               && existsAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId))
               && getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.seller_id == resource.data.seller_id
+              && (
+                request.auth.uid == resource.data.seller_id
+                ||
+                (
+                  request.auth.uid == getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.buyer_id
+                  && getAfter(/databases/$(database)/documents/offers/$(getAfter(/databases/$(database)/documents/transactions_v2/$(getAfter(/databases/$(database)/documents/listing_reservation_locks/$(listingId)).data.transaction_id)).data.accepted_offer_id)).data.created_by == resource.data.seller_id
+                )
+              )
             )
             ||
             (
