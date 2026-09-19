@@ -133,6 +133,8 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
 
 export function validateCanonicalListingPolicy(listing: CanonicalListingV2, category: ProductCategory) {
   if (!listingV2HasNoLegacyDescriptionPacking(listing)) throw new Error('LISTING_V2_SCHEMA_INCOMPLETE');
+  if (!Number.isFinite(listing.price_mxn) || listing.price_mxn <= 0 || listing.price_mxn > 1_000_000) throw new Error('LISTING_PRICE_INVALID');
+  if (!Number.isInteger(listing.quantity) || listing.quantity < 1 || listing.quantity > 99) throw new Error('LISTING_QUANTITY_INVALID');
   if (listing.video_urls && (listing.video_urls.length > 1 || !listing.video_urls.every(validCanonicalVideoUri))) {
     throw new Error('LISTING_VIDEO_REFERENCE_INVALID');
   }
