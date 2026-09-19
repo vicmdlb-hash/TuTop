@@ -172,15 +172,27 @@ export const canonicalListingsBackend = {
     if (listing.seller_id !== uid) throw new Error('SELLER_MISMATCH');
     validateCanonicalListingPolicy(listing, category);
     const id = localId();
+    const {
+      created_at: _clientCreatedAt,
+      updated_at: _clientUpdatedAt,
+      published_at: _clientPublishedAt,
+      ...serverTimedListing
+    } = listing;
     const payload = {
-      ...listing,
+      ...serverTimedListing,
       moderation_status: 'pending' as const,
-      created_at: new Date(listing.created_at),
-      updated_at: new Date(listing.updated_at),
-      ...(listing.published_at ? { published_at: new Date(listing.published_at) } : {}),
     };
+    const updateTransforms = [
+      { fieldPath: 'created_at', setToServerValue: 'REQUEST_TIME' as const },
+      { fieldPath: 'updated_at', setToServerValue: 'REQUEST_TIME' as const },
+      ...(listing.published_at ? [{ fieldPath: 'published_at', setToServerValue: 'REQUEST_TIME' as const }] : []),
+    ];
     await commitWithRateLimit(client, 'listing_create', [
-      { update: client.encodeDocumentForWrite(`listings_v2/${id}`, payload), currentDocument: { exists: false } },
+      {
+        update: client.encodeDocumentForWrite(`listings_v2/${id}`, payload),
+        updateTransforms,
+        currentDocument: { exists: false },
+      },
     ]);
     nearbyCache.clear();
     return { id, ...listing, moderation_status: 'pending' as const };
