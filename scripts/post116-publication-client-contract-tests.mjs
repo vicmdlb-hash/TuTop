@@ -4,6 +4,7 @@ import fs from 'node:fs';
 const screen=fs.readFileSync('src/components/NationalPublishScreen.tsx','utf8');
 const listings=fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8');
 const rate=fs.readFileSync('src/services/rateLimit.ts','utf8');
+const rulesGenerator=fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs','utf8');
 
 assert.match(screen,/parsedPrice >= 0\.01/);
 assert.match(screen,/parsedPrice <= 1_000_000/);
@@ -33,6 +34,16 @@ assert.match(listings,/LISTING_MEETING_POINTS_INVALID/);
 assert.match(listings,/LISTING_PHOTO_INVALID/);
 assert.match(listings,/Number\.isInteger\(listing\.quantity\)/);
 
+assert.match(rulesGenerator,/request\.resource\.data\.title\.size\(\) >= 2/);
+assert.match(rulesGenerator,/request\.resource\.data\.title\.size\(\) <= 120/);
+assert.match(rulesGenerator,/request\.resource\.data\.price_mxn <= 1000000/);
+assert.match(rulesGenerator,/request\.resource\.data\.quantity is int/);
+assert.match(rulesGenerator,/request\.resource\.data\.quantity >= 1 && request\.resource\.data\.quantity <= 99/);
+assert.match(rulesGenerator,/request\.resource\.data\.delivery_methods\.size\(\) >= 1 && request\.resource\.data\.delivery_methods\.size\(\) <= 4/);
+assert.match(rulesGenerator,/request\.resource\.data\.meeting_point_ids\.size\(\) <= 8/);
+assert.match(rulesGenerator,/request\.resource\.data\.photo_urls\.size\(\) >= 1 && request\.resource\.data\.photo_urls\.size\(\) <= 4/);
+assert.match(rulesGenerator,/visibility_scope != 'national' \|\| request\.resource\.data\.shipping_available == true/);
+
 const createStart=listings.indexOf('async create(listing: CanonicalListingV2');
 assert.ok(createStart>=0,'canonical listing create missing');
 const createEnd=listings.indexOf('\n  async loadMine',createStart);
@@ -53,5 +64,6 @@ assert.doesNotMatch(rate,/updated_at: at/);
 
 console.log('PASS publication UI blocks title/quantity/price/national-shipping values that violate source Rules');
 console.log('PASS canonical backend fails fast on all client-reachable listing boundary mismatches');
+console.log('PASS client/backend guards are locked against generated canonical Rules boundaries');
 console.log('PASS listing publication uses Firestore REQUEST_TIME, not device wall clock');
 console.log('PASS listing rate-limit uses Firestore REQUEST_TIME, not device wall clock');
