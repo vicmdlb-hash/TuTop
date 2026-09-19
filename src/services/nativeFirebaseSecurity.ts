@@ -151,3 +151,57 @@ export async function disableNativePushNotifications() {
     return false;
   }
 }
+
+function bounded<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise<T>((resolve) => window.setTimeout(() => resolve(fallback), timeoutMs)),
+  ]);
+}
+
+/**
+ * Best-effort push ownership cleanup before account sign-out.
+ * The old authenticated session is still present when this runs, so TuTop can
+ * deactivate the UID-scoped token mapping. Native deleteToken is also attempted
+ * so an offline/server-cleanup failure does not intentionally keep reusing the
+ * same registration token for the next account.
+ *
+ * Logout must remain available even on bad networks; callers should bound this
+ * operation and then clear auth regardless of the result.
+ */
+export async function prepareNativePushForAccountSignOut() {
+  initialization = null;
+  if (!isNativeFirebaseRuntime()) return { serverDeactivated: false, tokenDeleted: false };
+
+  const messaging = capacitorPlugin('FirebaseMessaging');
+  if (!messaging?.getToken) return { serverDeactivated: false, tokenDeleted: false };
+
+  let token = '';
+  try {
+    const result = await bounded(messaging.getToken(), 1_500, null as any);
+    token = String(result?.token || '').trim();
+  } catch {
+    token = '';
+  }
+
+  let serverDeactivated = false;
+  if (token) {
+    serverDeactivated = await bounded(
+      pushBackend.unregisterDeviceToken(token, 'android').then(() => true),
+      1_500,
+      false,
+    );
+  }
+
+  let tokenDeleted = false;
+  if (messaging.deleteToken) {
+    tokenDeleted = await bounded(
+      messaging.deleteToken().then(() => true),
+      1_500,
+      false,
+    );
+  }
+
+  initialization = null;
+  return { serverDeactivated, tokenDeleted };
+}
