@@ -60,6 +60,32 @@ async function seed() {
   });
 }
 
+function createOfferBatch(db, { offerId, buyerId, chatId, amountMxn, rateCount, windowStart }) {
+  const at = now();
+  const batch = writeBatch(db);
+  batch.set(doc(db, `offers/${offerId}`), {
+    listing_id: 'listing-1',
+    chat_id: chatId,
+    buyer_id: buyerId,
+    seller_id: 'seller',
+    created_by: buyerId,
+    amount_mxn: amountMxn,
+    status: 'pending',
+    expires_at: future(1440),
+    created_at: at,
+    updated_at: at,
+  });
+  batch.update(doc(db, `chats/${chatId}`), { current_offer_id: offerId, updated_at: at });
+  batch.set(doc(db, `rate_limits/${buyerId}-offer_create`), {
+    uid: buyerId,
+    action: 'offer_create',
+    window_start: windowStart,
+    count: rateCount,
+    updated_at: at,
+  });
+  return batch;
+}
+
 function reserveBatch(db, suffix, buyer, amount) {
   const txId = `tx-offer-${suffix}`;
   const at = now();
@@ -117,6 +143,33 @@ function completionPhaseOne(db, { sellOut = true, completeTx = true, actor = 'se
   if (sellOut) batch.update(doc(db, 'listings_v2/listing-1'), { status: 'sold_out', updated_at: at });
   return batch;
 }
+
+test('buyer puede ofertar antes del lock pero no crear nuevas ofertas mientras listing está reservado', async () => {
+  await seed();
+  const seller = verifiedContext(env, 'seller').firestore();
+  const buyerB = verifiedContext(env, 'buyer-b').firestore();
+  const windowStart = now();
+
+  await assertSucceeds(createOfferBatch(buyerB, {
+    offerId: 'offer-b-prelock',
+    buyerId: 'buyer-b',
+    chatId: 'chat-b',
+    amountMxn: 415,
+    rateCount: 1,
+    windowStart,
+  }).commit());
+
+  await assertSucceeds(reserveBatch(seller, 'a', 'buyer-a', 400).commit());
+
+  await assertFails(createOfferBatch(buyerB, {
+    offerId: 'offer-b-after-lock',
+    buyerId: 'buyer-b',
+    chatId: 'chat-b',
+    amountMxn: 420,
+    rateCount: 2,
+    windowStart,
+  }).commit());
+});
 
 test('sólo una reservation lock puede existir por listing', async () => {
   await seed();
