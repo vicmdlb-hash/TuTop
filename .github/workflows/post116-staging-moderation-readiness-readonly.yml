@@ -1,0 +1,28 @@
+name: Post-build116 staging moderation readiness (read-only)
+
+on:
+  push:
+    branches: [audit/post116-staging-moderation-readiness]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Static syntax check
+        run: node --check scripts/staging-moderation-readiness-readonly.mjs
+      - name: Read-only staging moderation inventory
+        run: node scripts/staging-moderation-readiness-readonly.mjs
