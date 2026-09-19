@@ -35,6 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           for path in \
+            src/App.tsx \
             src/components/NationalPublishScreen.tsx \
             src/components/PermissionSettings.tsx \
             src/lib/nearbyMarketplace.ts \
@@ -88,7 +89,7 @@ jobs:
 
           console.log('PASS exact build116 delegation: screen -> verification -> identity bridge -> canonical create -> rate-limited atomic listing write');
           NODE
-      - name: Exact build116 Topi, draft, permission and native-capability contract
+      - name: Exact build116 Topi, draft, navigation, permission and native-capability contract
         run: node scripts/build116-deviceA-feedback-tests.mjs
       - name: Read exact existing staging client config — no deploy
         run: node scripts/read-existing-staging-build-config.mjs
