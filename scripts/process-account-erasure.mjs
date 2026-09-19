@@ -1,4 +1,4 @@
-import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminListDocuments, adminPatchDocument, adminRunQuery } from './staging-v2-admin.mjs';
+import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminListDocuments, adminPatchDocument, adminRunQueryAll } from './staging-v2-admin.mjs';
 import { buildAccountErasurePlan } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -56,18 +56,18 @@ const retainedOperational = [
 
 const queryDeletePaths = [];
 for (const [collection, field] of queryDeletes) {
-  for (const doc of await adminRunQuery(collection, [{ field, value: uid }], 1000)) queryDeletePaths.push(doc.path);
+  for (const doc of await adminRunQueryAll(collection, [{ field, value: uid }], 500)) queryDeletePaths.push(doc.path);
 }
 
 const withdrawDocs = [];
 for (const [collection, field] of withdrawals) {
-  for (const doc of await adminRunQuery(collection, [{ field, value: uid }], 1000)) withdrawDocs.push({ collection, path: doc.path });
+  for (const doc of await adminRunQueryAll(collection, [{ field, value: uid }], 500)) withdrawDocs.push({ collection, path: doc.path });
 }
 
 const retained = [];
 const retainedChatPaths = new Set();
 for (const [collection, field] of retainedOperational) {
-  const docs = await adminRunQuery(collection, [{ field, value: uid }], 1000);
+  const docs = await adminRunQueryAll(collection, [{ field, value: uid }], 500);
   if (docs.length) retained.push({ collection, field, count: docs.length });
   if (collection === 'chats') {
     for (const document of docs) retainedChatPaths.add(document.path);
@@ -80,7 +80,7 @@ for (const [collection, field] of retainedOperational) {
 // decides how long they remain.
 for (const chatPath of [...retainedChatPaths].sort()) {
   for (const nested of ['messages', 'reads', 'confirmations']) {
-    const docs = await adminListDocuments(`${chatPath}/${nested}`, 1000);
+    const docs = await adminListDocuments(`${chatPath}/${nested}`, 500);
     if (docs.length) retained.push({
       collection: `chats/*/${nested}`,
       field: chatPath,
@@ -94,7 +94,7 @@ for (const chatPath of [...retainedChatPaths].sort()) {
 // the counterpart could lose the account/listing context needed to finish or dispute.
 const transactionDocs = new Map();
 for (const field of ['buyer_id', 'seller_id']) {
-  for (const document of await adminRunQuery('transactions_v2', [{ field, value: uid }], 1000)) transactionDocs.set(document.path, document);
+  for (const document of await adminRunQueryAll('transactions_v2', [{ field, value: uid }], 500)) transactionDocs.set(document.path, document);
 }
 const terminalStatuses = new Set(['completed', 'cancelled', 'expired', 'no_show']);
 const blockers = [...transactionDocs.values()]
@@ -137,6 +137,24 @@ for (const path of plan.delete_paths) await adminDeleteDocument(path);
 // El perfil público se elimina después de retirar contenido; referencias históricas
 // permanecen sólo en colecciones operativas retenidas para transacciones/disputas.
 await adminDeleteDocument(`users/${uid}`);
+
+// Verifica exhaustivamente que las colecciones con política delete ya no
+// conserven documentos ligados al UID. Las consultas paginadas se ejecutan
+// después de las mutaciones para evitar declarar completion por una primera
+// página incompleta.
+for (const path of [...directDeletes, `users/${uid}`]) {
+  if (await adminGetDocument(path)) throw new Error(`ACCOUNT_ERASURE_DIRECT_RESIDUAL:${path}`);
+}
+for (const [collection, field] of queryDeletes) {
+  const remaining = await adminRunQueryAll(collection, [{ field, value: uid }], 500);
+  if (remaining.length) throw new Error(`ACCOUNT_ERASURE_QUERY_RESIDUAL:${collection}:${remaining.length}`);
+}
+for (const [collection, field] of withdrawals) {
+  const remaining = await adminRunQueryAll(collection, [{ field, value: uid }], 500);
+  const expectedStatus = collection === 'listings_v2' ? 'archived' : 'expired';
+  const wrong = remaining.filter((document) => fieldString(document, 'status') !== expectedStatus);
+  if (wrong.length) throw new Error(`ACCOUNT_ERASURE_WITHDRAW_RESIDUAL:${collection}:${wrong.length}`);
+}
 
 // Auth se borra antes de declarar "completed". Si este paso falla, la solicitud
 // permanece processing y nunca se publica un falso estado de finalización.
