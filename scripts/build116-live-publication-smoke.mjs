@@ -138,6 +138,14 @@ async function auditLiveState(){
   const authVerified=authUsers.filter(u=>u.emailVerified===true).length;
   const authDisabled=authUsers.filter(u=>u.disabled===true).length;
   const authPhoneAlias=authUsers.filter(u=>/^phone-[a-f0-9]+@auth\.tutop\.app$/i.test(String(u.email||''))).length;
+  const authByUid=new Map(authUsers.map(u=>[String(u.localId||''),u]));
+  const profileUids=users.map(d=>String(d?.name||'').split('/').at(-1)||'').filter(Boolean);
+  const matchedProfileAuth=profileUids.map(id=>authByUid.get(id)).filter(Boolean);
+  const privateByUid=new Map(privateDocs.map(d=>[String(d?.name||'').split('/').at(-1)||'',d]));
+  const emailModeProfileUids=profileUids.filter(id=>stringField(privateByUid.get(id),'auth_mode')==='email_password_verified_beta');
+  const phoneModeProfileUids=profileUids.filter(id=>stringField(privateByUid.get(id),'auth_mode')==='phone_password_beta');
+  const emailModeMatched=emailModeProfileUids.map(id=>authByUid.get(id)).filter(Boolean);
+  const phoneModeMatched=phoneModeProfileUids.map(id=>authByUid.get(id)).filter(Boolean);
   const verificationLevelKinds={};
   const facultyIdKinds={};
   const careerIdKinds={};
@@ -182,6 +190,20 @@ async function auditLiveState(){
         email_verified_true:authVerified,
         disabled_true:authDisabled,
         phone_alias_accounts:authPhoneAlias
+      },
+      auth_profile_correlation:{
+        firestore_profiles:profileUids.length,
+        profiles_with_auth_match:matchedProfileAuth.length,
+        matched_verified_true:matchedProfileAuth.filter(u=>u.emailVerified===true).length,
+        matched_disabled_true:matchedProfileAuth.filter(u=>u.disabled===true).length,
+        email_mode_profiles:emailModeProfileUids.length,
+        email_mode_auth_matches:emailModeMatched.length,
+        email_mode_verified_true:emailModeMatched.filter(u=>u.emailVerified===true).length,
+        email_mode_disabled_true:emailModeMatched.filter(u=>u.disabled===true).length,
+        phone_mode_profiles:phoneModeProfileUids.length,
+        phone_mode_auth_matches:phoneModeMatched.length,
+        phone_mode_verified_true:phoneModeMatched.filter(u=>u.emailVerified===true).length,
+        phone_mode_alias_matches:phoneModeMatched.filter(u=>/^phone-[a-f0-9]+@auth\.tutop\.app$/i.test(String(u.email||''))).length
       },
       moderation_status_audit:true,
       identities_logged:false
