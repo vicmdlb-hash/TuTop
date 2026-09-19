@@ -44,18 +44,24 @@ assert.match(rulesGenerator,/request\.resource\.data\.meeting_point_ids\.size\(\
 assert.match(rulesGenerator,/request\.resource\.data\.photo_urls\.size\(\) >= 1 && request\.resource\.data\.photo_urls\.size\(\) <= 4/);
 assert.match(rulesGenerator,/visibility_scope != 'national' \|\| request\.resource\.data\.shipping_available == true/);
 
+const helperStart=listings.indexOf('export function buildCanonicalListingCreateWrite(');
+assert.ok(helperStart>=0,'canonical listing write helper missing');
+const helperEnd=listings.indexOf('\nexport const canonicalListingsBackend',helperStart);
+const helperBlock=listings.slice(helperStart,helperEnd);
+assert.match(helperBlock,/created_at: _clientCreatedAt/);
+assert.match(helperBlock,/updated_at: _clientUpdatedAt/);
+assert.match(helperBlock,/published_at: _clientPublishedAt/);
+assert.match(helperBlock,/fieldPath: 'created_at', setToServerValue: 'REQUEST_TIME'/);
+assert.match(helperBlock,/fieldPath: 'updated_at', setToServerValue: 'REQUEST_TIME'/);
+assert.match(helperBlock,/fieldPath: 'published_at', setToServerValue: 'REQUEST_TIME'/);
+assert.doesNotMatch(helperBlock,/created_at: new Date\(listing\.created_at\)/);
+assert.doesNotMatch(helperBlock,/updated_at: new Date\(listing\.updated_at\)/);
+
 const createStart=listings.indexOf('async create(listing: CanonicalListingV2');
 assert.ok(createStart>=0,'canonical listing create missing');
 const createEnd=listings.indexOf('\n  async loadMine',createStart);
 const createBlock=listings.slice(createStart,createEnd);
-assert.match(createBlock,/created_at: _clientCreatedAt/);
-assert.match(createBlock,/updated_at: _clientUpdatedAt/);
-assert.match(createBlock,/published_at: _clientPublishedAt/);
-assert.match(createBlock,/fieldPath: 'created_at', setToServerValue: 'REQUEST_TIME'/);
-assert.match(createBlock,/fieldPath: 'updated_at', setToServerValue: 'REQUEST_TIME'/);
-assert.match(createBlock,/fieldPath: 'published_at', setToServerValue: 'REQUEST_TIME'/);
-assert.doesNotMatch(createBlock,/created_at: new Date\(listing\.created_at\)/);
-assert.doesNotMatch(createBlock,/updated_at: new Date\(listing\.updated_at\)/);
+assert.match(createBlock,/buildCanonicalListingCreateWrite\(client, id, listing\)/);
 
 assert.match(rate,/setToServerValue: 'REQUEST_TIME'/);
 assert.match(rate,/fieldPath: 'updated_at'/);
