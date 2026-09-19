@@ -7,6 +7,7 @@ import {
   type CapabilityPermission,
   type PermissionState091,
 } from '../lib/permissionCenter091';
+import { nativePushRegistrationHealth } from '../services/nativeFirebaseSecurity';
 
 type PermissionCard = {
   id: CapabilityPermission;
@@ -43,26 +44,38 @@ export default function PermissionSettings() {
   });
   const [busy, setBusy] = useState<CapabilityPermission | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [pushTokenRegistered, setPushTokenRegistered] = useState<boolean | null>(null);
 
   const refresh = async () => {
-    const entries = await Promise.all(PERMISSIONS.map(async ({ id }) => [id, await queryCapabilityPermission(id)] as const));
+    const [entries, pushHealth] = await Promise.all([
+      Promise.all(PERMISSIONS.map(async ({ id }) => [id, await queryCapabilityPermission(id)] as const)),
+      nativePushRegistrationHealth().catch(() => null),
+    ]);
     setStates(Object.fromEntries(entries) as Record<CapabilityPermission, PermissionState091>);
+    setPushTokenRegistered(pushHealth?.permission === 'granted' ? pushHealth.tokenRegistered : null);
   };
 
   useEffect(() => {
     let active = true;
     const update = () => {
-      Promise.all(PERMISSIONS.map(async ({ id }) => [id, await queryCapabilityPermission(id)] as const))
-        .then((entries) => { if (active) setStates(Object.fromEntries(entries) as Record<CapabilityPermission, PermissionState091>); })
-        .catch(() => undefined);
+      Promise.all([
+        Promise.all(PERMISSIONS.map(async ({ id }) => [id, await queryCapabilityPermission(id)] as const)),
+        nativePushRegistrationHealth().catch(() => null),
+      ]).then(([entries, pushHealth]) => {
+        if (!active) return;
+        setStates(Object.fromEntries(entries) as Record<CapabilityPermission, PermissionState091>);
+        setPushTokenRegistered(pushHealth?.permission === 'granted' ? pushHealth.tokenRegistered : null);
+      }).catch(() => undefined);
     };
     update();
     const onVisible = () => { if (document.visibilityState === 'visible') update(); };
     window.addEventListener('focus', update);
+    window.addEventListener('online', update);
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       active = false;
       window.removeEventListener('focus', update);
+      window.removeEventListener('online', update);
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
@@ -76,7 +89,12 @@ export default function PermissionSettings() {
       const result = queried === 'unknown' ? requested : queried;
       setStates((current) => ({ ...current, [id]: result }));
       if (id === 'notifications' && result === 'granted') {
-        setNote('Notificaciones activas en Android. TuTop actualizará este estado también cuando regreses desde los ajustes del sistema.');
+        const health = await nativePushRegistrationHealth().catch(() => null);
+        const registered = health?.permission === 'granted' ? health.tokenRegistered : false;
+        setPushTokenRegistered(registered);
+        setNote(registered
+          ? 'Permiso Android activo y token FCM registrado para esta cuenta. La entrega real se confirma sólo cuando llegue y se abra una notificación de prueba.'
+          : 'Permiso Android activo, pero TuTop todavía no pudo registrar el token FCM. Reintentará al volver a la app o recuperar conexión.');
       } else if (id === 'camera' && result === 'granted') {
         setNote('Cámara/galería disponible. La prueba real se hace desde Publicar: toca Cámara o Galería y Android abrirá su selector del sistema.');
       } else if (id === 'location' && result !== 'granted') {
@@ -112,7 +130,7 @@ export default function PermissionSettings() {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <strong className="text-[11px]">{label}</strong>
                       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[8px] font-black ${active ? 'bg-emerald-500/10 text-emerald-400' : blocked ? 'bg-rose-500/10 text-rose-300' : 'bg-violet-500/10 text-violet-300'}`}>
-                        {active ? <CheckCircle2 className="h-2.5 w-2.5" /> : blocked ? <TriangleAlert className="h-2.5 w-2.5" /> : null}{stateLabel(id, state)}
+                        {active ? <CheckCircle2 className="h-2.5 w-2.5" /> : blocked ? <TriangleAlert className="h-2.5 w-2.5" /> : null}{id === 'notifications' && state === 'granted' ? (pushTokenRegistered ? 'Permiso + token' : 'Permiso activo') : stateLabel(id, state)}
                       </span>
                     </div>
                     <p className="mt-0.5 text-[9px] text-slate-500">{hint}</p>
@@ -122,6 +140,7 @@ export default function PermissionSettings() {
                   </button>
                 </div>
                 <p className="mt-2 text-[8px] leading-4 text-slate-600">{PERMISSION_PRIVACY_COPY[id]}</p>
+                {id === 'notifications' && state === 'granted' && <p className="mt-1 text-[8px] leading-4 text-slate-500">Token FCM: <strong className={pushTokenRegistered ? 'text-emerald-300' : 'text-amber-300'}>{pushTokenRegistered ? 'registrado' : 'pendiente de registro'}</strong> · entrega/tap todavía requiere prueba E2E real.</p>}
               </div>
             );
           })}
