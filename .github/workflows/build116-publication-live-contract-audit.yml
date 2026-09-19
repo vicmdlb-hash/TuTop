@@ -28,5 +28,12 @@ jobs:
         run: npm run v2:rules:prepare
       - name: Read live staging contract and aggregate profile compatibility
         run: node scripts/build116-publication-live-contract-audit.mjs
+      - name: Independent Firebase CLI Auth inventory — count only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes firebase-tools@15.30.1 auth:export /tmp/tutop-auth-export.json --project "$TUTOP_FIREBASE_PROJECT_ID" --format=json >/tmp/auth-export.log
+          node -e "const fs=require('fs');const raw=JSON.parse(fs.readFileSync('/tmp/tutop-auth-export.json','utf8')); console.log(JSON.stringify({firebase_cli_auth_users:(raw.users||[]).length,no_user_fields_logged:true}))"
+          rm -f /tmp/tutop-auth-export.json /tmp/auth-export.log
       - name: Prove no tracked mutation
         run: git diff --exit-code -- package.json package-lock.json
