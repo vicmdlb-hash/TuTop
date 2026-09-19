@@ -19,6 +19,12 @@ function localId() {
   return `listing-${random}`;
 }
 
+function listingIdForOperation(operationId: string) {
+  const clean = String(operationId || '').trim();
+  if (!/^[A-Za-z0-9_-]{16,120}$/.test(clean)) throw new Error('LISTING_OPERATION_ID_INVALID');
+  return `listing-op-${clean}`;
+}
+
 function getClient() {
   if (!nationalSchemaEnabled()) throw new Error('SCHEMA_V2_DISABLED');
   const client = new FirebaseRestClient(getFirebaseConfig());
@@ -166,12 +172,24 @@ async function productsForDocuments(client: FirebaseRestClient, docs: FirestoreD
 }
 
 export const canonicalListingsBackend = {
-  async create(listing: CanonicalListingV2, category: ProductCategory) {
+  async create(listing: CanonicalListingV2, category: ProductCategory, operationId?: string) {
     const client = getClient();
     const uid = client.currentSession!.uid;
     if (listing.seller_id !== uid) throw new Error('SELLER_MISMATCH');
     validateCanonicalListingPolicy(listing, category);
-    const id = localId();
+    const id = operationId ? listingIdForOperation(operationId) : localId();
+
+    const recoverCommitted = async () => {
+      if (!operationId) return null;
+      const existing = await client.getDocument<CanonicalListingV2>(`listings_v2/${id}`).catch(() => null);
+      if (!existing) return null;
+      if (existing.data.seller_id !== uid) throw new Error('LISTING_OPERATION_CONFLICT');
+      return { id, ...listing, moderation_status: existing.data.moderation_status || 'pending' as const, recovered: true as const };
+    };
+
+    const alreadyCommitted = await recoverCommitted();
+    if (alreadyCommitted) return alreadyCommitted;
+
     const payload = {
       ...listing,
       moderation_status: 'pending' as const,
@@ -179,11 +197,20 @@ export const canonicalListingsBackend = {
       updated_at: new Date(listing.updated_at),
       ...(listing.published_at ? { published_at: new Date(listing.published_at) } : {}),
     };
-    await commitWithRateLimit(client, 'listing_create', [
-      { update: client.encodeDocumentForWrite(`listings_v2/${id}`, payload), currentDocument: { exists: false } },
-    ]);
+    try {
+      await commitWithRateLimit(client, 'listing_create', [
+        { update: client.encodeDocumentForWrite(`listings_v2/${id}`, payload), currentDocument: { exists: false } },
+      ]);
+    } catch (error) {
+      const recovered = await recoverCommitted();
+      if (recovered) {
+        nearbyCache.clear();
+        return recovered;
+      }
+      throw error;
+    }
     nearbyCache.clear();
-    return { id, ...listing, moderation_status: 'pending' as const };
+    return { id, ...listing, moderation_status: 'pending' as const, recovered: false as const };
   },
 
   async loadMine(limit = 50) {
