@@ -129,7 +129,6 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
         && request.resource.data.institution_id is string && request.resource.data.institution_id.size() >= 2
         && request.resource.data.campus_id is string && request.resource.data.campus_id.size() >= 2
         && validUniversityMetadata(request.resource.data)
-        && productMatchesSellerIdentity(request.resource.data, request.auth.uid)
         && request.resource.data.category_id is string && request.resource.data.category_id.size() >= 2 && request.resource.data.category_id.size() <= 80
         && (!('subcategory_id' in request.resource.data) || (request.resource.data.subcategory_id is string && request.resource.data.subcategory_id.size() <= 80))
         && request.resource.data.title is string && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 120
