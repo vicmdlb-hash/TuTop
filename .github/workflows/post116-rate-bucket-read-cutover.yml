@@ -1,0 +1,86 @@
+name: Post116 rate bucket read cutover
+
+on:
+  push:
+    branches: [ops/post116-rate-bucket-read-cutover]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post116-rate-bucket-read-cutover
+  cancel-in-progress: false
+
+jobs:
+  cutover:
+    if: contains(github.event.head_commit.message, 'POST116_RATE_READ_ACTION_ID=post116-rate-bucket-read-20260919-01')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_RATE_BUCKET_READ_ACK: POST116_RATE_BUCKET_READ_REPAIR_ONLY
+      TUTOP_RATE_BUCKET_READ_ACTION_ID: post116-rate-bucket-read-20260919-01
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run check
+      - run: npm run typecheck
+      - name: Prepare exact V2 Rules
+        run: npm run v2:rules:prepare
+      - name: Assert source repair shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('fs');
+          const r=fs.readFileSync('firebase/firestore.v2.generated.rules','utf8');
+          const start=r.indexOf('match /rate_limits/{bucketId}');
+          const end=r.indexOf('match /device_tokens/{tokenId}',start);
+          if(start<0||end<0) throw new Error('RATE_LIMIT_BLOCK_MISSING');
+          const block=r.slice(start,end);
+          if(block.includes('allow read: if signedIn() && resource.data.uid == request.auth.uid;')) throw new Error('OLD_READ_GUARD_PRESENT');
+          for(const action of ['listing_create','chat_create','offer_create','message_create','report_create','demand_create']){
+            if(!block.includes("request.auth.uid + '-"+action+"'")) throw new Error('OWNER_BUCKET_MISSING_'+action);
+          }
+          NODE
+      - name: Emulator dependencies
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
+      - name: Rate read and publication emulator regression
+        run: >
+          npx firebase emulators:exec --only firestore
+          --project demo-tutop-rate-read-cutover
+          --config firebase.v2.json
+          "node --test --test-concurrency=1
+          tests/firestore.v2.runtime-services.test.mjs
+          tests/firestore.v2.post106-verified-identity.test.mjs
+          tests/firestore.v2.publication-profile-coupling.test.mjs"
+      - name: Controlled one-clause live Rules repair
+        run: node scripts/post116-rate-bucket-read-cutover.mjs --apply
+      - name: Preserve exact cutover evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-post116-rate-read-${{ github.run_id }}
+          path: staging-post116-rate-read-repair/applied.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: No dependency drift
+        if: always()
+        run: git diff --exit-code -- package.json package-lock.json
+      - name: Prove no APK generated
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs/apk || test -z "$(find android/app/build/outputs/apk -type f -name '*.apk' -print -quit 2>/dev/null)"
+          echo "PASS no APK generated"
