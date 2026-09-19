@@ -2,14 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 
-const source=fs.readFileSync('src/services/rateLimit.ts','utf8').replace(/
-/g,'
-');
-const js=stripTypeScriptTypes(source.replace(/^import .*;
-/gm,''))
-  .replace(/export type RateLimitAction[sS]*?;
-
-/,'')
+const source=fs.readFileSync('src/services/rateLimit.ts','utf8').replace(/\r\n/g,'\n');
+const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,''))
+  .replace(/export type RateLimitAction[\s\S]*?;\n\n/,'')
   .replace(/export async function/g,'async function');
 const factory=new Function(js+'; return {buildRateLimitWrite,commitWithRateLimit};');
 const api=factory();
