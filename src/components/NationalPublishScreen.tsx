@@ -37,6 +37,7 @@ type PublishDraft = {
   meetingPointId?: string;
   attributes?: Record<string, string | number | boolean>;
   images?: string[];
+  locationOptIn?: boolean;
 };
 
 function readPublishDraft(uid: string): PublishDraft | null {
@@ -126,6 +127,7 @@ export default function NationalPublishScreen() {
   const [message, setMessage] = useState<string | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening'>('idle');
   const [approxLocation, setApproxLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation());
+  const [locationOptIn, setLocationOptIn] = useState(Boolean(initialDraft?.locationOptIn));
 
   const institutionId = user.institution_id || user.university?.institution_id || '';
   const campusId = user.campus_id || user.university?.campus_id || '';
@@ -167,9 +169,9 @@ export default function NationalPublishScreen() {
   useEffect(() => {
     writePublishDraft(user.id, {
       assistantText, title, description, price, quantity, category, condition, negotiable, scope,
-      deliveryMethods, meetingPointId, attributes, images,
+      deliveryMethods, meetingPointId, attributes, images, locationOptIn,
     });
-  }, [user.id, assistantText, title, description, price, quantity, category, condition, negotiable, scope, deliveryMethods, meetingPointId, attributes, images]);
+  }, [user.id, assistantText, title, description, price, quantity, category, condition, negotiable, scope, deliveryMethods, meetingPointId, attributes, images, locationOptIn]);
 
   const applyTopi = async () => {
     const text = assistantText.trim();
@@ -209,8 +211,11 @@ export default function NationalPublishScreen() {
 
       setTopiSource(result.source);
       setTopiProvider(result.provider || null);
-      if (result.provider === 'firebase-ai-logic') setMessage('Topi IA real (Firebase AI) completó el borrador. Revisa los datos antes de publicar.');
-      else if (result.provider === 'private-endpoint') setMessage('Topi conectado completó el borrador mediante el endpoint privado. Revisa los datos antes de publicar.');
+      const privacyNote = result.privacyRedactions?.length
+        ? ' Por privacidad, omitimos del envío remoto datos de contacto o códigos sensibles detectados; revisa el borrador.'
+        : '';
+      if (result.provider === 'firebase-ai-logic') setMessage(`Topi IA real (Firebase AI) completó el borrador. Revisa los datos antes de publicar.${privacyNote}`);
+      else if (result.provider === 'private-endpoint') setMessage(`Topi conectado completó el borrador mediante el endpoint privado. Revisa los datos antes de publicar.${privacyNote}`);
       else setMessage('Topi usó la guía local. Esta respuesta no se presenta como Firebase AI.');
     } catch (error) {
       setTopiSource(null);
@@ -239,17 +244,24 @@ export default function NationalPublishScreen() {
   };
 
   const refreshLocation = async () => {
-    setMessage('Obteniendo una ubicación aproximada…');
+    setMessage('Obteniendo una ubicación aproximada para este anuncio…');
     const location = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000 });
     setApproxLocation(location);
     if (location) {
-      setMessage('Ubicación aproximada activada. TuTop guardará sólo precisión cercana a 1 km, nunca tu domicilio exacto.');
+      setLocationOptIn(true);
+      setMessage('Ubicación aproximada incluida en este anuncio (~1 km). Puedes quitarla antes de publicar.');
       return;
     }
+    setLocationOptIn(false);
     const permission = await nearbyLocationPermission();
     if (permission === 'denied') setMessage('Android tiene bloqueada la ubicación para TuTop. Activa ubicación aproximada para la app y vuelve a intentarlo.');
     else if (permission === 'unavailable') setMessage('No pudimos obtener ubicación del dispositivo. Comprueba que los servicios de ubicación de Android estén encendidos.');
     else setMessage('Android concedió el permiso, pero todavía no entregó una posición. Tu anuncio seguirá funcionando por campus y ciudad; vuelve a intentar ubicación en unos segundos.');
+  };
+
+  const removeListingLocation = () => {
+    setLocationOptIn(false);
+    setMessage('Este anuncio no incluirá ubicación aproximada. TuTop puede seguir usando una ubicación cacheada para explorar cerca de ti, pero no la publicará aquí.');
   };
 
   const addPhotos = async (files: FileList | null) => {
@@ -348,8 +360,9 @@ export default function NationalPublishScreen() {
         return;
       }
 
-      const location = approxLocation || await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000 });
-      if (location && !approxLocation) setApproxLocation(location);
+      // A cached Nearby position is not consent to publish location. Publication
+      // never requests location implicitly; only an explicit per-listing opt-in may attach it.
+      const location = locationOptIn ? approxLocation : null;
 
       if (videoFile) {
         const uploaded = await firebaseMediaStorage.uploadListingVideo(videoFile, user.id);
@@ -457,11 +470,11 @@ export default function NationalPublishScreen() {
           <button type="button" onClick={startVoice} className={`absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-xl ${voiceStatus === 'listening' ? 'bg-fuchsia-500 text-white' : 'bg-white/[0.06] text-violet-200'}`} aria-label="Dictar a Topi"><Mic className="h-4 w-4" /></button>
         </div>
         <button disabled={topiBusy} type="button" onClick={() => void applyTopi()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-xs font-black text-white disabled:opacity-60">{topiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{topiBusy ? 'Topi está preparando…' : 'Topi, prepara mi anuncio'}</button>
-        <p className="mt-2 text-[8px] leading-4 text-slate-600">Topi no recibe fotos, tokens ni ubicación exacta. La IA nunca publica por ti: sólo propone y tú confirmas.</p>
+        <p className="mt-2 text-[8px] leading-4 text-slate-600">TuTop no adjunta automáticamente fotos, tokens ni ubicación del dispositivo a Topi. Antes del envío remoto se omiten emails, teléfonos y códigos sensibles evidentes. No escribas domicilio exacto ni secretos. La IA nunca publica por ti: sólo propone y tú confirmas.</p>
       </section>
 
       <section className="publish-card">
-        <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-300" /><div className="min-w-0 flex-1"><strong className="text-xs">Cercanía para compradores</strong><p className="mt-1 text-[9px] text-slate-500">{approxLocation ? 'Ubicación aproximada activa (~1 km). Nunca se publica tu domicilio exacto.' : 'Actívala para aparecer en filtros de 5, 10, 25 y 50 km.'}</p></div><button type="button" onClick={() => void refreshLocation()} className="rounded-xl bg-emerald-500/10 px-3 py-2 text-[9px] font-bold text-emerald-200">{approxLocation ? 'Actualizar' : 'Activar'}</button></div>
+        <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-300" /><div className="min-w-0 flex-1"><strong className="text-xs">Cercanía para compradores</strong><p className="mt-1 text-[9px] text-slate-500">{locationOptIn && approxLocation ? 'Este anuncio incluirá ubicación aproximada (~1 km). Nunca se publica tu domicilio exacto.' : approxLocation ? 'Hay una ubicación aproximada disponible en este dispositivo, pero no se incluirá en este anuncio hasta que la actives aquí.' : 'Opcional: actívala para aparecer en filtros de 5, 10, 25 y 50 km.'}</p></div>{locationOptIn && approxLocation ? <button type="button" onClick={removeListingLocation} className="rounded-xl bg-rose-500/10 px-3 py-2 text-[9px] font-bold text-rose-200">Quitar</button> : <button type="button" onClick={() => void refreshLocation()} className="rounded-xl bg-emerald-500/10 px-3 py-2 text-[9px] font-bold text-emerald-200">Activar</button>}</div>
       </section>
 
       <section className="publish-card"><strong className="text-xs">{user.university?.institution_name || institutionId || 'Elige tu universidad'}</strong><p className="mt-1 text-[9px] text-slate-500">{user.university?.campus_name || campusId || 'Falta campus'}{user.university?.career_name ? ` · ${user.university.career_name}` : ''}</p></section>
