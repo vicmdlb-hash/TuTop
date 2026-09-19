@@ -253,6 +253,8 @@ async function auditActiveRulesContract() {
     national_requires_shipping:/visibility_scope\s*!=\s*'national'\s*\|\|\s*request\.resource\.data\.shipping_available\s*==\s*true/.test(section),
     video_urls_allowed_create_key:/hasOnly\(\[[\s\S]*?'video_urls'/.test(section),
     seller_profile_identity_coupling:/productMatchesSellerIdentity\(request\.resource\.data,\s*request\.auth\.uid\)/.test(section),
+    rate_read_resource_uid_guard:/match \/rate_limits\/\{bucketId\}[\s\S]*?allow read:\s*if signedIn\(\)\s*&&\s*resource\.data\.uid\s*==\s*request\.auth\.uid;/.test(content),
+    rate_read_deterministic_owner_guard:/match \/rate_limits\/\{bucketId\}[\s\S]*?allow read:[^;]*(?:listing_create|ownRateBucket)/.test(content),
     rules_content_logged:false
   };
   console.log(JSON.stringify({live_rules_contract_audit:audit}));
@@ -315,6 +317,23 @@ try {
   const claims=decodeJwt(idToken);
   if(String(login.localId||'')!==uid) throw new Error('AUTH_UID_DRIFT');
   if(claims.email_verified!==true) throw new Error('AUTH_EMAIL_VERIFIED_CLAIM_FALSE');
+
+  stage='MISSING_RATE_BUCKET_READ_PROBE';
+  const missingRatePath='rate_limits/'+uid+'-listing_create';
+  const missingRateResponse=await fetch('https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents/'+missingRatePath,{
+    headers:{Authorization:'Bearer '+idToken}
+  });
+  const missingRateText=await missingRateResponse.text();
+  let missingRateBody={};
+  try{missingRateBody=missingRateText?JSON.parse(missingRateText):{};}catch{}
+  const missingRateStatus=missingRateResponse.status;
+  const missingRateError=String(missingRateBody?.error?.status||missingRateBody?.error?.message||'');
+  console.log(JSON.stringify({missing_rate_bucket_read_probe:{
+    http_status:missingRateStatus,
+    firebase_status:/PERMISSION_DENIED/i.test(missingRateError)?'PERMISSION_DENIED':missingRateStatus===404?'NOT_FOUND':'OTHER',
+    expected_client_getDocument_behavior:missingRateStatus===404?'returns_null':missingRateStatus===403?'throws_permission_denied':'other',
+    user_data_logged:false
+  }}));
 
   stage='PROFILE_BOOTSTRAP';
   const at=new Date().toISOString();
@@ -683,6 +702,8 @@ try {
     title_minimum_live_boundary_pass:true,
     live_source_drift_national_without_shipping:liveRulesContract.national_requires_shipping===false,
     live_rules_video_key_enabled:liveRulesContract.video_urls_allowed_create_key,
+    missing_rate_bucket_read_status:missingRateStatus,
+    missing_rate_bucket_client_get_behavior:missingRateStatus===404?'returns_null':missingRateStatus===403?'throws_permission_denied':'other',
     user_data_logged:false,
     cleanup_required:true
   }));
