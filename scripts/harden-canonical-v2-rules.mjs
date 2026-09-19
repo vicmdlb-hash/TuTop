@@ -35,8 +35,8 @@ replaceOnce(
 
 replaceOnce(
   "          && request.resource.data.moderation_status == resource.data.moderation_status",
-  "          && (\n            request.resource.data.moderation_status == resource.data.moderation_status\n            || (request.resource.data.moderation_status == 'pending' && resource.data.moderation_status in ['approved','rejected','flagged'])\n          )",
-  'seller edit returns canonical listing to moderation without self-approval',
+  "          && (\n            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['title','description','category_id','subcategory_id','condition','attributes','photo_urls'])\n            || request.resource.data.moderation_status == 'pending'\n          )\n          && (\n            request.resource.data.moderation_status == resource.data.moderation_status\n            || (request.resource.data.moderation_status == 'pending' && resource.data.moderation_status in ['approved','rejected','flagged'])\n          )",
+  'seller public-content edit must return canonical listing to moderation based on current Rules diff',
 );
 
 const moderatorListingNeedle = `        ||
