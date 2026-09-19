@@ -25,6 +25,7 @@ const FALLBACK_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<
 const PUBLISH_DRAFT_PREFIX = 'tutop.publish.draft.v1.';
 
 type PublishDraft = {
+  operationId?: string;
   assistantText?: string;
   title?: string;
   description?: string;
