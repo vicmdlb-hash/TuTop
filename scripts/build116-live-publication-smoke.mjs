@@ -150,6 +150,10 @@ async function auditLiveState(){
     careerIdKinds[ck]=(careerIdKinds[ck]||0)+1;
   }
   const verificationLevelNonInteger=users.filter(d=>!['integerValue','missing'].includes(fieldKind(d,'verification_level'))).length;
+  const norm=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  const uatxFacultyNeedles=new Set(['uatx fcea','ciencias economico administrativas','uatx derecho','derecho ciencias politicas y criminologia']);
+  const legacyFacultyMatches=users.filter(d=>uatxFacultyNeedles.has(norm(stringField(d,'facultad')))).length;
+  const legacyFacultyNonempty=users.filter(d=>Boolean(norm(stringField(d,'facultad')))).length;
   const recentAtBaseCap=listingRates.filter(d=>{
     const start=Date.parse(timestampField(d,'window_start')||stringField(d,'window_start'));
     return integerField(d,'count')>=8&&Number.isFinite(start)&&now-start<60*60_000&&now>=start;
@@ -171,6 +175,8 @@ async function auditLiveState(){
       verification_level_non_integer:verificationLevelNonInteger,
       faculty_id_field_kinds:facultyIdKinds,
       career_id_field_kinds:careerIdKinds,
+      legacy_facultad_nonempty:legacyFacultyNonempty,
+      legacy_facultad_matches_uatx_faculty:legacyFacultyMatches,
       auth_batchget_aggregate:{
         total:authUsers.length,
         email_verified_true:authVerified,
