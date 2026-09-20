@@ -21,6 +21,8 @@ assert.match(preflight,/ACCESS_COARSE_LOCATION/);
 assert.match(preflight,/RECORD_AUDIO/);
 assert.match(preflight,/Firebase AI Logic/);
 assert.match(preflight,/EXTRA_PREFER_OFFLINE=false/);
+assert.match(preflight,/Production backend\/configuration status/);
+assert.match(preflight,/must \*\*not\*\* be prepared by silently reusing staging/);
 assert.match(preflight,/AAB \/ signing status/);
 assert.match(preflight,/no release `signingConfig` is configured/);
 assert.match(preflight,/no `bundleRelease` pipeline/);
@@ -36,5 +38,6 @@ for(const token of ['*.jks','*.keystore','android/key.properties','google-play*.
 assert.doesNotMatch(privacy,/política legal aprobada(?! para publicación)/i);
 console.log('PASS Candidate117 privacy draft stays non-approved and exact-authority aligned');
 console.log('PASS Candidate117 Play/Data Safety preflight is exact-candidate scoped');
+console.log('PASS No deliberate production backend is invented or inherited from staging');
 console.log('PASS Play publishing and billing remain fail-closed');
 console.log('PASS signing secrets remain excluded from repository');
