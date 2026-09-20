@@ -28,7 +28,7 @@
     "postcss.config.js": "2e7af2b7f1a6f391da1631d93968a9d487ba977d",
     "tailwind.config.js": "b491c5d253e607c54b112ea3c002df3e24f84e0f",
     "tsconfig.json": "3934b8f6d676d599058af5529521ad710c03121d",
-    "tsconfig.node.json": "97ede7ee6d676d599058af5529521ad710c03121d",
+    "tsconfig.node.json": "97ede7ee6f2d37bd2d76e60c0b6a447bee718b05",
     "vite.config.ts": "a879de9dbb6468cb8ee4b72be6b5a7290d64688b"
   },
   "cost_cutovers": {
