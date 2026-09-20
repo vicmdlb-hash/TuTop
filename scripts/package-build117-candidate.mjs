@@ -38,7 +38,7 @@ const manifest = {
     'accessibility_semantics',
     'historical_candidate_ci_trigger_hygiene'
   ],
-  pre_apk_gate: 'ALL_CANDIDATE117_SOFTWARE_AND_LIVE_PUBLICATION_CHECKS_PASS',
+  pre_apk_gate: 'ALL_CANDIDATE117_SOFTWARE_RULES_AND_LIVE_PUBLICATION_CHECKS_PASS',
   physical_evidence: 'NOT_TESTED',
   spend: 0,
   real_fcm_sent: false,
@@ -48,5 +48,8 @@ const manifest = {
 fs.writeFileSync(directory + '/provenance.json', JSON.stringify(manifest,null,2) + '\n');
 if (fs.existsSync('firebase/firestore.v2.generated.rules')) {
   fs.copyFileSync('firebase/firestore.v2.generated.rules', directory + '/firestore.candidate117.rules');
+}
+if (fs.existsSync('staging-candidate117-rules-cutover/applied.json')) {
+  fs.copyFileSync('staging-candidate117-rules-cutover/applied.json', directory + '/staging-rules-cutover.json');
 }
 console.log(JSON.stringify({source_sha:sha,apk:name,apk_sha256:hash,status:manifest.status}));

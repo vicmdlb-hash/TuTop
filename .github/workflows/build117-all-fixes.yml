@@ -24,6 +24,7 @@ jobs:
       TUTOP_AI_APP_CHECK_REQUIRED: 'false'
       VITE_TUTOP_TOPI_REMOTE_ENABLED: 'false'
       TUTOP_CLIENT_EQUIVALENT_ACK: CANDIDATE117_CLIENT_EQUIVALENT_PUBLICATION_ONLY
+      TUTOP_CANDIDATE117_RULES_ACK: CANDIDATE117_STAGING_RULES_AND_PUBLICATION_ONLY
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
       TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
@@ -115,11 +116,11 @@ jobs:
       - name: No dependency drift after emulator setup
         run: git diff --exit-code -- package.json package-lock.json
 
-      - name: Read current staging config without deploy
+      - name: Read current staging config
         run: node scripts/read-existing-staging-build-config.mjs
 
-      - name: REAL staging publication gate using Candidate117 client path
-        run: node --experimental-strip-types --experimental-loader ./scripts/node-ts-extension-loader.mjs scripts/candidate117-client-equivalent-live-smoke.mjs
+      - name: Controlled staging Rules cutover + REAL publication proof + auto rollback on failure
+        run: node scripts/candidate117-staging-rules-cutover.mjs --apply-and-prove
 
       - name: Firebase AI runtime smoke on staging
         run: node scripts/staging-topi-ai-runtime-smoke.mjs
