@@ -5,7 +5,7 @@ const tx = fs.readFileSync('src/services/canonicalTransactionsBackend.ts','utf8'
 const bridge = fs.readFileSync('src/services/nationalBackendCanonicalBridge.ts','utf8');
 const retry = fs.readFileSync('src/services/canonicalTransactionRetryBackend.ts','utf8');
 const chat = fs.readFileSync('src/components/ChatConversation.tsx','utf8');
-const rules = fs.readFileSync('firebase/firestore.v2.rules','utf8');
+const rules = fs.readFileSync('firebase/firestore.v2.generated.rules','utf8');
 const prepare = fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs','utf8');
 const locks = fs.readFileSync('scripts/harden-transaction-lock-rules.mjs','utf8');
 
