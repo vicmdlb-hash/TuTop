@@ -28,6 +28,7 @@ export type CanonicalListingV2 = {
   video_urls?: string[];
   status: CanonicalListingStatus;
   moderation_status: 'pending' | 'approved' | 'rejected' | 'flagged';
+  availability_status?: 'available' | 'reserved';
   visibility_scope: ListingVisibilityScope;
   published_at?: string;
   created_at: string;
@@ -117,6 +118,7 @@ export function legacyProductToListingV2(product: Product, now = new Date().toIS
       ...(legacyVideos.length ? { video_urls: legacyVideos } : {}),
       status: canonicalListingStatusFromLegacy(product.estado),
       moderation_status: canonicalModeration(product),
+      availability_status: product.availability_status === 'reserved' ? 'reserved' : 'available',
       visibility_scope: product.visibility_scope || 'institution',
       published_at: product.estado === 'Activo' ? product.fecha_creacion : undefined,
       created_at: product.fecha_creacion || now,
