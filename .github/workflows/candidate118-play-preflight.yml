@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: tutop-candidate118-play-preflight
+  group: tutop-candidate118-play-preflight-v2
   cancel-in-progress: true
 
 jobs:
