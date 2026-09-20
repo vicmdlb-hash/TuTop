@@ -37,6 +37,12 @@ export default function ProductDetail() {
   if (!product) return null;
   const favorite = favorites.includes(product.id);
   const ownProduct = product.vendedor_id === user.id;
+  const moderationLabel = ownProduct
+    ? product.moderation_status === 'pending' ? 'En revisión · aún no visible para otros'
+      : product.moderation_status === 'rejected' ? 'Rechazada'
+        : product.moderation_status === 'review' ? 'Revisión necesaria'
+          : product.estado === 'Activo' ? 'Disponible' : product.estado
+    : product.estado === 'Activo' ? 'Disponible' : product.estado;
   const photos = product.imagenes_url?.length ? product.imagenes_url : [product.imagen_url];
   const activePhoto = photos[Math.min(photoIndex, photos.length - 1)] || product.imagen_url;
   const videoUri = (product as Product & { video_urls?: string[] }).video_urls?.[0];
@@ -112,7 +118,7 @@ export default function ProductDetail() {
           <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-black/55" />
           <button onClick={closeProduct} className="detail-floating left-3" aria-label="Regresar"><ArrowLeft /></button>
           <button onClick={share} className="detail-floating right-3" aria-label="Compartir"><Share2 /></button>
-          <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-3 py-1 text-[10px] font-semibold backdrop-blur">{product.categoria}</span><span className="rounded-full bg-emerald-500/85 px-3 py-1 text-[10px] font-black text-white">{product.estado === 'Activo' ? 'Disponible' : product.estado}</span>{videoUri && <span className="inline-flex items-center gap-1 rounded-full bg-violet-600/85 px-2.5 py-1 text-[9px] font-black text-white"><Video className="h-3 w-3" />Video</span>}</div>
+          <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-3 py-1 text-[10px] font-semibold backdrop-blur">{product.categoria}</span><span className={`rounded-full px-3 py-1 text-[10px] font-black text-white ${ownProduct && product.moderation_status !== 'approved' ? 'bg-amber-500/90' : 'bg-emerald-500/85'}`}>{moderationLabel}</span>{videoUri && <span className="inline-flex items-center gap-1 rounded-full bg-violet-600/85 px-2.5 py-1 text-[9px] font-black text-white"><Video className="h-3 w-3" />Video</span>}</div>
           {photos.length > 1 && <span className="absolute bottom-3 right-3 rounded-full bg-black/55 px-2.5 py-1 text-[9px] font-bold backdrop-blur">{photoIndex + 1}/{photos.length}</span>}
         </div>
         {photos.length > 1 && <div className="flex gap-2 overflow-x-auto border-b border-white/[0.05] bg-[#09111d] px-4 py-2.5">{photos.map((photo, index) => <button key={`${photo.slice(0, 24)}-${index}`} onClick={() => { setPhotoIndex(index); feedbackTap(); }} className={`detail-thumb ${photoIndex === index ? 'detail-thumb-active' : ''}`}><img src={photo} alt={`Foto ${index + 1}`} /></button>)}</div>}

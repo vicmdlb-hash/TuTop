@@ -35,8 +35,8 @@ replaceOnce(
 
 replaceOnce(
   "          && request.resource.data.moderation_status == resource.data.moderation_status",
-  "          && (\n            request.resource.data.moderation_status == resource.data.moderation_status\n            || (request.resource.data.moderation_status == 'pending' && resource.data.moderation_status in ['approved','rejected','flagged'])\n          )",
-  'seller edit returns canonical listing to moderation without self-approval',
+  "          && (\n            (request.resource.data.diff(resource.data).affectedKeys().hasAny(['category_id','subcategory_id','title','description','attributes','condition','delivery_methods','meeting_point_ids','shipping_available','photo_urls','video_urls','visibility_scope'])\n              && request.resource.data.moderation_status == 'pending')\n            || (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['category_id','subcategory_id','title','description','attributes','condition','delivery_methods','meeting_point_ids','shipping_available','photo_urls','video_urls','visibility_scope'])\n              && request.resource.data.moderation_status == resource.data.moderation_status)\n          )",
+  'seller sensitive edit must return canonical listing to pending regardless of stale client snapshot',
 );
 
 const moderatorListingNeedle = `        ||

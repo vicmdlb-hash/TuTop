@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const doc = fs.readFileSync('docs/LEGAL_RETENTION_REVIEW_TEMPLATE_0.9.md', 'utf8');
+const lifecycle = fs.readFileSync('src/lib/privacyDataLifecycle.ts', 'utf8');
 for (const token of ['Base legal','Plazo de retención','Evento de inicio del plazo','Excepciones / litigio / fraude','Responsable de aprobar']) assert(doc.includes(token), `Falta campo legal: ${token}`);
 for (const collection of ['users','user_private','device_tokens','listings_v2','demand_requests','transactions_v2','listing_reservation_locks','offers','chats','reviews','reports','audit_log','account_deletion_requests']) assert(doc.includes(`\`${collection}\``), `Falta colección legal: ${collection}`);
 assert((doc.match(/PENDIENTE LEGAL/g) || []).length >= 20, 'La plantilla debe conservar placeholders legales explícitos');
@@ -11,3 +12,6 @@ console.log('PASS legal review matrix contains all decision fields');
 console.log('PASS critical collections including reservation locks are represented');
 console.log('PASS no retention duration is invented by engineering');
 console.log('Legal retention review contract: PASS');
+
+assert.doesNotMatch(lifecycle, /retention_days:\s*(?:30|60|90|180|365)\b/, 'Engineering lifecycle helper must not invent legal retention durations');
+console.log('PASS lifecycle helper leaves legal retention duration external');

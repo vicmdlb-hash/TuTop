@@ -31,10 +31,13 @@ export function accountDeletionDecision(input: {
   upheld_fraud_case?: boolean;
   legal_retention_required?: boolean;
 }): AccountDeletionDecision {
-  if (input.active_dispute) return { action: 'retain_temporarily', reason: 'active_dispute', retention_days: 90 };
-  if (input.legal_retention_required) return { action: 'retain_temporarily', reason: 'legal_retention', retention_days: 365 };
+  // Engineering may classify data as temporarily retained, but the actual
+  // retention deadline is a legal/operational decision supplied externally.
+  // Do not invent 30/60/90/180/365-day defaults here.
+  if (input.active_dispute) return { action: 'retain_temporarily', reason: 'active_dispute' };
+  if (input.legal_retention_required) return { action: 'retain_temporarily', reason: 'legal_retention' };
   if (input.upheld_fraud_case && input.zone === 'trust_safety') {
-    return { action: 'retain_temporarily', reason: 'fraud_prevention', retention_days: 365 };
+    return { action: 'retain_temporarily', reason: 'fraud_prevention' };
   }
   if (input.zone === 'transactional' || input.zone === 'analytics') {
     return { action: 'anonymize', reason: 'preserve_market_integrity_without_direct_identity' };
