@@ -17,6 +17,10 @@ This document is a reproducible engineering inventory for the exact Candidate117
 - Final Data Safety answers, legal retention decisions, store listing/content rating/assets, Play App Signing enrollment and explicit publication authorization remain pending.
 - Physical QA on the exact build117 APK remains pending.
 
+## Target API compliance
+
+Google Play's current mobile requirement for new apps and app updates is Android 16 / API 36 or higher from 2026-08-31. Candidate117 Android bootstrap pins both `compileSdkVersion=36` and `targetSdkVersion=36`, so the **target API level gate is currently green** for this candidate. The exact eventual release bundle must still be re-read before submission.
+
 ## Exact Android permission surface
 
 Candidate117 generated manifest audit:
