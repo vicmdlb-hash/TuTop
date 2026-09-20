@@ -41,7 +41,8 @@ for(const key of keys){
     generative_language_allowed:targets.length===0||targets.includes('generativelanguage.googleapis.com'),
     android_application_restricted:Boolean(restrictions.androidKeyRestrictions),
     allowed_android_packages:[...new Set(androidApps.map(x=>String(x.packageName||'')).filter(Boolean))],
-    allowed_certificate_count:androidApps.filter(x=>String(x.sha256Fingerprint||'').trim()).length,
+    allowed_certificate_count:androidApps.filter(x=>String(x.sha1Fingerprint||'').trim()).length,
+    exact_build118_application_allowed:androidApps.some(x=>String(x.packageName||'')==='mx.tutop.app'&&String(x.sha1Fingerprint||'').replace(/:/g,'').toUpperCase()==='50612E68A13CBF438A2355151135A8D08C126177'),
   });
 }
 const services={};
