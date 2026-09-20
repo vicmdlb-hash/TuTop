@@ -1,0 +1,40 @@
+name: Build117 Physical QA binding — no APK
+
+on:
+  push:
+    branches: [qa/candidate117-physical-acceptance]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-build117-physical-qa-binding
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Exact Build117 candidate runtime drift
+        run: node scripts/physical-qa-candidate-drift.mjs
+      - name: Physical QA evaluator contract
+        run: npm run physical-qa:evaluator:test
+      - name: Physical evidence bundle contract
+        run: npm run physical-qa:evidence:test
+      - name: Build117 18-gate acceptance contract
+        run: node scripts/build117-physical-acceptance-contract-tests.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Prove no APK/AAB generated
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS no APK/AAB generated"
