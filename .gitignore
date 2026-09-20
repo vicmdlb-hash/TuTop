@@ -18,6 +18,9 @@ functions/lib/
 firebase-debug.log
 .firebaserc.local
 
+# Generated Firebase web config for guarded Hosting build
+public/tutop-web-config.json
+
 # Generated locally/CI in the Spark beta
 android/
 ios/
