@@ -17,7 +17,7 @@ function friendlyError(raw: string) {
   if (/EMAIL_INVALID|INVALID_EMAIL/i.test(raw)) return 'Escribe un correo electrónico válido.';
   if (/WEAK_PASSWORD|PASSWORD_DOES_NOT_MEET_REQUIREMENTS/i.test(raw)) return 'Tu Clave TuTop necesita al menos 8 caracteres.';
   if (/TOO_MANY_ATTEMPTS|TOO_MANY_REQUESTS/i.test(raw)) return 'Hubo demasiados intentos. Inténtalo de nuevo más tarde.';
-  if (/NETWORK|FETCH|OFFLINE/i.test(raw)) return 'No pudimos conectar. Revisa tu internet e inténtalo otra vez.';
+  if (/FIREBASE_REQUEST_TIMEOUT|NETWORK|FETCH|OFFLINE/i.test(raw)) return 'La conexión tardó demasiado. Revisa tu internet e inténtalo otra vez.';
   if (/OPERATION_NOT_ALLOWED|CONFIGURATION_NOT_FOUND/i.test(raw)) return 'Ese método de recuperación no está disponible en esta beta. Usa “Entrar” con tu correo o crea una cuenta nueva.';
   if (/PERMISSION_DENIED|403/i.test(raw)) return 'Tu identidad todavía no autoriza esta acción. Verifica tu correo e inténtalo otra vez.';
   if (/PROFILE_MISSING|WALLET_MISSING|PRIVATE_IDENTITY_MISSING/i.test(raw)) return 'Tu cuenta necesita una reparación rápida. Vuelve a intentarlo.';
