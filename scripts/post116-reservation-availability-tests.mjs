@@ -30,7 +30,8 @@ assert.match(card, /Reservado temporalmente/);
 assert.match(card, /reservedForViewer/);
 assert.match(detail, /Reservado temporalmente/);
 assert.match(detail, /disabled=\{reserved\}/);
-assert.match(detail, /item\.availability_status !== 'reserved'/);
+assert.match(detail, /const reserved = product\.availability_status === 'reserved'/);
+assert.match(detail, /if \(ownProduct \|\| reserved\) return;/);
 assert.match(store, /product\.availability_status === 'reserved' && !existing/);
 
 console.log('PASS reservation availability truth is public-safe, atomic with lock lifecycle and blocks new buyer actions while reserved');
