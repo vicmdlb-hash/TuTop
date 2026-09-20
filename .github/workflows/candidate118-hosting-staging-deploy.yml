@@ -1,0 +1,85 @@
+name: Candidate118 Hosting staging deploy — legal gated
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type DEPLOY_CANDIDATE118_STAGING_HOSTING_ONLY
+        required: true
+        type: string
+      legal_approval:
+        description: Type LEGAL_PRIVACY_CONTENT_APPROVED
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: tutop-candidate118-hosting-staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-hosting:
+    if: github.ref_name == 'release/candidate118-play-preflight'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Exact PR103/Build118 + legal gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ inputs.confirm }}" = "DEPLOY_CANDIDATE118_STAGING_HOSTING_ONLY"
+          test "${{ inputs.legal_approval }}" = "LEGAL_PRIVACY_CONTENT_APPROVED"
+          PR_JSON="$(gh api "repos/$GITHUB_REPOSITORY/pulls/103")"
+          test "$(jq -r '.state' <<<"$PR_JSON")" = "open"
+          test "$(jq -r '.head.sha' <<<"$PR_JSON")" = "$GITHUB_SHA"
+          test "$(jq -r '.base.ref' <<<"$PR_JSON")" = "candidate/tutop-118-publication-self-heal"
+          test "$(jq -r '.base.sha' <<<"$PR_JSON")" = "e93ca0bb237e7fa438df5801fc627f065d9441e6"
+          ! grep -qi 'No es una política legal aprobada para publicación' public/privacy.html
+          ! grep -qi 'revisión legal.*pendiente\|legal.*pending' public/privacy.html
+      - run: npm ci
+      - name: Contract + legal retention gates
+        run: |
+          node scripts/candidate118-web-deletion-contract-tests.mjs
+          npm run legal-retention-review:test
+      - name: Read existing staging Firebase web config
+        run: node scripts/read-existing-staging-build-config.mjs
+      - name: Prepare Hosting runtime config
+        run: node scripts/prepare-candidate118-hosting-assets.mjs
+      - name: Build exact Hosting payload
+        run: npm run build
+      - name: Verify payload and no Android artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in dist/privacy.html dist/delete-account.html dist/delete-account.js dist/tutop-web-config.json; do test -s "$f"; done
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+      - name: Deploy Hosting only to exact staging project
+        run: >
+          npx --yes firebase-tools@15.30.1 deploy
+          --config firebase.json
+          --project tutop-beta-vicmdlb-1356585881
+          --only hosting
+      - name: External reachability probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location "https://tutop-beta-vicmdlb-1356585881.web.app/privacy.html" | grep -q 'Privacidad de TuTop'
+          curl --fail --silent --show-error --location "https://tutop-beta-vicmdlb-1356585881.web.app/delete-account.html" | grep -q 'Eliminar cuenta TuTop'
+          echo "PASS exact staging Hosting privacy + deletion URLs reachable"
+      - name: Remove temporary Firebase config
+        if: always()
+        run: rm -f .tutop-staging-web-config.json public/tutop-web-config.json
