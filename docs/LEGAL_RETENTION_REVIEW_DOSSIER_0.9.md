@@ -48,6 +48,46 @@ Esta sección únicamente identifica evidencia técnica vigente. **No fija plazo
 - Identidad del aprobador y fecha de vigencia: **PENDIENTE LEGAL**.
 - Producción Firebase, billing, signing/AAB y Play continúan bloqueados.
 
+## Baseline normativo mexicano para revisión
+
+> **Nota de alcance:** esta sección resume requisitos normativos oficiales para orientar la revisión. No sustituye asesoría jurídica ni decide por sí sola qué excepción, base, plazo o relación jurídica aplica a cada dato de TuTop.
+
+Fuente primaria de referencia: **Ley Federal de Protección de Datos Personales en Posesión de los Particulares**, nueva ley publicada DOF 20-03-2025; la Cámara de Diputados reporta reforma más reciente DOF 14-11-2025.
+
+### Requisitos que el revisor debe mapear a TuTop
+
+- **Finalidad y minimización:** el tratamiento debe limitarse a las finalidades del aviso; para datos sensibles debe buscarse que el periodo de tratamiento sea el mínimo indispensable.
+- **Supresión y bloqueo:** cuando los datos dejan de ser necesarios para las finalidades que motivaron el tratamiento deben suprimirse, previo bloqueo cuando corresponda y una vez concluido el periodo de conservación aplicable.
+- **Aviso de privacidad integral:** debe definir al menos:
+  - identidad y domicilio del responsable;
+  - datos personales tratados e identificación de datos sensibles;
+  - finalidades del tratamiento;
+  - opciones/medios para limitar uso o divulgación;
+  - mecanismos, medios y procedimientos para ejercer derechos ARCO;
+  - procedimiento para comunicar cambios al aviso.
+- **Seguridad:** deben existir medidas administrativas, técnicas y físicas acordes con riesgo, consecuencias, sensibilidad y tecnología.
+- **Cancelación:** la persona titular puede solicitar cancelación; la ley prevé bloqueo previo a supresión y permite conservación exclusivamente para responsabilidades nacidas del tratamiento durante el periodo aplicable.
+- **Excepciones a cancelación:** existen supuestos legales específicos (por ejemplo, datos necesarios para desarrollar/cumplir determinadas relaciones u obligaciones o por disposición legal). **El revisor debe decidir si alguno aplica a cada grupo de TuTop; ingeniería no lo presume.**
+- **ARCO:** debe existir persona/departamento responsable de tramitar solicitudes. La ley establece un plazo máximo de **20 días** para comunicar la determinación y, si procede, hacerla efectiva dentro de los **15 días** siguientes; la ampliación prevista por la ley debe revisarse caso por caso.
+- **Dato contractual específico:** la ley contiene una regla de **72 meses** para datos relativos al incumplimiento de obligaciones contractuales. No debe trasladarse automáticamente a chats, transacciones, reportes u otros datos de TuTop; el revisor debe determinar primero si un dato concreto entra realmente en ese supuesto.
+
+### Preguntas legales ya identificadas para TuTop
+
+1. ¿Quién será jurídicamente el **responsable** del tratamiento y qué domicilio debe aparecer en el aviso?
+2. ¿Qué datos de verificación universitaria califican como **sensibles** o requieren protección reforzada?
+3. Para `transactions_v2`, `offers`, `chats`, `reports` y `audit_log`, ¿qué información corresponde bloquear/retener por responsabilidades y cuál debe anonimizarse o suprimirse?
+4. ¿Qué relación jurídica —si existe— funda cada tratamiento y qué plazo de prescripción aplicable determina el bloqueo?
+5. ¿Algún dato de TuTop es realmente “relativo al incumplimiento de obligaciones contractuales” para efectos de la regla específica de 72 meses?
+6. ¿Qué terceros/proveedores deben recibir notificación de rectificación/cancelación cuando continúan tratando datos transmitidos por TuTop?
+7. ¿Quién será la persona/departamento encargado de ARCO y cuál será el canal verificable para cumplir los plazos legales?
+8. ¿Cómo se documentarán excepciones parciales de cancelación sin convertir una excepción específica en retención generalizada?
+9. ¿Cómo debe describirse el tratamiento por Firebase Auth, Firestore, FCM, App Check, Firebase AI Logic/Gemini y reconocimiento de voz en el aviso final y en Data Safety?
+
+Referencias oficiales:
+- Diario Oficial de la Federación, Decreto/LFPDPPP, 20-03-2025.
+- Cámara de Diputados, texto vigente de LFPDPPP, última reforma reportada 14-11-2025.
+- Orden Jurídico Nacional, texto vigente LFPDPPP, artículos 10, 12, 14-20 y 21-36.
+
 ## Registro de decisión obligatorio
 
 - Jurisdicción aplicable: **PENDIENTE LEGAL**
