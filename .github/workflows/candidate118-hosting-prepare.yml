@@ -1,0 +1,76 @@
+name: Candidate118 Hosting prepare — no deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type PREPARE_CANDIDATE118_HOSTING_NO_DEPLOY
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: tutop-candidate118-hosting-prepare
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    if: github.ref_name == 'release/candidate118-play-preflight'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Exact PR103/Build118 authority guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ inputs.confirm }}" = "PREPARE_CANDIDATE118_HOSTING_NO_DEPLOY"
+          test "$GITHUB_REF_NAME" = "release/candidate118-play-preflight"
+          PR_JSON="$(gh api "repos/$GITHUB_REPOSITORY/pulls/103")"
+          test "$(jq -r '.state' <<<"$PR_JSON")" = "open"
+          test "$(jq -r '.draft' <<<"$PR_JSON")" = "true"
+          test "$(jq -r '.head.sha' <<<"$PR_JSON")" = "$GITHUB_SHA"
+          test "$(jq -r '.base.ref' <<<"$PR_JSON")" = "candidate/tutop-118-publication-self-heal"
+          test "$(jq -r '.base.sha' <<<"$PR_JSON")" = "e93ca0bb237e7fa438df5801fc627f065d9441e6"
+      - run: npm ci
+      - name: Authenticated deletion contract
+        run: node scripts/candidate118-web-deletion-contract-tests.mjs
+      - name: Read existing staging Firebase web config — no mutation
+        run: node scripts/read-existing-staging-build-config.mjs
+      - name: Prepare ignored runtime Hosting config
+        run: node scripts/prepare-candidate118-hosting-assets.mjs
+      - name: Build Hosting payload
+        run: npm run build
+      - name: Verify exact Hosting payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/privacy.html
+          test -s dist/delete-account.html
+          test -s dist/delete-account.js
+          test -s dist/tutop-web-config.json
+          node -e "const c=require('./dist/tutop-web-config.json'); if(c.projectId!=='tutop-beta-vicmdlb-1356585881'||!c.apiKey||!c.appId) process.exit(2)"
+          grep -q 'Solicitar eliminación de mi cuenta TuTop' dist/delete-account.html
+          grep -q 'account_deletion_requests' dist/delete-account.js
+      - name: Prove no deploy and no APK/AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS Hosting payload prepared only; no firebase deploy executed; no APK/AAB generated"
+      - name: Remove temporary Firebase config
+        if: always()
+        run: rm -f .tutop-staging-web-config.json public/tutop-web-config.json
