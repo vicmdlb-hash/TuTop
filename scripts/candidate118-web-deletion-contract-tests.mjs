@@ -54,6 +54,10 @@ const parsed=JSON.parse(firebase);
 const csp=(parsed.hosting?.headers||[]).flatMap(item=>item.headers||[]).find(item=>item.key==='Content-Security-Policy')?.value||'';
 for(const origin of ['https://identitytoolkit.googleapis.com','https://securetoken.googleapis.com','https://firestore.googleapis.com']) assert(csp.includes(origin));
 assert(csp.includes("script-src 'self'"));
+const deleteHeaders=(parsed.hosting?.headers||[]).find(item=>item.source==='/delete-account*')?.headers||[];
+const configHeaders=(parsed.hosting?.headers||[]).find(item=>item.source==='/tutop-web-config.json')?.headers||[];
+assert(deleteHeaders.some(item=>item.key==='Cache-Control'&&item.value==='no-store'));
+assert(configHeaders.some(item=>item.key==='Cache-Control'&&item.value==='no-store'));
 
 console.log('PASS authenticated deletion page uses self-hosted JS and no inline script');
 console.log('PASS deletion client authenticates existing account and creates idempotent pending request only');
