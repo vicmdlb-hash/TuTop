@@ -10,13 +10,26 @@ type CapacitorRuntime = {
 };
 
 export type NativeTopiAIReason = 'ready' | 'not-native' | 'disabled' | 'plugin-missing' | 'app-check-unavailable' | 'request-failed' | 'empty-response';
+export type NativeTopiAIFailureKind = 'none' | 'timeout' | 'network' | 'firebase-config-rejected' | 'app-check' | 'capacity' | 'native-request';
 const AI_REQUEST_TIMEOUT_MS = 20_000;
 const AI_TRANSIENT_RETRY_DELAY_MS = 650;
 let lastReason: NativeTopiAIReason = 'disabled';
+let lastFailureKind: NativeTopiAIFailureKind = 'none';
 let lastModel = '';
 
-function setReason(reason: NativeTopiAIReason, context?: Record<string, unknown>) {
+function classifyFailure(error: unknown): NativeTopiAIFailureKind {
+  const message = String(error instanceof Error ? error.message : error || '');
+  if (/TOPI_AI_TIMEOUT|TIMEOUT/i.test(message)) return 'timeout';
+  if (/API[_ -]?KEY|PERMISSION_DENIED|REQUEST_DENIED|403|API key not valid/i.test(message)) return 'firebase-config-rejected';
+  if (/APP.?CHECK|UNAUTHENTICATED|401/i.test(message)) return 'app-check';
+  if (/RESOURCE_EXHAUSTED|429|high demand|503|temporarily unavailable/i.test(message)) return 'capacity';
+  if (/NETWORK|ECONN|ENET|fetch|offline/i.test(message)) return 'network';
+  return 'native-request';
+}
+
+function setReason(reason: NativeTopiAIReason, context?: Record<string, unknown>, failureKind: NativeTopiAIFailureKind = 'none') {
   lastReason = reason;
+  lastFailureKind = failureKind;
   recordDiagnostic('ai', reason, context);
 }
 
@@ -64,10 +77,10 @@ export function nativeTopiAIAvailable() {
 }
 
 export function nativeTopiAIStatus() {
-  if (!nativeRuntime()) return { available: false, reason: 'not-native' as NativeTopiAIReason, model: '', appCheck: nativeAppCheckStatus() };
-  if (!firebaseAIEnabled()) return { available: false, reason: 'disabled' as NativeTopiAIReason, model: '', appCheck: nativeAppCheckStatus() };
-  if (!plugin()?.generate) return { available: false, reason: 'plugin-missing' as NativeTopiAIReason, model: '', appCheck: nativeAppCheckStatus() };
-  return { available: lastReason === 'ready', reason: lastReason, model: lastModel, appCheck: nativeAppCheckStatus() };
+  if (!nativeRuntime()) return { available: false, reason: 'not-native' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
+  if (!firebaseAIEnabled()) return { available: false, reason: 'disabled' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
+  if (!plugin()?.generate) return { available: false, reason: 'plugin-missing' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
+  return { available: lastReason === 'ready', reason: lastReason, failureKind: lastFailureKind, model: lastModel, appCheck: nativeAppCheckStatus() };
 }
 
 function timeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -123,7 +136,7 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
     appCheckToken = null;
   }
   if (required && !appCheckToken) {
-    setReason('app-check-unavailable', { app_check_required: true });
+    setReason('app-check-unavailable', { app_check_required: true }, 'app-check');
     return null;
   }
 
@@ -147,8 +160,8 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
         }
         setReason('empty-response', { fallback_model: index > 0, retry: attempt > 0 });
       } catch (error) {
-        const code = error instanceof Error && /TIMEOUT/.test(error.message) ? 'timeout' : 'native-request';
-        setReason('request-failed', { fallback_model: index > 0, retry: attempt > 0, failure_kind: code });
+        const failureKind = classifyFailure(error);
+        setReason('request-failed', { fallback_model: index > 0, retry: attempt > 0, failure_kind: failureKind }, failureKind);
       }
       if (attempt + 1 < attempts) await delay(AI_TRANSIENT_RETRY_DELAY_MS);
     }
