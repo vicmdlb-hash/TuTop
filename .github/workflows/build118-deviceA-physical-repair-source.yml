@@ -1,0 +1,41 @@
+name: Build118 Device A physical-failure repair — source only
+
+on:
+  push:
+    branches: [fix/build118-deviceA-physical-failures]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-build118-deviceA-repair-source
+  cancel-in-progress: true
+
+jobs:
+  validate-source-repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: ProductDetail React hook-order regression
+        run: node scripts/build118-deviceA-product-detail-hook-order-tests.mjs
+      - name: Relevant regression family
+        run: |
+          node scripts/post116-reservation-availability-tests.mjs
+          node scripts/post116-nearby-moderation-freshness-tests.mjs
+          node --experimental-strip-types scripts/post116-account-personalization-isolation-tests.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove source-only lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source-only repair validation; no APK/AAB"
