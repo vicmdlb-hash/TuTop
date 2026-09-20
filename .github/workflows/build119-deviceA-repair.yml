@@ -111,13 +111,18 @@ jobs:
           APKSIGNER_OUT="$("$APKSIGNER" verify --print-certs "$APK")"
           CERT_SHA1=""
           while IFS= read -r line; do
-            if [[ "$line" == "Signer #1 certificate SHA-1 digest:"* ]]; then
-              CERT_SHA1="${line#*: }"
+            if [[ "$line" == *"SHA-1"* ]]; then
+              CERT_SHA1="${line##* }"
+              CERT_SHA1="${CERT_SHA1//:/}"
+              CERT_SHA1="${CERT_SHA1^^}"
               break
             fi
           done <<< "$APKSIGNER_OUT"
-          CERT_SHA1="$(printf '%s' "$CERT_SHA1" | tr -d ':' | tr '[:lower:]' '[:upper:]')"
-          test "${#CERT_SHA1}" -eq 40
+          if [[ ! "$CERT_SHA1" =~ ^[0-9A-F]{40}$ ]]; then
+            echo "Could not extract a 40-hex SHA-1 fingerprint from apksigner output." >&2
+            printf '%s\n' "$APKSIGNER_OUT" | sed -E 's/([0-9A-Fa-f]{8})[0-9A-Fa-f:]{24,}/\\1…[redacted]/g' >&2
+            exit 3
+          fi
           echo "TUTOP_BUILD119_APK_SHA256=$APK_SHA" >> "$GITHUB_ENV"
           echo "TUTOP_BUILD119_CERT_SHA1=$CERT_SHA1" >> "$GITHUB_ENV"
           echo "Build119 APK identity captured without exposing Firebase credentials."
