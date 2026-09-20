@@ -163,8 +163,11 @@ async function createDeletionRequest() {
     },
   );
 
-  if (response.status === 409) return readDeletionRequest();
-  await readJson(response);
+  if (!response.ok) {
+    const racedExisting = await readDeletionRequest().catch(() => null);
+    if (racedExisting) return racedExisting;
+    await readJson(response);
+  }
   return readDeletionRequest();
 }
 
