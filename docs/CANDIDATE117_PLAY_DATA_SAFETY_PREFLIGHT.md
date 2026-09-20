@@ -102,6 +102,18 @@ All four returned **HTTP 404** at the time of the audit. Source existence is the
 
 The source deletion page currently has `robots=noindex`. Google Play's account-deletion requirement is about a reachable web resource; this engineering preflight does not treat search-engine indexing as the compliance criterion. Public reachability and policy/legal approval are the actual unresolved gates.
 
+## Production backend/configuration status
+
+Candidate117 does not have a deliberately selected production Firebase target:
+
+- no versioned `.firebaserc`;
+- no `config/environments.json`, `config/firebase.json`, or `config/release.json`;
+- `config/` currently contains only `project.json` and `staging-reset-once.json`;
+- Android bootstrap explicitly recognizes the current staging project and rejects the historical Firebase project for the V2 path;
+- `productionPublishingAllowed=false`.
+
+Therefore a Play AAB must **not** be prepared by silently reusing staging or the historical Firebase project. A production project/configuration target must be explicitly selected, security-reviewed and wired before signed release-bundle generation.
+
 ## AAB / signing status
 
 Candidate117 release audit found:
