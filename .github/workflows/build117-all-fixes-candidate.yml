@@ -74,6 +74,8 @@ jobs:
           node scripts/post116-seller-moderation-truth-tests.mjs
           node scripts/post116-nearby-moderation-freshness-tests.mjs
           node scripts/post116-listing-moderation-race-tests.mjs
+      - name: Compose strict V2 Rules before reservation contracts
+        run: npm run v2:rules:prepare
       - name: Reservation truth contracts
         run: |
           node scripts/post116-reservation-availability-tests.mjs
@@ -92,8 +94,6 @@ jobs:
           node scripts/v2-canonical-bridge-coverage-tests.mjs
           node scripts/v2-rules-composition-contract-tests.mjs
 
-      - name: Compose strict V2 Rules
-        run: npm run v2:rules:prepare
       - name: Emulator dependencies
         run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
       - name: Reservation lock emulator
