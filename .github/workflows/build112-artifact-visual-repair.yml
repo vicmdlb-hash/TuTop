@@ -1,8 +1,6 @@
 name: TuTop build112 artifact visual repair candidate
 
 on:
-  push:
-    branches: [fix/tutop-112-artifact-visual-repair]
   workflow_dispatch:
 
 permissions:
