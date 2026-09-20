@@ -31,7 +31,9 @@ assert.match(preflight,/Production backend\/configuration status/);
 assert.match(preflight,/must \*\*not\*\* be prepared by silently reusing staging/);
 assert.match(preflight,/AAB \/ signing status/);
 assert.match(preflight,/no release `signingConfig` is configured/);
-assert.match(preflight,/no `bundleRelease` pipeline/);
+assert.match(preflight,/AAB_PIPELINE_PREPARED_FAIL_CLOSED/);
+assert.match(preflight,/PREPARE_SIGNED_AAB_NO_UPLOAD/);
+assert.match(preflight,/no Play Console upload step/);
 assert.match(preflight,/SOURCE_PREFLIGHT_PASS != LEGAL_APPROVAL != DEVICE_PASS != PLAY_APPROVED/);
 
 assert.equal(project.productionPublishingAllowed,false);
