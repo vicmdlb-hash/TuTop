@@ -24,7 +24,7 @@ assert.match(privacy,/Firebase AI Logic 17\.17\.0/);
 assert.match(privacy,/SpeechRecognizer/);
 assert.match(privacy,/20 de septiembre de 2026/);
 
-assert.match(deletion,/Eliminar cuenta TuTop/);
+assert.match(deletion,/Eliminación de cuenta TuTop/);
 assert.match(deletion,/sin abrir ni reinstalar la app/i);
 assert.match(deletion,/Solicitar eliminación de mi cuenta TuTop/);
 assert.match(deletion,/script type="module" src="\/delete-account\.js"/);
