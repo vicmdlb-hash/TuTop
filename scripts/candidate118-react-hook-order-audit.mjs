@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import ts from 'typescript';
+import * as ts from 'typescript';
 
 function walk(dir){
   return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>{
