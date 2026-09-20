@@ -108,7 +108,15 @@ jobs:
           APK_SHA="$(sha256sum "$APK" | awk '{print $1}')"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$APKSIGNER"
-          CERT_SHA1="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-1 digest: //p' | head -n 1 | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          APKSIGNER_OUT="$("$APKSIGNER" verify --print-certs "$APK")"
+          CERT_SHA1=""
+          while IFS= read -r line; do
+            if [[ "$line" == "Signer #1 certificate SHA-1 digest:"* ]]; then
+              CERT_SHA1="${line#*: }"
+              break
+            fi
+          done <<< "$APKSIGNER_OUT"
+          CERT_SHA1="$(printf '%s' "$CERT_SHA1" | tr -d ':' | tr '[:lower:]' '[:upper:]')"
           test "${#CERT_SHA1}" -eq 40
           echo "TUTOP_BUILD119_APK_SHA256=$APK_SHA" >> "$GITHUB_ENV"
           echo "TUTOP_BUILD119_CERT_SHA1=$CERT_SHA1" >> "$GITHUB_ENV"
