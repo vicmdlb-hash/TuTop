@@ -35,7 +35,7 @@ assert.doesNotMatch(prep,/service.?account|refreshToken|idToken/i);
 assert(ignore.includes('public/tutop-web-config.json'));
 
 assert.match(prepareWorkflow,/workflow_dispatch:/);
-assert.doesNotMatch(prepareWorkflow,/\npush:/);
+assert.match(prepareWorkflow,/push:\s*\n\s*branches: \[release\/candidate118-play-preflight\]/);
 assert.match(prepareWorkflow,/PREPARE_CANDIDATE118_HOSTING_NO_DEPLOY/);
 assert.match(prepareWorkflow,/pulls\/103/);
 assert.match(prepareWorkflow,/e93ca0bb237e7fa438df5801fc627f065d9441e6/);
@@ -59,6 +59,6 @@ console.log('PASS authenticated deletion page uses self-hosted JS and no inline 
 console.log('PASS deletion client authenticates existing account and creates idempotent pending request only');
 console.log('PASS no client Auth deletion/completion/token persistence capability exists');
 console.log('PASS Hosting runtime config is generated separately and ignored by git');
-console.log('PASS Hosting prepare workflow is manual and cannot deploy');
+console.log('PASS Hosting prepare workflow auto-validates each Candidate118 push and cannot deploy');
 console.log('PASS Hosting deploy workflow is manual, exact-branch/SHA scoped, legal-gated and hosting-only');
 console.log('PASS Firebase Hosting CSP permits only required Firebase REST origins for this flow');
