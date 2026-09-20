@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 const EXPECTED_SHA='e93ca0bb237e7fa438df5801fc627f065d9441e6';
 const privacy=fs.readFileSync('public/privacy.html','utf8');
+const deletion=fs.readFileSync('public/delete-account.html','utf8');
+const deletionClient=fs.readFileSync('public/delete-account.js','utf8');
 const preflight=fs.readFileSync('docs/CANDIDATE118_PLAY_DATA_SAFETY_PREFLIGHT.md','utf8');
 const project=JSON.parse(fs.readFileSync('config/project.json','utf8'));
 const gitignore=fs.readFileSync('.gitignore','utf8');
@@ -21,6 +23,14 @@ assert.match(privacy,/DEVICE_A_NOT_TESTED/);
 assert.match(privacy,/Firebase AI Logic 17\.17\.0/);
 assert.match(privacy,/SpeechRecognizer/);
 assert.match(privacy,/20 de septiembre de 2026/);
+
+assert.match(deletion,/Eliminar cuenta TuTop/);
+assert.match(deletion,/sin abrir ni reinstalar la app/i);
+assert.match(deletion,/Solicitar eliminación de mi cuenta TuTop/);
+assert.match(deletion,/script type="module" src="\/delete-account\.js"/);
+assert.match(deletionClient,/accounts:signInWithPassword/);
+assert.match(deletionClient,/account_deletion_requests/);
+assert.doesNotMatch(deletionClient,/accounts:delete|batchDelete/);
 
 assert.match(preflight,/ENGINEERING PREFLIGHT — NOT A FINAL PLAY CONSOLE DECLARATION/);
 assert.match(preflight,new RegExp(EXPECTED_SHA));
@@ -58,9 +68,10 @@ assert.match(releaseGate,/PLAY_VERSION_CODE_MUST_EXCEED_90212/);
 assert.match(releaseGate,/signing_key_generated:false/);
 assert.match(playVersion,/code<=90212/);
 
-for(const token of ['*.jks','*.keystore','android/key.properties','google-play*.json']) assert(gitignore.includes(token));
+for(const token of ['*.jks','*.keystore','android/key.properties','google-play*.json','public/tutop-web-config.json']) assert(gitignore.includes(token));
 
 console.log('PASS Candidate118 exact authority + non-approved privacy draft');
+console.log('PASS Candidate118 authenticated external deletion source is present but not deployed');
 console.log('PASS Candidate118 source-level API/permissions/voice/AI release inventory');
 console.log('PASS production publishing and billing remain fail-closed');
 console.log('PASS manual AAB path has no Play upload and requires pre-existing signing/production inputs');
