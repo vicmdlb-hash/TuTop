@@ -47,14 +47,14 @@ replaceOnce(
 const expiryNeedle = `            && request.resource.data.status == 'expired'\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])`;
 replaceOnce(
   expiryNeedle,
-  `${expiryNeedle}\n            && !existsAfter(/databases/$(database)/documents/listing_reservation_locks/$(resource.data.listing_id))\n            && getAfter(/databases/$(database)/documents/listings_v2/$(resource.data.listing_id)).data.availability_status == 'available'`,
+  `${expiryNeedle}\n            && (\n              (\n                !exists(/databases/$(database)/documents/listing_reservation_locks/$(resource.data.listing_id))\n                && (!('availability_status' in get(/databases/$(database)/documents/listings_v2/$(resource.data.listing_id)).data) || get(/databases/$(database)/documents/listings_v2/$(resource.data.listing_id)).data.availability_status == 'available')\n              )\n              ||\n              (\n                exists(/databases/$(database)/documents/listing_reservation_locks/$(resource.data.listing_id))\n                && !existsAfter(/databases/$(database)/documents/listing_reservation_locks/$(resource.data.listing_id))\n                && getAfter(/databases/$(database)/documents/listings_v2/$(resource.data.listing_id)).data.availability_status == 'available'\n              )\n            )`,
   'expiry releases reservation lock',
 );
 
 const cancelNeedle = `        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','outcome_code','outcome_actor_id','outcome_recorded_at','updated_at']);`;
 replaceOnce(
   cancelNeedle,
-  `        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','outcome_code','outcome_actor_id','outcome_recorded_at','updated_at'])\n        && !existsAfter(/databases/$(database)/documents/listing_reservation_locks/$(resource.data.listing_id))\n        && getAfter(/databases/$(database)/documents/listings_v2/$(resource.data.listing_id)).data.availability_status == 'available';`,
+  `        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','outcome_code','outcome_actor_id','outcome_recorded_at','updated_at'])\n        && (\n          (\n            !exists(/databases/$(database)/documents/listing_reservation_locks/$(resource.data.listing_id))\n            && (!('availability_status' in get(/databases/$(database)/documents/listings_v2/$(resource.data.listing_id)).data) || get(/databases/$(database)/documents/listings_v2/$(resource.data.listing_id)).data.availability_status == 'available')\n          )\n          ||\n          (\n            exists(/databases/$(database)/documents/listing_reservation_locks/$(resource.data.listing_id))\n            && !existsAfter(/databases/$(database)/documents/listing_reservation_locks/$(resource.data.listing_id))\n            && getAfter(/databases/$(database)/documents/listings_v2/$(resource.data.listing_id)).data.availability_status == 'available'\n          )\n        );`,
   'cancellation releases reservation lock',
 );
 
