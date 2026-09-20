@@ -31,8 +31,8 @@ Official references:
 ## Public privacy/deletion URL status
 
 Candidate117 audit previously observed HTTP 404 on the default Firebase Hosting privacy/deletion paths. Candidate118 now implements an authenticated external deletion flow in source and validates the exact Hosting payload against the current staging Firebase web config. Current release evidence is:
-- Play/Data Safety preflight run `35535108448` = **SUCCESS**;
-- Hosting prepare/no-deploy run `35535108425` = **SUCCESS**;
+- Play/Data Safety preflight run `35535647674` = **SUCCESS**;
+- Hosting prepare/no-deploy run `35535647662` = **SUCCESS**;
 - exact `dist/privacy.html`, `dist/delete-account.html`, `dist/delete-account.js` and generated runtime Firebase config are build-validated;
 - the legal-gated Hosting deployment workflow has **0 runs**.
 
@@ -70,10 +70,24 @@ Final generated-manifest verification remains required on the exact authorized r
 | Chats/messages/listings | user-generated marketplace content persisted in Firestore | User content mapping/retention |
 | Offers/reservations/transactions | marketplace operational records | do not label as financial/payment data without real-money evidence |
 | Push/device IDs | FCM token ownership / installation identifiers | Device or other IDs declaration/purpose |
-| Topi prompts/responses | prompt text sent to Firebase AI Logic; generated response returned | User content/provider role/monitoring state |
+| Topi prompts/responses | prompt text sent to Firebase AI Logic; generated response returned; staging readback shows no explicit telemetryConfig and 0 Firebase AI Model logs in 48h | User content/provider role + provider retention/processing outside Firebase AI Monitoring |
 | App Check | attestation material/tokens for abuse protection | Security/fraud disclosure |
 | Trust & safety | reports/reviews/moderation/audit evidence may be retained | legal basis/retention/anonymization |
 | Account deletion | in-app request + authenticated external web request source/build validated + trusted erasure contracts | legal retention + authorized Hosting deploy + public URL probe + trusted execution proof |
+
+## Firebase AI monitoring primary readback — 2026-09-20
+
+Read-only ops run `35535825476` = **SUCCESS / mutations=0** and used the current staging project directly:
+- Firebase AI Logic ConfigService `GetConfig` at `global` = HTTP 200;
+- returned config has **no `telemetryConfig` field**; normalized mode is `UNSPECIFIED`, not a fabricated `NONE`;
+- Cloud Logging exclusions = HTTP 200 / **0 active exclusions** / no documented Firebase AI Model prompt-response exclusion;
+- Cloud Logging query for `resource.type="firebasevertexai.googleapis.com/Model"` over the last 48h = HTTP 200 / **0 entries**;
+- Build118 executed real Firebase AI runtime smoke requests earlier the same day.
+
+Current classification:
+`AI_TELEMETRY_CONFIG_ABSENT / AI_MODEL_LOGS_48H=0 / AI_MONITORING_NOT_OBSERVED / PROVIDER_RETENTION_SEPARATE`.
+
+This is strong primary evidence that Firebase AI Monitoring is not currently observed/configured for staging. It is **not** rewritten as a formal `mode=NONE` because the service did not return that enum. It also does not prove that the underlying Gemini provider performs no independent processing or retention; that remains part of final provider/Data Safety/legal review.
 
 ## Production backend / signing / AAB status
 
