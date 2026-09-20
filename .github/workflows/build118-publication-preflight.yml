@@ -30,10 +30,8 @@ jobs:
           node scripts/post116-rate-window-runtime-tests.mjs
           node --experimental-strip-types scripts/post116-durable-publish-draft-tests.mjs
           node scripts/post116-publish-idempotency-tests.mjs
-      - name: Build117 physical binding stays exact
-        run: |
-          node scripts/physical-qa-candidate-drift.mjs
-          node scripts/build117-physical-acceptance-contract-tests.mjs
+      - name: Build118 requires fresh physical binding after runtime change
+        run: node scripts/build118-physical-replacement-required-tests.mjs
       - name: Typecheck
         run: npm run typecheck
       - name: Prove no APK/AAB generated
