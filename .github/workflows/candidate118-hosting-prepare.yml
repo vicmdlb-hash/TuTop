@@ -1,6 +1,8 @@
 name: Candidate118 Hosting prepare — no deploy
 
 on:
+  push:
+    branches: [release/candidate118-play-preflight]
   workflow_dispatch:
     inputs:
       confirm:
@@ -37,7 +39,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${{ inputs.confirm }}" = "PREPARE_CANDIDATE118_HOSTING_NO_DEPLOY"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            test "${{ inputs.confirm }}" = "PREPARE_CANDIDATE118_HOSTING_NO_DEPLOY"
+          fi
           test "$GITHUB_REF_NAME" = "release/candidate118-play-preflight"
           PR_JSON="$(gh api "repos/$GITHUB_REPOSITORY/pulls/103")"
           test "$(jq -r '.state' <<<"$PR_JSON")" = "open"
