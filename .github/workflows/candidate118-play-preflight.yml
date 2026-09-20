@@ -28,6 +28,8 @@ jobs:
         run: node scripts/candidate118-web-deletion-contract-tests.mjs
       - name: Legal retention boundary
         run: npm run legal-retention-review:test
+      - name: Legal retention dossier boundary
+        run: node scripts/legal-retention-dossier-tests.mjs
       - name: Typecheck
         run: npm run typecheck
       - name: Web build
