@@ -119,6 +119,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     visibility_scope: data.visibility_scope,
     listing_kind: 'offer',
     moderation_status: data.moderation_status === 'flagged' ? 'review' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
+    availability_status: data.availability_status === 'reserved' ? 'reserved' : 'available',
     punto_encuentro: 'Coordinar por Chat' as MeetingPoint,
     metodos_entrega: data.delivery_methods.map(legacyDelivery),
     shipping_available: data.shipping_available,
@@ -174,7 +175,11 @@ async function productsForDocuments(client: FirebaseRestClient, docs: FirestoreD
   await Promise.all(sellerIds.map(async (uid) => names.set(uid, await sellerNameFor(client, uid))));
   return docs
     .map((doc) => canonicalListingToProduct(doc, names.get(doc.data.seller_id) || 'Estudiante'))
-    .sort((a, b) => Date.parse(b.updated_at || b.fecha_creacion) - Date.parse(a.updated_at || a.fecha_creacion));
+    .sort((a, b) => {
+      const availability = Number(a.availability_status === 'reserved') - Number(b.availability_status === 'reserved');
+      if (availability) return availability;
+      return Date.parse(b.updated_at || b.fecha_creacion) - Date.parse(a.updated_at || a.fecha_creacion);
+    });
 }
 
 export function buildCanonicalListingCreateWrite(
@@ -191,6 +196,7 @@ export function buildCanonicalListingCreateWrite(
   const payload = {
     ...serverTimedListing,
     moderation_status: 'pending' as const,
+    availability_status: 'available' as const,
   };
   const updateTransforms = [
     { fieldPath: 'created_at', setToServerValue: 'REQUEST_TIME' as const },
@@ -239,7 +245,7 @@ export const canonicalListingsBackend = {
       throw error;
     }
     nearbyCache.clear();
-    return { id, ...listing, moderation_status: 'pending' as const, recovered: false as const };
+    return { id, ...listing, moderation_status: 'pending' as const, availability_status: 'available' as const, recovered: false as const };
   },
 
   async loadMine(limit = 50) {
