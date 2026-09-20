@@ -1,7 +1,5 @@
 name: TuTop 107 engineering candidate
 on:
-  push:
-    branches: [fix/tutop-107-runtime-recovery]
   workflow_dispatch:
 permissions:
   contents: read
