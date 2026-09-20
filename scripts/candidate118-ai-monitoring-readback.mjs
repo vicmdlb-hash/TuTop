@@ -29,8 +29,25 @@ for(const location of locations){
 
 const exclusionsResult=await get(`https://logging.googleapis.com/v2/projects/${PROJECT}/exclusions?pageSize=100`);
 
+const telemetryConfigPresent=Boolean(configResult?.ok && Object.prototype.hasOwnProperty.call(configResult.body||{},'telemetryConfig'));
 const telemetry=configResult?.ok ? (configResult.body?.telemetryConfig||{}) : {};
 const exclusions=exclusionsResult.ok && Array.isArray(exclusionsResult.body?.exclusions) ? exclusionsResult.body.exclusions : [];
+
+const since=new Date(Date.now()-48*60*60*1000).toISOString();
+const logResponse=await fetch('https://logging.googleapis.com/v2/entries:list',{
+  method:'POST',
+  headers:{...headers,'Content-Type':'application/json'},
+  body:JSON.stringify({
+    resourceNames:[`projects/${PROJECT}`],
+    pageSize:1,
+    orderBy:'timestamp desc',
+    filter:`resource.type="firebasevertexai.googleapis.com/Model" AND timestamp>="${since}"`,
+  }),
+});
+const logText=await logResponse.text();
+let logBody={};
+try{logBody=logText?JSON.parse(logText):{};}catch{logBody={};}
+const modelLogEntries=logResponse.ok && Array.isArray(logBody?.entries) ? logBody.entries.length : null;
 const activeExclusions=exclusions.filter(x=>x?.disabled!==true);
 const modelExclusions=activeExclusions.filter(x=>String(x?.filter||'').includes('firebasevertexai.googleapis.com/Model'));
 
@@ -45,6 +62,7 @@ const evidence={
     http_status:configResult?.status??null,
     location:configResult?.location||null,
     readable:Boolean(configResult?.ok),
+    telemetry_config_present:telemetryConfigPresent,
     telemetry_mode:configResult?.ok ? String(telemetry.mode||'UNSPECIFIED') : 'UNKNOWN',
     sampling_rate:configResult?.ok && telemetry.samplingRate!==undefined ? Number(telemetry.samplingRate) : null,
   },
@@ -54,6 +72,12 @@ const evidence={
     active_count:activeExclusions.length,
     firebase_ai_model_exclusion_count:modelExclusions.length,
     documented_prompt_response_exclusion_present:modelExclusions.length>0,
+  },
+  firebase_ai_model_logs_last_48h:{
+    http_status:logResponse.status,
+    readable:logResponse.ok,
+    any_entry:modelLogEntries===null?null:modelLogEntries>0,
+    sampled_entry_count_returned:modelLogEntries,
   },
 };
 
