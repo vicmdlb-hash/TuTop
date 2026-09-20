@@ -3,6 +3,16 @@ import { initializeNativeAppCheck, isNativeFirebaseRuntime } from './nativeAppCh
 
 type CapacitorPlugin = Record<string, (...args: any[]) => Promise<any>>;
 type PushPermission = 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' | 'unavailable';
+export type PushRegistrationReason =
+  | 'registered'
+  | 'permission-not-granted'
+  | 'plugin-unavailable'
+  | 'ownership-reconciliation-pending'
+  | 'token-empty'
+  | 'firebase-config-rejected'
+  | 'network-failure'
+  | 'server-registration-failed'
+  | 'token-registration-failed';
 
 export type NativeNotificationIntent = {
   source: 'received' | 'action';
@@ -119,17 +129,38 @@ async function installMessagingListeners(messaging: CapacitorPlugin) {
   });
 }
 
-async function syncGrantedPushToken() {
+function classifyPushFailure(error: unknown): PushRegistrationReason {
+  const message = String(error instanceof Error ? error.message : error || '');
+  if (/API[_ -]?KEY|PERMISSION_DENIED|403|REQUEST_DENIED|API key not valid/i.test(message)) return 'firebase-config-rejected';
+  if (/NETWORK|TIMEOUT|ECONN|ENET|fetch|offline/i.test(message)) return 'network-failure';
+  return 'token-registration-failed';
+}
+
+async function syncGrantedPushTokenHealth(): Promise<{ registered: boolean; reason: PushRegistrationReason }> {
   const messaging = capacitorPlugin('FirebaseMessaging');
-  if (!messaging?.getToken) return false;
+  if (!messaging?.getToken) return { registered: false, reason: 'plugin-unavailable' };
   await installMessagingListeners(messaging);
   const permission = await nativePushPermission();
-  if (permission !== 'granted') return false;
-  const result = await messaging.getToken();
+  if (permission !== 'granted') return { registered: false, reason: 'permission-not-granted' };
+  let result: any;
+  try {
+    result = await messaging.getToken();
+  } catch (error) {
+    return { registered: false, reason: classifyPushFailure(error) };
+  }
   const token = String(result?.token || '').trim();
-  if (!token) return false;
-  await registerToken(token);
-  return true;
+  if (!token) return { registered: false, reason: 'token-empty' };
+  try {
+    await registerToken(token);
+  } catch (error) {
+    const classified = classifyPushFailure(error);
+    return { registered: false, reason: classified === 'token-registration-failed' ? 'server-registration-failed' : classified };
+  }
+  return { registered: true, reason: 'registered' };
+}
+
+async function syncGrantedPushToken() {
+  return (await syncGrantedPushTokenHealth()).registered;
 }
 
 async function reconcilePendingPushOwnershipReset() {
@@ -172,28 +203,52 @@ export async function initializeNativeFirebaseSecurity() {
 
 export async function nativePushRegistrationHealth() {
   const permission = await nativePushPermission();
-  if (permission !== 'granted') return { permission, tokenRegistered: false, ownershipReconciliationPending: pendingPushOwnershipReset() };
+  if (permission !== 'granted') {
+    return {
+      permission,
+      tokenRegistered: false,
+      ownershipReconciliationPending: pendingPushOwnershipReset(),
+      reason: 'permission-not-granted' as PushRegistrationReason,
+    };
+  }
   const ownership = await reconcilePendingPushOwnershipReset();
-  if (ownership.pending) return { permission, tokenRegistered: false, ownershipReconciliationPending: true };
-  const tokenRegistered = await syncGrantedPushToken().catch(() => false);
-  return { permission, tokenRegistered, ownershipReconciliationPending: false };
+  if (ownership.pending) {
+    return {
+      permission,
+      tokenRegistered: false,
+      ownershipReconciliationPending: true,
+      reason: 'ownership-reconciliation-pending' as PushRegistrationReason,
+    };
+  }
+  const health = await syncGrantedPushTokenHealth();
+  return { permission, tokenRegistered: health.registered, ownershipReconciliationPending: false, reason: health.reason };
 }
 
 export async function enableNativePushNotifications() {
-  if (!isNativeFirebaseRuntime()) return { enabled: false, permission: 'unavailable' as PushPermission };
+  if (!isNativeFirebaseRuntime()) return { enabled: false, permission: 'unavailable' as PushPermission, reason: 'plugin-unavailable' as PushRegistrationReason };
   const messaging = capacitorPlugin('FirebaseMessaging');
-  if (!messaging?.requestPermissions || !messaging?.getToken) return { enabled: false, permission: 'unavailable' as PushPermission };
+  if (!messaging?.requestPermissions || !messaging?.getToken) {
+    return { enabled: false, permission: 'unavailable' as PushPermission, reason: 'plugin-unavailable' as PushRegistrationReason };
+  }
   await initializeNativeFirebaseSecurity();
   let permission = await nativePushPermission();
   if (permission !== 'granted') {
-    const result = await messaging.requestPermissions();
-    permission = String(result?.receive || 'denied') as PushPermission;
+    try {
+      const result = await messaging.requestPermissions();
+      permission = String(result?.receive || 'denied') as PushPermission;
+    } catch (error) {
+      return { enabled: false, permission, reason: classifyPushFailure(error), ownershipReconciliationPending: false };
+    }
   }
-  if (permission !== 'granted') return { enabled: false, permission };
+  if (permission !== 'granted') {
+    return { enabled: false, permission, reason: 'permission-not-granted' as PushRegistrationReason, ownershipReconciliationPending: false };
+  }
   const ownership = await reconcilePendingPushOwnershipReset();
-  if (ownership.pending) return { enabled: false, permission, ownershipReconciliationPending: true };
-  const enabled = await syncGrantedPushToken();
-  return { enabled, permission, ownershipReconciliationPending: false };
+  if (ownership.pending) {
+    return { enabled: false, permission, reason: 'ownership-reconciliation-pending' as PushRegistrationReason, ownershipReconciliationPending: true };
+  }
+  const health = await syncGrantedPushTokenHealth();
+  return { enabled: health.registered, permission, reason: health.reason, ownershipReconciliationPending: false };
 }
 
 export async function disableNativePushNotifications() {
