@@ -9,12 +9,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: tutop-post116-pr88-moderation-privacy-${{ github.ref }}
+  group: tutop-post116-pr90-reservation-truth-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate:
-    if: github.ref_name == 'integration/post116-pr88-moderation-privacy'
+    if: github.ref_name == 'integration/post116-pr89-reservation-truth'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
