@@ -11,6 +11,11 @@ const headers={Authorization:`Bearer ${token}`,'X-Goog-User-Project':PROJECT};
 
 function str(field){return String(field?.stringValue||'').trim();}
 function bool(field){return field?.booleanValue===true;}
+function timestamp(field){
+  const value=String(field?.timestampValue||field?.stringValue||'').trim();
+  const ms=Date.parse(value);
+  return Number.isFinite(ms)?new Date(ms).toISOString():null;
+}
 
 async function listCollection(collection){
   const docs=[];
@@ -70,6 +75,10 @@ const evidence={
     total:listings.length,
     moderation_statuses:histogram(listings.map(d=>str(d.moderation_status))),
     statuses:histogram(listings.map(d=>str(d.status))),
+    availability_statuses:histogram(listings.map(d=>str(d.availability_status))),
+    earliest_created_at:[...listings.map(d=>timestamp(d.created_at)).filter(Boolean)].sort()[0]||null,
+    latest_created_at:[...listings.map(d=>timestamp(d.created_at)).filter(Boolean)].sort().at(-1)||null,
+    latest_updated_at:[...listings.map(d=>timestamp(d.updated_at)).filter(Boolean)].sort().at(-1)||null,
   },
 };
 
