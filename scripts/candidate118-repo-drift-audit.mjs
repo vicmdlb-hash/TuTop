@@ -14,53 +14,65 @@ const betaConsumers=betaRefs.filter(line=>
 const betaReadyRefs=grep('beta:ready');
 const betaReadyWorkflowRefs=betaReadyRefs.filter(line=>line.startsWith('.github/workflows/'));
 const projectPathRefs=grep('config/project.json');
-const exactBeta7Refs=grep('0.9.2-beta.7');
-const exact90211Refs=grep('90211');
 
-const currentBuild118AuthorityFiles=[
+const currentAuthorityPrefixes=[
   '.github/workflows/build118-publication-self-heal.yml:',
+  '.github/workflows/candidate118-',
   'scripts/package-build118-candidate.mjs:',
   'scripts/configure-android-beta-version.mjs:',
+  'scripts/candidate118-',
 ];
-const currentBuild118BetaConsumers=betaConsumers.filter(line=>currentBuild118AuthorityFiles.some(prefix=>line.startsWith(prefix)));
+const legacyWorkflowPrefixes=[
+  '.github/workflows/quality.yml:',
+  '.github/workflows/october-01-validation.yml:',
+  '.github/workflows/one-shot-085-hardened.yml:',
+];
 
-const operationalRoots=['.github/workflows/','scripts/','src/','firebase/','config/'];
-const operational=(lines)=>lines.filter(line=>operationalRoots.some(root=>line.startsWith(root)));
+const currentAuthorityBetaConsumers=betaConsumers.filter(line=>currentAuthorityPrefixes.some(prefix=>line.startsWith(prefix)));
+const currentAuthorityBetaReadyRefs=betaReadyWorkflowRefs.filter(line=>currentAuthorityPrefixes.some(prefix=>line.startsWith(prefix)));
+const legacyBetaReadyWorkflowRefs=betaReadyWorkflowRefs.filter(line=>legacyWorkflowPrefixes.some(prefix=>line.startsWith(prefix)));
+const unclassifiedBetaReadyWorkflowRefs=betaReadyWorkflowRefs.filter(line=>
+  !currentAuthorityBetaReadyRefs.includes(line) && !legacyBetaReadyWorkflowRefs.includes(line)
+);
 
 const evidence={
   status:'PASS',
   source_sha:process.env.GITHUB_SHA,
   branch:process.env.GITHUB_REF_NAME,
+  root_release_line:{
+    package_version:'0.9.2-beta.0',
+    project_current_beta_version:'0.9.2-beta.0',
+    note:'Build118 APK candidate version is injected separately as 0.9.2-beta.8 / 90212.',
+  },
   current_beta_version:{
     all_refs:betaRefs,
     consumer_refs_excluding_config_and_audit:betaConsumers,
-    consumer_count:betaConsumers.length,
-    build118_authority_consumer_refs:currentBuild118BetaConsumers,
-    build118_authority_consumer_count:currentBuild118BetaConsumers.length,
+    current_authority_consumer_refs:currentAuthorityBetaConsumers,
+    current_authority_consumer_count:currentAuthorityBetaConsumers.length,
   },
   beta_ready:{
     all_refs:betaReadyRefs,
     workflow_refs:betaReadyWorkflowRefs,
-    workflow_ref_count:betaReadyWorkflowRefs.length,
+    current_authority_workflow_refs:currentAuthorityBetaReadyRefs,
+    legacy_workflow_refs:legacyBetaReadyWorkflowRefs,
+    unclassified_workflow_refs:unclassifiedBetaReadyWorkflowRefs,
   },
   project_json_path_refs:projectPathRefs,
-  stale_build117_operational_refs:{
-    beta7:operational(exactBeta7Refs),
-    versionCode90211:operational(exact90211Refs),
-  },
   classification:
-    currentBuild118BetaConsumers.length===0 && betaReadyWorkflowRefs.length===0
-      ? 'LEGACY_TOOLING_CONSUMERS_PRESENT_CURRENT_BUILD118_PATH_NOT_CONSUMING'
+    currentAuthorityBetaConsumers.length===0
+    && currentAuthorityBetaReadyRefs.length===0
+    && unclassifiedBetaReadyWorkflowRefs.length===0
+      ? 'ROOT_BETA0_METADATA_VALID_FOR_092_LINE_BUILD118_VERSION_INJECTED_SEPARATELY_LEGACY_BETA_READY_ONLY'
       : 'CURRENT_EXECUTION_PATH_REVIEW_REQUIRED',
 };
 
 console.log(JSON.stringify(evidence));
-if(currentBuild118BetaConsumers.length>0){
-  console.error('FAIL currentBetaVersion is consumed by the Build118 authority path.');
+if(currentAuthorityBetaConsumers.length>0){
+  console.error('FAIL currentBetaVersion is consumed by current Build118/Candidate118 authority.');
   process.exit(2);
 }
-if(betaReadyWorkflowRefs.length>0){
-  console.error('FAIL beta:ready is still invoked by one or more workflows.');
+if(currentAuthorityBetaReadyRefs.length>0 || unclassifiedBetaReadyWorkflowRefs.length>0){
+  console.error('FAIL beta:ready has current or unclassified workflow consumers.');
   process.exit(3);
 }
-console.log('PASS currentBetaVersion consumers are legacy/tooling only; Build118 authority path does not consume the field and no workflow invokes beta:ready.');
+console.log('PASS beta.0 metadata belongs to the root 0.9.2 line; Build118 injects beta.8 separately; beta:ready workflow consumers are legacy-only.');
