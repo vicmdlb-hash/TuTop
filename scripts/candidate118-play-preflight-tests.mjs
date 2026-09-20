@@ -15,6 +15,9 @@ const bootstrap=fs.readFileSync('scripts/android-bootstrap.mjs','utf8');
 const caps=fs.readFileSync('scripts/android-native-capabilities.mjs','utf8');
 const voice=fs.readFileSync('scripts/android-topi-voice-plugin.mjs','utf8');
 const ai=fs.readFileSync('scripts/android-topi-ai-plugin.mjs','utf8');
+const prTemplate=fs.readFileSync('.github/pull_request_template.md','utf8');
+const security=fs.readFileSync('SECURITY.md','utf8');
+const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
 
 assert.match(privacy,new RegExp(EXPECTED_SHA));
 assert.match(privacy,/Build118 \/ PR #100/);
@@ -52,6 +55,11 @@ assert.match(ai,/firebase-ai:17\.17\.0/);
 assert.equal(project.productionPublishingAllowed,false);
 assert.equal(project.billingAllowed,false);
 assert.equal(project.distributionTarget,'github-actions-debug-apk-first');
+assert.equal(pkg.version,'0.9.2-beta.0');
+assert.equal(project.currentBetaVersion,'0.9.2-beta.0');
+assert.match(prTemplate,/beta:ready.*histórica 0\.9\.1/i);
+assert.match(security,/beta:ready.*histórica 0\.9\.1/i);
+assert.doesNotMatch(prTemplate,/- \[ \] `npm run beta:ready`\s*$/m);
 
 assert.match(aabWorkflow,/workflow_dispatch:/);
 assert.doesNotMatch(aabWorkflow,/\npush:/);
@@ -76,3 +84,4 @@ console.log('PASS Candidate118 source-level API/permissions/voice/AI release inv
 console.log('PASS production publishing and billing remain fail-closed');
 console.log('PASS manual AAB path has no Play upload and requires pre-existing signing/production inputs');
 console.log('PASS current public URL reachability remains UNKNOWN until primary evidence');
+console.log('PASS beta.0 remains root 0.9.2 metadata while Build118 version is candidate-injected; human guidance no longer treats beta:ready as current authority');
