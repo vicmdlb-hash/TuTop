@@ -2,6 +2,52 @@
 
 Estado: **PENDIENTE REVISIÓN LEGAL**. Este dossier no fija plazos, bases legales, jurisdicción ni excepciones. Ingeniería sólo prepara las preguntas y la evidencia técnica para una decisión autorizada.
 
+## Paquete técnico actual para revisión — Build118 / Candidate118
+
+Esta sección únicamente identifica evidencia técnica vigente. **No fija plazos, bases legales, jurisdicción, excepciones ni conclusiones jurídicas.**
+
+### Autoridad técnica
+- Build Android vigente: **Build118 / PR #100 / SHA `e93ca0bb237e7fa438df5801fc627f065d9441e6` / `0.9.2-beta.8` / versionCode `90212`**.
+- Build118 run `35526553288` = **SUCCESS**.
+- Rules activas de staging y Rules generadas por Build118: SHA-256 `35e8c53e5c180e59b17d5d6976b09b80984919b943d892de5e52bc6ca9c7277a`, igualdad exacta probada.
+- Estado físico: **DEVICE_A_NOT_TESTED**; CI no equivale a aceptación física.
+
+### Eliminación de cuenta
+- Candidate118 / PR #103 implementa un recurso web autenticado propio para solicitar/consultar eliminación sin abrir ni reinstalar Android.
+- El flujo usa la misma identidad Firebase, deriva el UID desde Auth y reutiliza `account_deletion_requests/{uid}`.
+- El navegador sólo puede crear una solicitud `pending` o consultar su estado; no ejecuta erasure destructivo ni puede declarar `completed`.
+- Security Rules prueban aislamiento owner-only y niegan lectura cruzada/complete desde cliente.
+- Play/Data Safety preflight `35535904461` = **SUCCESS** y Hosting prepare/no-deploy `35535904470` = **SUCCESS**.
+- Firebase Hosting **no está desplegado** para esta candidata; la política de privacidad continúa marcada **NO legalmente aprobada** y el deploy está cerrado por ese gate.
+- El mailbox de soporte/privacidad permanece sólo como fallback; no se publica automáticamente correo personal ni Firebase `noreply`.
+
+### Erasure y evidencia residual
+- Los contratos de software cubren `delete / withdraw-anonymize / operational-retain`, bloqueo por operación marketplace activa, Auth eliminado al final, attestation trusted y manifiesto residual.
+- Auditoría live read-only `35535470621` = **SUCCESS / mutations=0** y observó:
+  - `account_deletion_requests=0`;
+  - `listings_v2=0`;
+  - `admins=0`;
+  - `device_tokens=0`.
+- Por tanto hoy no existe un sujeto auténtico de staging para ejecutar un apply de erasure, moderación o FCM E2E.
+- El smoke sintético destructivo no debe forzarse saltando el gate SPEND/billing sólo para obtener un PASS.
+- Ingeniería no interpreta ausencia de sujeto como aceptación legal ni como prueba destructiva de producción.
+
+### Firebase AI / Topi
+- Auditoría primaria read-only `35535825476` = **SUCCESS / mutations=0**.
+- Firebase AI Logic ConfigService respondió HTTP 200 pero no devolvió `telemetryConfig`; el valor normalizado es `UNSPECIFIED`, no un `NONE` inventado.
+- Cloud Logging: 0 exclusiones activas y 0 entradas `firebasevertexai.googleapis.com/Model` en las 48h revisadas.
+- La evidencia es consistente con **Firebase AI Monitoring no observado/configurado explícitamente** en staging.
+- Esto no decide tratamiento, base, conservación o rol del proveedor Gemini fuera de Firebase AI Monitoring; esas cuestiones siguen **PENDIENTE LEGAL** / revisión Data Safety.
+
+### Bloqueos expresamente fuera de alcance de ingeniería
+- Jurisdicción aplicable: **PENDIENTE LEGAL**.
+- Base jurídica por grupo de datos: **PENDIENTE LEGAL**.
+- Plazos de conservación: **PENDIENTE LEGAL**.
+- Evento de inicio de cada plazo: **PENDIENTE LEGAL**.
+- Excepciones por disputa/fraude/seguridad/cumplimiento: **PENDIENTE LEGAL**.
+- Identidad del aprobador y fecha de vigencia: **PENDIENTE LEGAL**.
+- Producción Firebase, billing, signing/AAB y Play continúan bloqueados.
+
 ## Registro de decisión obligatorio
 
 - Jurisdicción aplicable: **PENDIENTE LEGAL**
