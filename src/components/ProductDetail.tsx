@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, BadgeCheck, Flag, Heart, MapPin, MessageCircle, Share2, ShieldCheck, Sparkles, Tag, TimerReset, Video } from 'lucide-react';
 import { feedbackFavorite, feedbackTap } from '../lib/feedback';
+import { ACCOUNT_LOCAL_KEYS, readAccountLocalList, writeAccountLocalList } from '../lib/accountLocalState';
 import { parseListingDescription } from '../lib/listingDetails';
 import { normalizeCategory } from '../lib/productAssistant';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
@@ -12,7 +13,6 @@ import type { Product } from '../types';
 import SellerPublicProfile from './SellerPublicProfile';
 import SellerReputationInline from './SellerReputationInline';
 
-const RECENT_KEY = 'tutop.recent-products.v1';
 
 function relativeTime(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -54,11 +54,14 @@ export default function ProductDetail() {
   const reputation = sellerReputationEvidence(product.vendedor_id, reviews, chats);
 
   useEffect(() => {
-    try {
-      const previous = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') as string[];
-      localStorage.setItem(RECENT_KEY, JSON.stringify([product.id, ...previous.filter((id) => id !== product.id)].slice(0, 12)));
-    } catch { /* local history is optional */ }
-  }, [product.id]);
+    const previous = readAccountLocalList(ACCOUNT_LOCAL_KEYS.recentProducts, user.id, 12);
+    writeAccountLocalList(
+      ACCOUNT_LOCAL_KEYS.recentProducts,
+      user.id,
+      [product.id, ...previous.filter((id) => id !== product.id)],
+      12,
+    );
+  }, [product.id, user.id]);
 
   useEffect(() => {
     let cancelled = false;
