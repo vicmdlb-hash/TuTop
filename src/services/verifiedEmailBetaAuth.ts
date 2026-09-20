@@ -1,5 +1,5 @@
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
-import { firebaseFetch } from './firebaseHttp';
+import { firebaseFetch, isFirebaseRequestTimeout } from './firebaseHttp';
 import { FirebaseRestClient, normalizeMexicoPhone, phoneAliasEmail } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
 
@@ -251,6 +251,10 @@ export const verifiedEmailBetaAuth = {
     try {
       await createMarketplaceAccount(data, email, normalizedProfile);
     } catch (error) {
+      // A network timeout is ambiguous: the atomic Firestore commit may already
+      // have reached Firebase. Never delete Auth or clear the session merely
+      // because the client did not receive the response.
+      if (isFirebaseRequestTimeout(error)) throw error;
       try { await identityRequest('accounts:delete', { idToken: data.idToken }); } catch { /* best effort rollback */ }
       clearCanonicalSession();
       throw error;
