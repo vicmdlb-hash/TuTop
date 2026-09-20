@@ -1,8 +1,6 @@
 name: TuTop build116 Device A publication repair
 
 on:
-  push:
-    branches: [fix/tutop-116-deviceA-publication-repair]
   workflow_dispatch:
 
 permissions:
