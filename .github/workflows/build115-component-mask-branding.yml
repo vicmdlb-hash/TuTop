@@ -1,8 +1,6 @@
 name: TuTop build115 component-mask branding candidate
 
 on:
-  push:
-    branches: [fix/tutop-115-component-mask-branding]
   workflow_dispatch:
 
 permissions:
