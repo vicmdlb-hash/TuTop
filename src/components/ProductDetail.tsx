@@ -32,31 +32,17 @@ export default function ProductDetail() {
   const [videoObjectUrl, setVideoObjectUrl] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   useEffect(() => { setPhotoIndex(0); setSellerProfileOpen(false); }, [selectedProductId]);
-  if (!selectedProductId) return null;
-  const product = products.find((item) => item.id === selectedProductId);
-  if (!product) return null;
-  const favorite = favorites.includes(product.id);
-  const ownProduct = product.vendedor_id === user.id;
-  const existingBuyerChat = chats.some((chat) => chat.producto_id === product.id && chat.comprador_id === user.id && chat.vendedor_id === product.vendedor_id);
-  const reserved = product.availability_status === 'reserved';
-  const reservedForViewer = reserved && !ownProduct && !existingBuyerChat;
-  const moderationLabel = ownProduct
-    ? product.moderation_status === 'pending' ? 'En revisión · aún no visible para otros'
-      : product.moderation_status === 'rejected' ? 'Rechazada'
-        : product.moderation_status === 'review' ? 'Revisión necesaria'
-          : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado
-    : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado;
-  const photos = product.imagenes_url?.length ? product.imagenes_url : [product.imagen_url];
-  const activePhoto = photos[Math.min(photoIndex, photos.length - 1)] || product.imagen_url;
-  const videoUri = (product as Product & { video_urls?: string[] }).video_urls?.[0];
-  const parsed = parseListingDescription(product.descripcion);
-  const detailEntries = Object.entries(parsed.details).slice(0, 12);
-  const negotiable = parsed.details['Precio negociable']?.toLowerCase() === 'sí';
-  const deliverySummary = parsed.details['Entrega'] || product.punto_encuentro;
-  const similar = useMemo(() => products.filter((item) => item.id !== product.id && item.estado === 'Activo' && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4), [products, product]);
-  const reputation = sellerReputationEvidence(product.vendedor_id, reviews, chats);
+  const product = selectedProductId ? products.find((item) => item.id === selectedProductId) : undefined;
+  const videoUri = product ? (product as Product & { video_urls?: string[] }).video_urls?.[0] : undefined;
+  const similar = useMemo(
+    () => product
+      ? products.filter((item) => item.id !== product.id && item.estado === 'Activo' && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4)
+      : [],
+    [products, product],
+  );
 
   useEffect(() => {
+    if (!product) return;
     const previous = readAccountLocalList(ACCOUNT_LOCAL_KEYS.recentProducts, user.id, 12);
     writeAccountLocalList(
       ACCOUNT_LOCAL_KEYS.recentProducts,
@@ -64,7 +50,7 @@ export default function ProductDetail() {
       [product.id, ...previous.filter((id) => id !== product.id)],
       12,
     );
-  }, [product.id, user.id]);
+  }, [product?.id, user.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +76,27 @@ export default function ProductDetail() {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [videoUri]);
+
+  if (!product) return null;
+
+  const favorite = favorites.includes(product.id);
+  const ownProduct = product.vendedor_id === user.id;
+  const existingBuyerChat = chats.some((chat) => chat.producto_id === product.id && chat.comprador_id === user.id && chat.vendedor_id === product.vendedor_id);
+  const reserved = product.availability_status === 'reserved';
+  const reservedForViewer = reserved && !ownProduct && !existingBuyerChat;
+  const moderationLabel = ownProduct
+    ? product.moderation_status === 'pending' ? 'En revisión · aún no visible para otros'
+      : product.moderation_status === 'rejected' ? 'Rechazada'
+        : product.moderation_status === 'review' ? 'Revisión necesaria'
+          : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado
+    : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado;
+  const photos = product.imagenes_url?.length ? product.imagenes_url : [product.imagen_url];
+  const activePhoto = photos[Math.min(photoIndex, photos.length - 1)] || product.imagen_url;
+  const parsed = parseListingDescription(product.descripcion);
+  const detailEntries = Object.entries(parsed.details).slice(0, 12);
+  const negotiable = parsed.details['Precio negociable']?.toLowerCase() === 'sí';
+  const deliverySummary = parsed.details['Entrega'] || product.punto_encuentro;
+  const reputation = sellerReputationEvidence(product.vendedor_id, reviews, chats);
 
   const share = async () => {
     feedbackTap();
