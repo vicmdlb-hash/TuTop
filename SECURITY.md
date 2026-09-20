@@ -18,4 +18,6 @@ Durante la beta privada, registra el hallazgo como issue privado si GitHub lo pe
 
 ## Gates obligatorios
 
-Antes de integrar cambios sensibles deben pasar `npm run check`, `npm run github:ready`, `npm run beta:ready`, `npm run typecheck` y `npm run build`. Los cambios de Firestore Rules deben pasar además las pruebas de reglas en emulador mediante GitHub Actions.
+Antes de integrar cambios sensibles deben pasar `npm run check`, `npm run github:ready`, `npm run typecheck` y `npm run build`, además del **gate específico de la candidata/branch vigente** con evidencia same-SHA cuando aplique. Los cambios de Firestore Rules deben pasar también las pruebas de reglas en emulador mediante GitHub Actions.
+
+`npm run beta:ready` pertenece a la cadena histórica 0.9.1 y **no debe utilizarse como autoridad de Build118/Candidate118**. Para la candidata actual manda su workflow exacto y la evidencia canónica del PR correspondiente.
