@@ -1,20 +1,20 @@
 {
   "schema": "tutop.physical-qa-evidence.v1",
-  "app_version": "0.9.2-beta.7",
+  "app_version": "0.9.2-beta.8",
   "environment": "staging",
   "candidate": {
-    "artifact_name": "TuTop-build117-a578a214f17f3a0ddb7c0d8c6039866f0252c015",
-    "artifact_id": 10600229165,
-    "build_run_id": 35495399790,
-    "build_commit_sha": "a578a214f17f3a0ddb7c0d8c6039866f0252c015",
-    "build_tree_sha": "0f8ac20fa2791ae7462f5a70f6e3913b6791691a",
-    "apk_sha256": "28d9970866367179de769324e722487f26e04bbde498e412b3364905b79d23c6",
-    "gate_run_id": 35495399790,
-    "gate_commit_sha": "a578a214f17f3a0ddb7c0d8c6039866f0252c015",
-    "staging_smoke_run_id": 35495399790,
-    "staging_smoke_commit_sha": "a578a214f17f3a0ddb7c0d8c6039866f0252c015"
+    "artifact_name": "TuTop-build118-e93ca0bb237e7fa438df5801fc627f065d9441e6",
+    "artifact_id": 10609901887,
+    "build_run_id": 35526553288,
+    "build_commit_sha": "e93ca0bb237e7fa438df5801fc627f065d9441e6",
+    "build_tree_sha": "237e43fc4752f4c8ce2f4301b9a155af4a3270c9",
+    "apk_sha256": "6fadbdb05d6d3b2386eeffc3e2885e9f406190ed9710914048bd1a14a69ac8f7",
+    "gate_run_id": 35526553288,
+    "gate_commit_sha": "e93ca0bb237e7fa438df5801fc627f065d9441e6",
+    "staging_smoke_run_id": 35526553288,
+    "staging_smoke_commit_sha": "e93ca0bb237e7fa438df5801fc627f065d9441e6"
   },
-  "evidence_session_id": "PENDIENTE-DEVICE-A",
+  "evidence_session_id": "PENDIENTE-BUILD118-DEVICE-A",
   "evidence_started_at": "PENDIENTE-ISO8601",
   "evidence_completed_at": "PENDIENTE-ISO8601",
   "device": {
@@ -63,5 +63,5 @@
       "sha256": "PENDIENTE-SHA256"
     }
   ],
-  "notes": "Build117 Device A template bound to exact APK SHA. All evidence remains pending; complete only from real physical observation."
+  "notes": "Build118 Device A template bound to exact APK. All evidence starts pending and must come from real observation."
 }
