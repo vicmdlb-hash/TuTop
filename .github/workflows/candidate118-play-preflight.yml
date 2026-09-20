@@ -24,12 +24,24 @@ jobs:
       - run: npm ci
       - name: Candidate118 Play preflight contract
         run: node scripts/candidate118-play-preflight-tests.mjs
+      - name: Authenticated web deletion contract
+        run: node scripts/candidate118-web-deletion-contract-tests.mjs
       - name: Legal retention boundary
         run: npm run legal-retention-review:test
       - name: Typecheck
         run: npm run typecheck
       - name: Web build
         run: npm run build
+      - name: Prove privacy/deletion static build output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/privacy.html
+          test -s dist/delete-account.html
+          test -s dist/delete-account.js
+          grep -q 'delete-account.js' dist/delete-account.html
+          test ! -e dist/tutop-web-config.json
+          echo "PASS static privacy/deletion assets built; runtime Firebase config intentionally absent in preflight"
       - name: Prove no APK/AAB work exists
         shell: bash
         run: |
