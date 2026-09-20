@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Bell, BookmarkPlus, Building2, Clock3, Globe2, Heart, ListFilter, LocateFixed, MapPin, PlusCircle, Search, SlidersHorizontal, Sparkles, Store, X } from 'lucide-react';
+import { ACCOUNT_LOCAL_KEYS, readAccountLocalJson, readAccountLocalList, writeAccountLocalJson, writeAccountLocalList } from '../lib/accountLocalState';
 import { NEARBY_RADIUS_OPTIONS, getCachedApproxLocation, productDistanceKm, requestApproxLocation, withinRadius, type ApproxLocation } from '../lib/nearbyMarketplace';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant';
 import { parseListingDescription } from '../lib/listingDetails';
@@ -12,10 +13,6 @@ import type { ListingVisibilityScope, Product, User } from '../types';
 import ProductCard from './ProductCard';
 import NotificationCenter from './NotificationCenter';
 
-const SEARCH_KEY = 'tutop.search-history.v1';
-const RECENT_KEY = 'tutop.recent-products.v1';
-const SAVED_SEARCH_KEY = 'tutop.saved-searches.local.v1';
-const ONBOARDING_INTERESTS_KEY = 'tutop.interests.v1';
 type SortMode = 'relevant' | 'recent' | 'price-low' | 'price-high' | 'popular';
 type BrowseScope = 'nearby' | 'for-you' | 'campus' | 'institution' | 'city' | 'national';
 
@@ -27,13 +24,6 @@ const scopeOptions: Array<{ id: BrowseScope; label: string; hint: string; icon: 
   { id: 'city', label: 'Mi ciudad', hint: 'Comunidad cercana', icon: <MapPin /> },
   { id: 'national', label: 'Todo México', hint: 'Descubrimiento nacional', icon: <Globe2 /> },
 ];
-
-function readLocalList(key: string, max = 12) {
-  try {
-    const value = JSON.parse(localStorage.getItem(key) || '[]');
-    return Array.isArray(value) ? value.filter((item) => typeof item === 'string').slice(0, max) as string[] : [];
-  } catch { return []; }
-}
 
 function userInstitution(user: User) { return user.institution_id || user.university?.institution_id; }
 function userCampus(user: User) { return user.campus_id || user.university?.campus_id; }
@@ -101,10 +91,10 @@ export default function Feed() {
   const [negotiableOnly, setNegotiableOnly] = useState(false);
   const [deliveryOnly, setDeliveryOnly] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [searchHistory, setSearchHistory] = useState(() => readLocalList(SEARCH_KEY, 6));
+  const [searchHistory, setSearchHistory] = useState(() => readAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, user.id, 6));
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
-  const recentIds = readLocalList(RECENT_KEY, 12);
-  const onboardingInterests = readLocalList(ONBOARDING_INTERESTS_KEY, 8);
+  const recentIds = readAccountLocalList(ACCOUNT_LOCAL_KEYS.recentProducts, user.id, 12);
+  const onboardingInterests = readAccountLocalList(ACCOUNT_LOCAL_KEYS.interests, user.id, 8);
 
   const requestLocationAgain = async () => {
     setLocationStatus('asking');
@@ -168,7 +158,7 @@ export default function Feed() {
     if (clean.length < 2) return;
     const next = [clean, ...searchHistory.filter((item) => normalizeSearchText(item) !== normalizeSearchText(clean))].slice(0, 6);
     setSearchHistory(next);
-    try { localStorage.setItem(SEARCH_KEY, JSON.stringify(next)); } catch { /* optional */ }
+    writeAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, user.id, next, 6);
   };
 
   const saveCurrentSearch = async () => {
@@ -179,9 +169,9 @@ export default function Feed() {
     try {
       if (nationalSchemaEnabled()) await nationalBackend.saveSearch(payload);
       else {
-        const existing = JSON.parse(localStorage.getItem(SAVED_SEARCH_KEY) || '[]');
-        const next = [{ id: `local-${Date.now()}`, ...payload, created_at: new Date().toISOString() }, ...(Array.isArray(existing) ? existing : [])].slice(0, 20);
-        localStorage.setItem(SAVED_SEARCH_KEY, JSON.stringify(next));
+        const existing = readAccountLocalJson<Array<Record<string, unknown>>>(ACCOUNT_LOCAL_KEYS.savedSearches, user.id, []);
+        const next = [{ id: `local-${Date.now()}`, ...payload, created_at: new Date().toISOString() }, ...existing].slice(0, 20);
+        writeAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, user.id, next);
       }
       setSavedMessage(nationalSchemaEnabled() ? 'Búsqueda guardada · alertas V2 activas' : 'Búsqueda guardada en este dispositivo');
       window.setTimeout(() => setSavedMessage(null), 2600);
