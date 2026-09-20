@@ -1,0 +1,44 @@
+name: TuTop Build118 publication hardening preflight — no APK
+
+on:
+  push:
+    branches: [candidate/tutop-118-publication-self-heal]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-build118-preflight
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build118 publication recovery contract
+        run: node --experimental-strip-types scripts/build118-publication-recovery-tests.mjs
+      - name: Existing publication contracts
+        run: |
+          node scripts/post116-publication-client-contract-tests.mjs
+          node scripts/post116-rate-window-runtime-tests.mjs
+          node --experimental-strip-types scripts/post116-durable-publish-draft-tests.mjs
+          node scripts/post116-publish-idempotency-tests.mjs
+      - name: Build117 physical binding stays exact
+        run: |
+          node scripts/physical-qa-candidate-drift.mjs
+          node scripts/build117-physical-acceptance-contract-tests.mjs
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Prove no APK/AAB generated
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS no APK/AAB generated"
