@@ -22,8 +22,13 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: ProductDetail React hook-order regression
-        run: node scripts/build118-deviceA-product-detail-hook-order-tests.mjs
+      - name: Device A targeted regressions
+        run: |
+          node scripts/build118-deviceA-product-detail-hook-order-tests.mjs
+          node scripts/build118-deviceA-native-failure-diagnostics-tests.mjs
+          node scripts/post116-push-health-contract-tests.mjs
+          node scripts/local-topi-favorites-tests.mjs
+          node scripts/device-ux-ai-092-contract-tests.mjs
       - name: Relevant regression family
         run: |
           node scripts/post116-reservation-availability-tests.mjs
