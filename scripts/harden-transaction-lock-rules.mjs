@@ -19,6 +19,31 @@ replaceOnce(
   'transaction create requires unique reservation lock',
 );
 
+const sellerOnlyTransactionCreate = "        && request.auth.uid == request.resource.data.seller_id";
+replaceOnce(
+  sellerOnlyTransactionCreate,
+  `        && (
+          request.auth.uid == request.resource.data.seller_id
+          ||
+          (
+            request.auth.uid == request.resource.data.buyer_id
+            && getAfter(/databases/$(database)/documents/offers/$(request.resource.data.accepted_offer_id)).data.created_by == request.resource.data.seller_id
+          )
+        )`,
+  'buyer may atomically reserve only a seller-authored accepted counteroffer',
+);
+
+const canonicalOfferListing = `        && listingDoc(request.resource.data.listing_id).data.seller_id == request.resource.data.seller_id
+        && listingDoc(request.resource.data.listing_id).data.status == 'active'
+        && listingDoc(request.resource.data.listing_id).data.moderation_status == 'approved'`;
+replaceOnce(
+  canonicalOfferListing,
+  `${canonicalOfferListing}
+        && (!('availability_status' in listingDoc(request.resource.data.listing_id).data) || listingDoc(request.resource.data.listing_id).data.availability_status == 'available')
+        && !exists(/databases/$(database)/documents/listing_reservation_locks/$(request.resource.data.listing_id))`,
+  'new offers require canonical listing to be currently offerable',
+);
+
 const expiryNeedle = `            && request.resource.data.status == 'expired'\n            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])`;
 replaceOnce(
   expiryNeedle,
