@@ -33,6 +33,8 @@ jobs:
           ! grep -Eq "method:[[:space:]]*['\"](POST|PATCH|PUT|DELETE)['\"]" scripts/candidate118-live-readiness-audit.mjs
           ! grep -Eq "batchDelete|:commit|:runQuery|firebase deploy|adminPatch|adminDelete" scripts/candidate118-live-readiness-audit.mjs
           ! grep -Eq "entries:write|ConfigService.UpdateConfig|method:[[:space:]]*['\"](PATCH|PUT|DELETE)['\"]" scripts/candidate118-ai-monitoring-readback.mjs
+      - name: Repository drift audit
+        run: node scripts/candidate118-repo-drift-audit.mjs
       - name: Live staging aggregate audit
         run: node scripts/candidate118-live-readiness-audit.mjs
       - name: Firebase AI monitoring/config readback — no mutation
