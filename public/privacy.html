@@ -35,8 +35,13 @@
   <p>El flujo de fotos puede usar Camera/Photo Picker y lectura local de archivos. Build118 no declara permiso CAMERA ni permisos legacy de almacenamiento para este flujo. El código de video/Firebase Storage permanece bloqueado por los gates actuales.</p>
 
   <h2>Eliminación de cuenta</h2>
-  <p>Desde <strong>Perfil → Notificaciones y privacidad V2 → Eliminar cuenta y datos</strong> una cuenta autenticada puede registrar una solicitud de eliminación. La ejecución destructiva no se dispara automáticamente desde la app: existe un proceso controlado que separa datos eliminables, contenido que debe retirarse y evidencia operativa que podría requerir retención.</p>
-  <p><a href="/delete-account.html">Ver información técnica sobre eliminación de cuenta</a>.</p>
+  <p>Desde <strong>Perfil → Notificaciones y privacidad V2 → Eliminar cuenta y datos</strong> una cuenta autenticada puede registrar una solicitud de eliminación. Candidate118 también incluye un flujo web autenticado propio para que una cuenta existente pueda iniciar o consultar esa solicitud sin abrir ni reinstalar la app.</p>
+  <p>El flujo web usa la misma identidad Firebase de TuTop, deriva el UID de la sesión autenticada y sólo puede crear o consultar la solicitud del propio usuario. El navegador no ejecuta la eliminación destructiva ni puede marcar una solicitud como completada.</p>
+  <p><a href="/delete-account.html">Solicitar o consultar la eliminación de una cuenta TuTop desde la web</a>.</p>
+  <p><strong>Estado de release:</strong> el flujo externo está implementado y validado por build en PR #103, pero Firebase Hosting todavía no se ha desplegado para esta candidata. Por eso la disponibilidad pública de esa URL sigue pendiente de un deploy autorizado y una prueba externa posterior.</p>
+
+  <h2>Consultas de privacidad</h2>
+  <p>TuTop todavía no ha establecido un canal público final para consultas generales de privacidad. Antes de una publicación en Google Play deberá existir un mecanismo público aprobado y coherente con la identidad final del desarrollador. Este borrador no publica automáticamente un correo personal ni la dirección <code>noreply</code> de Firebase como contacto.</p>
 
   <h2>Retención y revisión legal</h2>
   <p>Los plazos, bases jurídicas, excepciones de retención y aprobación final siguen pendientes de revisión legal. Este borrador no inventa esos elementos ni sustituye la declaración final de Data Safety de Google Play.</p>
