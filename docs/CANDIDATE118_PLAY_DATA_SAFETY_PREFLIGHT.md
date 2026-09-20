@@ -30,12 +30,19 @@ Official references:
 
 ## Public privacy/deletion URL status
 
-Candidate117 audit previously observed HTTP 404 on the default Firebase Hosting privacy/deletion paths. A 2026-09-20 fresh probe from the current audit environment could not access those hosts, so **current live reachability is UNKNOWN**, not reclassified as 404 or PASS.
+Candidate117 audit previously observed HTTP 404 on the default Firebase Hosting privacy/deletion paths. Candidate118 now implements an authenticated external deletion flow in source and validates the exact Hosting payload against the current staging Firebase web config. Current release evidence is:
+- Play/Data Safety preflight run `35535108448` = **SUCCESS**;
+- Hosting prepare/no-deploy run `35535108425` = **SUCCESS**;
+- exact `dist/privacy.html`, `dist/delete-account.html`, `dist/delete-account.js` and generated runtime Firebase config are build-validated;
+- the legal-gated Hosting deployment workflow has **0 runs**.
+
+Therefore **current live reachability remains UNKNOWN**: source/build readiness is proven, but Hosting has not been deployed.
 
 Required before release:
-- approved public privacy-policy URL;
+- legally approved privacy-policy content and public privacy-query mechanism;
+- authorized Hosting deploy of the exact Candidate118 payload;
 - reachable external deletion resource;
-- fresh primary-evidence probe from the actual hosting environment.
+- fresh primary-evidence probe from the deployed hosting environment.
 
 ## Exact permission surface expected from Build118 source
 
@@ -66,7 +73,7 @@ Final generated-manifest verification remains required on the exact authorized r
 | Topi prompts/responses | prompt text sent to Firebase AI Logic; generated response returned | User content/provider role/monitoring state |
 | App Check | attestation material/tokens for abuse protection | Security/fraud disclosure |
 | Trust & safety | reports/reviews/moderation/audit evidence may be retained | legal basis/retention/anonymization |
-| Account deletion | in-app request + trusted erasure contracts | legal retention + external URL + trusted execution proof |
+| Account deletion | in-app request + authenticated external web request source/build validated + trusted erasure contracts | legal retention + authorized Hosting deploy + public URL probe + trusted execution proof |
 
 ## Production backend / signing / AAB status
 
@@ -87,8 +94,9 @@ Classification:
 ## Remaining release blockers
 
 - [ ] Device A Build118 physical acceptance;
-- [ ] approved public privacy URL;
-- [ ] approved/reachable external deletion URL;
+- [ ] legally approved privacy content + public privacy-query mechanism;
+- [ ] authorized Candidate118 Hosting deploy;
+- [ ] reachable public privacy/deletion URLs verified after deploy;
 - [ ] final Data Safety answers from exact release candidate + current SDK behavior;
 - [ ] human/legal retention decisions;
 - [ ] deliberate production Firebase project/config;
