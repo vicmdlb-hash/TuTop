@@ -1,14 +1,18 @@
 {
   "schema": "tutop.physical-qa-evidence.v1",
-  "app_version": "0.9.0-beta.0",
+  "app_version": "0.9.2-beta.7",
   "environment": "staging",
   "candidate": {
-    "artifact_name": "TuTop-0.9.0-beta.0-physical-qa-staging-20",
-    "artifact_id": 10002986519,
-    "build_run_id": 34078588228,
-    "build_commit_sha": "43326a9633fd841f95b8ea8f61af5699cc2c9383",
-    "build_tree_sha": "d1d90343806871479d1685783d1c1e5db1b5c341",
-    "apk_sha256": "57005fd59b0026645c8b7fe02cbc36a3876e93ba287ae9c6cd2cc323a567e493"
+    "artifact_name": "TuTop-build117-a578a214f17f3a0ddb7c0d8c6039866f0252c015",
+    "artifact_id": 10600229165,
+    "build_run_id": 35495399790,
+    "build_commit_sha": "a578a214f17f3a0ddb7c0d8c6039866f0252c015",
+    "build_tree_sha": "0f8ac20fa2791ae7462f5a70f6e3913b6791691a",
+    "apk_sha256": "28d9970866367179de769324e722487f26e04bbde498e412b3364905b79d23c6",
+    "gate_run_id": 35495399790,
+    "gate_commit_sha": "a578a214f17f3a0ddb7c0d8c6039866f0252c015",
+    "staging_smoke_run_id": 35495399790,
+    "staging_smoke_commit_sha": "a578a214f17f3a0ddb7c0d8c6039866f0252c015"
   },
   "device": {
     "label": "PENDIENTE-DISPOSITIVO-REAL",
@@ -37,5 +41,5 @@
   },
   "diagnostic_report": null,
   "screenshots": [],
-  "notes": "Template ligado a APK 20. No cuenta como evidencia física hasta physical=true, datos reales y todos los casos PASS. No incluir teléfono, password, tokens, idToken, refreshToken ni notification IDs crudos."
+  "notes": "Build117 generic physical evidence template. No PASS is prefilled. Do not store passwords, OTPs, raw tokens, phone numbers or hardware IDs."
 }

@@ -81,14 +81,14 @@ function bundle(slot, model, viewport, session, offset = 0) {
   const startedAt = new Date(started).toISOString();
   const completedAt = new Date(completed).toISOString();
   return {
-    schema: 'tutop.physical-qa-evidence.v1', app_version: '0.9.0-beta.0', environment: 'staging', candidate: expected,
+    schema: 'tutop.physical-qa-evidence.v1', app_version: candidate.app_version, environment: 'staging', candidate: expected,
     evidence_session_id: session,
     evidence_started_at: startedAt,
     evidence_completed_at: completedAt,
     device: { slot, label: `QA-${slot}`, manufacturer: 'SyntheticVendor', model, android_version: '15', viewport, installation: 'clean', physical: true },
     required_cases: allPass,
     diagnostic_report: {
-      generated_at: new Date(started + 5_000).toISOString(), version: '0.9.0-beta.0', platform: 'android', native_runtime: true,
+      generated_at: new Date(started + 5_000).toISOString(), version: candidate.app_version, platform: 'android', native_runtime: true,
       viewport: { width: 412, height: 915, dpr: 2.6 }, online: true, visibility: 'visible',
       checks: [
         { key: 'staging-project', label: 'Firebase staging', status: 'pass', detail: 'ok' },

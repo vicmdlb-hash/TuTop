@@ -8,6 +8,7 @@ import type { CanonicalListingV2, ListingDeliveryMethod } from '../lib/listingSc
 import { smartPriceFromTuTop } from '../lib/smartPricing';
 import { startTopiDictation } from '../lib/topiVoice';
 import { isForbiddenProductText, MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
+import { withPublicationSessionRecovery } from '../lib/publicationRecovery';
 import { clearDurablePublishDraft, readDurablePublishDraft, writeDurablePublishDraft } from '../lib/publishDraftPersistence';
 import { defaultScopeForCategory, safeMeetingPointsFor, VISIBILITY_SCOPES } from '../lib/universityNetwork';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
@@ -105,6 +106,8 @@ function videoErrorMessage(error: unknown) {
 function publicationFailureCode(raw: string) {
   if (/Missing or insufficient permissions|PERMISSION_DENIED/i.test(raw)) return 'publish_permission_denied';
   if (/RESOURCE_EXHAUSTED|rate.?limit|too many/i.test(raw)) return 'publish_rate_limited';
+  if (raw === 'PUBLISH_SESSION_REFRESH_FAILED') return 'publish_session_refresh_failed';
+  if (raw === 'PUBLISH_EMAIL_NOT_VERIFIED_AFTER_REFRESH') return 'publish_email_not_verified_after_refresh';
   if (/MEDIA_STORAGE_/.test(raw)) return 'publish_media_failed';
   if (raw.startsWith('LISTING_TITLE_INVALID')) return 'publish_title_invalid';
   if (raw.startsWith('LISTING_PRICE_INVALID')) return 'publish_price_invalid';
@@ -488,7 +491,11 @@ export default function NationalPublishScreen() {
       // bridge. That bridge is the single publication authority: it validates
       // institution/campus documents, their relationship, reconciles the profile,
       // re-reads it, then writes listings_v2. No UI catch-and-continue path remains.
-      const created = await canonicalListingsBackend.create(listing, category, publishOperationId);
+      const created = await withPublicationSessionRecovery({
+        attempt: () => canonicalListingsBackend.create(listing, category, publishOperationId),
+        refreshVerification: () => verifiedEmailBetaAuth.refreshVerificationStatus(),
+        diagnostic: (code) => recordDiagnostic('publication', code),
+      });
       uploadedVideoUri = null;
       clearPublishDraft(user.id);
 
@@ -512,7 +519,11 @@ export default function NationalPublishScreen() {
       const failureCode = publicationFailureCode(raw);
       recordDiagnostic('publication', failureCode);
       if (failureCode === 'publish_permission_denied') {
-        setMessage('Una validación de seguridad rechazó la publicación. El anuncio no se creó. Código: PUBLISH_PERMISSION_DENIED.');
+        setMessage('TuTop revalidó tu sesión automáticamente, pero una validación de seguridad todavía rechazó la publicación. El borrador sigue guardado. Código: PUBLISH_PERMISSION_DENIED.');
+      } else if (failureCode === 'publish_session_refresh_failed') {
+        setMessage('TuTop detectó que la sesión necesitaba revalidarse, pero no pudo renovarla. El borrador sigue guardado: revisa tu conexión, cierra sesión, vuelve a entrar y toca Publicar otra vez.');
+      } else if (failureCode === 'publish_email_not_verified_after_refresh') {
+        setMessage('Tu sesión se actualizó, pero el correo todavía no aparece verificado. El borrador sigue guardado; confirma el correo y vuelve a tocar Publicar.');
       } else if (failureCode === 'publish_title_invalid') {
         setMessage('El título debe tener al menos 2 caracteres.');
       } else if (failureCode === 'publish_price_invalid') {
