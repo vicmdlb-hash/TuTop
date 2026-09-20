@@ -250,19 +250,32 @@ export class FirebaseRestClient {
     }
   }
 
-  async setDocument(path: string, data: Record<string, unknown>, options: { merge?: boolean; exists?: boolean } = {}) {
+  async setDocument(
+    path: string,
+    data: Record<string, unknown>,
+    options: { merge?: boolean; exists?: boolean; updateTime?: string } = {},
+  ) {
     const parts = path.split('/').filter(Boolean);
     const documentId = parts.pop();
     if (!documentId || parts.length < 1) throw new Error(`Ruta de documento inválida: ${path}`);
     const parent = parts.join('/');
+    if (options.updateTime && options.exists !== undefined) {
+      throw new Error('FIRESTORE_PRECONDITION_CONFLICT');
+    }
     if (options.exists === false) {
       const url = `${this.firestoreBase()}/${encodePath(parent)}?documentId=${encodeURIComponent(documentId)}`;
       return this.firestoreFetch(url, { method: 'POST', body: JSON.stringify({ fields: encodeFields(data) }) });
     }
     const encodedEntries = Object.entries(data).filter(([, value]) => value !== undefined);
     const encodedData = Object.fromEntries(encodedEntries);
-    const mask = options.merge ? encodedEntries.map(([field]) => `updateMask.fieldPaths=${encodeURIComponent(field)}`).join('&') : '';
-    const suffix = mask ? `?${mask}` : '';
+    const params = new URLSearchParams();
+    if (options.merge) {
+      for (const [field] of encodedEntries) params.append('updateMask.fieldPaths', field);
+    }
+    if (options.exists === true) params.set('currentDocument.exists', 'true');
+    if (options.updateTime) params.set('currentDocument.updateTime', options.updateTime);
+    const query = params.toString();
+    const suffix = query ? `?${query}` : '';
     return this.firestoreFetch(`${this.firestoreBase()}/${encodePath(path)}${suffix}`, { method: 'PATCH', body: JSON.stringify({ fields: encodeFields(encodedData) }) });
   }
 

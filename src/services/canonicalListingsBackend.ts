@@ -291,9 +291,9 @@ export const canonicalListingsBackend = {
   async updateProduct(listingId: string, updates: Partial<Product>) {
     const client = getClient();
     const uid = client.currentSession!.uid;
-    const current = await client.getDocument<CanonicalListingV2>(`listings_v2/${listingId}`);
-    if (!current) throw new Error('LISTING_NOT_FOUND');
-    if (current.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
+    const first = await client.getDocument<CanonicalListingV2>(`listings_v2/${listingId}`);
+    if (!first) throw new Error('LISTING_NOT_FOUND');
+    if (first.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
 
     const patch: Record<string, unknown> = { updated_at: new Date() };
     let contentChanged = false;
@@ -309,9 +309,25 @@ export const canonicalListingsBackend = {
     // Sensitive seller edits must always return to moderation. Do not trust a stale read snapshot.
     if (contentChanged) patch.moderation_status = 'pending';
 
-    const next = { ...current.data, ...patch, updated_at: new Date().toISOString() } as CanonicalListingV2;
-    validateCanonicalListingPolicy(next, updates.categoria || categoryLabel(current.data.category_id));
-    await client.setDocument(`listings_v2/${listingId}`, patch, { merge: true });
+    const writeAgainst = async (snapshot: FirestoreDocument<CanonicalListingV2>) => {
+      if (snapshot.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
+      const next = { ...snapshot.data, ...patch, updated_at: new Date().toISOString() } as CanonicalListingV2;
+      validateCanonicalListingPolicy(next, updates.categoria || categoryLabel(snapshot.data.category_id));
+      await client.setDocument(`listings_v2/${listingId}`, patch, {
+        merge: true,
+        ...(snapshot.updateTime ? { updateTime: snapshot.updateTime } : {}),
+      });
+    };
+
+    try {
+      await writeAgainst(first);
+    } catch (error: any) {
+      const failedPrecondition = error?.payload?.error?.status === 'FAILED_PRECONDITION';
+      if (!first.updateTime || !failedPrecondition) throw error;
+      const fresh = await client.getDocument<CanonicalListingV2>(`listings_v2/${listingId}`);
+      if (!fresh) throw new Error('LISTING_NOT_FOUND');
+      await writeAgainst(fresh);
+    }
     nearbyCache.clear();
   },
 
