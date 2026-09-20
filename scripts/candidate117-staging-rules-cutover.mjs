@@ -14,6 +14,12 @@ const CANDIDATE_PATH='firebase/firestore.v2.generated.rules';
 function stop(code){ throw new Error(code); }
 function normalize(value){ return String(value||'').replace(/\r\n/g,'\n'); }
 function sha256(value){ return crypto.createHash('sha256').update(value).digest('hex'); }
+function rateBlock(source){
+  const start=source.indexOf('    match /rate_limits/{bucketId} {');
+  const end=source.indexOf('    match /device_tokens/{tokenId} {',start);
+  if(start<0||end<0) stop('RATE_LIMIT_BLOCK_MISSING');
+  return source.slice(start,end);
+}
 
 if(!process.argv.includes('--apply-and-prove')) stop('EXPLICIT_APPLY_AND_PROVE_REQUIRED');
 if(process.env.TUTOP_FIREBASE_PROJECT_ID!==PROJECT) stop('STAGING_PROJECT_REQUIRED');
@@ -69,8 +75,12 @@ for(const tokenText of [
 ]){
   if(!candidate.includes(tokenText)) stop('CANDIDATE_RULES_GUARD_MISSING_'+tokenText.replace(/[^A-Za-z0-9]+/g,'_'));
 }
-if(candidate.includes("allow read: if signedIn() && resource.data.uid == request.auth.uid;")) {
+const candidateRateBlock=rateBlock(candidate);
+if(candidateRateBlock.includes("allow read: if signedIn() && resource.data.uid == request.auth.uid;")) {
   stop('OLD_RATE_BUCKET_READ_GUARD_REAPPEARED');
+}
+for(const action of ['listing_create','chat_create','offer_create','message_create','report_create','demand_create']){
+  if(!candidateRateBlock.includes("request.auth.uid + '-"+action+"'")) stop('CANDIDATE_OWNER_BUCKET_MISSING_'+action);
 }
 
 let candidateRuleset='';
