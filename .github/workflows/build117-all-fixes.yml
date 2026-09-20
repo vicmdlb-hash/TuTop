@@ -69,6 +69,9 @@ jobs:
           node scripts/post116-push-ownership-contract-tests.mjs
           node scripts/post116-push-account-isolation-tests.mjs
 
+      - name: Compose exact strict V2 Rules before reservation contracts
+        run: npm run v2:rules:prepare
+
       - name: Moderation reservation and shared-device regressions
         run: |
           node scripts/post116-pr88-moderation-privacy-integration-tests.mjs
@@ -87,9 +90,6 @@ jobs:
 
       - name: Exact typecheck
         run: npm run typecheck
-
-      - name: Compose exact strict V2 Rules
-        run: npm run v2:rules:prepare
 
       - name: Emulator dependencies
         run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
