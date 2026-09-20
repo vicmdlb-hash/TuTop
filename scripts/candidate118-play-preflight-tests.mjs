@@ -35,7 +35,7 @@ assert.doesNotMatch(deletionClient,/accounts:delete|batchDelete/);
 assert.match(preflight,/ENGINEERING PREFLIGHT — NOT A FINAL PLAY CONSOLE DECLARATION/);
 assert.match(preflight,new RegExp(EXPECTED_SHA));
 assert.match(preflight,/targetSdkVersion=36/);
-assert.match(preflight,/current live reachability is UNKNOWN/);
+assert.match(preflight,/current live reachability (?:is|remains) UNKNOWN/);
 assert.match(preflight,/AAB_PIPELINE_PREPARED_FAIL_CLOSED/);
 assert.match(preflight,/versionCode must be \*\*greater than 90212\*\*/);
 assert.match(preflight,/ENGINEERING_PREFLIGHT != LEGAL_APPROVAL != DEVICE_PASS != SIGNED_RELEASE_AAB != PLAY_APPROVED/);
