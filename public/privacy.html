@@ -11,7 +11,7 @@
 </head>
 <body>
   <h1>Privacidad de TuTop — borrador beta</h1>
-  <p class="note"><strong>No es una política legal aprobada para publicación.</strong> Resume la superficie técnica de la línea sucesora post-build116. build116 sigue siendo la autoridad física Device A y la línea sucesora continúa DRAFT / NOT MERGED; la política final debe revisarse contra la candidata exacta que eventualmente se autorice para release.</p>
+  <p class="note"><strong>No es una política legal aprobada para publicación.</strong> Este borrador fue reconciliado contra la candidata de ingeniería build117 / PR #97 / SHA a578a214f17f3a0ddb7c0d8c6039866f0252c015. Build117 sigue DEVICE_A_NOT_TESTED y PR #97 continúa DRAFT / NOT MERGED; la política final debe revisarse jurídicamente y contra la candidata exacta que eventualmente se autorice para Play.</p>
 
   <h2>Cuenta e identidad</h2>
   <p>TuTop usa Firebase Authentication. La candidata actual trabaja con correo real y estado de verificación de correo. El flujo de recuperación legacy puede partir de un alias telefónico existente y la Clave TuTop para conservar el mismo UID; ese teléfono sigue siendo opcional/no verificado y TuTop no lo presenta como verificado por SMS.</p>
@@ -23,10 +23,13 @@
   <p>Nearby puede solicitar ubicación aproximada bajo demanda. La configuración nativa revisada usa ubicación coarse y no exige ubicación precisa ni ubicación en segundo plano para este flujo.</p>
 
   <h2>Topi / Firebase AI</h2>
-  <p>Cuando se usa Topi con IA remota habilitada, una pregunta del usuario se sanea y limita antes de enviarse a Firebase AI Logic. La respuesta y el modelo regresan al cliente. El módulo local de diagnóstico revisado no conserva prompts, tokens, UID, teléfonos ni coordenadas.</p>
+  <p>Cuando se usa Topi con IA remota habilitada, una pregunta del usuario se sanea y limita antes de enviarse a Firebase AI Logic 17.17.0. La respuesta y el modelo regresan al cliente. El módulo local de diagnóstico revisado no conserva prompts, tokens, UID, teléfonos ni coordenadas. La declaración final de privacidad/Data Safety debe considerar además los metadatos y datos que procese el SDK/proveedor y el estado efectivo de AI monitoring.</p>
 
   <h2>Notificaciones</h2>
   <p>La candidata incluye soporte de Firebase Cloud Messaging y preferencias de notificación. El dispositivo puede registrar o desactivar un token push. La aceptación física extremo a extremo de FCM continúa pendiente y no debe confundirse con validación de código.</p>
+
+  <h2>Voz y micrófono</h2>
+  <p>Topi Voice solicita RECORD_AUDIO bajo demanda y usa Android SpeechRecognizer. TuTop no persiste audio crudo en su propia capa revisada; el recognizer está configurado con preferencia offline desactivada, por lo que la política final debe contemplar posible procesamiento de voz por el servicio de reconocimiento disponible en el dispositivo.</p>
 
   <h2>Fotos y video</h2>
   <p>El flujo de fotos puede usar Camera/Photo Picker y lectura local de archivos. El código de video/Firebase Storage existe detrás de feature flags, pero Storage/video permanece bloqueado en la candidata actual y no se declara aquí como una superficie activa de producción.</p>
@@ -44,6 +47,6 @@
   <h2>Estado de publicación</h2>
   <p>TuTop continúa en beta controlada. Play Store, producción, billing, Storage/video y merge permanecen bloqueados por los gates actuales. Una política pública final debe ser coherente con el comportamiento real de la candidata que se publique.</p>
 
-  <p>Última revisión técnica del borrador: 19 de septiembre de 2026.</p>
+  <p>Última revisión técnica del borrador: 20 de septiembre de 2026.</p>
 </body>
 </html>
