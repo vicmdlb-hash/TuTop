@@ -179,6 +179,7 @@ export interface Product {
   visibility_scope?: ListingVisibilityScope;
   listing_kind?: ListingKind;
   moderation_status?: ModerationStatus;
+  availability_status?: 'available' | 'reserved';
   punto_encuentro: MeetingPoint;
   meeting_point_id?: string;
   punto_personalizado?: string;

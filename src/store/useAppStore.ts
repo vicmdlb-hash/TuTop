@@ -162,6 +162,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const product = state.products.find((item) => item.id === productId);
     if (!product || product.vendedor_id === state.user.id) return null;
     const existing = state.chats.find((chat) => chat.producto_id === productId && chat.comprador_id === state.user.id && chat.vendedor_id === product.vendedor_id);
+    if (product.availability_status === 'reserved' && !existing) return null;
     const chatId = existing?.id || `chat-${state.user.id}-${product.id}`;
     if (!existing) {
       const chat: Chat = {

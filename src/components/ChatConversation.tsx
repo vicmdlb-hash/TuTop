@@ -50,7 +50,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
   const quickMessages = isBuyer ? BUYER_QUICK : SELLER_QUICK;
   const structuredPending = structuredOffers.find((offer) => offer.status === 'pending');
   const actionableStructured = structuredPending && proposer(structuredPending) !== user.id ? structuredPending : null;
-  const finalizableAccepted = !isBuyer
+  const finalizableAccepted = !isBuyer && !canonicalTransaction
     ? structuredOffers.find((offer) => offer.status === 'accepted' && proposer(offer) === offer.seller_id && offer.id !== finalizedOfferId)
     : undefined;
   const legacyLatestOffer = useMemo(() => {
@@ -188,13 +188,10 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
           const result = await nationalBackend.acceptOfferAndCreateTransaction(visibleOffer.structured, 120);
           setStructuredOffers((current) => current.map((item) => item.id === visibleOffer.structured!.id ? { ...item, status: 'accepted', updated_at: new Date().toISOString() } : item));
           refreshCanonicalOffers();
-          if (result.transaction) {
-            setFinalizedOfferId(visibleOffer.structured.id);
-            syncCanonicalTransaction(result.transaction);
-            setStructuredMessage(`En trato · reservado por 2 h · operación ${result.transaction.id.slice(-6)}`);
-          } else {
-            setStructuredMessage('Contraoferta aceptada. El vendedor debe confirmar la reserva para iniciar la operación.');
-          }
+          if (!result.transaction) throw new Error('RESERVATION_NOT_CREATED');
+          setFinalizedOfferId(visibleOffer.structured.id);
+          syncCanonicalTransaction(result.transaction);
+          setStructuredMessage(`En trato · reservado por 2 h · operación ${result.transaction.id.slice(-6)}`);
         } else {
           await nationalBackend.updateOffer(visibleOffer.structured.id, 'rejected');
           setStructuredOffers((current) => current.map((item) => item.id === visibleOffer.structured!.id ? { ...item, status: 'rejected', updated_at: new Date().toISOString() } : item));
@@ -249,7 +246,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
       <TransactionReservationCard chatId={chatId} currentUserId={user.id} transactionHint={canonicalTransaction} onTransactionChange={syncCanonicalTransaction} />
 
       {structuredPending && proposer(structuredPending) === user.id && <div className="mx-4 mt-2 flex items-center gap-2 rounded-xl border border-sky-400/10 bg-sky-500/[0.045] px-3 py-2 text-[9px] text-sky-200"><CircleDollarSign className="h-3.5 w-3.5" /><span>Tu propuesta de <strong>${structuredPending.amount_mxn.toLocaleString('es-MX')}</strong> está esperando respuesta.</span></div>}
-      {finalizableAccepted && <div className="mx-4 mt-2 rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.06] p-3"><div className="flex gap-2"><PackageCheck className="h-4 w-4 text-emerald-300" /><div className="flex-1"><strong className="block text-[10px] text-emerald-200">El comprador aceptó tu contraoferta</strong><p className="mt-1 text-[9px] text-slate-500">${finalizableAccepted.amount_mxn.toLocaleString('es-MX')} · Confirma para reservar el artículo 2 horas.</p></div></div><button disabled={structuredBusy} onClick={() => void finalizeAcceptedCounter()} className="mt-3 h-9 w-full rounded-xl bg-emerald-500/15 text-[9px] font-black text-emerald-300 disabled:opacity-50">Confirmar trato y reservar</button></div>}
+      {finalizableAccepted && <div className="mx-4 mt-2 rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.06] p-3"><div className="flex gap-2"><PackageCheck className="h-4 w-4 text-emerald-300" /><div className="flex-1"><strong className="block text-[10px] text-emerald-200">Aceptación anterior sin reserva visible</strong><p className="mt-1 text-[9px] text-slate-500">${finalizableAccepted.amount_mxn.toLocaleString('es-MX')} · Recupera la reserva si esta aceptación ocurrió antes del flujo atómico.</p></div></div><button disabled={structuredBusy} onClick={() => void finalizeAcceptedCounter()} className="mt-3 h-9 w-full rounded-xl bg-emerald-500/15 text-[9px] font-black text-emerald-300 disabled:opacity-50">Recuperar reserva</button></div>}
 
       <div className="mx-4 mt-2 flex gap-2 overflow-x-auto pb-1 scrollbar-none">{quickMessages.map((message) => <button key={message} onClick={() => submitText(message)} className="shrink-0 rounded-full border border-white/5 bg-white/[0.035] px-3 py-2 text-[9px] font-bold text-slate-400">{message}</button>)}{isBuyer && !structuredPending && <button onClick={() => setOfferOpen((value) => !value)} className="shrink-0 rounded-full border border-emerald-400/10 bg-emerald-500/10 px-3 py-2 text-[9px] font-bold text-emerald-300"><CircleDollarSign className="mr-1 inline h-3.5 w-3.5" />Hacer oferta</button>}</div>
 
