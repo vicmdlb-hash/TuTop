@@ -5,6 +5,7 @@ const {
   FIREBASE_REQUEST_TIMEOUT_CODE,
   FirebaseRequestTimeoutError,
   firebaseFetch,
+  isFirebaseRequestTimeout,
 } = await import('../src/services/firebaseHttp.ts');
 
 const rest = fs.readFileSync('src/services/firebaseRest.ts', 'utf8');
@@ -14,10 +15,11 @@ const listings = fs.readFileSync('src/components/V2ListingsHydrator.tsx', 'utf8'
 const nearby = fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx', 'utf8');
 
 assert.match(rest, /import \{ firebaseFetch \} from '\.\/firebaseHttp'/);
-assert.match(auth, /import \{ firebaseFetch \} from '\.\/firebaseHttp'/);
+assert.match(auth, /import \{ firebaseFetch, isFirebaseRequestTimeout \} from '\.\/firebaseHttp'/);
 assert.doesNotMatch(rest, /\bfetch\s*\(/);
 assert.doesNotMatch(auth, /\bfetch\s*\(/);
 assert.match(gate, /FIREBASE_REQUEST_TIMEOUT/);
+assert.match(auth, /if \(isFirebaseRequestTimeout\(error\)\) throw error;[\s\S]*accounts:delete/);
 
 assert.match(listings, /finally \{\s*inFlight = false;\s*\}/);
 assert.match(listings, /window\.addEventListener\('online', online\)/);
@@ -42,6 +44,7 @@ try {
       assert.equal(error.code, FIREBASE_REQUEST_TIMEOUT_CODE);
       assert.equal(error.retryable, true);
       assert.equal(error.timeoutMs, 25);
+      assert.equal(isFirebaseRequestTimeout(error), true);
       return true;
     },
   );
