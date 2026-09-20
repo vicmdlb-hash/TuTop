@@ -22,7 +22,7 @@ export function loadPhysicalQaCandidate() {
   if (!fs.existsSync(CANDIDATE_MANIFEST_PATH)) throw new Error('PHYSICAL_QA_CANDIDATE_MANIFEST_MISSING');
   const candidate = JSON.parse(fs.readFileSync(CANDIDATE_MANIFEST_PATH, 'utf8'));
   if (candidate?.schema !== 'tutop.physical-qa-candidate.v1') throw new Error('PHYSICAL_QA_CANDIDATE_SCHEMA_INVALID');
-  if (candidate?.app_version !== '0.9.0-beta.0') throw new Error('PHYSICAL_QA_CANDIDATE_VERSION_INVALID');
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(String(candidate?.app_version || ''))) throw new Error('PHYSICAL_QA_CANDIDATE_VERSION_INVALID');
   if (candidate?.environment !== 'staging') throw new Error('PHYSICAL_QA_CANDIDATE_ENVIRONMENT_INVALID');
   if (candidate?.physical_release_candidate !== true) throw new Error('PHYSICAL_QA_CANDIDATE_NOT_ACTIVE');
   if (candidate?.candidate_status !== 'active_exact_head') throw new Error('PHYSICAL_QA_CANDIDATE_STATUS_INVALID');
@@ -89,7 +89,7 @@ export function validatePhysicalQaEvidence(bundle, now = Date.now(), expectedCan
   const errors = [];
   const warnings = [];
   if (bundle?.schema !== 'tutop.physical-qa-evidence.v1') errors.push('schema inválido');
-  if (bundle?.app_version !== '0.9.0-beta.0') errors.push('app_version debe ser 0.9.0-beta.0');
+  if (bundle?.app_version !== expectedCandidate?.app_version) errors.push(`app_version debe coincidir con candidato vigente: ${expectedCandidate?.app_version || 'UNKNOWN'}`);
   if (bundle?.environment !== 'staging') errors.push('environment debe ser staging');
   if (!candidateExactHeadIdentityValid(expectedCandidate)
       || expectedCandidate?.candidate_status !== 'active_exact_head'
