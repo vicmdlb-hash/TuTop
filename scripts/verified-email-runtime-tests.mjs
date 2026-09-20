@@ -40,8 +40,10 @@ function harness() {
       {localId:'u1',idToken:'token',refreshToken:'r1',expiresIn:'3600'};
     return {ok:true,text:async()=>JSON.stringify(data)};
   };
+  const firebaseFetch = fetch;
+  const isFirebaseRequestTimeout = (error) => error?.message === 'FIREBASE_REQUEST_TIMEOUT' || error?.code === 'FIREBASE_REQUEST_TIMEOUT';
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
-  const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch);
+  const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','isFirebaseRequestTimeout',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,isFirebaseRequestTimeout);
   return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set profileWait(v){profileWait=v;}};
 }
 const profile={nombre:'Tester',facultad:'Campus',institution_id:'inst',institution_name:'Institution',campus_id:'camp',campus_name:'Campus'};
@@ -63,6 +65,10 @@ const tests = [
  ['definite denied profile commit still rolls back Auth',async()=>{
    const h=harness(); h.commitError='PERMISSION_DENIED'; await assert.rejects(h.auth.register('a@example.test','password123',profile),/PERMISSION_DENIED/);
    assert.equal(h.session,null); assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,1);
+ }],
+ ['ambiguous profile commit timeout preserves Auth session and avoids destructive rollback',async()=>{
+   const h=harness(); h.commitError='FIREBASE_REQUEST_TIMEOUT'; await assert.rejects(h.auth.register('a@example.test','password123',profile),/FIREBASE_REQUEST_TIMEOUT/);
+   assert.equal(h.session.uid,'u1'); assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,0);
  }],
  ['lookup response after sign-out cannot restore session',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',profile);
