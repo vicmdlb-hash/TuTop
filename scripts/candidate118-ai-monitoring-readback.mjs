@@ -47,7 +47,7 @@ const logResponse=await fetch('https://logging.googleapis.com/v2/entries:list',{
 const logText=await logResponse.text();
 let logBody={};
 try{logBody=logText?JSON.parse(logText):{};}catch{logBody={};}
-const modelLogEntries=logResponse.ok && Array.isArray(logBody?.entries) ? logBody.entries.length : null;
+const modelLogEntries=logResponse.ok ? (Array.isArray(logBody?.entries) ? logBody.entries.length : 0) : null;
 const activeExclusions=exclusions.filter(x=>x?.disabled!==true);
 const modelExclusions=activeExclusions.filter(x=>String(x?.filter||'').includes('firebasevertexai.googleapis.com/Model'));
 
