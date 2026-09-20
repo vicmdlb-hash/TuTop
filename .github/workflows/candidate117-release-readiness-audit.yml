@@ -1,0 +1,60 @@
+name: TuTop Candidate117 release readiness read-only audit
+
+on:
+  push:
+    branches: [ops/candidate117-release-readiness-audit]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-candidate117-release-readiness
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      TUTOP_CANDIDATE117_BASE_SHA: a578a214f17f3a0ddb7c0d8c6039866f0252c015
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      VITE_TUTOP_SCHEMA_V2: 'true'
+      VITE_TUTOP_ENVIRONMENT: staging
+      TUTOP_ANDROID_GOOGLE_SERVICES_PATH: .tutop-staging-google-services.json
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Read existing staging configs only
+        run: node scripts/read-existing-staging-build-config.mjs
+      - name: Install mobile dependencies ephemerally
+        run: npm run deps:mobile
+      - name: Prove dependency manifests unchanged
+        run: git diff --exit-code -- package.json package-lock.json
+      - name: Build web assets locally only
+        run: npm run build
+      - name: Generate Android project locally only
+        run: npm run android:bootstrap
+      - name: Release readiness audit — no deploy/no APK/no AAB
+        run: node scripts/candidate117-release-readiness-audit.mjs
+      - name: Prove no APK or AAB was built
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS no APK/AAB generated"
+      - name: Remove local staging configs
+        if: always()
+        run: rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json android/app/google-services.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-candidate117-release-audit-${{ github.sha }}
+          path: candidate117-release-audit/
+          retention-days: 30
+          if-no-files-found: error
