@@ -25,6 +25,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
+      - name: Install repo dependencies for source audit
+        run: npm ci
       - name: Static no-mutation guard
         shell: bash
         run: |
@@ -33,6 +35,8 @@ jobs:
           ! grep -Eq "method:[[:space:]]*['\"](POST|PATCH|PUT|DELETE)['\"]" scripts/candidate118-live-readiness-audit.mjs
           ! grep -Eq "batchDelete|:commit|:runQuery|firebase deploy|adminPatch|adminDelete" scripts/candidate118-live-readiness-audit.mjs
           ! grep -Eq "entries:write|ConfigService.UpdateConfig|method:[[:space:]]*['\"](PATCH|PUT|DELETE)['\"]" scripts/candidate118-ai-monitoring-readback.mjs
+      - name: React hook-order source audit
+        run: node scripts/candidate118-react-hook-order-audit.mjs
       - name: Repository drift audit
         run: node scripts/candidate118-repo-drift-audit.mjs
       - name: Live staging aggregate audit
