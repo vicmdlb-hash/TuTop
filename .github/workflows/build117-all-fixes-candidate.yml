@@ -23,7 +23,7 @@ jobs:
       TUTOP_ANDROID_VERSION_CODE: 90211
       TUTOP_AI_APP_CHECK_REQUIRED: 'false'
       VITE_TUTOP_TOPI_REMOTE_ENABLED: 'false'
-      TUTOP_CLIENT_EQUIVALENT_ACK: POST116_CLIENT_EQUIVALENT_PUBLICATION_ONLY
+      TUTOP_CLIENT_EQUIVALENT_ACK: BUILD117_CLIENT_EQUIVALENT_PUBLICATION_ONLY
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
       TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
@@ -123,7 +123,7 @@ jobs:
       - name: Read existing staging configuration without mutations
         run: node scripts/read-existing-staging-build-config.mjs
       - name: Candidate117 client-equivalent publication against staging
-        run: node --experimental-strip-types --experimental-loader ./scripts/node-ts-extension-loader.mjs scripts/post116-client-equivalent-live-smoke.mjs
+        run: node --experimental-strip-types --experimental-loader ./scripts/node-ts-extension-loader.mjs scripts/build117-client-equivalent-live-smoke.mjs
       - name: Prove Firebase AI runtime on staging
         run: node scripts/staging-topi-ai-runtime-smoke.mjs
 
