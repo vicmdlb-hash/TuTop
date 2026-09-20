@@ -98,6 +98,10 @@ jobs:
         run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0 @firebase/rules-unit-testing@5.0.2 firebase-tools@15.30.1
       - name: Reservation lock emulator
         run: npx firebase emulators:exec --only firestore --project demo-tutop-build117-reservation --config firebase.v2.json "node --test --test-concurrency=1 tests/firestore.v2.transaction-lock.test.mjs"
+      - name: Recompose and prove least-privilege Rules immediately before sensitive emulator
+        run: |
+          npm run v2:rules:prepare
+          node scripts/post117-generated-rules-least-privilege-tests.mjs
       - name: Governance least-privilege account and publication emulator
         run: >
           npx firebase emulators:exec --only firestore
