@@ -1,24 +1,20 @@
 import { useState } from 'react';
 import { ArrowRight, Check, Search, ShieldCheck, Sparkles, Store, X } from 'lucide-react';
+import { ACCOUNT_LOCAL_KEYS, readAccountLocalList, readAccountLocalText, writeAccountLocalList, writeAccountLocalText } from '../lib/accountLocalState';
 import { MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
-
-const TOUR_KEY = 'tutop.onboarding.v1';
-const INTEREST_KEY = 'tutop.interests.v1';
+import { useAppStore } from '../store/useAppStore';
 
 export default function WelcomeTour() {
-  const [visible, setVisible] = useState(() => localStorage.getItem(TOUR_KEY) !== 'done');
+  const userId = useAppStore((state) => state.user.id);
+  const [visible, setVisible] = useState(() => Boolean(userId) && readAccountLocalText(ACCOUNT_LOCAL_KEYS.onboarding, userId) !== 'done');
   const [step, setStep] = useState(1);
-  const [interests, setInterests] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem(INTEREST_KEY) || '[]'); } catch { return []; }
-  });
+  const [interests, setInterests] = useState<string[]>(() => readAccountLocalList(ACCOUNT_LOCAL_KEYS.interests, userId, 6));
 
   if (!visible) return null;
 
   const finish = () => {
-    try {
-      localStorage.setItem(TOUR_KEY, 'done');
-      localStorage.setItem(INTEREST_KEY, JSON.stringify(interests.slice(0, 6)));
-    } catch { /* onboarding must never block access */ }
+    writeAccountLocalText(ACCOUNT_LOCAL_KEYS.onboarding, userId, 'done');
+    writeAccountLocalList(ACCOUNT_LOCAL_KEYS.interests, userId, interests, 6);
     setVisible(false);
   };
 
