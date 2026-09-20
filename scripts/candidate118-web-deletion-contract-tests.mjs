@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 const html=fs.readFileSync('public/delete-account.html','utf8');
 const client=fs.readFileSync('public/delete-account.js','utf8');
 const prep=fs.readFileSync('scripts/prepare-candidate118-hosting-assets.mjs','utf8');
+const prepareWorkflow=fs.readFileSync('.github/workflows/candidate118-hosting-prepare.yml','utf8');
+const deployWorkflow=fs.readFileSync('.github/workflows/candidate118-hosting-staging-deploy.yml','utf8');
 const ignore=fs.readFileSync('.gitignore','utf8');
 const firebase=fs.readFileSync('firebase.json','utf8');
 
@@ -32,6 +34,22 @@ assert.match(prep,/public\/tutop-web-config\.json/);
 assert.doesNotMatch(prep,/service.?account|refreshToken|idToken/i);
 assert(ignore.includes('public/tutop-web-config.json'));
 
+assert.match(prepareWorkflow,/workflow_dispatch:/);
+assert.doesNotMatch(prepareWorkflow,/\npush:/);
+assert.match(prepareWorkflow,/PREPARE_CANDIDATE118_HOSTING_NO_DEPLOY/);
+assert.match(prepareWorkflow,/pulls\/103/);
+assert.match(prepareWorkflow,/e93ca0bb237e7fa438df5801fc627f065d9441e6/);
+assert.doesNotMatch(prepareWorkflow,/--only hosting/);
+
+assert.match(deployWorkflow,/workflow_dispatch:/);
+assert.doesNotMatch(deployWorkflow,/\npush:/);
+assert.match(deployWorkflow,/DEPLOY_CANDIDATE118_STAGING_HOSTING_ONLY/);
+assert.match(deployWorkflow,/LEGAL_PRIVACY_CONTENT_APPROVED/);
+assert.match(deployWorkflow,/No es una política legal aprobada para publicación/);
+assert.match(deployWorkflow,/--only hosting/);
+assert.match(deployWorkflow,/--project tutop-beta-vicmdlb-1356585881/);
+assert.doesNotMatch(deployWorkflow,/--only\s+(firestore|auth|storage|functions)/);
+
 const parsed=JSON.parse(firebase);
 const csp=(parsed.hosting?.headers||[]).flatMap(item=>item.headers||[]).find(item=>item.key==='Content-Security-Policy')?.value||'';
 for(const origin of ['https://identitytoolkit.googleapis.com','https://securetoken.googleapis.com','https://firestore.googleapis.com']) assert(csp.includes(origin));
@@ -41,4 +59,6 @@ console.log('PASS authenticated deletion page uses self-hosted JS and no inline 
 console.log('PASS deletion client authenticates existing account and creates idempotent pending request only');
 console.log('PASS no client Auth deletion/completion/token persistence capability exists');
 console.log('PASS Hosting runtime config is generated separately and ignored by git');
+console.log('PASS Hosting prepare workflow is manual and cannot deploy');
+console.log('PASS Hosting deploy workflow is manual, exact-branch/SHA scoped, legal-gated and hosting-only');
 console.log('PASS Firebase Hosting CSP permits only required Firebase REST origins for this flow');
