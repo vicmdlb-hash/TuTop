@@ -1,3 +1,4 @@
+import { firebaseFetch } from './firebaseHttp';
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
 import type { FirebaseRuntimeConfig } from './runtimeConfig';
 
@@ -172,7 +173,7 @@ export class FirebaseRestClient {
 
   private async authRequest(endpoint: string, body: Record<string, unknown>) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(await appCheckHeader()) };
-    const response = await fetch(`https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${encodeURIComponent(this.config.apiKey)}`, {
+    const response = await firebaseFetch(`https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${encodeURIComponent(this.config.apiKey)}`, {
       method: 'POST', headers, body: JSON.stringify(body),
     });
     return readJson(response);
@@ -213,7 +214,7 @@ export class FirebaseRestClient {
     if (!this.session) throw new Error('AUTH_REQUIRED');
     if (this.session.expiresAt > Date.now() + 60_000) return this.session.idToken;
     const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded', ...(await appCheckHeader()) };
-    const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(this.config.apiKey)}`, {
+    const response = await firebaseFetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(this.config.apiKey)}`, {
       method: 'POST', headers,
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: this.session.refreshToken }),
     });
@@ -237,7 +238,7 @@ export class FirebaseRestClient {
     const appCheck = await getNativeAppCheckToken(false).catch(() => null);
     if (appCheck) headers.set('X-Firebase-AppCheck', appCheck);
     if (init.body) headers.set('Content-Type', 'application/json');
-    return readJson(await fetch(url, { ...init, headers }));
+    return readJson(await firebaseFetch(url, { ...init, headers }));
   }
 
   async getDocument<T = Record<string, unknown>>(path: string): Promise<FirestoreDocument<T> | null> {
