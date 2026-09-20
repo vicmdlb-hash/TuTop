@@ -1,0 +1,96 @@
+name: Candidate117 prepare signed AAB — manual, NO Play upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type PREPARE_SIGNED_AAB_NO_UPLOAD
+        required: true
+        type: string
+      version_name:
+        description: Release semver, e.g. 0.9.2
+        required: true
+        type: string
+      version_code:
+        description: Android versionCode greater than 90211
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.ref_name == 'release/candidate117-play-preflight' && inputs.confirm == 'PREPARE_SIGNED_AAB_NO_UPLOAD'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TUTOP_PLAY_RELEASE_CONFIRM: ${{ inputs.confirm }}
+      TUTOP_PLAY_VERSION_NAME: ${{ inputs.version_name }}
+      TUTOP_PLAY_VERSION_CODE: ${{ inputs.version_code }}
+      TUTOP_PLAY_PROJECT_ID: ${{ secrets.TUTOP_PLAY_PROJECT_ID }}
+      TUTOP_PLAY_WEB_CONFIG_B64: ${{ secrets.TUTOP_PLAY_WEB_CONFIG_B64 }}
+      TUTOP_PLAY_GOOGLE_SERVICES_B64: ${{ secrets.TUTOP_PLAY_GOOGLE_SERVICES_B64 }}
+      TUTOP_UPLOAD_KEYSTORE_B64: ${{ secrets.TUTOP_UPLOAD_KEYSTORE_B64 }}
+      TUTOP_UPLOAD_KEY_ALIAS: ${{ secrets.TUTOP_UPLOAD_KEY_ALIAS }}
+      TUTOP_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.TUTOP_UPLOAD_KEYSTORE_PASSWORD }}
+      TUTOP_UPLOAD_KEY_PASSWORD: ${{ secrets.TUTOP_UPLOAD_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+
+      - name: Fail-closed release authorization + production config gate
+        run: node scripts/play-release-gate.mjs --materialize
+
+      - name: Production web build
+        run: npm run build
+
+      - name: Mobile dependencies and Android bootstrap
+        run: |
+          npm run deps:mobile
+          git diff --exit-code -- package.json package-lock.json
+          npm run android:bootstrap
+          node scripts/configure-android-play-version.mjs
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Build release App Bundle only
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon bundleRelease
+
+      - name: Sign AAB with pre-existing upload key
+        shell: bash
+        run: |
+          set -euo pipefail
+          AAB="android/app/build/outputs/bundle/release/app-release.aab"
+          test -f "$AAB"
+          jarsigner -keystore "$TUTOP_UPLOAD_KEYSTORE_PATH"             -storepass "$TUTOP_UPLOAD_KEYSTORE_PASSWORD"             -keypass "$TUTOP_UPLOAD_KEY_PASSWORD"             -sigalg SHA256withRSA -digestalg SHA-256             "$AAB" "$TUTOP_UPLOAD_KEY_ALIAS"
+          jarsigner -verify -strict -certs "$AAB"
+          sha256sum "$AAB" > "$AAB.sha256"
+
+      - name: Package AAB for human Play Console review — NO upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-Play-AAB-${{ inputs.version_name }}-${{ inputs.version_code }}-${{ github.sha }}
+          path: |
+            android/app/build/outputs/bundle/release/app-release.aab
+            android/app/build/outputs/bundle/release/app-release.aab.sha256
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Cleanup sensitive local material
+        if: always()
+        shell: bash
+        run: rm -f .tutop-play-web-config.json .tutop-play-google-services.json .tutop-upload-key.jks android/app/google-services.json
