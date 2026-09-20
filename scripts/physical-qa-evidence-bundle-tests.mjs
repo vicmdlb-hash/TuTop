@@ -49,7 +49,7 @@ assert(pending.pending_cases >= 10);
 
 const passReport = {
   generated_at: '2026-09-07T02:45:00.000Z',
-  version: '0.9.2-beta.7',
+  version: candidateManifest.app_version,
   platform: 'android',
   native_runtime: true,
   viewport: { width: 412, height: 915, dpr: 2.6 },
