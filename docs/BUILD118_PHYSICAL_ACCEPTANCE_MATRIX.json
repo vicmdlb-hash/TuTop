@@ -1,0 +1,134 @@
+{
+  "schema": "tutop.build118-physical-acceptance.v1",
+  "candidate": {
+    "version": "0.9.2-beta.8",
+    "sha": "e93ca0bb237e7fa438df5801fc627f065d9441e6",
+    "artifact_id": 10609901887,
+    "apk_sha256": "6fadbdb05d6d3b2386eeffc3e2885e9f406190ed9710914048bd1a14a69ac8f7"
+  },
+  "truth": "ALL_CASES_START_PENDING; ENGINEERING/STAGING PASS NEVER BECOMES PHYSICAL PASS",
+  "issue_count": 18,
+  "issue_ids": [
+    10,
+    11,
+    12,
+    20,
+    31,
+    33,
+    35,
+    36,
+    37,
+    38,
+    39,
+    44,
+    45,
+    50,
+    52,
+    56,
+    60,
+    62
+  ],
+  "sessions": [
+    {
+      "id": "A_CORE",
+      "issue_ids": [
+        10,
+        12,
+        20,
+        31,
+        33,
+        38,
+        39,
+        44,
+        45
+      ],
+      "dependency": "exact Build118 installed on Device A",
+      "status": "pending_physical",
+      "cases": [
+        "install_boot",
+        "auth_identity",
+        "publish_listing_same_path_as_build116",
+        "publication_stale_session_self_heal_when_reproducible",
+        "topi_structured_compose_and_draft_transfer",
+        "draft_survives_process_kill",
+        "camera_photo_picker",
+        "microphone_voice_es_mx",
+        "location_explicit_opt_in",
+        "relaunch_session_persistence",
+        "weak_network_timeout_no_false_success",
+        "visual_branding_light_dark_system",
+        "accessibility_text_scaling_talkback",
+        "keyboard_android_back_safe_areas_rotation"
+      ]
+    },
+    {
+      "id": "SHARED_DEVICE_ACCOUNT_SWITCH",
+      "issue_ids": [
+        52,
+        56,
+        60
+      ],
+      "dependency": "two real staging accounts A and B on one phone",
+      "status": "pending_physical",
+      "cases": [
+        "account_A_use_location_personalization_push",
+        "logout_account_A",
+        "login_account_B",
+        "prove_no_cross_account_cache_or_token_leak",
+        "offline_logout_reconnect_cleanup"
+      ]
+    },
+    {
+      "id": "TWO_BUYER_RESERVATION",
+      "issue_ids": [
+        50
+      ],
+      "dependency": "seller + two real staging buyer accounts/devices or isolated profiles",
+      "status": "pending_physical",
+      "cases": [
+        "buyer1_offer",
+        "buyer2_competing_offer",
+        "seller_counteroffer_acceptance",
+        "atomic_reservation",
+        "reserved_listing_blocks_new_offer"
+      ]
+    },
+    {
+      "id": "MODERATION",
+      "issue_ids": [
+        35,
+        36,
+        62
+      ],
+      "dependency": "authorized staging moderation identity; currently absent",
+      "status": "blocked_external_admin_identity",
+      "cases": [
+        "pending_not_public",
+        "authorized_approve",
+        "approved_public",
+        "approved_to_pending_or_rejected_invalidation",
+        "seller_truthful_status"
+      ]
+    },
+    {
+      "id": "PUSH_TWO_DEVICE",
+      "issue_ids": [
+        11,
+        37
+      ],
+      "dependency": "two physical devices/profiles + trusted sender event",
+      "status": "pending_physical",
+      "cases": [
+        "foreground_receive",
+        "background_receive",
+        "cold_start_receive",
+        "tap_exact_deep_link",
+        "outbox_notification_correlation",
+        "no_recipient_uid_mismatch"
+      ]
+    }
+  ],
+  "release_blocked": true,
+  "completed_issue_ids": [],
+  "notes": "Build118 software publication path is live-staging green, including one-shot session self-heal contract, but no Device PASS is inferred."
+}

@@ -1,13 +1,13 @@
 {
   "schema": "tutop.fcm-physical-fixture.v1",
   "candidate": {
-    "artifact_id": 10600229165,
-    "build_run_id": 35495399790,
-    "build_tree_sha": "0f8ac20fa2791ae7462f5a70f6e3913b6791691a",
-    "apk_sha256": "28d9970866367179de769324e722487f26e04bbde498e412b3364905b79d23c6"
+    "artifact_id": 10609901887,
+    "build_run_id": 35526553288,
+    "build_tree_sha": "237e43fc4752f4c8ce2f4301b9a155af4a3270c9",
+    "apk_sha256": "6fadbdb05d6d3b2386eeffc3e2885e9f406190ed9710914048bd1a14a69ac8f7"
   },
   "device_slot": "A|B",
-  "evidence_session_id": "PENDIENTE-FCM-SESSION",
+  "evidence_session_id": "PENDIENTE-BUILD118-FCM-SESSION",
   "evidence_started_at": "PENDIENTE-ISO8601",
   "evidence_completed_at": "PENDIENTE-ISO8601",
   "scenarios": [
@@ -28,5 +28,5 @@
       "events": []
     }
   ],
-  "notes": "Build117 FCM template. No token/payload/notification ID or PASS is prefilled."
+  "notes": "Build118 FCM template. No token, payload, notification ID or PASS is prefilled."
 }
