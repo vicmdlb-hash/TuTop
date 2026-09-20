@@ -1,4 +1,5 @@
-import fs from 'node:fs';\nimport crypto from 'node:crypto';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { initializeApp, deleteApp } from 'firebase/app';
@@ -59,7 +60,8 @@ const withdrawalPaths = [
 ];
 
 let app;
-let uid = '';\nlet passed = false;
+let uid = '';
+let passed = false;
 
 function ok(label) {
   console.log(`✅ ${label}`);
@@ -112,7 +114,8 @@ try {
   const auth = getAuth(app);
   const db = getFirestore(app);
   const credential = await createUserWithEmailAndPassword(auth, email, password);
-  uid = credential.user.uid;\n  process.env.TUTOP_SYNTHETIC_UID = uid;
+  uid = credential.user.uid;
+  process.env.TUTOP_SYNTHETIC_UID = uid;
   ok('usuario sintético Auth creado');
 
   directPaths.push(
@@ -245,7 +248,8 @@ try {
   assert(authDeleted, 'la cuenta Auth siguió aceptando login después del erasure');
   ok('Auth fue eliminado al final y el login anterior ya no funciona');
 
-  passed = true;\n  console.log('Real staging account erasure smoke: PASS');
+  passed = true;
+  console.log('Real staging account erasure smoke: PASS');
 } finally {
   await cleanup();
   if (app) {
