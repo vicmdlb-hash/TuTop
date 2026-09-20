@@ -7,7 +7,7 @@ import {
   type CapabilityPermission,
   type PermissionState091,
 } from '../lib/permissionCenter091';
-import { nativePushRegistrationHealth } from '../services/nativeFirebaseSecurity';
+import { nativePushRegistrationHealth, type PushRegistrationReason } from '../services/nativeFirebaseSecurity';
 
 type PermissionCard = {
   id: CapabilityPermission;
@@ -32,9 +32,19 @@ function stateLabel(id: CapabilityPermission, state: PermissionState091) {
   return 'Sin comprobar';
 }
 
-function actionLabel(id: CapabilityPermission, state: PermissionState091, busy: boolean) {
+function pushReasonCopy(reason: PushRegistrationReason | null) {
+  if (reason === 'firebase-config-rejected') return 'Firebase rechazó la configuración nativa de esta instalación.';
+  if (reason === 'network-failure') return 'No hubo conexión suficiente para registrar notificaciones.';
+  if (reason === 'server-registration-failed') return 'El teléfono obtuvo token, pero TuTop no pudo asociarlo a esta cuenta.';
+  if (reason === 'plugin-unavailable') return 'El módulo nativo de notificaciones no está disponible.';
+  if (reason === 'token-empty' || reason === 'token-registration-failed') return 'Android/Firebase no devolvió un token utilizable.';
+  return 'El permiso está activo, pero el token FCM sigue pendiente.';
+}
+
+function actionLabel(id: CapabilityPermission, state: PermissionState091, busy: boolean, pushRegistered?: boolean | null) {
   if (busy) return 'Comprobando…';
   if (id === 'camera' && state === 'granted') return 'Verificar';
+  if (id === 'notifications' && state === 'granted' && pushRegistered === false) return 'Reintentar';
   return state === 'granted' ? 'Comprobar' : 'Activar';
 }
 
@@ -46,6 +56,7 @@ export default function PermissionSettings() {
   const [note, setNote] = useState<string | null>(null);
   const [pushTokenRegistered, setPushTokenRegistered] = useState<boolean | null>(null);
   const [pushOwnershipPending, setPushOwnershipPending] = useState(false);
+  const [pushRegistrationReason, setPushRegistrationReason] = useState<PushRegistrationReason | null>(null);
 
   const refresh = async () => {
     const [entries, pushHealth] = await Promise.all([
@@ -55,6 +66,7 @@ export default function PermissionSettings() {
     setStates(Object.fromEntries(entries) as Record<CapabilityPermission, PermissionState091>);
     setPushTokenRegistered(pushHealth?.permission === 'granted' ? pushHealth.tokenRegistered : null);
     setPushOwnershipPending(Boolean(pushHealth?.ownershipReconciliationPending));
+    setPushRegistrationReason(pushHealth?.reason || null);
   };
 
   useEffect(() => {
@@ -68,6 +80,7 @@ export default function PermissionSettings() {
         setStates(Object.fromEntries(entries) as Record<CapabilityPermission, PermissionState091>);
         setPushTokenRegistered(pushHealth?.permission === 'granted' ? pushHealth.tokenRegistered : null);
         setPushOwnershipPending(Boolean(pushHealth?.ownershipReconciliationPending));
+    setPushRegistrationReason(pushHealth?.reason || null);
       }).catch(() => undefined);
     };
     update();
@@ -97,17 +110,28 @@ export default function PermissionSettings() {
         const ownershipPending = Boolean(health?.ownershipReconciliationPending);
         setPushTokenRegistered(registered);
         setPushOwnershipPending(ownershipPending);
+        setPushRegistrationReason(health?.reason || null);
         setNote(ownershipPending
           ? 'Permiso Android activo, pero TuTop está invalidando un token que pertenecía a la cuenta anterior. No registrará ese mismo token para esta cuenta hasta completar la reconciliación.'
           : registered
             ? 'Permiso Android activo y token FCM registrado para esta cuenta. La entrega real se confirma sólo cuando llegue y se abra una notificación de prueba.'
-            : 'Permiso Android activo, pero TuTop todavía no pudo registrar el token FCM. Reintentará al volver a la app o recuperar conexión.');
+            : `${pushReasonCopy(health?.reason || null)} Puedes tocar “Reintentar” después de recuperar conexión o corregir la configuración.`);
       } else if (id === 'camera' && result === 'granted') {
         setNote('Cámara/galería disponible. La prueba real se hace desde Publicar: toca Cámara o Galería y Android abrirá su selector del sistema.');
       } else if (id === 'location' && result !== 'granted') {
         setNote('Si Android ya mostró el permiso pero sigue sin ubicación, comprueba que los servicios de ubicación del teléfono estén encendidos y vuelve a intentar.');
       } else if (result === 'denied') {
         setNote('Android tiene este permiso bloqueado. Puedes cambiarlo desde los ajustes de la aplicación.');
+      }
+    } catch {
+      if (id === 'notifications') {
+        const health = await nativePushRegistrationHealth().catch(() => null);
+        setPushTokenRegistered(health?.permission === 'granted' ? health.tokenRegistered : false);
+        setPushOwnershipPending(Boolean(health?.ownershipReconciliationPending));
+        setPushRegistrationReason(health?.reason || 'token-registration-failed');
+        setNote(pushReasonCopy(health?.reason || 'token-registration-failed'));
+      } else {
+        setNote('No pudimos completar esta comprobación. Inténtalo de nuevo.');
       }
     } finally { setBusy(null); }
   };
@@ -138,18 +162,18 @@ export default function PermissionSettings() {
                       <strong className="text-[11px]">{label}</strong>
                       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[8px] font-black ${active ? 'bg-emerald-500/10 text-emerald-400' : blocked ? 'bg-rose-500/10 text-rose-300' : 'bg-violet-500/10 text-violet-300'}`}>
                         {active ? <CheckCircle2 className="h-2.5 w-2.5" /> : blocked ? <TriangleAlert className="h-2.5 w-2.5" /> : null}{id === 'notifications' && state === 'granted'
-                          ? (pushOwnershipPending ? 'Reconciliando cuenta' : pushTokenRegistered ? 'Permiso + token' : 'Permiso activo')
+                          ? (pushOwnershipPending ? 'Reconciliando cuenta' : pushTokenRegistered ? 'Permiso + token' : 'Token pendiente')
                           : stateLabel(id, state)}
                       </span>
                     </div>
                     <p className="mt-0.5 text-[9px] text-slate-500">{hint}</p>
                   </div>
                   <button type="button" disabled={busy !== null} onClick={() => void request(id)} className="rounded-xl bg-violet-600 px-3 py-2 text-[9px] font-black text-white disabled:opacity-50">
-                    {actionLabel(id, state, busy === id)}
+                    {actionLabel(id, state, busy === id, id === 'notifications' ? pushTokenRegistered : null)}
                   </button>
                 </div>
                 <p className="mt-2 text-[8px] leading-4 text-slate-600">{PERMISSION_PRIVACY_COPY[id]}</p>
-                {id === 'notifications' && state === 'granted' && <p className="mt-1 text-[8px] leading-4 text-slate-500">Token FCM: <strong className={pushTokenRegistered ? 'text-emerald-300' : 'text-amber-300'}>{pushOwnershipPending ? 'reconciliando cuenta anterior' : pushTokenRegistered ? 'registrado' : 'pendiente de registro'}</strong> · entrega/tap todavía requiere prueba E2E real.</p>}
+                {id === 'notifications' && state === 'granted' && <p className="mt-1 text-[8px] leading-4 text-slate-500">Token FCM: <strong className={pushTokenRegistered ? 'text-emerald-300' : 'text-amber-300'}>{pushOwnershipPending ? 'reconciliando cuenta anterior' : pushTokenRegistered ? 'registrado' : pushRegistrationReason ? pushReasonCopy(pushRegistrationReason) : 'pendiente de registro'}</strong> · entrega/tap todavía requiere prueba E2E real.</p>}
               </div>
             );
           })}
