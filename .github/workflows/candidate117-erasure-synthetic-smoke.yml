@@ -1,0 +1,51 @@
+name: TuTop Candidate117 synthetic erasure staging smoke
+
+on:
+  push:
+    branches: [ops/candidate117-erasure-synthetic-smoke]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-candidate117-synthetic-erasure
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_CANDIDATE117_BASE_SHA: a578a214f17f3a0ddb7c0d8c6039866f0252c015
+      TUTOP_ALLOW_SYNTHETIC_ERASURE: candidate117-reviewed
+      TUTOP_ERASURE_RUN_ID: ${{ github.run_id }}
+      TUTOP_STAGING_WEB_CONFIG_PATH: .tutop-staging-web-config.json
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Install ephemeral Firebase client
+        run: npm install --no-save --package-lock=false --no-audit --no-fund firebase@12.18.0
+      - name: Prove dependency manifests unchanged
+        run: git diff --exit-code -- package.json package-lock.json
+      - name: Read existing staging Web config only
+        run: node scripts/read-existing-staging-build-config.mjs
+      - name: Candidate117 synthetic erasure smoke
+        run: node scripts/candidate117-staging-account-erasure-smoke.mjs
+      - name: Remove local staging configs
+        if: always()
+        run: rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json
+      - uses: actions/upload-artifact@v7
+        if: success()
+        with:
+          name: TuTop-candidate117-erasure-smoke-${{ github.sha }}
+          path: candidate117-erasure-smoke-evidence/
+          retention-days: 30
+          if-no-files-found: error
