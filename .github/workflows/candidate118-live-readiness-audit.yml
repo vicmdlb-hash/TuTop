@@ -1,0 +1,54 @@
+name: Candidate118 live staging readiness audit — read only
+
+on:
+  push:
+    branches: [ops/candidate118-live-readiness-audit]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-candidate118-live-readiness-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Static no-mutation guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "ops/candidate118-live-readiness-audit"
+          ! grep -Eq "method:[[:space:]]*['\"](POST|PATCH|PUT|DELETE)['\"]" scripts/candidate118-live-readiness-audit.mjs
+          ! grep -Eq "batchDelete|:commit|:runQuery|firebase deploy|adminPatch|adminDelete" scripts/candidate118-live-readiness-audit.mjs
+      - name: Live staging aggregate audit
+        run: node scripts/candidate118-live-readiness-audit.mjs
+      - name: Validate evidence shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s staging-readiness/evidence.json
+          node - <<'NODE'
+          const fs=require('fs');
+          const e=JSON.parse(fs.readFileSync('staging-readiness/evidence.json','utf8'));
+          if(e.status!=='PASS'||e.read_only!==true||e.mutations!==0)process.exit(2);
+          for(const k of ['admins','account_deletion_requests','device_tokens','listings_v2'])if(!e[k])process.exit(3);
+          console.log('PASS aggregate evidence only; mutations=0');
+          NODE
+      - name: Prove no APK/AAB/deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS no APK/AAB and no deploy"
