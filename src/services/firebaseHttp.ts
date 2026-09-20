@@ -13,6 +13,13 @@ export class FirebaseRequestTimeoutError extends Error {
   }
 }
 
+export function isFirebaseRequestTimeout(error: unknown) {
+  if (error instanceof FirebaseRequestTimeoutError) return true;
+  const candidate = error as { code?: unknown; message?: unknown } | null;
+  return candidate?.code === FIREBASE_REQUEST_TIMEOUT_CODE
+    || candidate?.message === FIREBASE_REQUEST_TIMEOUT_CODE;
+}
+
 export async function firebaseFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
