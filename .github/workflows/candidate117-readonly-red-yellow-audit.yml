@@ -1,0 +1,35 @@
+name: TuTop Candidate117 red-yellow read-only audit
+
+on:
+  push:
+    branches: [ops/candidate117-readonly-red-yellow-audit]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-candidate117-readonly-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Read-only staging moderation + erasure audit
+        run: node scripts/candidate117-readonly-red-yellow-audit.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-candidate117-readonly-audit-${{ github.sha }}
+          path: candidate117-readonly-audit/
+          retention-days: 30
+          if-no-files-found: error
