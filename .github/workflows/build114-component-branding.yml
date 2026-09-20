@@ -1,8 +1,6 @@
 name: TuTop build114 component branding candidate
 
 on:
-  push:
-    branches: [fix/tutop-114-component-branding-extraction]
   workflow_dispatch:
 
 permissions:

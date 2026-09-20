@@ -1,8 +1,6 @@
 name: TuTop build113 final branding crop candidate
 
 on:
-  push:
-    branches: [fix/tutop-113-final-branding-crop]
   workflow_dispatch:
 
 permissions:

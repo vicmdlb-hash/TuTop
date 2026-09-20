@@ -1,8 +1,6 @@
 name: TuTop build111 physical repair candidate
 
 on:
-  push:
-    branches: [fix/tutop-111-physical-repair]
   workflow_dispatch:
 
 permissions:
