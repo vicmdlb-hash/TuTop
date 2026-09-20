@@ -1,4 +1,5 @@
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
+import { firebaseFetch, isFirebaseRequestTimeout } from './firebaseHttp';
 import { FirebaseRestClient, normalizeMexicoPhone, phoneAliasEmail } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
 
@@ -71,7 +72,7 @@ async function readJson(response: Response) {
 
 async function identityRequest(endpoint: string, body: Record<string, unknown>) {
   const config = getFirebaseConfig();
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
+  const response = await firebaseFetch(`https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${encodeURIComponent(config.apiKey)}`, {
     method: 'POST',
     headers: await authHeaders(),
     body: JSON.stringify(body),
@@ -141,7 +142,7 @@ async function forceRefreshStoredSession(expectedGeneration = authGeneration) {
   const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' };
   const appCheck = await getNativeAppCheckToken(false).catch(() => null);
   if (appCheck) headers['X-Firebase-AppCheck'] = appCheck;
-  const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(config.apiKey)}`, {
+  const response = await firebaseFetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(config.apiKey)}`, {
     method: 'POST',
     headers,
     body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: originalRefreshToken }),
@@ -250,6 +251,10 @@ export const verifiedEmailBetaAuth = {
     try {
       await createMarketplaceAccount(data, email, normalizedProfile);
     } catch (error) {
+      // A network timeout is ambiguous: the atomic Firestore commit may already
+      // have reached Firebase. Never delete Auth or clear the session merely
+      // because the client did not receive the response.
+      if (isFirebaseRequestTimeout(error)) throw error;
       try { await identityRequest('accounts:delete', { idToken: data.idToken }); } catch { /* best effort rollback */ }
       clearCanonicalSession();
       throw error;
