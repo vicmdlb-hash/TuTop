@@ -43,6 +43,8 @@ jobs:
         run: node scripts/candidate118-live-readiness-audit.mjs
       - name: Firebase AI monitoring/config readback — no mutation
         run: node scripts/candidate118-ai-monitoring-readback.mjs
+      - name: Android Firebase AI/FCM config readback — no mutation
+        run: node scripts/candidate118-android-runtime-config-audit.mjs
       - name: Validate evidence shape
         shell: bash
         run: |
