@@ -1,0 +1,38 @@
+name: Candidate117 Play/Data Safety preflight — no APK
+
+on:
+  push:
+    branches: [release/candidate117-play-preflight]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-candidate117-play-preflight
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Candidate117 Play preflight contract
+        run: node scripts/candidate117-play-preflight-tests.mjs
+      - name: Legal retention boundary
+        run: npm run legal-retention-review:test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove no APK/AAB work exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS no APK/AAB generated"
