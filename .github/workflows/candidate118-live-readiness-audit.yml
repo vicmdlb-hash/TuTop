@@ -32,8 +32,11 @@ jobs:
           test "$GITHUB_REF_NAME" = "ops/candidate118-live-readiness-audit"
           ! grep -Eq "method:[[:space:]]*['\"](POST|PATCH|PUT|DELETE)['\"]" scripts/candidate118-live-readiness-audit.mjs
           ! grep -Eq "batchDelete|:commit|:runQuery|firebase deploy|adminPatch|adminDelete" scripts/candidate118-live-readiness-audit.mjs
+          ! grep -Eq "method:[[:space:]]*['\"](POST|PATCH|PUT|DELETE)['\"]" scripts/candidate118-ai-monitoring-readback.mjs
       - name: Live staging aggregate audit
         run: node scripts/candidate118-live-readiness-audit.mjs
+      - name: Firebase AI monitoring/config readback — no mutation
+        run: node scripts/candidate118-ai-monitoring-readback.mjs
       - name: Validate evidence shape
         shell: bash
         run: |
@@ -44,7 +47,9 @@ jobs:
           const e=JSON.parse(fs.readFileSync('staging-readiness/evidence.json','utf8'));
           if(e.status!=='PASS'||e.read_only!==true||e.mutations!==0)process.exit(2);
           for(const k of ['admins','account_deletion_requests','device_tokens','listings_v2'])if(!e[k])process.exit(3);
-          console.log('PASS aggregate evidence only; mutations=0');
+          const ai=JSON.parse(fs.readFileSync('staging-readiness/ai-monitoring-evidence.json','utf8'));
+          if(ai.status!=='PASS'||ai.read_only!==true||ai.mutations!==0)process.exit(4);
+          console.log('PASS aggregate + AI config evidence only; mutations=0');
           NODE
       - name: Prove no APK/AAB/deploy
         shell: bash
