@@ -23,7 +23,7 @@ assert.match(client,/account_deletion_requests/);
 assert.match(client,/status: \{ stringValue: 'pending' \}/);
 assert.match(client,/setToServerValue: 'REQUEST_TIME'/);
 assert.match(client,/currentDocument: \{ exists: false \}/);
-assert.match(client,/response\.status === 409/);
+assert.match(client,/racedExisting = await readDeletionRequest\(\)\.catch\(\(\) => null\)/);
 assert.doesNotMatch(client,/localStorage|sessionStorage/);
 assert.doesNotMatch(client,/accounts:delete|batchDelete|deleteDocument/);
 assert.doesNotMatch(client,/console\./);
