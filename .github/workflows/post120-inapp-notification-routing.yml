@@ -22,6 +22,8 @@ jobs:
         run: node --experimental-strip-types scripts/post120-inapp-notification-routing-tests.mjs
       - name: Native/in-app routing contract
         run: node scripts/post120-inapp-notification-routing-contract-tests.mjs
+      - name: Trusted outbox kind projection
+        run: node --experimental-strip-types scripts/post120-notification-kind-projection-tests.mjs
       - name: Existing notification regressions
         run: |
           node scripts/marketplace-notification-projection-tests.mjs
