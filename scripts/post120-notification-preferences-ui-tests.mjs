@@ -6,7 +6,8 @@ const ui=fs.readFileSync('src/components/NotificationPreferenceSettings.tsx','ut
 const permissions=fs.readFileSync('src/components/PermissionSettings.tsx','utf8');
 const backend=fs.readFileSync('src/services/nationalUserSettings.ts','utf8');
 
-const keys=[...prefs.matchAll(/\| '([a-z_]+)'/g)].map((match)=>match[1]);
+const keyBlock=prefs.slice(prefs.indexOf('export type NotificationPreferenceKey'),prefs.indexOf('export type NotificationPriority'));
+const keys=[...keyBlock.matchAll(/\| '([a-z_]+)'/g)].map((match)=>match[1]);
 assert.equal(keys.length,13,'canonical notification preference key count drifted');
 for(const key of keys) assert.match(ui,new RegExp(`key: '${key}'`),`UI missing ${key}`);
 
