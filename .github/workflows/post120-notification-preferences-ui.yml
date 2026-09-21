@@ -22,6 +22,10 @@ jobs:
         run: node scripts/post120-notification-preferences-ui-tests.mjs
       - name: Notification projector preference enforcement
         run: node scripts/post120-notification-preference-projection-tests.mjs
+      - name: Saved-search alert projection
+        run: |
+          node scripts/post120-saved-search-alert-projector-tests.mjs
+          node scripts/post120-saved-search-alert-contract-tests.mjs
       - name: Notification regressions
         run: |
           node scripts/saved-search-notification-tests.mjs
