@@ -344,7 +344,10 @@ class NationalMarketplaceBackend {
       [{ field: 'updated_at', direction: 'DESCENDING' }],
       Math.max(1, Math.min(100, limit)),
     );
-    return docs.map((doc) => ({ id: doc.id, ...doc.data, owner_uid: ownerUid } as SavedSearch));
+    return docs.map((doc) => {
+      const { id: _storedId, ...data } = doc.data;
+      return { ...data, id: doc.id, owner_uid: ownerUid } as SavedSearch;
+    });
   }
 
   async setSavedSearchNotifications(searchId: string, enabled: boolean) {
@@ -362,7 +365,8 @@ class NationalMarketplaceBackend {
       notifications_enabled: Boolean(enabled),
       updated_at: at,
     }, { merge: true, ...(current.updateTime ? { updateTime: current.updateTime } : {}) });
-    return { id: cleanId, ...current.data, owner_uid: ownerUid, notifications_enabled: Boolean(enabled), updated_at: at } as SavedSearch;
+    const { id: _storedId, ...data } = current.data;
+    return { ...data, id: cleanId, owner_uid: ownerUid, notifications_enabled: Boolean(enabled), updated_at: at } as SavedSearch;
   }
 
   async deleteSavedSearch(searchId: string) {
