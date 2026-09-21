@@ -1,0 +1,36 @@
+name: Post120 notification preferences UI — source only
+
+on:
+  push:
+    branches: [feat/post120-notification-preferences-ui]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Notification preferences UI contract
+        run: node scripts/post120-notification-preferences-ui-tests.mjs
+      - name: Notification regressions
+        run: |
+          node scripts/saved-search-notification-tests.mjs
+          node scripts/post116-push-health-contract-tests.mjs
+      - name: Full regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove source-only
+        run: |
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source-only notification preference controls; Build120 APK unchanged"
