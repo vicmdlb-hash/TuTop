@@ -1,0 +1,52 @@
+name: Build119 national-scope publication repair — source only
+
+on:
+  push:
+    branches: [fix/build119-national-scope-publication]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-build119-national-scope-source
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: National visibility/delivery contract
+        run: |
+          node scripts/build119-national-scope-publication-tests.mjs
+          node scripts/listing-schema-v2-tests.mjs
+      - name: Publication regressions
+        run: |
+          node --experimental-strip-types scripts/build118-publication-recovery-tests.mjs
+          node scripts/post116-publication-client-contract-tests.mjs
+          node --experimental-strip-types scripts/post116-durable-publish-draft-tests.mjs
+          node scripts/post116-publish-idempotency-tests.mjs
+      - name: Build119 physical-failure repair regressions
+        run: |
+          node scripts/build119-deviceA-repair-integration-tests.mjs
+          node scripts/build118-deviceA-product-detail-hook-order-tests.mjs
+          node scripts/build118-deviceA-native-failure-diagnostics-tests.mjs
+          node scripts/post116-push-health-contract-tests.mjs
+      - name: Full regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove source-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source-only publication repair; no APK/AAB generated"

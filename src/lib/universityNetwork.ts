@@ -37,7 +37,7 @@ export const VISIBILITY_SCOPES: Array<{ id: ListingVisibilityScope; label: strin
   { id: 'institution', label: 'Mi universidad', hint: 'Libros, accesorios y servicios entre campus.' },
   { id: 'university-zone', label: 'Zona universitaria', hint: 'Renta, transporte y servicios cercanos.' },
   { id: 'city', label: 'Mi ciudad', hint: 'Electrónica, ropa y artículos generales.' },
-  { id: 'national', label: 'Todo México', hint: 'Solo para artículos que realmente puedas enviar.' },
+  { id: 'national', label: 'Todo México', hint: 'Visible en Todo México; elige una forma de entrega que realmente puedas cumplir.' },
 ];
 
 export function safeMeetingPointsFor(campusId?: string, institutionId?: string) {
