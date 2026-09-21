@@ -20,9 +20,12 @@ jobs:
       - run: npm ci
       - name: Notification preferences UI contract
         run: node scripts/post120-notification-preferences-ui-tests.mjs
+      - name: Notification projector preference enforcement
+        run: node scripts/post120-notification-preference-projection-tests.mjs
       - name: Notification regressions
         run: |
           node scripts/saved-search-notification-tests.mjs
+          node scripts/marketplace-notification-projection-tests.mjs
           node scripts/post116-push-health-contract-tests.mjs
       - name: Full regression
         run: npm run check
