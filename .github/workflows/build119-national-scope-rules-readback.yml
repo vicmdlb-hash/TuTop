@@ -1,0 +1,33 @@
+name: Build119 national-scope staging Rules readback — no mutation
+
+on:
+  push:
+    branches: [ops/build119-national-scope-rules-readback]
+
+permissions:
+  contents: read
+
+jobs:
+  readback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Generate exact final Rules
+        run: npm run v2:rules:prepare
+      - name: Read live staging Rules and compare — no mutation
+        run: node scripts/build119-national-scope-staging-rules-readback.mjs
+      - name: Prove no deploy/build artifact
+        run: |
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS read-only Rules comparison; no deploy/APK/AAB"
