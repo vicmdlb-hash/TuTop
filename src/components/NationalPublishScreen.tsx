@@ -112,7 +112,6 @@ function publicationFailureCode(raw: string) {
   if (raw.startsWith('LISTING_TITLE_INVALID')) return 'publish_title_invalid';
   if (raw.startsWith('LISTING_PRICE_INVALID')) return 'publish_price_invalid';
   if (raw.startsWith('LISTING_QUANTITY_INVALID')) return 'publish_quantity_invalid';
-  if (raw.startsWith('LISTING_NATIONAL_SHIPPING_REQUIRED')) return 'publish_national_shipping_required';
   if (raw.startsWith('PROHIBITED_LISTING:')) return 'publish_prohibited';
   if (raw.startsWith('PRIVATE_FIELD_EXPOSED:')) return 'publish_private_field_blocked';
   return 'publish_unknown_failed';
@@ -167,7 +166,6 @@ export default function NationalPublishScreen() {
   const hasValidQuantity = quantity.trim() !== '' && Number.isInteger(parsedQuantity) && parsedQuantity >= 1 && parsedQuantity <= 99;
   const hasValidTitle = title.trim().length >= 2;
   const shippingAvailable = deliveryMethods.includes('shipping');
-  const nationalShippingValid = scope !== 'national' || shippingAvailable;
   const prohibitedDraft = isForbiddenProductText(`${title} ${description}`);
   const publishIssues: string[] = [];
   if (!institutionId || !campusId) publishIssues.push('universidad/campus');
@@ -176,7 +174,6 @@ export default function NationalPublishScreen() {
   if (!hasValidPrice) publishIssues.push('precio entre $0.01 y $1,000,000');
   if (!hasValidQuantity) publishIssues.push('cantidad entera entre 1 y 99');
   if (!deliveryMethods.length) publishIssues.push('forma de entrega');
-  if (!nationalShippingValid) publishIssues.push('envío para alcance nacional');
   if (prohibitedDraft) publishIssues.push('artículo o servicio no permitido');
   if (missing.length) publishIssues.push(`${missing.length} dato${missing.length === 1 ? '' : 's'} obligatorio${missing.length === 1 ? '' : 's'}`);
   if (videoFile && !videoInfraEnabled) publishIssues.push('video no disponible en esta beta');
@@ -424,7 +421,6 @@ export default function NationalPublishScreen() {
     if (!hasValidQuantity) return setMessage('La cantidad debe ser un número entero entre 1 y 99.');
     if (prohibitedDraft) return setMessage('Ese artículo o servicio no está permitido en TuTop. Revisa el título y la descripción.');
     if (!deliveryMethods.length) return setMessage('Selecciona al menos una forma de entrega.');
-    if (!nationalShippingValid) return setMessage('Para publicar en Todo México debes activar Envío externo acordado.');
     if (missing.length) {
       setAdvancedOpen(true);
       return setMessage('Completa los campos obligatorios marcados con * antes de publicar.');
@@ -530,8 +526,6 @@ export default function NationalPublishScreen() {
         setMessage('El precio debe estar entre $0.01 y $1,000,000.');
       } else if (failureCode === 'publish_quantity_invalid') {
         setMessage('La cantidad debe ser un número entero entre 1 y 99.');
-      } else if (failureCode === 'publish_national_shipping_required') {
-        setMessage('Para publicar en Todo México debes activar Envío externo acordado.');
       } else if (failureCode === 'publish_rate_limited') {
         setMessage('Alcanzaste temporalmente el límite de publicaciones de seguridad. Espera antes de volver a intentar.');
       } else if (failureCode === 'publish_media_failed') {

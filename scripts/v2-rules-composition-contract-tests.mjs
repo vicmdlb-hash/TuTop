@@ -63,7 +63,7 @@ for (const [name, source] of [
   assert.match(source, /encontró \$\{count\}|encontró \$\{occurrences\}|esperaba 1 coincidencia/, `${name} must fail closed on marker drift`);
 }
 assert.match(nearby, /const path = 'firebase\/firestore\.v2\.generated\.rules'/);
-assert.match(nearby, /canonicalCount !== 2/);
+assert.match(nearby, /canonicalCount !== 0/);
 assert.match(nearby, /legacyCount !== 1/);
 assert.match(nearby, /legacyShippingRequirement/);
 

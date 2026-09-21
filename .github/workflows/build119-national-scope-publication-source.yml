@@ -1,0 +1,81 @@
+name: Build119 national-scope publication repair — source only
+
+on:
+  push:
+    branches: [fix/build119-national-scope-publication]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-build119-national-scope-source
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: National visibility/delivery contract
+        run: |
+          node scripts/build119-national-scope-publication-tests.mjs
+          node scripts/listing-schema-v2-tests.mjs
+      - name: Publication regressions
+        run: |
+          node --experimental-strip-types scripts/build118-publication-recovery-tests.mjs
+          node scripts/post116-publication-client-contract-tests.mjs
+          node --experimental-strip-types scripts/post116-durable-publish-draft-tests.mjs
+          node scripts/post116-publish-idempotency-tests.mjs
+      - name: Build119 physical-failure repair regressions
+        run: |
+          node scripts/build119-deviceA-repair-integration-tests.mjs
+          node scripts/build118-deviceA-product-detail-hook-order-tests.mjs
+          node scripts/build118-deviceA-native-failure-diagnostics-tests.mjs
+          node scripts/post116-push-health-contract-tests.mjs
+      - name: Prepare exact strict V2 Rules
+        run: npm run v2:rules:prepare
+      - name: Install ephemeral Firestore emulator harness
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+          git diff --exit-code -- package.json package-lock.json
+      - name: Firestore canonical publication + full relevant regression
+        run: >-
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore
+          --config firebase.v2.json
+          --project demo-tutop-build119-national-scope
+          "node --test --test-concurrency=1
+          tests/firestore.v2.rules.test.mjs
+          tests/firestore.v2.atomic.test.mjs
+          tests/firestore.v2.acceptance-atomic.test.mjs
+          tests/firestore.v2.reputation-trust.test.mjs
+          tests/firestore.v2.governance.test.mjs
+          tests/firestore.v2.runtime-services.test.mjs
+          tests/firestore.v2.account-operations.test.mjs
+          tests/firestore.v2.notification-receipts.test.mjs
+          tests/firestore.v2.transaction-lock.test.mjs
+          tests/firestore.v2.unread-aggregation.test.mjs
+          tests/firestore.v2.review-strike-aggregation.test.mjs
+          tests/firestore.v2.favorite-membership.test.mjs"
+      - name: Full regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove source-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source-only publication repair; no APK/AAB generated"

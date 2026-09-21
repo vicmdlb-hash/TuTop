@@ -149,7 +149,6 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
         && request.resource.data.moderation_status == 'pending'
         && (!('availability_status' in request.resource.data) || request.resource.data.availability_status == 'available')
         && validVisibilityScope(request.resource.data.visibility_scope)
-        && (request.resource.data.visibility_scope != 'national' || request.resource.data.shipping_available == true)
         && (!('published_at' in request.resource.data) || request.resource.data.published_at is timestamp)
         && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
       allow update: if signedIn() && notSuspended() && (
@@ -172,7 +171,6 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
           )
           && validUniversityMetadata(request.resource.data)
           && request.resource.data.visibility_scope in ['campus','institution','university-zone','city','national']
-          && (request.resource.data.visibility_scope != 'national' || request.resource.data.shipping_available == true)
           && fresh(request.resource.data.updated_at)
         )
         ||

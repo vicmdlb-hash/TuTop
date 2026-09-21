@@ -60,6 +60,15 @@ assert.ok(reserved.warnings.includes('legacy_reserved_mapped_to_active_listing_t
 const national = schema.legacyProductToListingV2(product({ visibility_scope: 'national', shipping_available: true }), '2026-09-05T20:00:00.000Z');
 assert.ok(national.listing.delivery_methods.includes('shipping'));
 
+const nationalWithoutShipping = schema.legacyProductToListingV2(product({
+  visibility_scope: 'national',
+  shipping_available: false,
+}), '2026-09-05T20:00:00.000Z');
+assert.ok(nationalWithoutShipping.listing, 'national visibility must not require shipping');
+assert.equal(nationalWithoutShipping.listing.visibility_scope, 'national');
+assert.equal(nationalWithoutShipping.listing.shipping_available, false);
+assert.deepEqual(nationalWithoutShipping.listing.delivery_methods, ['campus_meetup'], 'legacy migration retains its canonical non-shipping delivery fallback');
+
 const missingCampus = schema.legacyProductToListingV2(product({ campus_id: undefined }), '2026-09-05T20:00:00.000Z');
 assert.equal(missingCampus.listing, null);
 assert.ok(missingCampus.blockers.includes('missing_campus_id'));
@@ -83,7 +92,7 @@ assert.equal(schema.listingV2HasNoLegacyDescriptionPacking(tooManyVideos), false
 
 console.log('PASS legacy product migrates to explicit institution/campus listing schema');
 console.log('PASS reservation remains transaction state, not canonical listing state');
-console.log('PASS national shipping and structured attributes survive migration');
+console.log('PASS national visibility is independent from shipping while delivery methods remain explicit');
 console.log('PASS migration blocks records missing campus identity');
 console.log('PASS canonical listing video references are fail-closed and limited to one Storage object');
 console.log('Canonical listings_v2 migration contract: PASS');

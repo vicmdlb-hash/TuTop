@@ -98,6 +98,30 @@ function createListingWithRate(db, listingId, listing, count = 1, windowStart = 
   return batch.commit();
 }
 
+test('listings_v2 permite alcance nacional sin shipping cuando existe una forma de entrega explícita', async () => {
+  await seedBase();
+  const seller = verifiedContext(env, 'uatx-user').firestore();
+  const windowStart = now();
+  await assertSucceeds(createListingWithRate(seller, 'national-no-shipping', {
+    ...canonicalListing(),
+    visibility_scope: 'national',
+    shipping_available: false,
+    delivery_methods: ['campus_meetup'],
+  }, 1, windowStart));
+});
+
+test('listings_v2 mantiene obligatorio al menos un método de entrega también en alcance nacional', async () => {
+  await seedBase();
+  const seller = verifiedContext(env, 'uatx-user').firestore();
+  const windowStart = now();
+  await assertFails(createListingWithRate(seller, 'national-no-delivery', {
+    ...canonicalListing(),
+    visibility_scope: 'national',
+    shipping_available: false,
+    delivery_methods: [],
+  }, 1, windowStart));
+});
+
 test('moderador institucional sólo puede leer y resolver reportes de su institución', async () => {
   await seedBase();
   const uatx = verifiedContext(env, 'uatxmod').firestore();

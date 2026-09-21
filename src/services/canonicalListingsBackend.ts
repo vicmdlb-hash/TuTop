@@ -142,7 +142,6 @@ export function validateCanonicalListingPolicy(listing: CanonicalListingV2, cate
   if (listing.title.trim().length < 2 || listing.title.length > 120) throw new Error('LISTING_TITLE_INVALID');
   if (!Number.isFinite(listing.price_mxn) || listing.price_mxn < 0.01 || listing.price_mxn > 1_000_000) throw new Error('LISTING_PRICE_INVALID');
   if (!Number.isInteger(listing.quantity) || listing.quantity < 1 || listing.quantity > 99) throw new Error('LISTING_QUANTITY_INVALID');
-  if (listing.visibility_scope === 'national' && !listing.shipping_available) throw new Error('LISTING_NATIONAL_SHIPPING_REQUIRED');
   if (!Array.isArray(listing.delivery_methods) || listing.delivery_methods.length < 1 || listing.delivery_methods.length > 4) throw new Error('LISTING_DELIVERY_INVALID');
   if (!Array.isArray(listing.meeting_point_ids) || listing.meeting_point_ids.length > 8) throw new Error('LISTING_MEETING_POINTS_INVALID');
   if (!Array.isArray(listing.photo_urls) || listing.photo_urls.length < 1 || listing.photo_urls.length > 4 || listing.photo_urls.some((url) => typeof url !== 'string' || url.length > 180000)) throw new Error('LISTING_PHOTO_INVALID');
