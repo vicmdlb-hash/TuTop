@@ -63,12 +63,11 @@ assert.ok(national.listing.delivery_methods.includes('shipping'));
 const nationalWithoutShipping = schema.legacyProductToListingV2(product({
   visibility_scope: 'national',
   shipping_available: false,
-  metodos_entrega: ['pickup'],
 }), '2026-09-05T20:00:00.000Z');
 assert.ok(nationalWithoutShipping.listing, 'national visibility must not require shipping');
 assert.equal(nationalWithoutShipping.listing.visibility_scope, 'national');
 assert.equal(nationalWithoutShipping.listing.shipping_available, false);
-assert.ok(nationalWithoutShipping.listing.delivery_methods.includes('pickup'));
+assert.deepEqual(nationalWithoutShipping.listing.delivery_methods, ['campus_meetup'], 'legacy migration retains its canonical non-shipping delivery fallback');
 
 const missingCampus = schema.legacyProductToListingV2(product({ campus_id: undefined }), '2026-09-05T20:00:00.000Z');
 assert.equal(missingCampus.listing, null);
