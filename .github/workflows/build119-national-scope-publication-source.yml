@@ -21,6 +21,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
       - run: npm ci
       - name: National visibility/delivery contract
         run: |
@@ -38,6 +42,32 @@ jobs:
           node scripts/build118-deviceA-product-detail-hook-order-tests.mjs
           node scripts/build118-deviceA-native-failure-diagnostics-tests.mjs
           node scripts/post116-push-health-contract-tests.mjs
+      - name: Prepare exact strict V2 Rules
+        run: npm run v2:rules:prepare
+      - name: Install ephemeral Firestore emulator harness
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+          git diff --exit-code -- package.json package-lock.json
+      - name: Firestore canonical publication + full relevant regression
+        run: >-
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore
+          --config firebase.v2.json
+          --project demo-tutop-build119-national-scope
+          "node --test --test-concurrency=1
+          tests/firestore.v2.publication-profile-coupling.test.mjs
+          tests/firestore.v2.rules.test.mjs
+          tests/firestore.v2.atomic.test.mjs
+          tests/firestore.v2.acceptance-atomic.test.mjs
+          tests/firestore.v2.reputation-trust.test.mjs
+          tests/firestore.v2.governance.test.mjs
+          tests/firestore.v2.runtime-services.test.mjs
+          tests/firestore.v2.account-operations.test.mjs
+          tests/firestore.v2.notification-receipts.test.mjs
+          tests/firestore.v2.transaction-lock.test.mjs
+          tests/firestore.v2.unread-aggregation.test.mjs
+          tests/firestore.v2.review-strike-aggregation.test.mjs
+          tests/firestore.v2.favorite-membership.test.mjs"
       - name: Full regression
         run: npm run check
       - name: Typecheck

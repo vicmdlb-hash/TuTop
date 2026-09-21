@@ -58,6 +58,28 @@ test('verified seller can publish to a valid selected institution/campus even wh
   await assertSucceeds(publicationBatch(db,'valid-selected-campus',listing()).commit());
 });
 
+test('national visibility does not require shipping when an explicit delivery method exists', async () => {
+  await seedCatalogAndStaleProfile();
+  const db=auth();
+  await assertSucceeds(publicationBatch(db,'national-without-shipping',{
+    ...listing(),
+    visibility_scope:'national',
+    shipping_available:false,
+    delivery_methods:['pickup'],
+  }).commit());
+});
+
+test('national visibility still fails closed when no delivery method is selected', async () => {
+  await seedCatalogAndStaleProfile();
+  const db=auth();
+  await assertFails(publicationBatch(db,'national-without-delivery',{
+    ...listing(),
+    visibility_scope:'national',
+    shipping_available:false,
+    delivery_methods:[],
+  }).commit());
+});
+
 test('invalid/nonexistent campus still fails closed', async () => {
   await seedCatalogAndStaleProfile();
   const db=auth();
@@ -70,4 +92,4 @@ test('campus belonging to another institution still fails closed', async () => {
   await assertFails(publicationBatch(db,'wrong-parent-campus',listing('old-campus')).commit());
 });
 
-console.log('PASS publication no longer depends on stale users profile; canonical institution/campus integrity remains enforced');
+console.log('PASS publication no longer depends on stale users profile; national visibility is independent from shipping; delivery and university integrity remain enforced');
