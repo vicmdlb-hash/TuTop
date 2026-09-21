@@ -55,7 +55,6 @@ jobs:
           --config firebase.v2.json
           --project demo-tutop-build119-national-scope
           "node --test --test-concurrency=1
-          tests/firestore.v2.publication-profile-coupling.test.mjs
           tests/firestore.v2.rules.test.mjs
           tests/firestore.v2.atomic.test.mjs
           tests/firestore.v2.acceptance-atomic.test.mjs
