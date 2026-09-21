@@ -1,11 +1,21 @@
 import { motion } from 'framer-motion';
-import { ArrowLeft, Bell, CheckCheck, MessageCircle, Trophy } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Bell, CheckCheck, CircleDollarSign, MessageCircle, PackageCheck, Search, ShieldAlert, Trophy, Truck } from 'lucide-react';
 import { inAppNotificationDestination } from '../lib/inAppNotificationRouting';
 import { useAppStore } from '../store/useAppStore';
 
 export default function NotificationCenter({ onClose }: { onClose: () => void }) {
   const { notifications, markNotificationRead, markAllNotificationsRead, openChat, openProduct, setActiveTab, chats } = useAppStore();
-  const iconFor = (kind: string) => kind === 'message' ? <MessageCircle /> : kind === 'bid' ? <Trophy /> : <Bell />;
+  const iconFor = (kind: string) => {
+    if (kind === 'message') return <MessageCircle />;
+    if (kind === 'offer') return <CircleDollarSign />;
+    if (kind === 'reservation') return <PackageCheck />;
+    if (kind === 'delivery') return <Truck />;
+    if (kind === 'search') return <Search />;
+    if (kind === 'verification') return <BadgeCheck />;
+    if (kind === 'safety') return <ShieldAlert />;
+    if (kind === 'bid') return <Trophy />;
+    return <Bell />;
+  };
 
   const activateNotification = (notification: typeof notifications[number]) => {
     markNotificationRead(notification.id);
