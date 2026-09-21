@@ -41,6 +41,19 @@ for(const [name,text] of [['active',activeText],['candidate',candidateText]]){
   if(!text.includes("request.resource.data.delivery_methods.size() >= 1"))stop(name.toUpperCase()+'_DELIVERY_MINIMUM_MISSING');
 }
 
+const compact=v=>normalize(v).replace(/\/\/[^\n]*/g,'').replace(/\s+/g,' ').trim();
+const activeLines=activeText.split('\n');
+const candidateLines=candidateText.split('\n');
+let firstMismatch=-1;
+for(let i=0;i<Math.max(activeLines.length,candidateLines.length);i++){
+  if((activeLines[i]||'')!==(candidateLines[i]||'')){firstMismatch=i;break;}
+}
+const mismatchContext=firstMismatch<0?[]:[
+  ...Array.from({length:7},(_,offset)=>firstMismatch-3+offset)
+    .filter(i=>i>=0&&i<Math.max(activeLines.length,candidateLines.length))
+    .map(i=>({line:i+1,active:activeLines[i]||'',candidate:candidateLines[i]||''}))
+];
+
 const evidence={
   status:'PASS',
   project:PROJECT,
@@ -49,6 +62,11 @@ const evidence={
   active_rules_sha256:sha(activeText),
   candidate_rules_sha256:sha(candidateText),
   candidate_equals_active:sha(activeText)===sha(candidateText),
+  whitespace_comment_normalized_equal:compact(activeText)===compact(candidateText),
+  active_line_count:activeLines.length,
+  candidate_line_count:candidateLines.length,
+  first_mismatch_line:firstMismatch<0?null:firstMismatch+1,
+  mismatch_context:mismatchContext,
   national_requires_shipping:false,
   explicit_delivery_required:true,
   billing_enabled:false,
