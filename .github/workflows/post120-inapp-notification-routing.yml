@@ -1,0 +1,41 @@
+name: Post120 in-app notification routing — source only
+
+on:
+  push:
+    branches: [fix/post120-inapp-notification-routing]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: In-app notification destination unit test
+        run: node --experimental-strip-types scripts/post120-inapp-notification-routing-tests.mjs
+      - name: Native/in-app routing contract
+        run: node scripts/post120-inapp-notification-routing-contract-tests.mjs
+      - name: Existing notification regressions
+        run: |
+          node scripts/marketplace-notification-projection-tests.mjs
+          node scripts/saved-search-notification-tests.mjs
+          node scripts/post116-push-account-isolation-tests.mjs
+          node scripts/post116-push-health-contract-tests.mjs
+          node scripts/post116-push-ownership-contract-tests.mjs
+      - name: Full regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove source-only
+        run: |
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source-only notification routing repair; Build120 APK unchanged"
