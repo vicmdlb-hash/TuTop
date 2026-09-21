@@ -268,6 +268,21 @@ export const verifiedEmailBetaAuth = {
     return { uid: data.localId, email, emailVerified: false, verificationEmailSent } satisfies VerifiedEmailBetaStatus;
   },
 
+  async requestPasswordReset(emailInput: string) {
+    const email = normalizeEmail(emailInput);
+    try {
+      await identityRequest('accounts:sendOobCode', { requestType: 'PASSWORD_RESET', email });
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      // Password recovery must not become an account-enumeration oracle.
+      // Firebase projects with email-enumeration protection may already return
+      // the same response, but keep the client fail-closed for older behavior.
+      if (/EMAIL_NOT_FOUND|USER_NOT_FOUND/i.test(raw)) return true;
+      throw error;
+    }
+    return true;
+  },
+
   async login(emailInput: string, password: string) {
     const email = normalizeEmail(emailInput);
     const requestGeneration = ++authGeneration;
