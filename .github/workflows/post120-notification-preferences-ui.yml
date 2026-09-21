@@ -32,6 +32,12 @@ jobs:
         run: |
           node scripts/post120-temporal-reminder-tests.mjs
           node scripts/post120-temporal-reminder-contract-tests.mjs
+      - name: Listing-saved opt-in notifications
+        run: |
+          node scripts/post120-listing-saved-notification-tests.mjs
+          node scripts/post120-listing-saved-notification-contract-tests.mjs
+      - name: Notification producer coverage truth
+        run: node scripts/post120-notification-producer-coverage-tests.mjs
       - name: Notification regressions
         run: |
           node scripts/saved-search-notification-tests.mjs
