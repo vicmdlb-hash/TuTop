@@ -3,6 +3,7 @@ import { BellRing, CheckCircle2, Loader2 } from 'lucide-react';
 import { DEFAULT_NOTIFICATION_PREFERENCES, type NotificationPreferenceKey, type NotificationPreferences } from '../lib/notificationPreferences';
 import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { nationalUserSettings } from '../services/nationalUserSettings';
+import SavedSearchManager from './SavedSearchManager';
 
 const OPTIONS: Array<{ key: NotificationPreferenceKey; label: string; hint: string }> = [
   { key: 'new_message', label: 'Mensajes nuevos', hint: 'Cuando alguien te escribe.' },
@@ -92,6 +93,7 @@ export default function NotificationPreferenceSettings() {
         {saving ? 'Guardando…' : 'Guardar preferencias'}
       </button>
       <p className="mt-2 text-[8px] leading-4 text-slate-600">Cambiar estas opciones no prueba entrega FCM. La entrega real sigue siendo un gate físico separado.</p>
+      <SavedSearchManager accountPreferenceEnabled={preferences.saved_search_match} />
     </div>
   );
 }
