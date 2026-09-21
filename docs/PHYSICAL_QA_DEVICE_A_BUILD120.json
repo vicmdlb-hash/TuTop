@@ -1,0 +1,53 @@
+{
+  "schema": "tutop.build120-device-a-evidence.v1",
+  "app_version": "0.9.2-beta.10",
+  "environment": "staging",
+  "candidate": {
+    "artifact_name": "TuTop-build120-554f4ef6d0429b0059738d8cd6e1b6e4890bda91",
+    "artifact_id": 10622421310,
+    "build_run_id": 35560814829,
+    "build_commit_sha": "554f4ef6d0429b0059738d8cd6e1b6e4890bda91",
+    "build_tree_sha": "61485d3c218cc553a230be09dab3217b2774b44e",
+    "apk_name": "TuTop-build120-554f4ef6d042-deviceA-publication-repair-staging.apk",
+    "apk_sha256": "9855a2e51587f3115f9c270c28d61b1f5c4aa4db7813dacc16b3fe700d458cc0",
+    "apk_signing_cert_sha1": "8FF8FEC3E281566856B68CE1E227BABEBF547309"
+  },
+  "evidence_session_id": "PENDING-BUILD120-DEVICE-A",
+  "started_at": null,
+  "completed_at": null,
+  "device": {
+    "slot": "A",
+    "label": "PENDING-REAL-DEVICE",
+    "manufacturer": "PENDING",
+    "model": "PENDING",
+    "android_version": "PENDING",
+    "installation": "upgrade|reinstall|clean",
+    "physical": false
+  },
+  "causal_cases": {
+    "install_boot": "pending",
+    "react_product_detail_no_crash": "pending",
+    "topi_real_firebase_ai": "pending",
+    "notification_permission_granted": "pending",
+    "notification_token_registered": "pending",
+    "publication_historical_path": "pending",
+    "publication_national_without_shipping": "pending"
+  },
+  "regression_observations": {
+    "auth_identity": "pending",
+    "camera_gallery": "pending",
+    "microphone_voice": "pending",
+    "explicit_location_opt_in": "pending",
+    "durable_draft_reload": "pending",
+    "offline_reconnect": "pending",
+    "android_back_lifecycle": "pending"
+  },
+  "diagnostic_report": null,
+  "screenshots": [],
+  "notes": [
+    "Do not record passwords, OTPs, raw FCM/App Check tokens, phone numbers or hardware IDs.",
+    "Notification delivery is not a causal Build120 pass requirement because no real FCM send is authorized outside the later two-device gate.",
+    "publication_historical_path remains UNKNOWN until physically attempted on this exact APK.",
+    "publication_national_without_shipping must prove national visibility can publish with an explicit non-shipping delivery method."
+  ]
+}

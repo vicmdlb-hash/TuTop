@@ -1,0 +1,56 @@
+{
+  "schema": "tutop.build120-physical-acceptance.v1",
+  "candidate": {
+    "version": "0.9.2-beta.10",
+    "sha": "554f4ef6d0429b0059738d8cd6e1b6e4890bda91",
+    "artifact_id": 10622421310,
+    "apk_sha256": "9855a2e51587f3115f9c270c28d61b1f5c4aa4db7813dacc16b3fe700d458cc0"
+  },
+  "truth": "CI_PASS_NEVER_EQUALS_DEVICE_PASS",
+  "phases": [
+    {
+      "id": "A_CAUSAL",
+      "purpose": "Retest the three Build118 physical failures, the historical Publish path, and the Build119 national-publication defect on exact Build120.",
+      "required_cases": [
+        "install_boot",
+        "react_product_detail_no_crash",
+        "topi_real_firebase_ai",
+        "notification_permission_granted",
+        "notification_token_registered",
+        "publication_historical_path",
+        "publication_national_without_shipping"
+      ],
+      "status": "pending_physical"
+    },
+    {
+      "id": "A_REGRESSION",
+      "purpose": "Broaden Device A after causal retest without changing the exact APK.",
+      "required_cases": [
+        "auth_identity",
+        "camera_gallery",
+        "microphone_voice",
+        "explicit_location_opt_in",
+        "durable_draft_reload",
+        "offline_reconnect",
+        "android_back_lifecycle"
+      ],
+      "status": "pending_after_causal"
+    },
+    {
+      "id": "PUSH_TWO_DEVICE",
+      "purpose": "Later prove real notification delivery/tap/deep-link on a two-device gate.",
+      "required_cases": [
+        "foreground_delivery",
+        "background_delivery",
+        "cold_start_delivery",
+        "tap_exact_deep_link",
+        "recipient_ownership",
+        "account_switch_token_ownership"
+      ],
+      "status": "blocked_until_authorized_two_device_gate"
+    }
+  ],
+  "causal_release_blocked": true,
+  "full_release_blocked": true,
+  "notes": "A_CAUSAL may clear only the observed failure cluster and publication defect; it never implies full release acceptance."
+}

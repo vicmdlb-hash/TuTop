@@ -1,0 +1,44 @@
+name: Build120 Physical QA binding — no APK
+
+on:
+  push:
+    branches: [qa/candidate120-physical-acceptance]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-build120-physical-qa-binding
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Exact Build120 runtime drift — QA-only branch
+        run: node scripts/build120-physical-qa-drift.mjs
+      - name: Build120 physical acceptance contract
+        run: node scripts/build120-physical-acceptance-contract-tests.mjs
+      - name: Pending Device A template validates without fabricated PASS
+        run: node scripts/build120-physical-evidence-validator.mjs docs/PHYSICAL_QA_DEVICE_A_BUILD120.json
+      - name: Directed source repair regression remains green
+        run: |
+          node scripts/build119-deviceA-repair-integration-tests.mjs
+          node scripts/build119-national-scope-publication-tests.mjs
+      - name: Existing regression suite remains green
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Prove QA binding generated no APK/AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS QA-only binding; no APK/AAB generated"
