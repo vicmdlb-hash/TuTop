@@ -36,6 +36,10 @@ jobs:
         run: |
           node scripts/post120-listing-saved-notification-tests.mjs
           node scripts/post120-listing-saved-notification-contract-tests.mjs
+      - name: Favorite price/availability transition watch
+        run: |
+          node scripts/post120-favorite-listing-transition-tests.mjs
+          node scripts/post120-favorite-listing-transition-contract-tests.mjs
       - name: Notification producer coverage truth
         run: node scripts/post120-notification-producer-coverage-tests.mjs
       - name: Notification regressions
