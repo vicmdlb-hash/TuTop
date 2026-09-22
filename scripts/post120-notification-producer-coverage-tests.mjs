@@ -8,10 +8,9 @@ const keys=[...keyBlock.matchAll(/\| '([a-z_]+)'/g)].map((m)=>m[1]);
 const proven=new Set([
   'new_message','offer_received','offer_accepted','counter_offer',
   'reservation_expiring','meetup_reminder','saved_search_match','listing_saved_count',
+  'favorite_price_drop','saved_item_available',
 ]);
 const intentionallyUnproven={
-  favorite_price_drop:'requires a trustworthy historical price baseline, not just current listing price',
-  saved_item_available:'requires a trustworthy unavailable->available transition baseline',
   followed_seller_new_listing:'no canonical seller-follow graph exists yet',
   weekly_digest:'requires an explicitly scheduled aggregation worker',
   safety_alert:'requires a defined trusted safety-event source rather than a generic switch',
