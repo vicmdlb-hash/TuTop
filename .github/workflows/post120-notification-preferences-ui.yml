@@ -61,6 +61,10 @@ jobs:
           --config firebase.v2.json
           --project demo-tutop-seller-follows
           "node --test tests/firestore.v2.seller-follows.test.mjs"
+      - name: Weekly digest projection
+        run: |
+          node scripts/post120-weekly-digest-tests.mjs
+          node scripts/post120-weekly-digest-contract-tests.mjs
       - name: Notification producer coverage truth
         run: node scripts/post120-notification-producer-coverage-tests.mjs
       - name: Notification regressions
