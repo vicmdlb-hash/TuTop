@@ -8,11 +8,9 @@ const keys=[...keyBlock.matchAll(/\| '([a-z_]+)'/g)].map((m)=>m[1]);
 const proven=new Set([
   'new_message','offer_received','offer_accepted','counter_offer',
   'reservation_expiring','meetup_reminder','saved_search_match','listing_saved_count',
-  'favorite_price_drop','saved_item_available','followed_seller_new_listing','weekly_digest',
+  'favorite_price_drop','saved_item_available','followed_seller_new_listing','weekly_digest','safety_alert',
 ]);
-const intentionallyUnproven={
-  safety_alert:'requires a defined trusted safety-event source rather than a generic switch',
-};
+const intentionallyUnproven={};
 
 assert.equal(keys.length,13);
 for(const key of proven) assert.ok(keys.includes(key),`unknown proven key ${key}`);

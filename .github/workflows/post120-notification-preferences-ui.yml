@@ -65,6 +65,10 @@ jobs:
         run: |
           node scripts/post120-weekly-digest-tests.mjs
           node scripts/post120-weekly-digest-contract-tests.mjs
+      - name: Safety alert trusted-source projection
+        run: |
+          node scripts/post120-safety-notification-tests.mjs
+          node scripts/post120-safety-notification-contract-tests.mjs
       - name: Notification producer coverage truth
         run: node scripts/post120-notification-producer-coverage-tests.mjs
       - name: Notification regressions
