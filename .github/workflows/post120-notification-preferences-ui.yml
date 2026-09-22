@@ -17,6 +17,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
       - run: npm ci
       - name: Notification preferences UI contract
         run: node scripts/post120-notification-preferences-ui-tests.mjs
@@ -40,6 +44,23 @@ jobs:
         run: |
           node scripts/post120-favorite-listing-transition-tests.mjs
           node scripts/post120-favorite-listing-transition-contract-tests.mjs
+      - name: Seller follow graph + followed-seller alerts
+        run: |
+          node scripts/post120-followed-seller-notification-tests.mjs
+          node scripts/post120-seller-follow-contract-tests.mjs
+      - name: Prepare final V2 Rules for focused seller-follow emulator
+        run: npm run v2:rules:prepare
+      - name: Install ephemeral Firestore emulator harness
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+          git diff --exit-code -- package.json package-lock.json
+      - name: Seller-follow Rules emulator
+        run: >-
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore
+          --config firebase.v2.json
+          --project demo-tutop-seller-follows
+          "node --test tests/firestore.v2.seller-follows.test.mjs"
       - name: Notification producer coverage truth
         run: node scripts/post120-notification-producer-coverage-tests.mjs
       - name: Notification regressions
