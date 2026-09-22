@@ -267,6 +267,20 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    match /seller_follows/{followId} {
+      allow read: if signedIn() && (resource.data.follower_uid == request.auth.uid || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['follower_uid','seller_id','created_at','updated_at'])
+        && request.resource.data.follower_uid == request.auth.uid
+        && request.resource.data.seller_id is string
+        && request.resource.data.seller_id != request.auth.uid
+        && followId == request.auth.uid + '_' + request.resource.data.seller_id
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.seller_id))
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.follower_uid == request.auth.uid;
+    }
+
     match /chats/{chatId} {
       allow read: if signedIn() && (request.auth.uid in resource.data.participants || isAdmin());
       allow create: if signedIn() && notSuspended()
