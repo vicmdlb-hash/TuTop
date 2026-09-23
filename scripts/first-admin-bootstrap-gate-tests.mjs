@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { validateFirstAdminBootstrap } from './first-admin-bootstrap-gate-lib.mjs';
+const base={projectId:'tutop-beta-vicmdlb-1356585881',uid:'uid_12345678',adminsActive:0,authUserExists:true,profileExists:true};
+assert.deepEqual(validateFirstAdminBootstrap({...base,apply:false,ack:''}),{ok:true,code:'DRY_RUN_READY'});
+assert.deepEqual(validateFirstAdminBootstrap({...base,apply:true,ack:''}),{ok:false,code:'EXACT_ACK_REQUIRED'});
+assert.deepEqual(validateFirstAdminBootstrap({...base,apply:true,ack:'BOOTSTRAP_FIRST_STAGING_ADMIN:uid_12345678'}),{ok:true,code:'APPLY_AUTHORIZED'});
+assert.equal(validateFirstAdminBootstrap({...base,adminsActive:1,apply:true,ack:'BOOTSTRAP_FIRST_STAGING_ADMIN:uid_12345678'}).code,'FIRST_ADMIN_ALREADY_EXISTS');
+assert.equal(validateFirstAdminBootstrap({...base,authUserExists:false}).code,'AUTH_USER_REQUIRED');
+assert.equal(validateFirstAdminBootstrap({...base,profileExists:false}).code,'PROFILE_REQUIRED');
+assert.equal(validateFirstAdminBootstrap({...base,projectId:'production'}).code,'STAGING_PROJECT_REQUIRED');
+console.log('PASS first-admin bootstrap requires staging + real Auth user + profile + zero active admins + exact UID-bound ACK');
