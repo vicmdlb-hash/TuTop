@@ -36,6 +36,15 @@
         ]
       },
       {
+        "source": "/auth-action*",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          }
+        ]
+      },
+      {
         "source": "/admin/**",
         "headers": [
           {
