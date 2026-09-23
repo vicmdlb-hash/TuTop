@@ -25,5 +25,7 @@ test('auth_status binds email_verified to Firebase Auth claim and is admin-reada
   await assertSucceeds(setDoc(doc(pending,'auth_status/pending'),{uid:'pending',email_verified:false,auth_mode:'email_password_verified_beta',last_client_code:'EMAIL_VERIFICATION_PENDING',last_seen_at:at}));
   await assertSucceeds(setDoc(doc(verified,'auth_status/verified'),{uid:'verified',email_verified:true,auth_mode:'email_password_verified_beta',last_client_code:'EMAIL_VERIFIED',last_seen_at:at}));
   await assertFails(setDoc(doc(forged,'auth_status/forged'),{uid:'forged',email_verified:true,auth_mode:'email_password_verified_beta',last_client_code:'EMAIL_VERIFIED',last_seen_at:at}));
+  await assertSucceeds(setDoc(doc(pending,'auth_status/pending'),{uid:'pending',email_verified:false,auth_mode:'email_password_verified_beta',last_client_code:'VERIFICATION_EMAIL_SEND_FAILED',last_seen_at:at}));
+  await assertFails(setDoc(doc(pending,'auth_status/pending'),{uid:'pending',email_verified:false,auth_mode:'email_password_verified_beta',last_client_code:'RAW_FIREBASE_ERROR',last_seen_at:at}));
   await assertSucceeds(getDoc(doc(admin,'auth_status/verified')));
 });
