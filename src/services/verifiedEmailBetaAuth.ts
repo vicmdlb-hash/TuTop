@@ -159,6 +159,19 @@ async function forceRefreshStoredSession(expectedGeneration = authGeneration) {
   return persistCanonicalSession(next);
 }
 
+
+async function syncAuthStatus(uid: string, emailVerified: boolean, code: 'EMAIL_VERIFICATION_PENDING' | 'EMAIL_VERIFIED' | 'PROFILE_MISSING') {
+  const client = sessionClient();
+  const at = new Date().toISOString();
+  await client.setDocument(`auth_status/${uid}`, {
+    uid,
+    email_verified: emailVerified,
+    auth_mode: 'email_password_verified_beta',
+    last_client_code: code,
+    last_seen_at: at,
+  }, { merge: true }).catch(() => undefined);
+}
+
 async function synchronizePrivateEmail(uid: string, email: string) {
   const client = sessionClient();
   const privateIdentity = await client.getDocument<Record<string, unknown>>(`user_private/${uid}`);
@@ -231,6 +244,7 @@ async function createMarketplaceAccount(payload: AuthPayload, email: string, pro
     { update: client.encodeDocumentForWrite(`user_private/${payload.localId}`, privateData), currentDocument: { exists: false } },
     { update: client.encodeDocumentForWrite(`wallets/${payload.localId}`, { owner_uid: payload.localId, balance: 10, prestige: 0, welcome_granted: true, last_op_id: walletTxId, updated_at: at }), currentDocument: { exists: false } },
     { update: client.encodeDocumentForWrite(`wallet_transactions/${walletTxId}`, { user_id: payload.localId, type: 'income', description: 'Bono de bienvenida', amount: 10, operation_id: walletTxId, created_at: at }), currentDocument: { exists: false } },
+    { update: client.encodeDocumentForWrite(`auth_status/${payload.localId}`, { uid: payload.localId, email_verified: false, auth_mode: 'email_password_verified_beta', last_client_code: 'EMAIL_VERIFICATION_PENDING', last_seen_at: at }), currentDocument: { exists: false } },
   ]);
 }
 
@@ -279,6 +293,7 @@ export const verifiedEmailBetaAuth = {
     const profile = await client.getDocument(`users/${data.localId}`);
     assertSessionUnchanged(ownGeneration, ownSession.uid, ownSession.refreshToken);
     if (!profile) {
+      await syncAuthStatus(data.localId, false, 'PROFILE_MISSING');
       clearCanonicalSession();
       throw new Error('PROFILE_MISSING');
     }
@@ -338,6 +353,7 @@ export const verifiedEmailBetaAuth = {
     assertSessionUnchanged(generation, stored.uid, stored.refreshToken);
     const normalizedUserEmail = String(user.email).toLowerCase();
     if (verified) await synchronizePrivateEmail(user.localId, normalizedUserEmail);
+    await syncAuthStatus(user.localId, verified, verified ? 'EMAIL_VERIFIED' : 'EMAIL_VERIFICATION_PENDING');
     assertSessionUnchanged(generation, stored.uid, stored.refreshToken);
     const next: CompatibleSession = {
       ...stored,
