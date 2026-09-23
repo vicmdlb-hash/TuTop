@@ -76,7 +76,9 @@ export default function NotificationPreferenceSettings() {
               type="button"
               key={option.key}
               onClick={() => toggle(option.key)}
-              aria-pressed={preferences[option.key]}
+              role="switch"
+              aria-checked={preferences[option.key]}
+              aria-label={`${option.label}: ${preferences[option.key] ? 'activada' : 'desactivada'}`}
               className="flex w-full items-center gap-3 rounded-2xl border border-white/[0.05] bg-black/10 p-3 text-left"
             >
               <span className="min-w-0 flex-1"><strong className="block text-[10px] text-slate-200">{option.label}</strong><span className="mt-0.5 block text-[8px] leading-4 text-slate-500">{option.hint}</span></span>
@@ -88,7 +90,7 @@ export default function NotificationPreferenceSettings() {
         </div>
       )}
 
-      {message && <p className="mt-3 flex items-start gap-1.5 rounded-xl bg-white/[0.03] px-3 py-2 text-[9px] leading-4 text-slate-400">{message.startsWith('Preferencias guardadas') && <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" />}{message}</p>}
+      {message && <p role="status" aria-live="polite" aria-atomic="true" className="mt-3 flex items-start gap-1.5 rounded-xl bg-white/[0.03] px-3 py-2 text-[9px] leading-4 text-slate-400">{message.startsWith('Preferencias guardadas') && <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" aria-hidden="true" />}{message}</p>}
       <button type="button" disabled={loading || saving} onClick={() => void save()} className="mt-3 w-full rounded-xl bg-violet-600 py-2.5 text-[9px] font-black text-white disabled:opacity-50">
         {saving ? 'Guardando…' : 'Guardar preferencias'}
       </button>
