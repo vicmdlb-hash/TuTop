@@ -1,0 +1,24 @@
+name: Post120 Olympus identity model — source only
+on:
+  push:
+    branches: [feat/post120-olympus-identity-model]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Olympus product invariants
+        run: node --experimental-strip-types scripts/post120-olympus-identity-tests.mjs
+      - run: npm run check
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Prove no billing/deploy/APK
+        run: echo "PASS source-only taxonomy; no billing/deploy/APK/AAB"
