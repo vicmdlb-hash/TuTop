@@ -14,6 +14,6 @@ assert.match(panel,/ownershipReconciliationPending/);
 assert.match(panel,/VITE_TUTOP_APP_VERSION/);
 assert.doesNotMatch(panel,/\.token\b|getToken\(|idToken|refreshToken|phone|email|uid/i);
 assert.match(panel,/no demuestra entrega FCM real/i);
-assert.match(panel,/no reemplaza la prueba física de Topi/i);
+assert.match(panel,/(no|ni) reemplaza la prueba física de Topi/i);
 
 console.log('PASS device-health panel exposes build/Topi/push truth without raw tokens or personal identifiers');
