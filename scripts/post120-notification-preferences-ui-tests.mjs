@@ -13,7 +13,9 @@ for(const key of keys) assert.match(ui,new RegExp(`key: '${key}'`),`UI missing $
 
 assert.match(ui,/loadNotificationPreferences\(\)/);
 assert.match(ui,/saveNotificationPreferences\(preferences\)/);
-assert.match(ui,/aria-pressed=\{preferences\[option\.key\]\}/);
+assert.match(ui,/role="switch"/);
+assert.match(ui,/aria-checked=\{preferences\[option\.key\]\}/);
+assert.doesNotMatch(ui,/aria-pressed=\{preferences\[option\.key\]\}/);
 assert.match(ui,/Cambiar estas opciones no prueba entrega FCM/);
 assert.match(permissions,/NotificationPreferenceSettings/);
 assert.match(backend,/notification_preferences\/\$\{session\.uid\}/);
