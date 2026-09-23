@@ -1,0 +1,36 @@
+name: Post120 accessibility hardening — source only
+
+on:
+  push:
+    branches: [qa/post120-accessibility-hardening]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Existing accessibility semantics
+        run: node scripts/post116-accessibility-semantics-tests.mjs
+      - name: Post-Build120 accessibility semantics
+        run: node scripts/post120-accessibility-hardening-tests.mjs
+      - name: Full regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove source-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS accessibility source-only; no APK/AAB"
