@@ -104,13 +104,13 @@ export default function SavedSearchManager({ accountPreferenceEnabled }: { accou
                 onClick={() => void remove(search.id)}
                 className={`mt-2 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[8px] font-bold ${confirmDeleteId === search.id ? 'bg-rose-500/15 text-rose-200' : 'text-slate-600'}`}
               >
-                <Trash2 className="h-3 w-3" />{confirmDeleteId === search.id ? 'Confirmar borrar' : 'Borrar'}
+                <Trash2 className="h-3 w-3" aria-hidden="true" />{confirmDeleteId === search.id ? 'Confirmar borrar' : 'Borrar'}
               </button>
             </div>
           ))}
         </div>
       )}
-      {message && <p className="mt-3 text-[8px] leading-4 text-rose-200">{message}</p>}
+      {message && <p role="status" aria-live="polite" aria-atomic="true" className="mt-3 text-[8px] leading-4 text-rose-200">{message}</p>}
       <p className="mt-3 text-[8px] leading-4 text-slate-600">Estos controles configuran elegibilidad; no prueban que un worker ni FCM hayan entregado un aviso real.</p>
     </div>
   );
