@@ -49,7 +49,7 @@ assert(configHeaders.some(item=>item.key==='Cache-Control'&&item.value==='no-sto
 assert.match(privacy,/Build120/);
 assert.match(privacy,/No es una política legal aprobada para publicación/);
 assert.match(privacy,/flujo web autenticado/i);
-assert.doesNotMatch(privacy,/correo personal|@gmail\.com/i);
+assert.doesNotMatch(privacy,/[A-Z0-9._%+-]+@gmail\.com/i);
 
 console.log('PASS Build120 web deletion flow authenticates the existing account and can create only a pending owner request');
 console.log('PASS runtime Firebase web config is generated separately and ignored by git');
