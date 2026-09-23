@@ -141,7 +141,7 @@ function UsersSection({ users, wallets, reviews, statuses, privateUsers, authSta
     const request=verificationMap.get(uid)||{};
     const moderation=statusMap.get(uid)||{};
     if(auth.last_client_code==='PROFILE_MISSING')return {tone:'rose',label:'Perfil faltante',fix:'Reparar perfil Firestore antes de continuar.'};
-    if(auth.last_client_code==='VERIFICATION_EMAIL_SEND_FAILED')return {tone:'rose',label:'Falló envío de verificación',fix:'Reintentar desde la app; si persiste, revisar conectividad y Firebase Auth sendOobCode.'};
+    if(auth.last_client_code==='VERIFICATION_EMAIL_SEND_FAILED')return {tone:'rose',label:'Falló envío de verificación',fix:'Reintentar desde la app; si persiste, revisar conectividad y el servicio de envío de Firebase Auth.'};
     if(auth.last_client_code==='VERIFICATION_CHECK_FAILED')return {tone:'amber',label:'Falló comprobación',fix:'La cuenta existe, pero la app no pudo consultar el estado. Reintentar “Ya verifiqué · comprobar”.'};
     if(auth.last_client_code==='AUTH_SYNC_FAILED')return {tone:'amber',label:'Sincronización Auth falló',fix:'Reabrir sesión y volver a sincronizar antes de modificar la cuenta.'};
     if(auth.last_client_code==='VERIFICATION_EMAIL_SENT')return {tone:'amber',label:'Correo reenviado',fix:'Abrir el correo más reciente y después volver a comprobar en TuTop.'};
