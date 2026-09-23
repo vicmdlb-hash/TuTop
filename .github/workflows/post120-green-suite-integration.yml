@@ -53,6 +53,8 @@ jobs:
           node scripts/post120-safety-notification-tests.mjs
           node scripts/post120-safety-notification-contract-tests.mjs
           node scripts/post120-notification-producer-coverage-tests.mjs
+      - name: Device health truth/privacy
+        run: node scripts/post120-device-health-panel-tests.mjs
       - name: Build120 web deletion contract
         run: node scripts/candidate120-web-deletion-contract-tests.mjs
       - name: Prepare final V2 Rules
