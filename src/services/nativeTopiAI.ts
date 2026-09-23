@@ -20,8 +20,10 @@ let lastModel = '';
 function classifyFailure(error: unknown): NativeTopiAIFailureKind {
   const message = String(error instanceof Error ? error.message : error || '');
   if (/TOPI_AI_TIMEOUT|TIMEOUT/i.test(message)) return 'timeout';
-  if (/API[_ -]?KEY|PERMISSION_DENIED|REQUEST_DENIED|403|API key not valid/i.test(message)) return 'firebase-config-rejected';
-  if (/APP.?CHECK|UNAUTHENTICATED|401/i.test(message)) return 'app-check';
+  // App Check errors often arrive as 401/403 PERMISSION_DENIED. Classify them
+  // before generic Firebase/API-key errors so Device QA does not hide the cause.
+  if (/APP.?CHECK|UNAUTHENTICATED|401|PERMISSION_DENIED.*APP.?CHECK|enforce Firebase App Check/i.test(message)) return 'app-check';
+  if (/API[_ -]?KEY|REQUEST_DENIED|403|API key not valid|PERMISSION_DENIED/i.test(message)) return 'firebase-config-rejected';
   if (/RESOURCE_EXHAUSTED|429|high demand|503|temporarily unavailable/i.test(message)) return 'capacity';
   if (/NETWORK|ECONN|ENET|fetch|offline/i.test(message)) return 'network';
   return 'native-request';
@@ -136,8 +138,11 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
     appCheckToken = null;
   }
   if (required && !appCheckToken) {
-    setReason('app-check-unavailable', { app_check_required: true }, 'app-check');
+    setReason('app-check-unavailable', { app_check_required: true, app_check: nativeAppCheckStatus() }, 'app-check');
     return null;
+  }
+  if (!required && !appCheckToken) {
+    recordDiagnostic('ai', 'app_check_token_missing_best_effort', { app_check: nativeAppCheckStatus() });
   }
 
   const models = preferred === 'gemini-3.8-flash'
@@ -161,7 +166,7 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
         setReason('empty-response', { fallback_model: index > 0, retry: attempt > 0 });
       } catch (error) {
         const failureKind = classifyFailure(error);
-        setReason('request-failed', { fallback_model: index > 0, retry: attempt > 0, failure_kind: failureKind }, failureKind);
+        setReason('request-failed', { fallback_model: index > 0, retry: attempt > 0, failure_kind: failureKind, app_check: nativeAppCheckStatus() }, failureKind);
       }
       if (attempt + 1 < attempts) await delay(AI_TRANSIENT_RETRY_DELAY_MS);
     }
