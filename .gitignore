@@ -23,3 +23,6 @@ android/
 ios/
 .firebase/
 .gradle/
+.tutop-staging-web-config.json
+public/tutop-web-config.json
+dist/tutop-web-config.json
