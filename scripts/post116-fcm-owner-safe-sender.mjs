@@ -1,12 +1,22 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { eligibleRecipientTargets, isPermanentFcmTokenError } from './fcm-token-ownership-lib.mjs';
+import { validateBuild120FcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './build120-fcm-physical-gate-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const apply = process.argv.includes('--apply');
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
 const limit = Math.max(1, Math.min(500, Number(process.env.TUTOP_POST110_FCM_LIMIT || 300)));
+const applyGate = validateBuild120FcmApplyGate({
+  apply,
+  maintenanceAllow: allow,
+  ack: process.env.TUTOP_FCM_PHYSICAL_APPLY_ACK,
+  candidateSha: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_SHA,
+  notificationId: process.env.TUTOP_FCM_PHYSICAL_NOTIFICATION_ID,
+  recipientUid: process.env.TUTOP_FCM_PHYSICAL_RECIPIENT_UID,
+  deviceTokenRecordId: process.env.TUTOP_FCM_PHYSICAL_DEVICE_TOKEN_RECORD_ID,
+});
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -14,7 +24,7 @@ function stop(message) {
 }
 
 if (projectId !== STAGING_PROJECT) stop(`post110 FCM sender requiere ${STAGING_PROJECT}.`);
-if (apply && allow !== 'staging-v2') stop('post110 FCM apply requiere TUTOP_ALLOW_V2_MAINTENANCE=staging-v2.');
+if (!applyGate.pass) stop(applyGate.error);
 
 const token = await firebaseCiAccessToken();
 const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
@@ -122,12 +132,18 @@ async function deactivateTokenRecord(target, reason) {
 
 const [outbox, tokens] = await Promise.all([query('notification_outbox'), query('device_tokens')]);
 const pending = outbox.filter((item) => item.status === 'pending');
+const scopedPending = apply
+  ? [selectExactPhysicalNotification(pending, applyGate.notificationId, applyGate.recipientUid)]
+  : pending;
 let planned = 0;
 let delivered = 0;
 let waitingForToken = 0;
 
-for (const item of pending) {
-  const targets = eligibleRecipientTargets(tokens, item.recipient_uid);
+for (const item of scopedPending) {
+  const eligibleTargets = eligibleRecipientTargets(tokens, item.recipient_uid);
+  const targets = apply
+    ? [selectExactPhysicalTarget(eligibleTargets, applyGate.deviceTokenRecordId)]
+    : eligibleTargets;
   if (!targets.length) {
     waitingForToken += 1;
     continue;
@@ -171,11 +187,14 @@ console.log(JSON.stringify({
   mode: apply ? 'APPLY' : 'DRY_RUN',
   project: projectId,
   pending_notifications: pending.length,
+  scoped_pending_notifications: scopedPending.length,
   planned_deliveries: planned,
   delivered,
   waiting_for_device_token: waitingForToken,
   current_owner_filter: true,
   permanent_invalid_token_cleanup: apply,
   notification_id_in_payload: true,
+  single_target_apply_guard: apply ? true : null,
+  selected_device_token_record_id: apply ? applyGate.deviceTokenRecordId : null,
   real_fcm_sent: apply && delivered > 0,
 }, null, 2));
