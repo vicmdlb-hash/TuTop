@@ -72,7 +72,7 @@ export default function DeviceHealthPanel() {
         <span><strong>Diagnóstico de esta instalación</strong><small>Versión, Topi y notificaciones sin mostrar tokens ni datos privados</small></span>
         {open ? <ChevronUp /> : <ChevronDown />}
       </button>
-      {open && <div className="border-t border-white/[0.05] p-3">
+      {open && <div className="border-t border-white/[0.05] p-3" role="region" aria-label="Diagnóstico de esta instalación">
         {!snapshot ? <p className="text-[9px] text-slate-500">Comprobando estados locales…</p> : <>
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-xl bg-white/[0.03] p-2.5"><span className="text-[8px] text-slate-500">BUILD</span><strong className="mt-1 block text-[10px] text-slate-200">{snapshot.version}</strong><small className="text-[8px] text-slate-600">{snapshot.environment}</small></div>
@@ -80,7 +80,7 @@ export default function DeviceHealthPanel() {
             <div className="rounded-xl bg-white/[0.03] p-2.5"><span className="text-[8px] text-slate-500">PERMISO PUSH</span><strong className="mt-1 block text-[10px] text-slate-200">{snapshot.push?.permission || 'sin comprobar'}</strong></div>
             <div className="rounded-xl bg-white/[0.03] p-2.5"><span className="text-[8px] text-slate-500">TOKEN FCM</span><strong className={`mt-1 block text-[10px] ${pushReady ? 'text-emerald-300' : 'text-amber-300'}`}>{snapshot.push?.ownershipReconciliationPending ? 'reconciliando' : snapshot.push?.tokenRegistered ? 'registrado' : pushReason(snapshot.push?.reason)}</strong></div>
           </div>
-          <div className="mt-3 rounded-xl border border-white/[0.05] bg-black/10 p-2.5">
+          <div className="mt-3 rounded-xl border border-white/[0.05] bg-black/10 p-2.5" role="status" aria-live="polite" aria-atomic="true">
             <div className="flex items-center gap-2">{topiReady && pushReady ? <ShieldCheck className="h-4 w-4 text-emerald-300" /> : <TriangleAlert className="h-4 w-4 text-amber-300" />}<strong className="text-[9px] text-slate-300">{topiReady && pushReady ? 'Estados locales listos' : 'Hay estados que todavía requieren prueba o corrección'}</strong></div>
             <p className="mt-1 text-[8px] leading-4 text-slate-600">Este panel no demuestra entrega FCM real ni reemplaza la prueba física de Topi. Sólo separa permiso, token y estado local de IA para evitar falsos verdes.</p>
           </div>
