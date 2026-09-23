@@ -1,0 +1,34 @@
+name: Post120 staging App Check off-Play repair
+
+on:
+  push:
+    branches: [fix/post120-physical-failure-cluster]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-staging-app-check-offplay-repair
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_STAGING_OFFPLAY_APP_CHECK_ACK: REPAIR_STAGING_OFFPLAY_APP_CHECK
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Repair exact staging Play Integrity for off-Play QA
+        run: node scripts/repair-staging-offplay-app-check.mjs
+      - name: Prove staging-only / no deploy / no build
+        run: echo "PASS App Check staging config only; no APK/AAB/Rules/Hosting/Play/production"
