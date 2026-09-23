@@ -135,7 +135,7 @@ export default function SellerPublicProfile({
                   {followBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : followed ? <UserCheck className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
                   {followed ? 'Siguiendo' : 'Seguir vendedor'}
                 </button>}
-                {followMessage && <p className="mt-2 text-[8px] leading-4 text-amber-200">{followMessage}</p>}
+                {followMessage && <p role="status" aria-live="polite" aria-atomic="true" className="mt-2 text-[8px] leading-4 text-amber-200">{followMessage}</p>}
               </div>
             </div>
 
