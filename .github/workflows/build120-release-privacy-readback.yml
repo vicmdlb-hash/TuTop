@@ -1,0 +1,32 @@
+name: Build120 release privacy readback — no mutation
+on:
+  push:
+    branches: [ops/build120-release-privacy-readback]
+permissions:
+  contents: read
+jobs:
+  readback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Static privacy/no-mutation guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "ops/build120-release-privacy-readback"
+          ! grep -Eq "entries:write|UpdateConfig|method:[[:space:]]*['\"](PATCH|PUT|DELETE)['\"]|firebase deploy" scripts/build120-release-privacy-readback.mjs
+          grep -Fq "fields=entries(timestamp),nextPageToken" scripts/build120-release-privacy-readback.mjs
+      - name: Build120 AI/Logging privacy readback
+        run: node scripts/build120-release-privacy-readback.mjs
+      - name: Prove no APK/AAB/deploy
+        run: echo "PASS read-only privacy metadata; no deploy/APK/AAB"
