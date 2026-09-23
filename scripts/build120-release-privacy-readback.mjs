@@ -36,7 +36,7 @@ const logResponse=await fetch('https://logging.googleapis.com/v2/entries:list?fi
 });
 const logText=await logResponse.text();let logBody={};
 try{logBody=logText?JSON.parse(logText):{};}catch{}
-const entryCount=logResponse.ok&&Array.isArray(logBody.entries)?logBody.entries.length:null;
+const entryCount=logResponse.ok ? (Array.isArray(logBody.entries) ? logBody.entries.length : 0) : null;
 
 const telemetryPresent=Boolean(config?.ok&&Object.prototype.hasOwnProperty.call(config.body||{},'telemetryConfig'));
 const telemetry=config?.ok?(config.body.telemetryConfig||{}):{};
