@@ -11,7 +11,7 @@
 </head>
 <body>
   <h1>Privacidad de TuTop — borrador beta</h1>
-  <p class="note"><strong>No es una política legal aprobada para publicación.</strong> Resume la superficie técnica de la línea sucesora post-build116. build116 sigue siendo la autoridad física Device A y la línea sucesora continúa DRAFT / NOT MERGED; la política final debe revisarse contra la candidata exacta que eventualmente se autorice para release.</p>
+  <p class="note"><strong>No es una política legal aprobada para publicación.</strong> Este borrador técnico está reconciliado con Build120 / PR #107 / SHA 554f4ef6d0429b0059738d8cd6e1b6e4890bda91. Build120 no está aprobada para release y conserva fallos físicos abiertos en autenticación/verificación, Topi real y activación de notificaciones; la política final debe revisarse jurídicamente y contra la candidata exacta que eventualmente se autorice para Play.</p>
 
   <h2>Cuenta e identidad</h2>
   <p>TuTop usa Firebase Authentication. La candidata actual trabaja con correo real y estado de verificación de correo. El flujo de recuperación legacy puede partir de un alias telefónico existente y la Clave TuTop para conservar el mismo UID; ese teléfono sigue siendo opcional/no verificado y TuTop no lo presenta como verificado por SMS.</p>
@@ -20,30 +20,40 @@
   <p>Según la superficie técnica revisada, TuTop puede manejar datos de perfil y universidad/campus; publicaciones y fotografías; chats y mensajes; ofertas, reservas y transacciones; favoritos, búsquedas guardadas, reseñas y reportes; preferencias de notificaciones; tokens de dispositivo para push; solicitudes de eliminación; y evidencia de verificación cuando el usuario usa ese flujo.</p>
 
   <h2>Ubicación</h2>
-  <p>Nearby puede solicitar ubicación aproximada bajo demanda. La configuración nativa revisada usa ubicación coarse y no exige ubicación precisa ni ubicación en segundo plano para este flujo.</p>
+  <p>Nearby puede solicitar ubicación aproximada bajo demanda. Build120 declara ubicación coarse y rechaza ubicación precisa y ubicación en segundo plano para este flujo. La ubicación de una publicación requiere opt-in explícito.</p>
 
   <h2>Topi / Firebase AI</h2>
-  <p>Cuando se usa Topi con IA remota habilitada, una pregunta del usuario se sanea y limita antes de enviarse a Firebase AI Logic. La respuesta y el modelo regresan al cliente. El módulo local de diagnóstico revisado no conserva prompts, tokens, UID, teléfonos ni coordenadas.</p>
+  <p>Cuando se usa Topi con IA remota habilitada, una pregunta del usuario se sanea y limita antes de enviarse a Firebase AI Logic 17.17.0. La respuesta y el modelo regresan al cliente. La declaración final de privacidad/Data Safety debe considerar además los metadatos y datos que procese el SDK/proveedor y el estado efectivo de AI monitoring/logging.</p>
+
+  <h2>Voz y micrófono</h2>
+  <p>Topi Voice solicita RECORD_AUDIO bajo demanda y usa Android SpeechRecognizer. TuTop no persiste audio crudo en su capa revisada; el recognizer está configurado con preferencia offline desactivada, por lo que la política final debe contemplar posible procesamiento por el servicio de reconocimiento disponible en el dispositivo.</p>
 
   <h2>Notificaciones</h2>
-  <p>La candidata incluye soporte de Firebase Cloud Messaging y preferencias de notificación. El dispositivo puede registrar o desactivar un token push. La aceptación física extremo a extremo de FCM continúa pendiente y no debe confundirse con validación de código.</p>
+  <p>La candidata incluye Firebase Cloud Messaging y preferencias de notificación. El dispositivo puede registrar o desactivar un token push. La aceptación física extremo a extremo de FCM continúa pendiente y no debe confundirse con validación de código.</p>
 
   <h2>Fotos y video</h2>
-  <p>El flujo de fotos puede usar Camera/Photo Picker y lectura local de archivos. El código de video/Firebase Storage existe detrás de feature flags, pero Storage/video permanece bloqueado en la candidata actual y no se declara aquí como una superficie activa de producción.</p>
+  <p>El flujo de fotos puede usar Camera/Photo Picker y lectura local de archivos. Build120 no declara permiso CAMERA ni permisos legacy de almacenamiento para este flujo. El código de video/Firebase Storage permanece bloqueado por los gates actuales.</p>
 
   <h2>Eliminación de cuenta</h2>
-  <p>Desde <strong>Perfil → Notificaciones y privacidad V2 → Eliminar cuenta y datos</strong> una cuenta autenticada puede registrar una solicitud de eliminación. La ejecución destructiva no se dispara automáticamente desde la app: existe un proceso controlado que separa datos eliminables, contenido que debe retirarse y evidencia operativa que podría requerir retención.</p>
-  <p><a href="/delete-account.html">Ver información técnica sobre eliminación de cuenta</a>.</p>
+  <p>Desde <strong>Perfil → Notificaciones y privacidad V2 → Eliminar cuenta y datos</strong> una cuenta autenticada puede registrar una solicitud de eliminación. Candidate120 también incluye un flujo web autenticado propio para que una cuenta existente pueda iniciar o consultar esa solicitud sin abrir ni reinstalar la app.</p>
+  <p>El flujo web usa la misma identidad Firebase de TuTop, deriva el UID de la sesión autenticada y sólo puede crear o consultar la solicitud del propio usuario. El navegador no ejecuta la eliminación destructiva ni puede marcar una solicitud como completada.</p>
+  <p><a href="/delete-account.html">Solicitar o consultar la eliminación de una cuenta TuTop desde la web</a>.</p>
+  <p><strong>Estado de release:</strong> el flujo externo está implementado y validado por build en PR #112, pero Firebase Hosting todavía no se ha desplegado para esta candidata. Por eso la disponibilidad pública de esa URL sigue pendiente de un deploy autorizado y una prueba externa posterior.</p>
+
+  <h2>Consultas de privacidad</h2>
+  <p>TuTop todavía no ha establecido un canal público final para consultas generales de privacidad. Antes de una publicación en Google Play deberá existir un mecanismo público aprobado y coherente con la identidad final del desarrollador. Este borrador no publica automáticamente un correo personal ni la dirección <code>noreply</code> de Firebase como contacto.</p>
 
   <h2>Retención y revisión legal</h2>
   <p>Los plazos, bases jurídicas, excepciones de retención y aprobación final siguen pendientes de revisión legal. Este borrador no inventa esos elementos ni sustituye la declaración final de Data Safety de Google Play.</p>
 
-  <h2>Infraestructura observada</h2>
-  <p>En la superficie Android revisada aparecen Firebase Authentication/Firestore, Firebase AI Logic, Firebase App Check, Firebase Cloud Messaging y componentes Capacitor para Android, ubicación, cámara y filesystem.</p>
+  <h2>Elementos legales pendientes antes de publicación</h2>
+  <p>Este borrador todavía no identifica de forma final la <strong>identidad y domicilio jurídico del responsable</strong>, ni designa a la persona o departamento que tramitará derechos ARCO. Tampoco fija un canal público final para esas solicitudes o consultas generales de privacidad.</p>
+  <p>La revisión legal deberá cerrar, como mínimo, los datos personales y sensibles tratados, las finalidades correspondientes, los medios para limitar uso o divulgación, los mecanismos y procedimientos ARCO, el procedimiento para comunicar cambios al aviso, y las reglas aplicables de bloqueo, supresión, transferencias y excepciones de cancelación.</p>
+  <p>Los plazos y excepciones no se deducen desde ingeniería. Cuando exista una regla legal específica, deberá vincularse únicamente al dato y supuesto jurídico que realmente corresponda.</p>
 
   <h2>Estado de publicación</h2>
-  <p>TuTop continúa en beta controlada. Play Store, producción, billing, Storage/video y merge permanecen bloqueados por los gates actuales. Una política pública final debe ser coherente con el comportamiento real de la candidata que se publique.</p>
+  <p>TuTop continúa en beta controlada. Play Store, producción, billing, signing/AAB, Storage/video y merge permanecen bloqueados por los gates actuales.</p>
 
-  <p>Última revisión técnica del borrador: 19 de septiembre de 2026.</p>
+  <p>Última revisión técnica del borrador: 23 de septiembre de 2026.</p>
 </body>
 </html>

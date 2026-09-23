@@ -18,6 +18,24 @@
     ],
     "headers": [
       {
+        "source": "/tutop-web-config.json",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          }
+        ]
+      },
+      {
+        "source": "/delete-account*",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          }
+        ]
+      },
+      {
         "source": "/admin/**",
         "headers": [
           {

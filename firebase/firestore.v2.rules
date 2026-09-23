@@ -169,6 +169,22 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /auth_status/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasOnly(['uid','email_verified','auth_mode','last_client_code','last_seen_at'])
+        && request.resource.data.uid == uid
+        && request.resource.data.email_verified is bool
+        && (
+          (('email_verified' in request.auth.token) && request.resource.data.email_verified == request.auth.token.email_verified)
+          || (!('email_verified' in request.auth.token) && request.resource.data.email_verified == false)
+        )
+        && request.resource.data.auth_mode == 'email_password_verified_beta'
+        && request.resource.data.last_client_code in ['EMAIL_VERIFICATION_PENDING','EMAIL_VERIFIED','PROFILE_MISSING','VERIFICATION_EMAIL_SENT','VERIFICATION_EMAIL_SEND_FAILED','VERIFICATION_CHECK_FAILED','AUTH_SYNC_FAILED']
+        && fresh(request.resource.data.last_seen_at);
+      allow delete: if false;
+    }
+
     match /wallets/{uid} {
       allow read: if owner(uid) || isAdmin();
       allow create: if owner(uid)
@@ -265,6 +281,20 @@ service cloud.firestore {
         && fresh(request.resource.data.created_at);
       allow delete: if signedIn() && notSuspended() && resource.data.uid == request.auth.uid;
       allow update: if false;
+    }
+
+    match /seller_follows/{followId} {
+      allow read: if signedIn() && (resource.data.follower_uid == request.auth.uid || isAdmin());
+      allow create: if signedIn() && notSuspended()
+        && request.resource.data.keys().hasOnly(['follower_uid','seller_id','created_at','updated_at'])
+        && request.resource.data.follower_uid == request.auth.uid
+        && request.resource.data.seller_id is string
+        && request.resource.data.seller_id != request.auth.uid
+        && followId == request.auth.uid + '_' + request.resource.data.seller_id
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.seller_id))
+        && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.follower_uid == request.auth.uid;
     }
 
     match /chats/{chatId} {

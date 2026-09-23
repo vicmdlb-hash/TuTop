@@ -1,5 +1,7 @@
 # TuTop 0.9 — Android Physical QA
 
+> **Build120 exact candidate:** `0.9.2-beta.10` · source `554f4ef6d0429b0059738d8cd6e1b6e4890bda91` · artifact `10622421310` · APK SHA-256 `9855a2e51587f3115f9c270c28d61b1f5c4aa4db7813dacc16b3fe700d458cc0`. Todos los resultados empiezan en PENDING; CI no sustituye observación física.
+
 Este protocolo valida comportamiento físico. Los gates CI, emulator y Firebase staging **no sustituyen** estas pruebas.
 
 ## Evidencia obligatoria por dispositivo
@@ -11,10 +13,10 @@ El reporte QA nunca debe incluir contraseñas, OTP, `idToken`, `refreshToken`, t
 ## P0 — debe pasar antes de continuar
 
 1. Instalación limpia abre sin crash ni pantalla técnica.
-2. Crear cuenta con teléfono + Clave TuTop; seleccionar institución y campus.
+2. Crear cuenta con correo + Clave TuTop; verificar el correo y seleccionar institución y campus.
 3. Cerrar/reabrir: sesión e identidad siguen disponibles.
 4. Publicar listing campus con hasta 4 fotos.
-5. Publicar listing nacional: sin Paquetería debe bloquear; con Paquetería debe permitir continuar.
+5. Publicar listing `Todo México`: sin Paquetería debe permitir continuar cuando exista otra forma válida de entrega; Paquetería es opcional, no obligatoria.
 6. Moderar/aprobar listing en staging y comprobar que otra cuenta lo descubre.
 7. Segunda cuenta: favorito → contacto → chat → oferta → contraoferta → aceptación.
 8. Reserva → Punto TuTop → confirmación bilateral → listing sold_out → review/reputación.
@@ -65,7 +67,7 @@ Para un futuro enforcement, completar una copia privada del esquema `docs/APP_CH
 ## Cuenta y privacidad
 
 34. Cambiar Clave TuTop con sesión válida y comprobar login con nueva clave.
-35. La app no debe fingir recuperación de clave olvidada por SMS/email todavía.
+35. En Build120 no se espera todavía el flujo post-candidate de recuperación por email. No debe fingir recuperación por SMS; la mejora de password-reset posterior a Build120 no forma parte de esta APK.
 36. Solicitar eliminación y comprobar estado de solicitud; no ejecutar borrado destructivo en cuenta real de QA sin autorización explícita.
 
 ## Criterio de salida de 0.9 Physical QA

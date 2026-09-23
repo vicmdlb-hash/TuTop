@@ -8,6 +8,7 @@ import {
   type PermissionState091,
 } from '../lib/permissionCenter091';
 import { nativePushRegistrationHealth, type PushRegistrationReason } from '../services/nativeFirebaseSecurity';
+import NotificationPreferenceSettings from './NotificationPreferenceSettings';
 
 type PermissionCard = {
   id: CapabilityPermission;
@@ -181,6 +182,7 @@ export default function PermissionSettings() {
         {note && <div className="mt-3 rounded-xl border border-violet-300/10 bg-violet-500/[0.05] px-3 py-2 text-[9px] leading-4 text-violet-100/80">{note}</div>}
         <button type="button" onClick={() => void refresh()} className="mt-3 w-full rounded-xl border border-white/[0.06] bg-white/[0.03] py-2.5 text-[9px] font-black text-slate-300">Actualizar estados</button>
       </div>
+      <NotificationPreferenceSettings />
     </section>
   );
 }

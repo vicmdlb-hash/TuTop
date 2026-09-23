@@ -1,0 +1,80 @@
+name: Candidate120 Hosting prepare — no deploy
+
+on:
+  push:
+    branches: [release/candidate120-web-compliance-preflight]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type PREPARE_CANDIDATE120_HOSTING_NO_DEPLOY
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-candidate120-hosting-prepare
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    if: github.ref_name == 'release/candidate120-web-compliance-preflight'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Exact Build120 release-web guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            test "${{ inputs.confirm }}" = "PREPARE_CANDIDATE120_HOSTING_NO_DEPLOY"
+          fi
+          test "$GITHUB_REF_NAME" = "release/candidate120-web-compliance-preflight"
+          test "$(git rev-parse 554f4ef6d0429b0059738d8cd6e1b6e4890bda91)" = "554f4ef6d0429b0059738d8cd6e1b6e4890bda91"
+          git merge-base --is-ancestor 554f4ef6d0429b0059738d8cd6e1b6e4890bda91 "$GITHUB_SHA"
+      - run: npm ci
+      - name: Build120 authenticated deletion/privacy contract
+        run: node scripts/candidate120-web-deletion-contract-tests.mjs
+      - name: Read existing staging Firebase web config — no mutation
+        run: node scripts/read-existing-staging-build-config.mjs
+      - name: Prepare ignored runtime Hosting config
+        run: node scripts/prepare-candidate120-hosting-assets.mjs
+      - name: Production web build
+        run: npm run build
+      - name: Verify exact Hosting payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/privacy.html
+          test -s dist/delete-account.html
+          test -s dist/delete-account.js
+          test -s dist/tutop-web-config.json
+          node -e "const c=require('./dist/tutop-web-config.json'); if(c.projectId!=='tutop-beta-vicmdlb-1356585881'||!c.apiKey||!c.appId) process.exit(2)"
+          grep -q 'Solicitar eliminación de mi cuenta TuTop' dist/delete-account.html
+          grep -q 'account_deletion_requests' dist/delete-account.js
+      - name: Full source regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Prove no deploy and no APK/AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS Build120 Hosting payload prepared only; no deploy/APK/AAB"
+      - name: Remove temporary Firebase config
+        if: always()
+        run: rm -f .tutop-staging-web-config.json public/tutop-web-config.json

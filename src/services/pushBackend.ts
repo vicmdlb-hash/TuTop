@@ -1,3 +1,4 @@
+import { appNotificationKindFromOutbox } from '../lib/notificationProjection';
 import type { AppNotification } from '../types';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
@@ -71,7 +72,7 @@ export const pushBackend = {
     const read = new Set(receipts.filter((doc) => Boolean(doc.data?.read_at)).map((doc) => String(doc.data.notification_id || '')));
     return docs.map((doc) => ({
       id: doc.id,
-      kind: doc.data.kind === 'saved_search_match' ? 'search' : doc.data.kind === 'new_message' ? 'message' : doc.data.kind === 'safety_alert' ? 'safety' : 'system',
+      kind: appNotificationKindFromOutbox(doc.data.kind),
       title: String(doc.data.title || 'TuTop'),
       body: String(doc.data.body || ''),
       created_at: String(doc.data.created_at || new Date().toISOString()),
@@ -79,6 +80,7 @@ export const pushBackend = {
       chat_id: doc.data.chat_id ? String(doc.data.chat_id) : undefined,
       product_id: doc.data.listing_id ? String(doc.data.listing_id) : undefined,
       transaction_id: doc.data.transaction_id ? String(doc.data.transaction_id) : undefined,
+      offer_id: doc.data.offer_id ? String(doc.data.offer_id) : undefined,
       saved_search_id: doc.data.saved_search_id ? String(doc.data.saved_search_id) : undefined,
     }));
   },

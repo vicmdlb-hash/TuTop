@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BadgeCheck, PackageCheck, ShieldCheck, Store } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Loader2, PackageCheck, ShieldCheck, Store, UserCheck, UserPlus } from 'lucide-react';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
 import {
   trustedReputationAgeHours,
@@ -7,6 +7,7 @@ import {
   trustedReputationIsFresh,
   type TrustedReputationSnapshot,
 } from '../services/trustedReputationBackend';
+import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
 import { useAppStore } from '../store/useAppStore';
 
 export default function SellerPublicProfile({
@@ -22,10 +23,14 @@ export default function SellerPublicProfile({
   verified?: boolean;
   onClose: () => void;
 }) {
-  const { products, reviews, chats, openProduct } = useAppStore();
+  const { products, reviews, chats, openProduct, user } = useAppStore();
   const visibleEvidence = sellerReputationEvidence(sellerId, reviews, chats);
   const [trusted, setTrusted] = useState<TrustedReputationSnapshot | null>(null);
   const [trustedLoaded, setTrustedLoaded] = useState(false);
+  const [followed, setFollowed] = useState(false);
+  const [followLoaded, setFollowLoaded] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
+  const [followMessage, setFollowMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -43,6 +48,46 @@ export default function SellerPublicProfile({
       });
     return () => { active = false; };
   }, [sellerId]);
+
+  const canFollow = nationalSchemaEnabled() && Boolean(user.id) && user.id !== sellerId;
+
+  useEffect(() => {
+    let active = true;
+    setFollowMessage(null);
+    if (!canFollow) {
+      setFollowed(false);
+      setFollowLoaded(true);
+      return () => { active = false; };
+    }
+    setFollowLoaded(false);
+    void nationalBackend.getSellerFollowState(sellerId)
+      .then((value) => {
+        if (!active) return;
+        setFollowed(value);
+        setFollowLoaded(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setFollowed(false);
+        setFollowLoaded(true);
+        setFollowMessage('No pudimos comprobar si sigues a este vendedor.');
+      });
+    return () => { active = false; };
+  }, [sellerId, canFollow]);
+
+  const toggleFollow = async () => {
+    if (!canFollow || followBusy) return;
+    try {
+      setFollowBusy(true);
+      setFollowMessage(null);
+      const next = await nationalBackend.setSellerFollow(sellerId, !followed);
+      setFollowed(next);
+    } catch {
+      setFollowMessage('No pudimos cambiar el seguimiento. Revisa tu conexión e inténtalo otra vez.');
+    } finally {
+      setFollowBusy(false);
+    }
+  };
 
   const activeListings = products
     .filter((product) => product.vendedor_id === sellerId && product.estado === 'Activo')
@@ -86,6 +131,11 @@ export default function SellerPublicProfile({
                 <div className="flex items-center gap-1.5"><h2 className="truncate text-lg font-black">{sellerName}</h2>{verified && <BadgeCheck className="h-5 w-5 text-sky-400" fill="currentColor" />}</div>
                 <p className="mt-0.5 text-[11px] text-slate-500">Facultad de {faculty}</p>
                 <div className="mt-2 flex flex-wrap gap-2">{verified && <span className="verified-pill"><ShieldCheck className="h-3.5 w-3.5" />Identidad verificada</span>}<span className="inline-flex items-center gap-1 rounded-full bg-white/[0.04] px-2 py-1 text-[9px] font-bold text-slate-400"><Store className="h-3 w-3" />{activeListings.length} {activeListings.length === 1 ? 'publicación activa' : 'publicaciones activas'}</span></div>
+                {canFollow && <button type="button" disabled={!followLoaded || followBusy} onClick={() => void toggleFollow()} aria-pressed={followed} className={`mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[9px] font-black transition disabled:opacity-50 ${followed ? 'bg-violet-500/15 text-violet-200' : 'bg-white/[0.05] text-slate-300'}`}>
+                  {followBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : followed ? <UserCheck className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
+                  {followed ? 'Siguiendo' : 'Seguir vendedor'}
+                </button>}
+                {followMessage && <p role="status" aria-live="polite" aria-atomic="true" className="mt-2 text-[8px] leading-4 text-amber-200">{followMessage}</p>}
               </div>
             </div>
 

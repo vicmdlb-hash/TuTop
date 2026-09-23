@@ -19,6 +19,9 @@ export default function AdminDashboard() {
   const [bids, setBids] = useState<AdminDoc[]>([]);
   const [allReviews, setAllReviews] = useState<AdminDoc[]>([]);
   const [moderationStatuses, setModerationStatuses] = useState<AdminDoc[]>([]);
+  const [privateUsers, setPrivateUsers] = useState<AdminDoc[]>([]);
+  const [authStatuses, setAuthStatuses] = useState<AdminDoc[]>([]);
+  const [publicVerifications, setPublicVerifications] = useState<AdminDoc[]>([]);
 
   useEffect(() => {
     document.title = 'MiTuTop Admin';
@@ -32,7 +35,7 @@ export default function AdminDashboard() {
     if (!isAdmin) { setLoading(false); return; }
     try {
       setLoading(true); setError(null);
-      const [userDocs, reportDocs, verificationDocs, walletDocs, bidDocs, reviewDocs, statusDocs] = await Promise.all([
+      const [userDocs, reportDocs, verificationDocs, walletDocs, bidDocs, reviewDocs, statusDocs, privateDocs, authDocs, publicVerificationDocs] = await Promise.all([
         onlineBackend.listAdminCollection('users', 300),
         onlineBackend.listAdminCollection('reports', 300),
         onlineBackend.listAdminCollection('verificationRequests', 300),
@@ -40,6 +43,9 @@ export default function AdminDashboard() {
         onlineBackend.listAdminCollection('bids', 500),
         onlineBackend.listAdminCollection('reviews', 500),
         onlineBackend.listAdminCollection('moderationStatus', 300),
+        onlineBackend.listAdminCollection('user_private', 300),
+        onlineBackend.listAdminCollection('auth_status', 300),
+        onlineBackend.listAdminCollection('publicVerifications', 300),
       ]);
       setUsers(userDocs as AdminDoc[]);
       setReports(reportDocs as AdminDoc[]);
@@ -48,6 +54,9 @@ export default function AdminDashboard() {
       setBids(bidDocs as AdminDoc[]);
       setAllReviews(reviewDocs as AdminDoc[]);
       setModerationStatuses(statusDocs as AdminDoc[]);
+      setPrivateUsers(privateDocs as AdminDoc[]);
+      setAuthStatuses(authDocs as AdminDoc[]);
+      setPublicVerifications(publicVerificationDocs as AdminDoc[]);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
     } finally { setLoading(false); }
@@ -92,7 +101,7 @@ export default function AdminDashboard() {
           <div className="p-4 sm:p-7">
             {section === 'overview' && <Overview stats={stats} products={products} chats={chats} user={user} notificationsCount={notifications.length} usersCount={users.length} reportsCount={activeReports.length} />}
             {section === 'products' && <ProductsSection products={filteredProducts} query={query} setQuery={setQuery} />}
-            {section === 'users' && <UsersSection users={users} wallets={wallets} reviews={allReviews} statuses={moderationStatuses} onRefresh={refresh} />}
+            {section === 'users' && <UsersSection users={users} wallets={wallets} reviews={allReviews} statuses={moderationStatuses} privateUsers={privateUsers} authStatuses={authStatuses} verifications={verifications} publicVerifications={publicVerifications} onRefresh={refresh} />}
             {section === 'moderation' && <ModerationSection reports={reports} verifications={verifications} onRefresh={refresh} />}
             {section === 'system' && <SystemSection userId={user.id} bids={bids.length} loading={loading} />}
           </div>
@@ -117,14 +126,50 @@ function Overview({ stats, products, chats, user, notificationsCount, usersCount
 
 function ProductsSection({ products, query, setQuery }: { products: ReturnType<typeof useAppStore.getState>['products']; query: string; setQuery: (value:string)=>void }) { return <><PageTitle eyebrow="Marketplace" title="Productos" subtitle="Publicaciones sincronizadas desde Cloud Firestore."/><div className="mt-5 flex items-center gap-2 rounded-2xl border border-white/[0.07] bg-[#0b111c] px-3"><Search className="h-4 w-4 text-slate-600"/><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Buscar título, vendedor o categoría" className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-700"/></div><div className="mt-4 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b111c]"><div className="divide-y divide-white/[0.05]">{products.length ? products.map((product)=><div key={product.id} className="grid grid-cols-[54px_1fr_auto] gap-3 p-3.5 sm:grid-cols-[54px_1fr_130px_110px] sm:items-center"><img src={product.imagen_url} alt="" className="h-[54px] w-[54px] rounded-xl object-cover"/><div className="min-w-0"><p className="truncate text-sm font-bold">{product.titulo}</p><p className="mt-1 truncate text-xs text-slate-600">{product.vendedor_nombre} · {product.categoria}</p></div><div className="hidden text-sm font-black text-emerald-300 sm:block">{money(product.precio_mxn)}</div><StatusPill value={product.estado}/></div>) : <EmptyText text="Firestore aún no tiene productos."/>}</div></div></>; }
 
-function UsersSection({ users, wallets, reviews, statuses, onRefresh }: { users: AdminDoc[]; wallets: AdminDoc[]; reviews: AdminDoc[]; statuses: AdminDoc[]; onRefresh: ()=>Promise<void> }) {
+function UsersSection({ users, wallets, reviews, statuses, privateUsers, authStatuses, verifications, publicVerifications, onRefresh }: { users: AdminDoc[]; wallets: AdminDoc[]; reviews: AdminDoc[]; statuses: AdminDoc[]; privateUsers: AdminDoc[]; authStatuses: AdminDoc[]; verifications: AdminDoc[]; publicVerifications: AdminDoc[]; onRefresh: ()=>Promise<void> }) {
   const walletMap = new Map(wallets.map((wallet)=>[wallet.id,wallet.data]));
   const statusMap = new Map(statuses.map((status)=>[status.id,status.data]));
+  const privateMap = new Map(privateUsers.map((doc)=>[doc.id,doc.data]));
+  const authMap = new Map(authStatuses.map((doc)=>[doc.id,doc.data]));
+  const verificationMap = new Map(verifications.map((doc)=>[doc.id,doc.data]));
+  const publicVerificationMap = new Map(publicVerifications.map((doc)=>[doc.id,doc.data]));
+  const [accountQuery,setAccountQuery]=useState('');
+  const maskEmail=(value:unknown)=>{const email=String(value||'');const [local,domain]=email.split('@');if(!local||!domain)return 'correo no disponible';return `${local.slice(0,1)}***@${domain}`;};
+  const accountState=(uid:string,data:Record<string,any>)=>{
+    const auth=authMap.get(uid)||{};
+    const student=publicVerificationMap.get(uid)||{};
+    const request=verificationMap.get(uid)||{};
+    const moderation=statusMap.get(uid)||{};
+    if(auth.last_client_code==='PROFILE_MISSING')return {tone:'rose',label:'Perfil faltante',fix:'Reparar perfil Firestore antes de continuar.'};
+    if(auth.last_client_code==='VERIFICATION_EMAIL_SEND_FAILED')return {tone:'rose',label:'Falló envío de verificación',fix:'Reintentar desde la app; si persiste, revisar conectividad y el servicio de envío de Firebase Auth.'};
+    if(auth.last_client_code==='VERIFICATION_CHECK_FAILED')return {tone:'amber',label:'Falló comprobación',fix:'La cuenta existe, pero la app no pudo consultar el estado. Reintentar “Ya verifiqué · comprobar”.'};
+    if(auth.last_client_code==='AUTH_SYNC_FAILED')return {tone:'amber',label:'Sincronización Auth falló',fix:'Reabrir sesión y volver a sincronizar antes de modificar la cuenta.'};
+    if(auth.last_client_code==='VERIFICATION_EMAIL_SENT')return {tone:'amber',label:'Correo reenviado',fix:'Abrir el correo más reciente y después volver a comprobar en TuTop.'};
+    if(auth.email_verified===false)return {tone:'amber',label:'Correo pendiente',fix:'Abrir el enlace más reciente y volver a comprobar; la verificación estudiantil es un proceso aparte.'};
+    if(auth.email_verified!==true)return {tone:'slate',label:'Auth sin telemetría',fix:'La cuenta debe abrir una versión con auth_status para confirmar el claim de Firebase.'};
+    if(!data.institution_id||!data.campus_id)return {tone:'amber',label:'Universidad incompleta',fix:'Completar universidad y campus sobre la misma UID.'};
+    if(moderation.suspended===true)return {tone:'rose',label:'Suspendida',fix:'Revisar moderación antes de reactivar.'};
+    if(request.status==='pending')return {tone:'amber',label:'Credencial pendiente',fix:'Revisar solicitud de verificación estudiantil.'};
+    if(student.approved===true)return {tone:'emerald',label:'Lista · verificada',fix:'Sin bloqueo detectado en identidad/perfil.'};
+    return {tone:'emerald',label:'Lista · correo verificado',fix:'Puede usar marketplace; verificación estudiantil es independiente.'};
+  };
+  const visibleUsers=users.filter((doc)=>{
+    const q=accountQuery.trim().toLowerCase(); if(!q)return true;
+    const privateDoc=privateMap.get(doc.id)||{};
+    return [doc.id,doc.data.nombre,doc.data.facultad,doc.data.institution_name,doc.data.campus_name,privateDoc.institutional_email].some((value)=>String(value||'').toLowerCase().includes(q));
+  });
   const cutoff = Date.now() - 30 * 86400000;
   const strikesFor = (uid:string) => reviews.filter((review)=>review.data.evaluado_id===uid && review.data.calificacion==='negative' && Date.parse(String(review.data.fecha||0))>=cutoff).length;
   const [busy,setBusy]=useState<string|null>(null);
   const toggle = async(uid:string,suspend:boolean,strikes:number)=>{try{setBusy(uid); const reason=suspend?`Revisión administrativa: ${strikes} reporte(s) negativo(s) en 30 días.`:''; await onlineBackend.adminSetSuspension(uid,suspend,reason); await onRefresh();}finally{setBusy(null)}};
-  return <><PageTitle eyebrow="Comunidad" title="Usuarios" subtitle="Perfiles reales. 3 negativos en 30 días se marcan para revisión; el administrador puede suspender sin Cloud Functions."/><div className="mt-5 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b111c]"><div className="divide-y divide-white/[0.05]">{users.length ? users.map((doc)=>{const wallet=walletMap.get(doc.id)||{}; const strikes=strikesFor(doc.id); const suspended=statusMap.get(doc.id)?.suspended===true; return <div key={doc.id} className="flex flex-wrap items-center gap-3 p-4"><div className="grid h-10 w-10 place-items-center rounded-xl bg-violet-500/10 text-sm font-black text-violet-300">{String(doc.data.nombre||'E').slice(0,2).toUpperCase()}</div><div className="min-w-[180px] flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-bold">{doc.data.nombre||'Estudiante'}</p>{suspended&&<span className="rounded-full bg-rose-500/10 px-2 py-1 text-[9px] font-black text-rose-300">SUSPENDIDO</span>}{strikes>=3&&!suspended&&<span className="rounded-full bg-amber-500/10 px-2 py-1 text-[9px] font-black text-amber-300">REVISAR</span>}</div><p className="text-xs text-slate-600">{doc.data.facultad||'Sin facultad'} · UID {doc.id.slice(0,8)}…</p><p className={`mt-1 text-[10px] font-bold ${strikes>=3?'text-amber-300':'text-slate-600'}`}>{strikes} negativos · últimos 30 días</p></div><div className="text-right"><p className="text-xs font-black text-amber-300">{wallet.balance??0} UC</p><p className="text-[10px] text-slate-600">{wallet.prestige??0} PP</p></div><button disabled={busy===doc.id} onClick={()=>void toggle(doc.id,!suspended,strikes)} className={`rounded-xl px-3 py-2 text-[10px] font-black ${suspended?'bg-emerald-500/10 text-emerald-300':'bg-rose-500/10 text-rose-300'}`}>{busy===doc.id?'…':suspended?'Reactivar':'Suspender'}</button></div>}) : <EmptyText text="Aún no hay usuarios registrados."/>}</div></div></>;
+  return <><PageTitle eyebrow="Comunidad" title="Usuarios" subtitle="Estado de identidad, perfil y confianza cruzado con datos reales disponibles para administración."/>
+  <div className="mt-5 flex items-center gap-2 rounded-2xl border border-white/[0.07] bg-[#0b111c] px-3"><Search className="h-4 w-4 text-slate-600"/><input value={accountQuery} onChange={(e)=>setAccountQuery(e.target.value)} placeholder="Buscar nombre, correo, UID, universidad o campus" className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-700"/></div>
+  <p className="mt-2 text-[10px] leading-5 text-slate-600">El correo se muestra enmascarado. “Auth sin telemetría” significa UNKNOWN, no cuenta inválida. MiTuTop Admin nunca ve contraseñas, tokens ni enlaces de verificación.</p>
+  <div className="mt-4 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0b111c]"><div className="divide-y divide-white/[0.05]">{visibleUsers.length ? visibleUsers.map((doc)=>{const wallet=walletMap.get(doc.id)||{}; const strikes=strikesFor(doc.id); const suspended=statusMap.get(doc.id)?.suspended===true; const privateDoc=privateMap.get(doc.id)||{}; const auth=authMap.get(doc.id)||{}; const state=accountState(doc.id,doc.data); return <div key={doc.id} className="flex flex-wrap items-center gap-3 p-4"><div className="grid h-10 w-10 place-items-center rounded-xl bg-violet-500/10 text-sm font-black text-violet-300">{String(doc.data.nombre||'E').slice(0,2).toUpperCase()}</div><div className="min-w-[180px] flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-bold">{doc.data.nombre||'Estudiante'}</p>{suspended&&<span className="rounded-full bg-rose-500/10 px-2 py-1 text-[9px] font-black text-rose-300">SUSPENDIDO</span>}{strikes>=3&&!suspended&&<span className="rounded-full bg-amber-500/10 px-2 py-1 text-[9px] font-black text-amber-300">REVISAR</span>}</div><p className="text-xs text-slate-600">{doc.data.facultad||'Sin facultad'} · UID {doc.id.slice(0,8)}…</p>
+<p className="mt-1 text-[10px] text-slate-600">{maskEmail(privateDoc.institutional_email)} · {doc.data.institution_name||'universidad pendiente'} / {doc.data.campus_name||'campus pendiente'}</p>
+<div className="mt-1 flex flex-wrap gap-1"><span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${state.tone==='emerald'?'bg-emerald-500/10 text-emerald-300':state.tone==='rose'?'bg-rose-500/10 text-rose-300':state.tone==='amber'?'bg-amber-500/10 text-amber-300':'bg-white/5 text-slate-400'}`}>{state.label}</span>{auth.last_seen_at&&<span className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[9px] text-slate-500">Auth {String(auth.last_client_code||'UNKNOWN')}</span>}{auth.last_seen_at&&<span className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[9px] text-slate-600">último estado {new Date(String(auth.last_seen_at)).toLocaleString('es-MX')}</span>}</div>
+<p className="mt-1 text-[9px] leading-4 text-slate-500">{state.fix}</p>
+<p className={`mt-1 text-[10px] font-bold ${strikes>=3?'text-amber-300':'text-slate-600'}`}>{strikes} negativos · últimos 30 días</p></div><div className="text-right"><p className="text-xs font-black text-amber-300">{wallet.balance??0} UC</p><p className="text-[10px] text-slate-600">{wallet.prestige??0} PP</p></div><button disabled={busy===doc.id} onClick={()=>void toggle(doc.id,!suspended,strikes)} className={`rounded-xl px-3 py-2 text-[10px] font-black ${suspended?'bg-emerald-500/10 text-emerald-300':'bg-rose-500/10 text-rose-300'}`}>{busy===doc.id?'…':suspended?'Reactivar':'Suspender'}</button></div>}) : <EmptyText text="Aún no hay usuarios registrados."/>}</div></div></>;
 }
 
 function ModerationSection({ reports, verifications, onRefresh }: { reports: AdminDoc[]; verifications: AdminDoc[]; onRefresh: ()=>Promise<void> }) {
@@ -135,7 +180,7 @@ function ModerationSection({ reports, verifications, onRefresh }: { reports: Adm
 }
 
 function SystemSection({ userId, bids, loading }: { userId:string; bids:number; loading:boolean }) {
-  const checks = [['Firestore REST','Conectado',true],['Auth número + clave beta','Conectado',true],['Panel admin','Protegido por rules',true],['Fotos','Firestore comprimido',true],['Pujas y Wallet','Transacción + rules',true],['SMS real','Requiere facturación',false],['Cloud Storage','Requiere Blaze',false],['Cloud Functions','Requiere Blaze',false],['APK debug','Workflow GitHub listo',true],['Google Play','No requerido en beta',true]] as const;
+  const checks = [['Firestore REST','Conectado',true],['Auth correo verificado + Clave TuTop','Conectado',true],['Panel admin','Protegido por rules',true],['Fotos','Firestore comprimido',true],['Pujas y Wallet','Transacción + rules',true],['SMS real','Requiere facturación',false],['Cloud Storage','Requiere Blaze',false],['Cloud Functions','Requiere Blaze',false],['APK debug','Workflow GitHub listo',true],['Google Play','No requerido en beta',true]] as const;
   return <><PageTitle eyebrow="Infraestructura" title="Estado del sistema" subtitle="Qué funciona hoy sin inversión y qué queda deliberadamente aplazado."/><div className="mt-6 grid gap-5 xl:grid-cols-[1fr_.8fr]"><Panel title="Checklist técnico" subtitle={loading?'Actualizando…':'Proyecto Firebase conectado'}><div className="divide-y divide-white/[0.05]">{checks.map(([label,value,ok])=><div key={label} className="flex items-center gap-3 py-3"><div className={`grid h-8 w-8 place-items-center rounded-lg ${ok?'bg-emerald-400/10 text-emerald-300':'bg-amber-400/10 text-amber-300'}`}>{ok?<CheckCircle2 className="h-4 w-4"/>:<AlertTriangle className="h-4 w-4"/>}</div><span className="flex-1 text-sm font-semibold">{label}</span><span className={`text-xs font-semibold ${ok?'text-emerald-300':'text-amber-300'}`}>{value}</span></div>)}</div></Panel><div className="space-y-5"><Panel title="Administrador" subtitle="UID actual"><div className="rounded-xl bg-[#070b12] p-3 font-mono text-xs text-slate-400 break-all">{userId}</div></Panel><Panel title="Subasta" subtitle="Bids visibles por admin"><div className="flex items-center gap-3"><WalletCards className="h-8 w-8 text-amber-300"/><div><strong className="text-2xl">{bids}</strong><p className="text-xs text-slate-600">documentos de puja</p></div></div></Panel></div></div></>;
 }
 

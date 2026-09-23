@@ -1,5 +1,6 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { projectMarketplaceNotifications } from './marketplace-notification-projection-lib.mjs';
+import { notificationPreferenceAllows } from './notification-preference-projection-lib.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
@@ -85,6 +86,14 @@ async function queryRecent(collectionId, timestampField, { parentPath = '' } = {
   return decodeQueryRows(response.data || []);
 }
 
+async function loadNotificationPreferences(uid) {
+  const clean = String(uid || '').trim();
+  if (!clean) return {};
+  const result = await request(`${root}/notification_preferences/${encodeURIComponent(clean)}`, {}, [404]);
+  if (result.status === 404 || !result.data?.fields) return {};
+  return decodeFields(result.data.fields);
+}
+
 async function createOutbox(notification) {
   const { id, source_event_at, ...payload } = notification;
   const at = new Date().toISOString();
@@ -119,13 +128,21 @@ const projected = projectMarketplaceNotifications({
   lookbackMs: lookbackMinutes * 60_000,
 });
 
+const recipientUids = [...new Set(projected.map((item) => String(item.recipient_uid || '')).filter(Boolean))];
+const preferenceEntries = await Promise.all(recipientUids.map(async (uid) => [uid, await loadNotificationPreferences(uid)]));
+const preferencesByUid = new Map(preferenceEntries);
+const eligible = projected.filter((notification) => notificationPreferenceAllows(
+  notification.kind,
+  preferencesByUid.get(String(notification.recipient_uid || '')) || {},
+));
+
 let created = 0;
 let duplicates = 0;
-for (const notification of projected) {
+for (const notification of eligible) {
   if (!apply) { created += 1; continue; }
   const result = await createOutbox(notification);
   if (result.status === 409) duplicates += 1;
   else created += 1;
 }
 
-console.log(`marketplace-notifications: cutoff=${cutoffIso}; projected=${projected.length} ${apply ? `created=${created} duplicates=${duplicates}` : 'dry-run'}; chats=${chats.length} messages=${messages.length} offers=${offers.length} transactions=${transactions.length}.`);
+console.log(`marketplace-notifications: cutoff=${cutoffIso}; projected=${projected.length} eligible=${eligible.length} suppressed_by_preferences=${projected.length - eligible.length} ${apply ? `created=${created} duplicates=${duplicates}` : 'dry-run'}; chats=${chats.length} messages=${messages.length} offers=${offers.length} transactions=${transactions.length}.`);

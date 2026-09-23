@@ -9,7 +9,7 @@ import { completePendingUniversityIdentity } from '../services/v2OnboardingRecov
 import { verifiedEmailBetaAuth, type VerifiedEmailBetaStatus } from '../services/verifiedEmailBetaAuth';
 import { useAppStore } from '../store/useAppStore';
 
-type AuthMode = 'login' | 'register' | 'legacy';
+type AuthMode = 'login' | 'register' | 'legacy' | 'forgot';
 
 function friendlyError(raw: string) {
   if (/EMAIL_NOT_FOUND|INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD/i.test(raw)) return 'Datos de acceso o clave incorrectos.';
@@ -142,6 +142,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
   const passwordScore = password.length >= 12 ? 3 : password.length >= 10 ? 2 : password.length >= 8 ? 1 : 0;
   const campusOptions = useMemo(() => CAMPUSES.filter((campus) => campus.institution_id === institutionId), [institutionId]);
   const institution = INSTITUTIONS.find((item) => item.id === institutionId);
@@ -178,6 +179,21 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
     } catch (submitError) {
       const raw = submitError instanceof Error ? submitError.message : String(submitError);
       setError(raw === 'Escribe tu nombre.' || raw === 'Selecciona universidad y campus.' ? raw : friendlyError(raw));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const requestPasswordReset = async () => {
+    try {
+      setBusy(true);
+      setError(null);
+      setRecoveryMessage(null);
+      await verifiedEmailBetaAuth.requestPasswordReset(email);
+      setRecoveryMessage('Si existe una cuenta TuTop con ese correo, Firebase enviará instrucciones para cambiar la clave. Revisa también Spam/No deseado.');
+    } catch (resetError) {
+      const raw = resetError instanceof Error ? resetError.message : String(resetError);
+      setError(friendlyError(raw));
     } finally {
       setBusy(false);
     }
@@ -227,7 +243,17 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
             <label className="auth-label">Clave TuTop</label><div className="relative"><LockKeyhole className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><input value={password} onChange={(event) => setPassword(event.target.value)} className="auth-input px-10" type={showPassword ? 'text' : 'password'} autoComplete="current-password" onKeyDown={(event) => event.key === 'Enter' && void submit()} /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-3.5 text-slate-600" aria-label={showPassword ? 'Ocultar clave' : 'Mostrar clave'} aria-pressed={showPassword}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>
             {error && <p className="mt-3 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>}
             <button disabled={busy || !validEmail || password.length < 8} onClick={() => void submit()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}Entrar a TuTop</button>
-            <button type="button" onClick={() => { setMode('legacy'); setError(null); }} className="mt-3 w-full text-center text-[10px] font-bold text-slate-500 underline-offset-4 hover:text-slate-300 hover:underline">¿Usabas TuTop antes? Recuperar cuenta anterior</button>
+            <button type="button" onClick={() => { setMode('forgot'); setError(null); setRecoveryMessage(null); }} className="mt-3 w-full text-center text-[10px] font-bold text-violet-300 underline-offset-4 hover:underline">Olvidé mi Clave TuTop</button>
+            <button type="button" onClick={() => { setMode('legacy'); setError(null); setRecoveryMessage(null); }} className="mt-2 w-full text-center text-[10px] font-bold text-slate-500 underline-offset-4 hover:text-slate-300 hover:underline">¿Usabas TuTop antes? Recuperar cuenta anterior</button>
+          </>}
+          {mode === 'forgot' && <>
+            <button type="button" onClick={() => { setMode('login'); setError(null); setRecoveryMessage(null); }} className="mt-4 inline-flex items-center gap-1 text-[10px] font-bold text-slate-500"><ArrowLeft className="h-3.5 w-3.5" />Volver a Entrar</button>
+            <h2 className="mt-4 text-lg font-black">Recupera tu Clave TuTop</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Escribe el correo de tu cuenta. Por privacidad, TuTop muestra la misma respuesta exista o no una cuenta con ese correo.</p>
+            <label className="auth-label">Correo electrónico</label><div className="relative"><Mail className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><input value={email} onChange={(event) => setEmail(event.target.value)} className="auth-input pl-10" inputMode="email" autoComplete="email" placeholder="tu@correo.com" maxLength={180} /></div>
+            {error && <p className="mt-3 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>}
+            {recoveryMessage && <p className="mt-3 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.06] px-3 py-2 text-[10px] leading-5 text-emerald-100">{recoveryMessage}</p>}
+            <button disabled={busy || !validEmail} onClick={() => void requestPasswordReset()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 py-3.5 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Enviar instrucciones</button>
           </>}
           {mode === 'legacy' && <>
             <button type="button" onClick={() => { setMode('login'); setError(null); }} className="mt-4 inline-flex items-center gap-1 text-[10px] font-bold text-slate-500"><ArrowLeft className="h-3.5 w-3.5" />Volver a Entrar</button>
@@ -254,7 +280,10 @@ function EmailVerificationScreen({ status, onVerified, onSignOut }: { status: Ve
       const current = await verifiedEmailBetaAuth.refreshVerificationStatus();
       if (current.emailVerified) { onVerified(); return; }
       setMessage('El correo todavía aparece pendiente. Abre el enlace recibido y vuelve a comprobar.');
-    } catch (error) { setMessage(friendlyError(error instanceof Error ? error.message : String(error))); }
+    } catch (error) {
+      await verifiedEmailBetaAuth.recordDiagnostic('VERIFICATION_CHECK_FAILED').catch(() => false);
+      setMessage(friendlyError(error instanceof Error ? error.message : String(error)));
+    }
     finally { setBusy(false); }
   };
   const resend = async () => {
