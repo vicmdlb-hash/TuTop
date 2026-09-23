@@ -180,7 +180,7 @@ service cloud.firestore {
           || (!('email_verified' in request.auth.token) && request.resource.data.email_verified == false)
         )
         && request.resource.data.auth_mode == 'email_password_verified_beta'
-        && request.resource.data.last_client_code in ['EMAIL_VERIFICATION_PENDING','EMAIL_VERIFIED','PROFILE_MISSING']
+        && request.resource.data.last_client_code in ['EMAIL_VERIFICATION_PENDING','EMAIL_VERIFIED','PROFILE_MISSING','VERIFICATION_EMAIL_SENT','VERIFICATION_EMAIL_SEND_FAILED','VERIFICATION_CHECK_FAILED','AUTH_SYNC_FAILED']
         && fresh(request.resource.data.last_seen_at);
       allow delete: if false;
     }
