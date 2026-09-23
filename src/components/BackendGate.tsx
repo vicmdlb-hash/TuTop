@@ -274,6 +274,39 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
 function EmailVerificationScreen({ status, onVerified, onSignOut }: { status: VerifiedEmailBetaStatus; onVerified: () => void; onSignOut: () => void }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+
+  // Verification happens in the browser/email client. When the user returns to
+  // TuTop, re-check automatically instead of leaving them trapped behind a
+  // manual button. Security Rules remain authoritative; this never bypasses
+  // Firebase emailVerified.
+  useEffect(() => {
+    let cancelled = false;
+    let probing = false;
+    const probe = async () => {
+      if (cancelled || probing || document.visibilityState !== 'visible' || !navigator.onLine) return;
+      probing = true;
+      try {
+        const current = await verifiedEmailBetaAuth.refreshVerificationStatus();
+        if (!cancelled && current.emailVerified) onVerified();
+      } catch {
+        // Manual "comprobar" keeps the visible error path. Background probes
+        // stay quiet so a temporary network failure does not spam the user.
+      } finally {
+        probing = false;
+      }
+    };
+    const visible = () => { if (document.visibilityState === 'visible') void probe(); };
+    window.addEventListener('focus', visible);
+    document.addEventListener('visibilitychange', visible);
+    const timer = window.setInterval(() => { void probe(); }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', visible);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [status.uid, onVerified]);
+
   const check = async () => {
     try {
       setBusy(true); setMessage('');
