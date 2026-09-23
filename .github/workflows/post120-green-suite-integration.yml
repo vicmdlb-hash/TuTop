@@ -55,6 +55,13 @@ jobs:
           node scripts/post120-notification-producer-coverage-tests.mjs
       - name: Device health truth/privacy
         run: node scripts/post120-device-health-panel-tests.mjs
+      - name: Accessibility hardening
+        run: node scripts/post120-accessibility-hardening-tests.mjs
+      - name: Build120 FCM physical-gate hardening
+        run: |
+          node scripts/post120-fcm-single-target-gate-tests.mjs
+          node scripts/post120-fcm-physical-gate-contract-tests.mjs
+          node scripts/physical-qa-evidence-bundle-tests.mjs
       - name: Build120 web deletion contract
         run: node scripts/candidate120-web-deletion-contract-tests.mjs
       - name: Admin account diagnostics + Olympus model
