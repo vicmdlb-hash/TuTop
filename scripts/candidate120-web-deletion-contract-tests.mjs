@@ -46,7 +46,9 @@ const configHeaders=(firebase.hosting?.headers||[]).find(item=>item.source==='/t
 assert(deleteHeaders.some(item=>item.key==='Cache-Control'&&item.value==='no-store'));
 assert(configHeaders.some(item=>item.key==='Cache-Control'&&item.value==='no-store'));
 
-assert.match(privacy,/Build120/);
+assert.match(privacy,/Build120 \/ PR #107 \/ SHA 554f4ef6d0429b0059738d8cd6e1b6e4890bda91/);
+assert.doesNotMatch(privacy,/Build120 \/ PR #100|e93ca0bb237e7fa438df5801fc627f065d9441e6/);
+assert.match(privacy,/fallos físicos abiertos en autenticación\/verificación, Topi real y activación de notificaciones/);
 assert.match(privacy,/No es una política legal aprobada para publicación/);
 assert.match(privacy,/flujo web autenticado/i);
 assert.doesNotMatch(privacy,/[A-Z0-9._%+-]+@gmail\.com/i);
@@ -54,4 +56,5 @@ assert.doesNotMatch(privacy,/[A-Z0-9._%+-]+@gmail\.com/i);
 console.log('PASS Build120 web deletion flow authenticates the existing account and can create only a pending owner request');
 console.log('PASS runtime Firebase web config is generated separately and ignored by git');
 console.log('PASS Hosting prepare workflow is exact-Build120 scoped and cannot deploy');
+console.log('PASS privacy provenance is exact PR107/Build120 SHA and stale Build118 identity is rejected');
 console.log('PASS privacy remains explicitly draft/legal-pending rather than fabricated as approved');
