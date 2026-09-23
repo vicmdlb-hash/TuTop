@@ -13,7 +13,7 @@ assert.match(native, /bounded\(/);
 assert.match(native, /PENDING_PUSH_OWNERSHIP_RESET_KEY/);
 assert.match(native, /reconcilePendingPushOwnershipReset/);
 assert.match(native, /if \(ownership\.pending\) \{[\s\S]*initialization = null;[\s\S]*return;/);
-assert.match(native, /if \(ownership\.pending\) return \{ permission, tokenRegistered: false, ownershipReconciliationPending: true \}/);
+assert.match(native, /if \(ownership\.pending\) \{[\s\S]*tokenRegistered: false,[\s\S]*ownershipReconciliationPending: true,[\s\S]*reason: 'ownership-reconciliation-pending'/);
 assert.match(native, /!serverDeactivated && !tokenDeleted/);
 assert.match(native, /setPendingPushOwnershipReset\(true\)/);
 assert.match(native, /window\.addEventListener\('online'/);
