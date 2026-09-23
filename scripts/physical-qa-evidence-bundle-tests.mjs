@@ -49,7 +49,7 @@ assert(pending.pending_cases >= 10);
 
 const passReport = {
   generated_at: '2026-09-07T02:45:00.000Z',
-  version: '0.9.2-beta.7',
+  version: '0.9.2-beta.10',
   platform: 'android',
   native_runtime: true,
   viewport: { width: 412, height: 915, dpr: 2.6 },
@@ -167,8 +167,8 @@ delete missingCandidate.candidate;
 const missingCandidateResult = validatePhysicalQaEvidence(missingCandidate, now, candidateManifest);
 assert.equal(missingCandidateResult.overall, 'fail');
 
-console.log('PASS Build117 repository manifest is the active exact-runtime Physical QA candidate');
-console.log('PASS evidence validator uses Build117-compatible active_exact_head identity');
+console.log('PASS Build120 repository manifest is the active exact-runtime Physical QA candidate');
+console.log('PASS evidence validator uses Build120-compatible active_exact_head identity');
 console.log('PASS evidence bundles bind APK plus October/staging run IDs and SHAs');
 console.log('PASS sensitive, stale, wrong-runtime and wrong-candidate evidence remains fail-closed');
 console.log('Physical QA evidence bundle contract: PASS');
