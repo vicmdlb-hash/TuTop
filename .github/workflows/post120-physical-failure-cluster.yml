@@ -1,0 +1,44 @@
+name: Post120 physical failure cluster — source repair only
+
+on:
+  push:
+    branches: [fix/post120-physical-failure-cluster]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post120-physical-failure-cluster
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Physical failure cluster contracts
+        run: |
+          node scripts/post120-physical-failure-cluster-tests.mjs
+          node scripts/build118-deviceA-native-failure-diagnostics-tests.mjs
+          node scripts/post120-admin-account-status-contract-tests.mjs
+          node scripts/post120-fcm-single-target-gate-tests.mjs
+          node scripts/post120-fcm-physical-gate-contract-tests.mjs
+      - name: Full source regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove no candidate artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source repair only; no APK/AAB/Build121"
