@@ -1,0 +1,34 @@
+name: Post120 device health panel — source only
+
+on:
+  push:
+    branches: [feat/post120-device-health-panel]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Device health privacy/truth contract
+        run: node scripts/post120-device-health-panel-tests.mjs
+      - name: Full regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove source-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source-only; no APK/AAB generated"
