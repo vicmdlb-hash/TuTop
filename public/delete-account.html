@@ -1,1 +1,62 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Eliminar cuenta · TuTop</title><style>body{font:15px/1.6 system-ui;background:#050a13;color:#e5e7eb;max-width:650px;margin:auto;padding:42px 20px}.card{background:#0c1422;border:1px solid #233044;border-radius:20px;padding:22px}a{color:#c4b5fd}small{color:#94a3b8}.tag{display:inline-block;padding:5px 9px;border-radius:999px;background:#2a1c08;color:#fcd34d;font-size:11px;font-weight:700}</style></head><body><div class="card"><span class="tag">BETA CONTROLADA</span><h1>Eliminación de cuenta</h1><p>En la beta V2 puedes registrar una solicitud autenticada desde <strong>Perfil → Notificaciones y privacidad V2 → Eliminar cuenta y datos</strong>. La solicitud queda asociada a tu cuenta y puede consultarse por estado.</p><p>TuTop ya dispone en staging de un procesador controlado con modo de vista previa que separa datos eliminables, contenido que debe retirarse del marketplace y evidencia operativa que puede requerir retención temporal. La ejecución destructiva no se dispara automáticamente desde la app y requiere una autorización operativa explícita.</p><p>La política actual retira publicaciones y solicitudes abiertas; elimina datos privados, preferencias, tokens, favoritos y otros datos personales eliminables; y evita borrar a ciegas transacciones, disputas, reportes, auditoría u otra evidencia necesaria para seguridad o cumplimiento.</p><p>Antes de Google Play este procedimiento deberá validarse jurídicamente y ejecutarse con la política final de retención, además de la verificación física y operativa correspondiente.</p><p><small>TuTop no activa facturación ni servicios de pago para este flujo. Solicitar eliminación no equivale a cerrar sesión ni a una simple desactivación.</small></p><p><a href="/">Volver a TuTop</a></p></div></body></html>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Eliminar cuenta · TuTop</title>
+  <style>
+    :root{color-scheme:dark}body{font:15px/1.6 system-ui;background:#050a13;color:#e5e7eb;max-width:720px;margin:auto;padding:42px 20px}
+    .card{background:#0c1422;border:1px solid #233044;border-radius:20px;padding:24px;margin-bottom:18px}
+    h1,h2{color:#fff}a{color:#c4b5fd}.muted,small{color:#94a3b8}.tag{display:inline-block;padding:5px 9px;border-radius:999px;background:#2a1c08;color:#fcd34d;font-size:11px;font-weight:700}
+    label{display:block;margin:12px 0 6px;font-weight:700}input[type=email],input[type=password]{box-sizing:border-box;width:100%;padding:12px;border-radius:10px;border:1px solid #475569;background:#07101e;color:#fff}
+    button{margin-top:14px;padding:11px 14px;border:0;border-radius:10px;font-weight:800;cursor:pointer}button:disabled{opacity:.55;cursor:not-allowed}
+    .danger{background:#dc2626;color:#fff}.secondary{background:#334155;color:#fff}.confirm{display:flex;gap:10px;align-items:flex-start;margin-top:16px}.confirm input{margin-top:5px}
+    #status{padding:12px;border-radius:10px;background:#111827;margin-top:16px}#status[data-tone=error]{border:1px solid #ef4444}#status[data-tone=success]{border:1px solid #22c55e}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="tag">BETA CONTROLADA</span>
+    <h1>Eliminación de cuenta TuTop</h1>
+    <p>Este recurso permite solicitar la eliminación desde la web <strong>sin abrir ni reinstalar la app</strong>. Debes autenticar la misma cuenta TuTop que quieres eliminar.</p>
+    <p>Registrar una solicitud no significa que la cuenta ya esté eliminada. TuTop separa los estados <strong>pendiente</strong>, <strong>en procesamiento</strong> y <strong>completada</strong>. La ejecución destructiva y la declaración final de completado quedan fuera del navegador y requieren el proceso confiable de TuTop.</p>
+    <p class="muted">No introduzcas códigos OTP, tokens, claves de administrador ni documentos de identidad en esta página.</p>
+  </div>
+
+  <div class="card">
+    <form id="login-form">
+      <h2>Inicia sesión en TuTop</h2>
+      <p>Usa una cuenta existente. Este recurso no crea cuentas nuevas.</p>
+      <label for="email">Correo de TuTop</label>
+      <input id="email" name="email" type="email" autocomplete="email" required maxlength="180">
+      <label for="password">Clave TuTop</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required minlength="8" maxlength="256">
+      <button id="login-button" type="submit" class="secondary">Iniciar sesión</button>
+    </form>
+
+    <section id="account-panel" hidden>
+      <h2>Cuenta autenticada</h2>
+      <p id="account-email"></p>
+      <label class="confirm" for="confirm-delete">
+        <input id="confirm-delete" type="checkbox">
+        <span>Entiendo que estoy solicitando la eliminación de mi cuenta TuTop y de los datos eliminables asociados, sujeta al proceso de seguridad y a la política final de retención aplicable.</span>
+      </label>
+      <button id="request-delete-button" type="button" class="danger" disabled>Solicitar eliminación de mi cuenta TuTop</button>
+      <br>
+      <button id="logout-button" type="button" class="secondary" disabled>Cerrar sesión web</button>
+    </section>
+
+    <div id="status" role="status" aria-live="polite">Cargando configuración segura del recurso…</div>
+  </div>
+
+  <div class="card">
+    <h2>Qué ocurre después</h2>
+    <p>La solicitud queda asociada al UID autenticado y puede consultarse por estado. El navegador no puede marcarla como completada ni borrar directamente la cuenta de Firebase Authentication.</p>
+    <p>TuTop puede necesitar retirar publicaciones y datos privados, y preservar temporalmente evidencia estrictamente necesaria para transacciones, disputas, seguridad o cumplimiento conforme a la política final aprobada.</p>
+    <p><a href="/privacy.html">Privacidad de TuTop</a> · <a href="/">Volver a TuTop</a></p>
+  </div>
+
+  <script type="module" src="/delete-account.js"></script>
+</body>
+</html>

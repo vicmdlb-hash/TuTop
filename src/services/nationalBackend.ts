@@ -320,6 +320,48 @@ class NationalMarketplaceBackend {
     return request;
   }
 
+  private sellerFollowId(followerUid: string, sellerId: string) {
+    const follower = String(followerUid || '').trim();
+    const seller = String(sellerId || '').trim();
+    if (!follower || !seller || follower.length > 128 || seller.length > 128 || follower.includes('/') || seller.includes('/')) throw new Error('SELLER_FOLLOW_ID_INVALID');
+    return `${follower}_${seller}`;
+  }
+
+  async getSellerFollowState(sellerId: string) {
+    this.requireV2();
+    const client = this.getClient();
+    const followerUid = client.currentSession?.uid;
+    if (!followerUid) throw new Error('AUTH_REQUIRED');
+    if (followerUid === sellerId) return false;
+    const followId = this.sellerFollowId(followerUid, sellerId);
+    const current = await client.getDocument<any>(`seller_follows/${followId}`);
+    return Boolean(current && current.data?.follower_uid === followerUid && current.data?.seller_id === sellerId);
+  }
+
+  async setSellerFollow(sellerId: string, enabled: boolean) {
+    this.requireV2();
+    const client = this.getClient();
+    const followerUid = client.currentSession?.uid;
+    if (!followerUid) throw new Error('AUTH_REQUIRED');
+    if (followerUid === sellerId) throw new Error('SELF_FOLLOW_DENIED');
+    const followId = this.sellerFollowId(followerUid, sellerId);
+    if (!enabled) {
+      const current = await client.getDocument<any>(`seller_follows/${followId}`);
+      if (!current) return false;
+      if (current.data?.follower_uid !== followerUid || current.data?.seller_id !== sellerId) throw new Error('SELLER_FOLLOW_OWNER_REQUIRED');
+      await client.deleteDocument(`seller_follows/${followId}`);
+      return false;
+    }
+    const at = nowIso();
+    await client.setDocument(`seller_follows/${followId}`, {
+      follower_uid: followerUid,
+      seller_id: sellerId,
+      created_at: at,
+      updated_at: at,
+    }, { exists: false });
+    return true;
+  }
+
   async saveSearch(input: Omit<SavedSearch, 'id' | 'owner_uid' | 'created_at' | 'updated_at'>) {
     this.requireV2();
     const client = this.getClient();
@@ -331,6 +373,56 @@ class NationalMarketplaceBackend {
     const { id: _id, ...data } = saved;
     await client.setDocument(`saved_searches/${searchId}`, data, { exists: false });
     return saved;
+  }
+
+  async listSavedSearches(limit = 30) {
+    this.requireV2();
+    const client = this.getClient();
+    const ownerUid = client.currentSession?.uid;
+    if (!ownerUid) throw new Error('AUTH_REQUIRED');
+    const docs = await client.runQuery<SavedSearch>(
+      'saved_searches',
+      [{ field: 'owner_uid', op: 'EQUAL', value: ownerUid }],
+      [{ field: 'updated_at', direction: 'DESCENDING' }],
+      Math.max(1, Math.min(100, limit)),
+    );
+    return docs.map((doc) => {
+      const { id: _storedId, ...data } = doc.data;
+      return { ...data, id: doc.id, owner_uid: ownerUid } as SavedSearch;
+    });
+  }
+
+  async setSavedSearchNotifications(searchId: string, enabled: boolean) {
+    this.requireV2();
+    const client = this.getClient();
+    const ownerUid = client.currentSession?.uid;
+    if (!ownerUid) throw new Error('AUTH_REQUIRED');
+    const cleanId = String(searchId || '').trim();
+    if (!cleanId || cleanId.length > 180) throw new Error('SAVED_SEARCH_ID_INVALID');
+    const current = await client.getDocument<SavedSearch>(`saved_searches/${cleanId}`);
+    if (!current) throw new Error('SAVED_SEARCH_NOT_FOUND');
+    if (current.data.owner_uid !== ownerUid) throw new Error('SAVED_SEARCH_OWNER_REQUIRED');
+    const at = nowIso();
+    await client.setDocument(`saved_searches/${cleanId}`, {
+      notifications_enabled: Boolean(enabled),
+      updated_at: at,
+    }, { merge: true, ...(current.updateTime ? { updateTime: current.updateTime } : {}) });
+    const { id: _storedId, ...data } = current.data;
+    return { ...data, id: cleanId, owner_uid: ownerUid, notifications_enabled: Boolean(enabled), updated_at: at } as SavedSearch;
+  }
+
+  async deleteSavedSearch(searchId: string) {
+    this.requireV2();
+    const client = this.getClient();
+    const ownerUid = client.currentSession?.uid;
+    if (!ownerUid) throw new Error('AUTH_REQUIRED');
+    const cleanId = String(searchId || '').trim();
+    if (!cleanId || cleanId.length > 180) throw new Error('SAVED_SEARCH_ID_INVALID');
+    const current = await client.getDocument<SavedSearch>(`saved_searches/${cleanId}`);
+    if (!current) return true;
+    if (current.data.owner_uid !== ownerUid) throw new Error('SAVED_SEARCH_OWNER_REQUIRED');
+    await client.deleteDocument(`saved_searches/${cleanId}`);
+    return true;
   }
 }
 

@@ -173,7 +173,7 @@ export default function Feed() {
         const next = [{ id: `local-${Date.now()}`, ...payload, created_at: new Date().toISOString() }, ...existing].slice(0, 20);
         writeAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, user.id, next);
       }
-      setSavedMessage(nationalSchemaEnabled() ? 'Búsqueda guardada · alertas V2 activas' : 'Búsqueda guardada en este dispositivo');
+      setSavedMessage(nationalSchemaEnabled() ? 'Búsqueda guardada · alerta configurada' : 'Búsqueda guardada en este dispositivo');
       window.setTimeout(() => setSavedMessage(null), 2600);
     } catch { setSavedMessage('No pudimos guardar la búsqueda.'); }
   };

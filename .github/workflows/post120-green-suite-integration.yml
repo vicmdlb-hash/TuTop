@@ -1,0 +1,82 @@
+name: Post120 green-suite integration — source only
+
+on:
+  push:
+    branches: [integration/post120-green-suite]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post120-green-suite
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Notification routing + password reset
+        run: |
+          node scripts/post120-inapp-notification-routing-tests.mjs
+          node scripts/post120-inapp-notification-routing-contract-tests.mjs
+          node scripts/post120-notification-kind-projection-tests.mjs
+          node scripts/post120-password-reset-contract-tests.mjs
+      - name: Notification preferences and producers
+        run: |
+          node scripts/post120-notification-preferences-ui-tests.mjs
+          node scripts/post120-notification-preference-projection-tests.mjs
+          node scripts/post120-saved-search-alert-projector-tests.mjs
+          node scripts/post120-saved-search-alert-contract-tests.mjs
+          node scripts/post120-saved-search-manager-tests.mjs
+          node scripts/post120-temporal-reminder-tests.mjs
+          node scripts/post120-temporal-reminder-contract-tests.mjs
+          node scripts/post120-listing-saved-notification-tests.mjs
+          node scripts/post120-listing-saved-notification-contract-tests.mjs
+          node scripts/post120-favorite-listing-transition-tests.mjs
+          node scripts/post120-favorite-listing-transition-contract-tests.mjs
+          node scripts/post120-followed-seller-notification-tests.mjs
+          node scripts/post120-seller-follow-contract-tests.mjs
+          node scripts/post120-weekly-digest-tests.mjs
+          node scripts/post120-weekly-digest-contract-tests.mjs
+          node scripts/post120-safety-notification-tests.mjs
+          node scripts/post120-safety-notification-contract-tests.mjs
+          node scripts/post120-notification-producer-coverage-tests.mjs
+      - name: Build120 web deletion contract
+        run: node scripts/candidate120-web-deletion-contract-tests.mjs
+      - name: Prepare final V2 Rules
+        run: npm run v2:rules:prepare
+      - name: Install ephemeral Firestore emulator harness
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+          git diff --exit-code -- package.json package-lock.json
+      - name: Seller-follow Rules emulator
+        run: >-
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore
+          --config firebase.v2.json
+          --project demo-tutop-post120-green-suite
+          "node --test tests/firestore.v2.seller-follows.test.mjs"
+      - name: Full regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove source-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source-only integration; no APK/AAB generated"
