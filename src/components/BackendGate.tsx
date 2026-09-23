@@ -254,7 +254,10 @@ function EmailVerificationScreen({ status, onVerified, onSignOut }: { status: Ve
       const current = await verifiedEmailBetaAuth.refreshVerificationStatus();
       if (current.emailVerified) { onVerified(); return; }
       setMessage('El correo todavía aparece pendiente. Abre el enlace recibido y vuelve a comprobar.');
-    } catch (error) { setMessage(friendlyError(error instanceof Error ? error.message : String(error))); }
+    } catch (error) {
+      await verifiedEmailBetaAuth.recordDiagnostic('VERIFICATION_CHECK_FAILED').catch(() => false);
+      setMessage(friendlyError(error instanceof Error ? error.message : String(error)));
+    }
     finally { setBusy(false); }
   };
   const resend = async () => {
