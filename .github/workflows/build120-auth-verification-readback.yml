@@ -22,7 +22,24 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
       - run: npm ci
+      - name: Prepare exact final V2 Rules
+        run: npm run v2:rules:prepare
+      - name: Install ephemeral Rules test harness
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+          git diff --exit-code -- package.json package-lock.json
+      - name: Prove current email-registration private document is rejected
+        run: >-
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore
+          --config firebase.v2.json
+          --project demo-tutop-email-registration-rule
+          "node --test tests/firestore.v2.email-registration-current-fail.test.mjs"
       - name: Auth/API-key verification readback — sanitized no mutation
         run: node scripts/build120-auth-verification-readback.mjs
       - name: Prove no deploy/build artifact
