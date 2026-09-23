@@ -9,8 +9,10 @@ const token=await firebaseCiAccessToken();
 const headers={Authorization:'Bearer '+token,'Content-Type':'application/json','X-Goog-User-Project':PROJECT};
 const root=`https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
 
-async function request(url,options={}){
-  const response=await fetch(url,{...options,headers:{...headers,...(options.headers||{})}});
+async function request(url,options={},includeQuotaProject=true){
+  const requestHeaders={...headers,...(options.headers||{})};
+  if(!includeQuotaProject) delete requestHeaders['X-Goog-User-Project'];
+  const response=await fetch(url,{...options,headers:requestHeaders});
   const text=await response.text();let body={};
   try{body=text?JSON.parse(text):{}}catch{}
   if(!response.ok)throw new Error('HTTP_'+response.status);
@@ -26,7 +28,7 @@ async function count(collectionId,filters=[]){
   const raw=rows?.[0]?.result?.aggregateFields?.count?.integerValue||'0';
   return Number(raw);
 }
-const billing=await request('https://cloudbilling.googleapis.com/v1/projects/'+PROJECT+'/billingInfo');
+const billing=await request('https://cloudbilling.googleapis.com/v1/projects/'+PROJECT+'/billingInfo',{},false);
 if(billing.billingEnabled===true)throw new Error('SPEND_ZERO_BILLING_ENABLED');
 
 const result={
