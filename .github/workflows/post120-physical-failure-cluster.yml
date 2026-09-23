@@ -3,6 +3,8 @@ name: Post120 physical failure cluster — source repair only
 on:
   push:
     branches: [fix/post120-physical-failure-cluster]
+  pull_request:
+    branches: [integration/post120-green-suite]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +16,13 @@ concurrency:
 
 jobs:
   validate:
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/post120-physical-failure-cluster'
     runs-on: ubuntu-24.04
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -23,6 +31,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Live staging App Check readback — no mutation
+        run: node scripts/audit-staging-offplay-app-check.mjs
       - name: Physical failure cluster contracts
         run: |
           node scripts/post120-physical-failure-cluster-tests.mjs
