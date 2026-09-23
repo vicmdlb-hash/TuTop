@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Verificar correo · TuTop</title>
+  <style>
+    :root{color-scheme:dark}body{font:16px/1.6 system-ui;background:#050a13;color:#e5e7eb;max-width:680px;margin:auto;padding:44px 20px}
+    .card{background:#0c1422;border:1px solid #233044;border-radius:22px;padding:26px}h1{color:#fff}.muted{color:#94a3b8}
+    #status{margin-top:18px;padding:14px;border-radius:12px;background:#111827}#status[data-tone=success]{border:1px solid #22c55e}#status[data-tone=error]{border:1px solid #ef4444}
+    a{display:inline-block;margin-top:18px;color:#c4b5fd;font-weight:800}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Verificación de correo TuTop</h1>
+    <p class="muted">Este recurso confirma el código de verificación directamente con Firebase. No pide contraseña, OTP, credencial universitaria ni datos bancarios.</p>
+    <div id="status" role="status" aria-live="polite">Comprobando el enlace…</div>
+    <a id="return-link" href="/" hidden>Volver a TuTop</a>
+  </main>
+  <script type="module" src="/auth-action.js"></script>
+</body>
+</html>
