@@ -160,7 +160,16 @@ async function forceRefreshStoredSession(expectedGeneration = authGeneration) {
 }
 
 
-async function syncAuthStatus(uid: string, emailVerified: boolean, code: 'EMAIL_VERIFICATION_PENDING' | 'EMAIL_VERIFIED' | 'PROFILE_MISSING') {
+export type AuthStatusCode =
+  | 'EMAIL_VERIFICATION_PENDING'
+  | 'EMAIL_VERIFIED'
+  | 'PROFILE_MISSING'
+  | 'VERIFICATION_EMAIL_SENT'
+  | 'VERIFICATION_EMAIL_SEND_FAILED'
+  | 'VERIFICATION_CHECK_FAILED'
+  | 'AUTH_SYNC_FAILED';
+
+async function syncAuthStatus(uid: string, emailVerified: boolean, code: AuthStatusCode) {
   const client = sessionClient();
   const at = new Date().toISOString();
   await client.setDocument(`auth_status/${uid}`, {
@@ -333,7 +342,20 @@ export const verifiedEmailBetaAuth = {
   async resendVerificationEmail() {
     const stored = readCompatibleSession();
     if (!stored?.idToken) throw new Error('AUTH_REQUIRED');
-    await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: stored.idToken });
+    try {
+      await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: stored.idToken });
+      await syncAuthStatus(stored.uid, stored.emailVerified === true, 'VERIFICATION_EMAIL_SENT');
+      return true;
+    } catch (error) {
+      await syncAuthStatus(stored.uid, stored.emailVerified === true, 'VERIFICATION_EMAIL_SEND_FAILED');
+      throw error;
+    }
+  },
+
+  async recordDiagnostic(code: Extract<AuthStatusCode, 'VERIFICATION_CHECK_FAILED' | 'AUTH_SYNC_FAILED'>) {
+    const stored = readCompatibleSession();
+    if (!stored?.uid) return false;
+    await syncAuthStatus(stored.uid, stored.emailVerified === true, code);
     return true;
   },
 
