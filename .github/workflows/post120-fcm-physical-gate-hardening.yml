@@ -1,0 +1,41 @@
+name: Build120 FCM physical gate hardening — source only
+
+on:
+  push:
+    branches: [qa/post120-fcm-physical-gate-hardening]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build120 exact-send gate unit tests
+        run: node scripts/post120-fcm-single-target-gate-tests.mjs
+      - name: Build120 candidate/fixture contract
+        run: node scripts/post120-fcm-physical-gate-contract-tests.mjs
+      - name: Existing FCM physical fixture validator tests
+        run: node scripts/fcm-physical-fixture-tests.mjs
+      - name: Push ownership regressions
+        run: |
+          node scripts/post116-push-ownership-contract-tests.mjs
+          node scripts/post116-push-account-isolation-tests.mjs
+      - name: Full regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Prove no real FCM send and no APK/AAB
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${TUTOP_FCM_PHYSICAL_APPLY_ACK:-}"
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source-only; no FCM apply / APK / AAB"
