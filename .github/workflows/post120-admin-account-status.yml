@@ -1,0 +1,51 @@
+name: Post120 admin account status — source only
+
+on:
+  push:
+    branches: [feat/post120-admin-account-status]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Account-status source contract
+        run: node scripts/post120-admin-account-status-contract-tests.mjs
+      - name: Prepare final V2 Rules
+        run: npm run v2:rules:prepare
+      - name: Install ephemeral Firestore emulator harness
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+          git diff --exit-code -- package.json package-lock.json
+      - name: Auth status Rules emulator
+        run: >-
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore
+          --config firebase.v2.json
+          --project demo-tutop-auth-status
+          "node --test tests/firestore.v2.auth-status.test.mjs"
+      - name: Full regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Prove source-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source-only admin account status; no APK/AAB"

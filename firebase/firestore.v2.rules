@@ -169,6 +169,22 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /auth_status/{uid} {
+      allow read: if owner(uid) || isAdmin();
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasOnly(['uid','email_verified','auth_mode','last_client_code','last_seen_at'])
+        && request.resource.data.uid == uid
+        && request.resource.data.email_verified is bool
+        && (
+          (('email_verified' in request.auth.token) && request.resource.data.email_verified == request.auth.token.email_verified)
+          || (!('email_verified' in request.auth.token) && request.resource.data.email_verified == false)
+        )
+        && request.resource.data.auth_mode == 'email_password_verified_beta'
+        && request.resource.data.last_client_code in ['EMAIL_VERIFICATION_PENDING','EMAIL_VERIFIED','PROFILE_MISSING','VERIFICATION_EMAIL_SENT','VERIFICATION_EMAIL_SEND_FAILED','VERIFICATION_CHECK_FAILED','AUTH_SYNC_FAILED']
+        && fresh(request.resource.data.last_seen_at);
+      allow delete: if false;
+    }
+
     match /wallets/{uid} {
       allow read: if owner(uid) || isAdmin();
       allow create: if owner(uid)
