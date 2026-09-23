@@ -5,11 +5,22 @@ on:
   workflow_dispatch:
     inputs:
       uid:
-        description: Exact staging Firebase Auth UID to authorize as first admin
+        description: Exact staging Firebase Auth UID to authorize as first moderator
         required: true
         type: string
+      role:
+        description: Minimum moderation role for this account
+        required: true
+        type: choice
+        options:
+          - institution_moderator
+          - moderator
+      institution_id:
+        description: Required only for institution_moderator; leave blank for moderator
+        required: false
+        type: string
       confirm:
-        description: Type BOOTSTRAP_FIRST_STAGING_ADMIN:<UID>
+        description: Type BOOTSTRAP_FIRST_STAGING_ADMIN:<UID>:<ROLE>:<INSTITUTION_OR_DASH>
         required: true
         type: string
 permissions:
@@ -24,6 +35,8 @@ jobs:
       TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
       TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
       TUTOP_FIRST_ADMIN_UID: ${{ github.event_name == 'workflow_dispatch' && inputs.uid || 'dryrun_uid_12345678' }}
+      TUTOP_FIRST_ADMIN_ROLE: ${{ github.event_name == 'workflow_dispatch' && inputs.role || 'moderator' }}
+      TUTOP_FIRST_ADMIN_INSTITUTION_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.institution_id || '' }}
       TUTOP_FIRST_ADMIN_ACK: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm || '' }}
     steps:
       - uses: actions/checkout@v7
