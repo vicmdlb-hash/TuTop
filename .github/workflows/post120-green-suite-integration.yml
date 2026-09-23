@@ -57,19 +57,23 @@ jobs:
         run: node scripts/post120-device-health-panel-tests.mjs
       - name: Build120 web deletion contract
         run: node scripts/candidate120-web-deletion-contract-tests.mjs
+      - name: Admin account diagnostics + Olympus model
+        run: |
+          node scripts/post120-admin-account-status-contract-tests.mjs
+          node --experimental-strip-types scripts/post120-olympus-identity-tests.mjs
       - name: Prepare final V2 Rules
         run: npm run v2:rules:prepare
       - name: Install ephemeral Firestore emulator harness
         run: |
           npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
           git diff --exit-code -- package.json package-lock.json
-      - name: Seller-follow Rules emulator
+      - name: Seller-follow + auth-status Rules emulator
         run: >-
           npx --yes firebase-tools@15.29.0 emulators:exec
           --only firestore
           --config firebase.v2.json
           --project demo-tutop-post120-green-suite
-          "node --test tests/firestore.v2.seller-follows.test.mjs"
+          "node --test tests/firestore.v2.seller-follows.test.mjs tests/firestore.v2.auth-status.test.mjs"
       - name: Full regression
         run: npm run check
       - name: Typecheck
