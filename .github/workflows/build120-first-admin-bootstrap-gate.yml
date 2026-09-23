@@ -2,6 +2,8 @@ name: Build120 first-admin bootstrap gate
 on:
   push:
     branches: [ops/build120-first-admin-bootstrap-gate]
+  pull_request:
+    branches: [candidate/tutop-120-deviceA-publication-repair]
   workflow_dispatch:
     inputs:
       uid:
