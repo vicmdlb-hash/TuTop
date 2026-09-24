@@ -60,6 +60,14 @@ jobs:
           node scripts/post116-push-health-contract-tests.mjs
           node scripts/post120-fcm-single-target-gate-tests.mjs
           node scripts/post120-fcm-physical-gate-contract-tests.mjs
+      - name: Marketplace truth contracts
+        run: |
+          node scripts/post116-seller-moderation-truth-tests.mjs
+          node scripts/post116-listing-moderation-race-tests.mjs
+          node scripts/post116-reservation-availability-tests.mjs
+          node scripts/post116-counteroffer-atomic-reservation-tests.mjs
+          node scripts/post116-nearby-moderation-freshness-tests.mjs
+          node scripts/reservation-lock-residue-audit-tests.mjs
       - name: Full source regression
         run: npm run check
       - name: Typecheck
