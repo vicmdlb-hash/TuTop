@@ -31,8 +31,6 @@ if(!app?.appId||!app?.name)stop('STAGING_ANDROID_APP_REQUIRED');
 
 const certs=await req(`https://firebase.googleapis.com/v1beta1/${app.name}/sha`);
 const sha256=(certs.body.certificates||[]).filter(x=>x.certType==='SHA_256'&&String(x.shaHash||'').trim());
-if(!sha256.length)stop('ANDROID_SHA256_CERT_REQUIRED_BEFORE_APPCHECK_REPAIR');
-
 const name=`projects/${projectNumber}/apps/${app.appId}/playIntegrityConfig`;
 const url=`https://firebaseappcheck.googleapis.com/v1/${name}`;
 const before=await req(url);
@@ -83,3 +81,4 @@ console.log(JSON.stringify({
   play:false,
 },null,2));
 console.log('PASS staging Play Integrity accepts off-Play app versions while retaining device-integrity attestation.');
+if(!sha256.length)stop('ANDROID_SHA256_CERT_REQUIRED_FOR_NEXT_CANDIDATE');
