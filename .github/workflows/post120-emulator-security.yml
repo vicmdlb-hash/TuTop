@@ -1,0 +1,84 @@
+name: Post120 successor emulator security
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/post120-physical-failure-cluster
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post120-emulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  successor-emulator-security:
+    name: Firestore + Storage emulator security
+    if: github.ref_name == 'fix/post120-physical-failure-cluster'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GCLOUD_PROJECT: demo-tutop-post120-rules
+      FIREBASE_PROJECT_ID: demo-tutop-post120-rules
+    steps:
+      - name: Checkout exact successor ref
+        uses: actions/checkout@v7
+
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Install emulator harness without mutating manifests
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+
+      - name: Verify dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
+
+      - name: Prepare strict V2 Rules
+        run: npm run v2:rules:prepare
+
+      - name: Verify successor emulator gate is demo-only and isolated
+        run: node scripts/post120-successor-emulator-gate-contract-tests.mjs
+
+      - name: Firestore + Storage emulator security suite
+        run: >
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore,storage
+          --config firebase.v2.json
+          --project demo-tutop-post120-rules
+          "node --test --test-concurrency=1
+          tests/firestore.v2.rules.test.mjs
+          tests/firestore.v2.atomic.test.mjs
+          tests/firestore.v2.acceptance-atomic.test.mjs
+          tests/firestore.v2.auth-status.test.mjs
+          tests/firestore.v2.reputation-trust.test.mjs
+          tests/firestore.v2.governance.test.mjs
+          tests/firestore.v2.runtime-services.test.mjs
+          tests/firestore.v2.account-operations.test.mjs
+          tests/firestore.v2.notification-receipts.test.mjs
+          tests/firestore.v2.transaction-lock.test.mjs
+          tests/firestore.v2.unread-aggregation.test.mjs
+          tests/firestore.v2.review-strike-aggregation.test.mjs
+          tests/firestore.v2.favorite-membership.test.mjs
+          tests/firestore.v2.post106-verified-identity.test.mjs
+          tests/firestore.v2.private-admin-reads.test.mjs
+          tests/firestore.v2.publication-profile-coupling.test.mjs
+          tests/firestore.v2.seller-follows.test.mjs
+          tests/storage.rules.test.mjs"
+
+      - name: Final dependency immutability check
+        if: always()
+        run: git diff --exit-code -- package.json package-lock.json
