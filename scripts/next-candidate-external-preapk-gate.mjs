@@ -12,6 +12,9 @@ if(String(process.env.GITHUB_REF_NAME||'')!==BRANCH) throw new Error('EXACT_PROM
 if(String(process.env.TUTOP_FIREBASE_PROJECT_ID||'')!==PROJECT) throw new Error('STAGING_PROJECT_REQUIRED');
 const sourceSha=required('GITHUB_SHA');
 if(!/^[0-9a-f]{40}$/.test(sourceSha)) throw new Error('SOURCE_SHA_INVALID');
+const extractedSourceSha=required('TUTOP_NEXT_CANDIDATE_SOURCE_SHA');
+if(!/^[0-9a-f]{40}$/.test(extractedSourceSha)) throw new Error('EXTRACTED_SOURCE_SHA_INVALID');
+if(extractedSourceSha!==sourceSha) throw new Error('CANDIDATE_SOURCE_SHA_MISMATCH');
 const apkSha256=apk(required('TUTOP_NEXT_CANDIDATE_APK_SHA256'));
 
 const token=await firebaseCiAccessToken();
@@ -49,7 +52,7 @@ if(customHandler){
   const frameOptions=String(handlerResponse.headers.get('x-frame-options')||'').toUpperCase();
   const referrerPolicy=String(handlerResponse.headers.get('referrer-policy')||'').toLowerCase();
   const permissionsPolicy=String(handlerResponse.headers.get('permissions-policy')||'').toLowerCase();
-  const contentTypeOptions=String(handlerResponse.headers.get('x-content-options')||handlerResponse.headers.get('x-content-type-options')||'').toLowerCase();
+  const contentTypeOptions=String(handlerResponse.headers.get('x-content-type-options')||'').toLowerCase();
   if(!cacheControl.includes('no-store')) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CACHE_UNSAFE');
   if(frameOptions!=='DENY') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_FRAME_UNSAFE');
   if(referrerPolicy!=='no-referrer') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_REFERRER_UNSAFE');
