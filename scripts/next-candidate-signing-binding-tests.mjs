@@ -8,6 +8,12 @@ const audit=fs.readFileSync('scripts/audit-staging-offplay-app-check.mjs','utf8'
 const external=fs.readFileSync('scripts/next-candidate-external-preapk-gate.mjs','utf8');
 
 assert.match(extract,/APKSIGNER_REQUIRED/);
+assert.match(extract,/AAPT2_REQUIRED/);
+assert.match(extract,/aapt2/);
+assert.match(extract,/dump','badging/);
+assert.match(extract,/mx\.tutop\.app/);
+assert.match(extract,/APK_PACKAGE_NAME_MISSING/);
+assert.match(extract,/APK_PACKAGE_MISMATCH/);
 assert.match(extract,/Signer #1 certificate/);
 assert.match(extract,/GITHUB_REF_NAME/);
 assert.match(extract,/EXACT_EXTRACTION_BRANCH_REQUIRED/);
@@ -60,7 +66,7 @@ assert.match(external,/NEXT_CANDIDATE_SIGNED_CERT_SHA256_REQUIRED/);
 assert.match(external,/NEXT_CANDIDATE_EXACT_ANDROID_SHA256_NOT_REGISTERED/);
 assert.doesNotMatch(external,/NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED/);
 
-console.log('PASS exact source SHA is exported together with the signed APK identity');
+console.log('PASS exact source SHA + TuTop package + signed APK identity are extracted together');
 console.log('PASS exact SHA-1 API-key and SHA-256 Firebase bindings require extraction source continuity + exact APK identity + explicit ACK');
 console.log('PASS pre-promotion external gate requires the same source/artifact provenance chain');
 console.log('PASS no private signing key is introduced by the source-only preparation');
