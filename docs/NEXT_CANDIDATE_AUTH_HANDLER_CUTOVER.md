@@ -1,107 +1,79 @@
-> **2026-09-23 live staging result:** the reviewed handler is deployed at `https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`, but Identity Toolkit rejects `notification.sendEmail.callbackUri` mutation with exact error `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED`. Do not retry this PATCH by inertia. The accepted staging route is therefore the exact Firebase-managed handler `/__/auth/action`, plus TuTop automatic verification refresh and same-UID in-app paste-link recovery. The custom handler remains deployed/available but is not the configured email callback.
+> **2026-09-23 live staging authority:** TuTop's reviewed handler is deployed and reachable at `https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`. Identity Toolkit Admin v2 rejects automated mutation of `notification.sendEmail.callbackUri` with exact provider error `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED`. **Do not retry that PATCH.** Firebase's documented route is the Firebase Console email-template control: Authentication → Templates → edit template → **Customize action URL**.
 
 # TuTop staging — custom Firebase Auth email handler cutover
 
-Status: **PREPARED / NOT APPLIED**  
+Status: **HOSTING DEPLOYED / CALLBACK MANUAL-CONSOLE GATE OPEN**  
 Scope: staging only (`tutop-beta-vicmdlb-1356585881`)  
-Build120: historical `obsolete_physical_fail`; do not use it for acceptance.
+Build120: historical `obsolete_physical_fail`; never reinstall/retest it.
 
-## Goal
+## Current truth
 
-Replace the default Firebase Auth action handler (`/__/auth/action`) with TuTop's reviewed
-`/auth-action.html` before any successor APK is authorized.
+- Reviewed TuTop handler: `https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`
+- Public handler: deployed.
+- Hardened response policy: `Cache-Control: no-store`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, restrictive `Permissions-Policy`.
+- Current Firebase Auth callback: default managed `/__/auth/action`.
+- Automated callback PATCH: **provider-rejected / retired** with `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED`.
+- Successor APK gate: **BLOCKED** until read-back reports `TUTOP_CUSTOM`.
+- Android signing SHA-256 remains a separate later gate after a deliberately assembled successor artifact exists.
 
-This is required because Firebase verification emails currently resolve to the default
-Firebase handler. TuTop source now has two recovery paths:
+## Single remaining human action for this lane
 
-1. first-party web handler `/auth-action.html`;
-2. in-app paste-link redemption that applies `verifyEmail` `oobCode` and requires
-   the returned Firebase UID to equal the currently signed-in UID.
+Open the exact **staging** Firebase project, then:
 
-## Preconditions
+1. Authentication.
+2. Templates.
+3. Edit the verification email template.
+4. Choose **Customize action URL**.
+5. Set:
+   `https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`
+6. Save.
+7. Do not change production, sender domain, SMTP, branding, Play, or Android settings.
 
-- PR #120 source/config suite green.
-- Staging only; no Play/production changes.
-- `public/auth-action.html`, `public/auth-action.js` and `firebase.json` security headers reviewed.
-- Staging Hosting deployment explicitly authorized.
-- No legal/privacy page is promoted merely by deploying this handler.
-- A rollback URL is recorded: `https://tutop-beta-vicmdlb-1356585881.firebaseapp.com/__/auth/action`.
+Firebase documents this console flow for custom email action handlers. The same customized action URL is used by the project's user-management email templates.
 
-## Stage 1 — deploy only reviewed staging Hosting assets
-
-Do not deploy production. Build the exact reviewed source and publish only to the staging
-Firebase Hosting site. Confirm:
-
-- `/auth-action.html` returns HTTP 200;
-- `Cache-Control: no-store`;
-- `X-Frame-Options: DENY`;
-- `Referrer-Policy: no-referrer`;
-- `X-Content-Type-Options: nosniff`;
-- restrictive `Permissions-Policy`;
-- page loads its same-origin `/auth-action.js`;
-- invalid/missing action codes fail safely and reveal no credential/token.
-
-## Stage 2 — change Firebase Authentication email action URL
-
-In Firebase Console for the exact staging project:
-
-Authentication → Templates → edit an email template → **Customize action URL**
-
-Set:
-
-`https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`
-
-Firebase applies the customized action URL to user-management email templates. Do not
-change sender/domain branding or production settings in this operation.
-
-## Stage 3 — read-back
+## Automated read-back after the console save
 
 Run:
 
 `node scripts/audit-staging-auth-email-config.mjs`
 
-Required:
-
-- `callback_uri_configured=true`
-- `callback_uri_origin=https://tutop-beta-vicmdlb-1356585881.firebaseapp.com`
-- `callback_uri_path=/auth-action.html` (or `/auth-action`)
+Required truth:
+- `auth_email_handler_mode=TUTOP_CUSTOM`
 - `custom_tutop_handler_configured=true`
+- callback origin `https://tutop-beta-vicmdlb-1356585881.web.app`
+- callback path `/auth-action.html` or `/auth-action`
 
-Then run the public reachability gate in
-`scripts/next-candidate-external-preapk-gate.mjs`.
+Then run:
 
-## Stage 4 — controlled verification evidence
+`node scripts/next-candidate-external-preapk-gate.mjs`
 
-Use a disposable staging account. Never use a production identity.
+That gate now **fails closed** with `NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFIGURED` while Firebase still points to the default managed handler.
 
-Required observations:
+## Controlled verification evidence after the callback changes
 
-1. verification email is delivered and `verifyEmail` succeeds;
-2. password-reset email opens the same TuTop handler, validates the code and changes the password only after two matching >=8-character entries;
-3. recover-email action applies its Firebase OOB code and returns a safe confirmation;
-4. all links open the TuTop handler, not `/__/auth/action`;
-5. expired/reused codes give a safe retry message;
-6. cross-account verification link is rejected by the in-app UID-binding recovery;
-7. returning to the app causes automatic verification refresh;
-8. publication/chat/offer/reservation remain blocked until Firebase reports
-   `emailVerified=true`;
-9. browser storage and diagnostics contain no password, ID token or refresh token.
+Use staging identities only.
 
-Do not mark physical PASS from a browser-only test.
+Required:
+1. verification email opens the TuTop handler and `verifyEmail` succeeds;
+2. password reset opens the TuTop handler and only accepts two matching passwords of at least 8 characters;
+3. recover-email applies the Firebase OOB code safely;
+4. expired/reused codes fail safely;
+5. cross-account in-app paste-link redemption is rejected by UID binding;
+6. returning to the app refreshes verification state automatically;
+7. sensitive marketplace writes remain blocked until Firebase reports `emailVerified=true`;
+8. browser storage/diagnostics contain no password, ID token, refresh token, or OOB secret.
+
+Browser proof is not Device A physical PASS.
 
 ## Rollback
 
-If delivery or action handling regresses, restore the staging template action URL to:
-
-`https://tutop-beta-vicmdlb-1356585881.firebaseapp.com/__/auth/action`
-
-Then re-run the read-only audit and keep the next candidate blocked.
+If the custom handler causes regressions, restore the Firebase-managed action URL from Firebase Console, rerun the read-only audit, and keep successor APK blocked.
 
 ## Promotion rule
 
 No successor APK may be assembled/promoted while either is true:
 
-- `NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFIGURED`;
-- `NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED`.
+- `NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFIGURED`
+- `NEXT_CANDIDATE_SIGNED_CERT_SHA256_REQUIRED` / exact SHA-256 not registered
 
-Even after both gates pass, device acceptance remains separate.
+Even after both pass, physical acceptance remains separate.
