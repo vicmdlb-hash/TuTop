@@ -52,6 +52,8 @@ jobs:
         run: npm run typecheck
       - name: Web build
         run: npm run build
+      - name: Live staging Auth client config/key readback — no mutation
+        run: node scripts/audit-staging-auth-client-config.mjs
       - name: Live staging Auth email configuration readback — no mutation
         run: node scripts/audit-staging-auth-email-config.mjs
       - name: Live staging App Check readback — no mutation
