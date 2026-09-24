@@ -13,6 +13,7 @@ const nativeAppCheck = read('src/services/nativeAppCheckToken.ts');
 const rest = read('src/services/firebaseRest.ts');
 const runtime = read('src/services/runtimeConfig.ts');
 const appCheckStaging = read('scripts/configure-app-check-staging.mjs');
+const stagingFreezeGuard = read('scripts/staging-freeze-guard.mjs');
 const androidWorkflow = read('.github/workflows/android-debug-apk.yml');
 const versioner = read('scripts/configure-android-beta-version.mjs');
 
@@ -55,9 +56,15 @@ pass('V2 runtime hard-blocks legacy Firebase and pins staging project',
   && runtime.includes('V2_LEGACY_FIREBASE_BLOCKED')
   && runtime.includes('V2_STAGING_PROJECT_MISMATCH'));
 
-pass('App Check enforcement still requires explicit client-ready guard',
-  appCheckStaging.includes('TUTOP_ALLOW_APP_CHECK_ENFORCEMENT')
-  && appCheckStaging.includes('staging-v2-client-ready'));
+pass('App Check enforcement remains behind exact staging freeze guards',
+  appCheckStaging.includes('assertStagingFreezeContext')
+  && appCheckStaging.includes('assertAppCheckFreezeMode')
+  && stagingFreezeGuard.includes("remote_staging_mutation_requires_GITHUB_ACTIONS_true")
+  && stagingFreezeGuard.includes('branch_not_authorized_for_staging_')
+  && stagingFreezeGuard.includes('october_gate_sha_must_equal_GITHUB_SHA')
+  && stagingFreezeGuard.includes('general_app_check_enforcement_forbidden_during_runtime_freeze')
+  && stagingFreezeGuard.includes('TUTOP_ALLOW_AI_APP_CHECK_ENFORCEMENT')
+  && stagingFreezeGuard.includes('staging-ai-only'));
 
 pass('Android workflow preserves stable main path and enables automatic physical QA builds',
   androidWorkflow.includes('workflow_dispatch:')
