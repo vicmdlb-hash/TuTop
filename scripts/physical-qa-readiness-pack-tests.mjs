@@ -23,7 +23,7 @@ assert(Number.isSafeInteger(candidate.artifact_id) && candidate.artifact_id > 0)
 assert(Number.isSafeInteger(candidate.build_run_id) && candidate.build_run_id > 0);
 
 const obsolete = candidate.physical_release_candidate === false
-  && candidate.candidate_status === 'obsolete_runtime_drift'
+  && ['obsolete_runtime_drift', 'obsolete_physical_fail'].includes(candidate.candidate_status)
   && candidate.replacement_required === true;
 const active = candidate.physical_release_candidate === true
   && candidate.candidate_status === 'active_exact_head'
