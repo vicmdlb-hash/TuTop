@@ -28,7 +28,7 @@ assert.doesNotMatch(extract,/keystore|storePassword|keyPassword/i);
 for (const binding of [sha256, sha1]) {
   assert.match(binding,/GITHUB_ACTIONS_REQUIRED/);
   assert.match(binding,/GITHUB_REF_NAME/);
-  assert.match(binding,/fix\/post120-physical-failure-cluster/);
+  assert.match(binding,/candidate\/tutop-121-post120-physical-repair/);
   assert.match(binding,/EXACT_BINDING_BRANCH_REQUIRED/);
   assert.match(binding,/GITHUB_SHA/);
   assert.match(binding,/SOURCE_SHA_INVALID/);
@@ -51,7 +51,7 @@ assert.match(audit,/EXPECTED_ANDROID_CERT_SHA256_NOT_REGISTERED/);
 
 assert.match(external,/GITHUB_ACTIONS_REQUIRED/);
 assert.match(external,/GITHUB_REF_NAME/);
-assert.match(external,/fix\/post120-physical-failure-cluster/);
+assert.match(external,/candidate\/tutop-121-post120-physical-repair/);
 assert.match(external,/EXACT_PROMOTION_BRANCH_REQUIRED/);
 assert.match(external,/GITHUB_SHA/);
 assert.match(external,/SOURCE_SHA_INVALID/);
