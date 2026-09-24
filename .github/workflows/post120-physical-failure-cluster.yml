@@ -84,6 +84,34 @@ jobs:
         run: |
           node scripts/post116-accessibility-semantics-tests.mjs
           node scripts/post120-accessibility-hardening-tests.mjs
+      - name: Offline / reconnect / runtime recovery contracts
+        run: |
+          node scripts/offline-performance-tests.mjs
+          node scripts/offline-reconnect-chaos-tests.mjs
+          node scripts/offline-reconnect-extreme-tests.mjs
+          node scripts/native-runtime-recovery-tests.mjs
+          node scripts/post106-runtime-recovery-contract-tests.mjs
+          node scripts/build118-publication-recovery-tests.mjs
+      - name: Notification ecosystem contracts
+        run: |
+          node scripts/post120-notification-producer-coverage-tests.mjs
+          node scripts/post120-notification-preference-projection-tests.mjs
+          node scripts/post120-notification-kind-projection-tests.mjs
+          node scripts/post120-inapp-notification-routing-contract-tests.mjs
+          node scripts/post120-inapp-notification-routing-tests.mjs
+          node scripts/post120-followed-seller-notification-tests.mjs
+          node scripts/post120-listing-saved-notification-tests.mjs
+          node scripts/post120-safety-notification-contract-tests.mjs
+      - name: Security / credentials / recovery abuse contracts
+        run: |
+          node scripts/security-tests.mjs
+          node scripts/native-security-tests.mjs
+          node scripts/credential-retention-tests.mjs
+          node scripts/account-recovery-tests.mjs
+          node scripts/recovery-local-provider-abuse-tests.mjs
+          node scripts/recovery-local-provider-simulation-tests.mjs
+          node scripts/ci-auth-readiness-tests.mjs
+          node scripts/ci-auth-redaction-contract-tests.mjs
       - name: Full source regression
         run: npm run check
       - name: Typecheck
