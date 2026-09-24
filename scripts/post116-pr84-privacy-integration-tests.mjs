@@ -57,7 +57,8 @@ assert.equal(productFacts.text, 'Vendo iPhone 13 de 128 GB en $12,500, batería 
 
 assert.match(assistant, /redactTopiRemoteText/);
 assert.match(assistant, /safeDraftForRemote/);
-assert.match(publish, /Antes del envío remoto se omiten emails, teléfonos y códigos sensibles evidentes/);
+assert.match(publish, /Firebase AI real, el texto necesario se procesa remotamente/i);
+assert.match(publish, /antes del envío se omiten emails, teléfonos y códigos sensibles evidentes/i);
 assert.match(publish, /La IA nunca publica por ti/);
 
 console.log('PASS PR84 privacy integration: explicit durable listing consent + Topi PII redaction diagnostics + UID-bound location cache + no implicit geolocation');
