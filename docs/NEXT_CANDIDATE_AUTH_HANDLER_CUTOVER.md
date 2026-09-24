@@ -1,3 +1,5 @@
+> **2026-09-23 live staging result:** the reviewed handler is deployed at `https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`, but Identity Toolkit rejects `notification.sendEmail.callbackUri` mutation with exact error `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED`. Do not retry this PATCH by inertia. The accepted staging route is therefore the exact Firebase-managed handler `/__/auth/action`, plus TuTop automatic verification refresh and same-UID in-app paste-link recovery. The custom handler remains deployed/available but is not the configured email callback.
+
 # TuTop staging — custom Firebase Auth email handler cutover
 
 Status: **PREPARED / NOT APPLIED**  
