@@ -23,9 +23,11 @@ const firebaseDefaultHandler=callbackUrl.pathname==='/__/auth/action'
   && [`${PROJECT}.firebaseapp.com`, `${PROJECT}.web.app`].includes(callbackUrl.hostname);
 const handlerMode=customHandler ? 'TUTOP_CUSTOM' : firebaseDefaultHandler ? 'FIREBASE_DEFAULT_MANAGED' : 'UNKNOWN';
 if(handlerMode==='UNKNOWN') throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_UNRECOGNIZED');
-if(handlerMode!=='TUTOP_CUSTOM') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFIGURED');
 
 let hardenedCustomHandler=false;
+if(firebaseDefaultHandler){
+  console.log('INFO AUTH_EMAIL_HANDLER_MODE=FIREBASE_DEFAULT_MANAGED; supported Firebase default handler. TuTop in-app same-UID paste-link recovery + verification auto-refresh remain required source contracts.');
+}
 if(customHandler){
   const handlerResponse=await fetch(callbackUrl.toString(), { redirect:'error', headers:{'Cache-Control':'no-cache'} });
   const handlerText=await handlerResponse.text();
