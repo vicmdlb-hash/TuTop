@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
+const PACKAGE='mx.tutop.app';
 const BRANCH='fix/post120-physical-failure-cluster';
 const ACK='EXTRACT_EXACT_NEXT_CANDIDATE_APK_IDENTITY';
 
@@ -24,8 +25,16 @@ if(!androidHome)throw new Error('ANDROID_HOME_REQUIRED');
 const buildTools=path.join(androidHome,'build-tools');
 const versions=fs.readdirSync(buildTools,{withFileTypes:true}).filter(x=>x.isDirectory()).map(x=>x.name).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 if(!versions.length)throw new Error('ANDROID_BUILD_TOOLS_REQUIRED');
-const apksigner=path.join(buildTools,versions.at(-1),process.platform==='win32'?'apksigner.bat':'apksigner');
+const buildToolsBin=path.join(buildTools,versions.at(-1));
+const apksigner=path.join(buildToolsBin,process.platform==='win32'?'apksigner.bat':'apksigner');
+const aapt2=path.join(buildToolsBin,process.platform==='win32'?'aapt2.exe':'aapt2');
 if(!fs.existsSync(apksigner))throw new Error('APKSIGNER_REQUIRED');
+if(!fs.existsSync(aapt2))throw new Error('AAPT2_REQUIRED');
+
+const badging=execFileSync(aapt2,['dump','badging',apk],{encoding:'utf8'});
+const packageName=String(badging.match(/package:\s+name='([^']+)'/i)?.[1]||'').trim();
+if(!packageName)throw new Error('APK_PACKAGE_NAME_MISSING');
+if(packageName!==PACKAGE)throw new Error('APK_PACKAGE_MISMATCH');
 
 const output=execFileSync(apksigner,['verify','--print-certs',apk],{encoding:'utf8'});
 const digest=(kind,length)=>{
@@ -46,7 +55,7 @@ fs.appendFileSync(githubEnv,[
 ].join('\n')+'\n');
 
 console.log(JSON.stringify({
- status:'PASS',project:PROJECT,source_sha:sourceSha,apk_sha256:apkSha256,
+ status:'PASS',project:PROJECT,package:packageName,source_sha:sourceSha,apk_sha256:apkSha256,
  cert_sha1:certSha1,cert_sha256:certSha256,
  mutation:false,production:false,play:false,
 },null,2));
