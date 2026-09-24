@@ -4,13 +4,17 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
+const BRANCH='fix/post120-physical-failure-cluster';
 const ACK='EXTRACT_EXACT_NEXT_CANDIDATE_APK_IDENTITY';
 
 function required(name){const v=String(process.env[name]||'').trim();if(!v)throw new Error('MISSING_'+name);return v;}
 if(process.env.GITHUB_ACTIONS!=='true')throw new Error('GITHUB_ACTIONS_REQUIRED');
+if(String(process.env.GITHUB_REF_NAME||'')!==BRANCH)throw new Error('EXACT_EXTRACTION_BRANCH_REQUIRED');
 if(String(process.env.TUTOP_FIREBASE_PROJECT_ID||'')!==PROJECT)throw new Error('STAGING_PROJECT_REQUIRED');
 if(String(process.env.TUTOP_NEXT_CANDIDATE_IDENTITY_ACK||'')!==ACK)throw new Error('EXACT_APK_IDENTITY_ACK_REQUIRED');
 
+const sourceSha=required('GITHUB_SHA');
+if(!/^[0-9a-f]{40}$/.test(sourceSha))throw new Error('SOURCE_SHA_INVALID');
 const apk=path.resolve(required('TUTOP_NEXT_CANDIDATE_APK_PATH'));
 if(!fs.existsSync(apk)||fs.statSync(apk).size<=0)throw new Error('NEXT_CANDIDATE_APK_MISSING');
 const apkSha256=crypto.createHash('sha256').update(fs.readFileSync(apk)).digest('hex');
@@ -34,6 +38,7 @@ const certSha1=digest('SHA-1',40);
 const certSha256=digest('SHA-256',64);
 const githubEnv=required('GITHUB_ENV');
 fs.appendFileSync(githubEnv,[
+  `TUTOP_NEXT_CANDIDATE_SOURCE_SHA=${sourceSha}`,
   `TUTOP_NEXT_CANDIDATE_APK_SHA256=${apkSha256}`,
   `TUTOP_ANDROID_CERT_SHA1=${certSha1}`,
   `TUTOP_ANDROID_CERT_SHA256=${certSha256}`,
@@ -41,7 +46,7 @@ fs.appendFileSync(githubEnv,[
 ].join('\n')+'\n');
 
 console.log(JSON.stringify({
- status:'PASS',project:PROJECT,apk_sha256:apkSha256,
+ status:'PASS',project:PROJECT,source_sha:sourceSha,apk_sha256:apkSha256,
  cert_sha1:certSha1,cert_sha256:certSha256,
  mutation:false,production:false,play:false,
 },null,2));
