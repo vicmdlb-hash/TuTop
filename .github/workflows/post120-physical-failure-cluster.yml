@@ -128,6 +128,31 @@ jobs:
         run: |
           node scripts/release-092-contract-tests.mjs
           node scripts/physical-qa-readiness-pack-tests.mjs
+      - name: Idempotency / concurrency contracts
+        run: |
+          node scripts/chat-message-idempotency-tests.mjs
+          node scripts/offer-idempotency-tests.mjs
+          node scripts/transaction-retry-idempotency-tests.mjs
+          node scripts/post116-publish-idempotency-tests.mjs
+          node scripts/post116-listing-moderation-race-tests.mjs
+      - name: Favorites / saved-search truth contracts
+        run: |
+          node scripts/post120-favorite-listing-transition-contract-tests.mjs
+          node scripts/post120-favorite-listing-transition-tests.mjs
+          node scripts/post120-saved-search-alert-contract-tests.mjs
+          node scripts/post120-saved-search-alert-projector-tests.mjs
+          node scripts/post120-saved-search-manager-tests.mjs
+          node scripts/saved-search-notification-tests.mjs
+      - name: Release evidence / retention / signing contracts
+        run: |
+          node --experimental-strip-types scripts/physical-qa-evidence-bundle-tests.mjs
+          node --experimental-strip-types scripts/physical-qa-two-device-gate-tests.mjs
+          node scripts/physical-qa-candidate-drift-tests.mjs
+          node scripts/next-candidate-signing-binding-tests.mjs
+          node scripts/retention-matrix-tests.mjs
+          node scripts/legal-retention-review-tests.mjs
+          node scripts/legal-retention-dossier-tests.mjs
+          node scripts/app-check-enforcement-tests.mjs
       - name: Full source regression
         run: npm run check
       - name: Typecheck
