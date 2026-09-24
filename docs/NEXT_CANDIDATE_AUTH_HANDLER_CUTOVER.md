@@ -74,14 +74,16 @@ Use a disposable staging account. Never use a production identity.
 
 Required observations:
 
-1. verification email is delivered;
-2. link opens the TuTop handler, not `/__/auth/action`;
-3. valid code verifies the same UID;
-4. expired/reused code gives a safe retry message;
-5. cross-account link is rejected by the in-app UID-binding recovery;
-6. returning to the app causes automatic verification refresh;
-7. publication/chat/offer/reservation remain blocked until Firebase reports
-   `emailVerified=true`.
+1. verification email is delivered and `verifyEmail` succeeds;
+2. password-reset email opens the same TuTop handler, validates the code and changes the password only after two matching >=8-character entries;
+3. recover-email action applies its Firebase OOB code and returns a safe confirmation;
+4. all links open the TuTop handler, not `/__/auth/action`;
+5. expired/reused codes give a safe retry message;
+6. cross-account verification link is rejected by the in-app UID-binding recovery;
+7. returning to the app causes automatic verification refresh;
+8. publication/chat/offer/reservation remain blocked until Firebase reports
+   `emailVerified=true`;
+9. browser storage and diagnostics contain no password, ID token or refresh token.
 
 Do not mark physical PASS from a browser-only test.
 
