@@ -66,30 +66,31 @@ pass('App Check enforcement remains behind exact staging freeze guards',
   && stagingFreezeGuard.includes('TUTOP_ALLOW_AI_APP_CHECK_ENFORCEMENT')
   && stagingFreezeGuard.includes('staging-ai-only'));
 
-pass('Android workflow preserves stable main path and enables automatic physical QA builds',
+pass('Android workflow is manual-only and branch-gated to the exact staging physical-QA lane',
   androidWorkflow.includes('workflow_dispatch:')
-  && androidWorkflow.includes('branches: ["main", "feat/tutop-0.8-p0"]')
-  && androidWorkflow.includes("if: github.ref_name != 'feat/tutop-0.8-p0'")
-  && androidWorkflow.includes("if: github.ref_name == 'feat/tutop-0.8-p0' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')"));
+  && androidWorkflow.includes("if: github.ref_name == 'feat/tutop-0.9.1-nearby-topi'")
+  && androidWorkflow.includes('Require same-SHA green October and Staging')
+  && androidWorkflow.includes('october-01-validation.yml')
+  && androidWorkflow.includes('staging-v2-smoke.yml'));
 pass('physical QA branch selects V2 staging only and remains isolated from legacy Firebase',
   androidWorkflow.includes('TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881')
-  && androidWorkflow.includes("grep -q 'tutop-3a4f7'")
+  && androidWorkflow.includes('TUTOP_ALLOW_ANDROID_APP_SETUP: staging-v2')
   && androidWorkflow.includes('export-staging-v2-build-env.mjs')
   && androidWorkflow.includes('permissions:\n      contents: write'));
 pass('physical QA distribution is durable without enabling production',
   androidWorkflow.includes('retention-days: 90')
-  && androidWorkflow.includes('Publish durable Physical QA prerelease')
+  && androidWorkflow.includes('Publish durable 0.9.1 Physical QA prerelease')
   && androidWorkflow.includes('gh release create')
   && androidWorkflow.includes('--prerelease')
-  && androidWorkflow.includes('Not production-ready, not Play-ready'));
+  && androidWorkflow.includes('Not production-ready or Play-ready'));
 pass('0.9 Android version is deterministic before packaging',
-  androidWorkflow.includes('TUTOP_BETA_VERSION: 0.9.0-beta.0')
-  && androidWorkflow.includes('TUTOP_ANDROID_VERSION_CODE: 90000')
+  androidWorkflow.includes('TUTOP_BETA_VERSION: 0.9.1-beta.0')
+  && androidWorkflow.includes('TUTOP_ANDROID_VERSION_CODE: 90100')
   && androidWorkflow.includes('configure-android-beta-version.mjs')
-  && versioner.includes("'0.9.0-beta.0'")
-  && versioner.includes('90000'));
+  && versioner.includes("expectedVersionName.match(/^0\\.9\\.(1|2)-beta\\.(\\d+)$/)")
+  && versioner.includes('minor === 1 ? 90100 : 90200'));
 pass('0.9 physical QA artifact is explicit and checksummed',
-  androidWorkflow.includes('TuTop-0.9.0-beta.0-physical-qa-staging.apk')
-  && androidWorkflow.includes('sha256sum TuTop-0.9.0-beta.0-physical-qa-staging.apk'));
+  androidWorkflow.includes('TuTop-0.9.1-beta.0-physical-qa-staging.apk')
+  && androidWorkflow.includes('sha256sum "$TUTOP_APK_PATH"'));
 
 console.log('Native Firebase security contracts: PASS');
