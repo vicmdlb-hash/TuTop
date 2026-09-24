@@ -14,7 +14,7 @@ assert.match(extract,/dump','badging/);
 assert.match(extract,/mx\.tutop\.app/);
 assert.match(extract,/APK_PACKAGE_NAME_MISSING/);
 assert.match(extract,/APK_PACKAGE_MISMATCH/);
-assert.match(extract,/Signer #1 certificate/);
+assert.match(extract,/extractApkSignerDigest/);
 assert.match(extract,/GITHUB_REF_NAME/);
 assert.match(extract,/EXACT_EXTRACTION_BRANCH_REQUIRED/);
 assert.match(extract,/GITHUB_SHA/);
