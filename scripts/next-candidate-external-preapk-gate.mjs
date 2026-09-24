@@ -2,7 +2,17 @@ import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
 const PACKAGE='mx.tutop.app';
+const BRANCH='fix/post120-physical-failure-cluster';
+
+function required(name){const value=String(process.env[name]||'').trim();if(!value)throw new Error('MISSING_'+name);return value;}
+function apk(value){const normalized=String(value||'').toLowerCase();if(!/^[0-9a-f]{64}$/.test(normalized))throw new Error('APK_SHA256_INVALID');return normalized;}
+
+if(process.env.GITHUB_ACTIONS!=='true') throw new Error('GITHUB_ACTIONS_REQUIRED');
+if(String(process.env.GITHUB_REF_NAME||'')!==BRANCH) throw new Error('EXACT_PROMOTION_BRANCH_REQUIRED');
 if(String(process.env.TUTOP_FIREBASE_PROJECT_ID||'')!==PROJECT) throw new Error('STAGING_PROJECT_REQUIRED');
+const sourceSha=required('GITHUB_SHA');
+if(!/^[0-9a-f]{40}$/.test(sourceSha)) throw new Error('SOURCE_SHA_INVALID');
+const apkSha256=apk(required('TUTOP_NEXT_CANDIDATE_APK_SHA256'));
 
 const token=await firebaseCiAccessToken();
 const headers={Authorization:`Bearer ${token}`,'X-Goog-User-Project':PROJECT};
@@ -39,7 +49,7 @@ if(customHandler){
   const frameOptions=String(handlerResponse.headers.get('x-frame-options')||'').toUpperCase();
   const referrerPolicy=String(handlerResponse.headers.get('referrer-policy')||'').toLowerCase();
   const permissionsPolicy=String(handlerResponse.headers.get('permissions-policy')||'').toLowerCase();
-  const contentTypeOptions=String(handlerResponse.headers.get('x-content-type-options')||'').toLowerCase();
+  const contentTypeOptions=String(handlerResponse.headers.get('x-content-options')||handlerResponse.headers.get('x-content-type-options')||'').toLowerCase();
   if(!cacheControl.includes('no-store')) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CACHE_UNSAFE');
   if(frameOptions!=='DENY') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_FRAME_UNSAFE');
   if(referrerPolicy!=='no-referrer') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_REFERRER_UNSAFE');
@@ -66,6 +76,8 @@ console.log(JSON.stringify({
   status:'PASS',
   project:PROJECT,
   package:PACKAGE,
+  source_sha:sourceSha,
+  apk_sha256:apkSha256,
   auth_handler_mode:handlerMode,
   auth_callback_origin:callbackUrl.origin,
   auth_callback_path:callbackUrl.pathname,
@@ -78,4 +90,4 @@ console.log(JSON.stringify({
   production:false,
   play:false,
 },null,2));
-console.log(`PASS next-candidate pre-APK external gates: auth handler mode=${handlerMode} + Android SHA-256 are present.`);
+console.log(`PASS next-candidate pre-promotion gates: source=${sourceSha} apk=${apkSha256} auth handler mode=${handlerMode} + exact Android SHA-256 registered.`);
