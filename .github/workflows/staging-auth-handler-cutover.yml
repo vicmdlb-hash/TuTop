@@ -4,7 +4,7 @@ on:
   push:
     branches: [fix/post120-physical-failure-cluster]
     paths:
-      - ops/staging-auth-handler-cutover.trigger
+      - ops/staging-auth-handler-cutover-v2.trigger
 
 permissions:
   contents: read
@@ -35,7 +35,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(cat ops/staging-auth-handler-cutover.trigger)" = "CUTOVER_TUTOP_STAGING_AUTH_HANDLER_V1"
+          test "$(cat ops/staging-auth-handler-cutover-v2.trigger)" = "CUTOVER_TUTOP_STAGING_AUTH_HANDLER_V1"
           test "$TUTOP_FIREBASE_PROJECT_ID" = "tutop-beta-vicmdlb-1356585881"
 
       - run: npm ci
