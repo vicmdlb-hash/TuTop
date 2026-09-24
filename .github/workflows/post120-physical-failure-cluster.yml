@@ -60,6 +60,11 @@ jobs:
           node scripts/post116-push-health-contract-tests.mjs
           node scripts/post120-fcm-single-target-gate-tests.mjs
           node scripts/post120-fcm-physical-gate-contract-tests.mjs
+      - name: Location / privacy truth contracts
+        run: |
+          node scripts/post116-pr84-privacy-integration-tests.mjs
+          node scripts/post116-pr88-moderation-privacy-integration-tests.mjs
+          node scripts/seller-profile-privacy-tests.mjs
       - name: Marketplace truth contracts
         run: |
           node scripts/post116-seller-moderation-truth-tests.mjs
