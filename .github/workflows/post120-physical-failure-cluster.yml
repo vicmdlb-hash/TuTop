@@ -45,6 +45,8 @@ jobs:
         run: npm run typecheck
       - name: Web build
         run: npm run build
+      - name: Live staging Auth email configuration readback — no mutation
+        run: node scripts/audit-staging-auth-email-config.mjs
       - name: Live staging App Check readback — no mutation
         run: node scripts/audit-staging-offplay-app-check.mjs
       - name: Prove no candidate artifact
