@@ -20,7 +20,7 @@ async function req(url,options={},allow=[]){
 }
 function val(v){if(typeof v==='boolean')return {booleanValue:v};if(typeof v==='string')return {stringValue:v};return {nullValue:null};}
 async function countActiveAdmins(){
-  const body={structuredAggregationQuery:{aggregations:[{alias:'count',count:{}}],structuredQuery:{from:[{collectionId:'admins'}],where:{fieldFilter:{field:{fieldPath:'active'},op:'EQUAL',value:{booleanValue:true}}}}}}};
+  const body={structuredAggregationQuery:{aggregations:[{alias:'count',count:{}}],structuredQuery:{from:[{collectionId:'admins'}],where:{fieldFilter:{field:{fieldPath:'active'},op:'EQUAL',value:{booleanValue:true}}}}}};
   const r=await req(root+':runAggregationQuery',{method:'POST',body:JSON.stringify(body)});
   return Number(r.body?.[0]?.result?.aggregateFields?.count?.integerValue||0);
 }
