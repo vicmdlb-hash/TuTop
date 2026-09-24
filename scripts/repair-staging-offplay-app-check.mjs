@@ -81,4 +81,4 @@ console.log(JSON.stringify({
   play:false,
 },null,2));
 console.log('PASS staging Play Integrity accepts off-Play app versions while retaining device-integrity attestation.');
-if(!sha256.length) console.log('GATE NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED: exact signing certificate must be registered before any new APK is authorized.');
+if(!sha256.length) console.log('INFO no successor signing SHA-256 exists yet; bind the exact signed artifact certificate after assembly and before candidate promotion or handoff.');
