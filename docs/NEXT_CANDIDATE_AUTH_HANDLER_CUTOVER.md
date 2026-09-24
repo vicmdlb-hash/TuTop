@@ -47,7 +47,7 @@ Authentication → Templates → edit an email template → **Customize action U
 
 Set:
 
-`https://tutop-beta-vicmdlb-1356585881.firebaseapp.com/auth-action.html`
+`https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`
 
 Firebase applies the customized action URL to user-management email templates. Do not
 change sender/domain branding or production settings in this operation.
