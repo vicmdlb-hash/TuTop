@@ -13,7 +13,7 @@ const appCheckAudit=fs.readFileSync('scripts/audit-staging-offplay-app-check.mjs
 const certBind=fs.readFileSync('scripts/register-staging-android-sha256.mjs','utf8');
 const externalGate=fs.readFileSync('scripts/next-candidate-external-preapk-gate.mjs','utf8');
 const appCheckWorkflow=fs.readFileSync('.github/workflows/post120-staging-app-check-offplay-repair.yml','utf8');
-const authCutoverWorkflow=fs.readFileSync('.github/workflows/staging-auth-handler-cutover.yml','utf8');
+const authCutoverWorkflow=fs.readFileSync('.github/workflows/staging-auth-handler-cutover.yml','utf8');\nconst authClientAudit=fs.readFileSync('scripts/audit-staging-auth-client-config.mjs','utf8');
 
 assert.match(android,/android\.permission\.POST_NOTIFICATIONS/);
 assert.match(android,/falta POST_NOTIFICATIONS para Android 13\+/);
@@ -73,6 +73,13 @@ assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_REACHABLE/);
 assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_MISMATCH/);
 assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CACHE_UNSAFE/);
 assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_FRAME_UNSAFE/);
+
+// Automatic Auth client audits must remain read-only and rate-limit safe.
+assert.match(authClientAudit,/apikeys\.googleapis\.com\/v2\/keys:lookupKey/);
+assert.match(authClientAudit,/identitytoolkit\.googleapis\.com/);
+assert.match(authClientAudit,/synthetic_credential_probe:false/);
+assert.doesNotMatch(authClientAudit,/accounts:signInWithPassword/);
+assert.doesNotMatch(authClientAudit,/syntheticEmail/);
 
 // External staging mutations must never happen merely because source/docs are pushed.
 // Push may audit App Check read-only; mutation is manual-dispatch + exact ACK only.
