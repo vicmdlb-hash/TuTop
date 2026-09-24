@@ -12,6 +12,8 @@ const appCheckRepair=fs.readFileSync('scripts/repair-staging-offplay-app-check.m
 const appCheckAudit=fs.readFileSync('scripts/audit-staging-offplay-app-check.mjs','utf8');
 const certBind=fs.readFileSync('scripts/register-staging-android-sha256.mjs','utf8');
 const externalGate=fs.readFileSync('scripts/next-candidate-external-preapk-gate.mjs','utf8');
+const appCheckWorkflow=fs.readFileSync('.github/workflows/post120-staging-app-check-offplay-repair.yml','utf8');
+const authCutoverWorkflow=fs.readFileSync('.github/workflows/staging-auth-handler-cutover.yml','utf8');
 
 assert.match(android,/android\.permission\.POST_NOTIFICATIONS/);
 assert.match(android,/falta POST_NOTIFICATIONS para Android 13\+/);
@@ -72,4 +74,28 @@ assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_MISMATCH/)
 assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CACHE_UNSAFE/);
 assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_FRAME_UNSAFE/);
 
-console.log('PASS physical-failure repair contracts: email verification handler, Android notifications, Topi App Check diagnostics and off-Play attestation guards');
+// External staging mutations must never happen merely because source/docs are pushed.
+// Push may audit App Check read-only; mutation is manual-dispatch + exact ACK only.
+assert.match(appCheckWorkflow,/push:[\s\S]*fix\/post120-physical-failure-cluster/);
+assert.match(appCheckWorkflow,/workflow_dispatch:[\s\S]*repair_ack/);
+assert.match(appCheckWorkflow,/Read-only staging App Check audit/);
+const appCheckRepairJobIndex=appCheckWorkflow.indexOf('\n  repair:');
+assert(appCheckRepairJobIndex>0,'App Check workflow must keep a separate guarded repair job');
+const appCheckAutomaticSection=appCheckWorkflow.slice(0,appCheckRepairJobIndex);
+assert.match(appCheckAutomaticSection,/audit-staging-offplay-app-check\.mjs/);
+assert.doesNotMatch(appCheckAutomaticSection,/repair-staging-offplay-app-check\.mjs/);
+const appCheckRepairSection=appCheckWorkflow.slice(appCheckRepairJobIndex);
+assert.match(appCheckRepairSection,/github\.event_name == 'workflow_dispatch'/);
+assert.match(appCheckRepairSection,/inputs\.repair_ack == 'REPAIR_STAGING_OFFPLAY_APP_CHECK'/);
+assert.match(appCheckRepairSection,/repair-staging-offplay-app-check\.mjs/);
+assert.match(appCheckRepairSection,/audit-staging-offplay-app-check\.mjs/);
+
+// Provider-rejected Auth callback cutover is retired from automatic push execution.
+// A future retry remains possible only as an explicit manual action after provider capability changes.
+assert.match(authCutoverWorkflow,/workflow_dispatch:/);
+assert.doesNotMatch(authCutoverWorkflow,/^\s{2}push:/m);
+assert.match(authCutoverWorkflow,/RETRY_ONLY_AFTER_PROVIDER_CAPABILITY_CHANGE/);
+assert.match(authCutoverWorkflow,/inputs\.retry_ack == 'RETRY_ONLY_AFTER_PROVIDER_CAPABILITY_CHANGE'/);
+assert.match(authCutoverWorkflow,/cutover-staging-auth-email-handler\.mjs --apply/);
+
+console.log('PASS physical-failure repair contracts: email verification handler, Android notifications, Topi App Check diagnostics, off-Play attestation guards and no push-triggered external repair');
