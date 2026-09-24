@@ -56,10 +56,11 @@ for(const [key,value] of [
 assert.match(appCheckRepair,/allowUnrecognizedVersion:true/);
 assert.match(appCheckRepair,/MEETS_DEVICE_INTEGRITY/);
 assert.match(appCheckRepair,/requireLicensed:false/);
-assert.match(appCheckRepair,/NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED/);
+assert.match(appCheckRepair,/EXPECTED_ANDROID_CERT_SHA256_NOT_REGISTERED/);
 assert.match(certBind,/certType:'SHA_256'/);
 assert.match(certBind,/BIND_EXACT_STAGING_ANDROID_SHA256/);
-assert.match(externalGate,/NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED/);
+assert.match(externalGate,/NEXT_CANDIDATE_SIGNED_CERT_SHA256_REQUIRED/);
+assert.match(externalGate,/NEXT_CANDIDATE_EXACT_ANDROID_SHA256_NOT_REGISTERED/);
 assert.match(externalGate,/FIREBASE_DEFAULT_MANAGED/);
 assert.match(externalGate,/TUTOP_CUSTOM/);
 assert.match(externalGate,/NEXT_CANDIDATE_AUTH_HANDLER_UNRECOGNIZED/);
