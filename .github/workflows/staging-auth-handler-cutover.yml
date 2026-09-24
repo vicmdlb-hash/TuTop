@@ -1,10 +1,12 @@
-name: Staging Auth email handler cutover — one shot
+name: Staging Auth email handler cutover — manual future-only
 
 on:
-  push:
-    branches: [fix/post120-physical-failure-cluster]
-    paths:
-      - ops/staging-auth-handler-cutover-v5.trigger
+  workflow_dispatch:
+    inputs:
+      retry_ack:
+        description: Type RETRY_ONLY_AFTER_PROVIDER_CAPABILITY_CHANGE to allow a deliberate future retry.
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -15,7 +17,7 @@ concurrency:
 
 jobs:
   cutover:
-    if: github.ref_name == 'fix/post120-physical-failure-cluster'
+    if: github.ref_name == 'fix/post120-physical-failure-cluster' && inputs.retry_ack == 'RETRY_ONLY_AFTER_PROVIDER_CAPABILITY_CHANGE'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
@@ -31,12 +33,13 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Exact one-shot trigger
+      - name: Explicit future-retry guard
         shell: bash
         run: |
           set -euo pipefail
-          test "$(cat ops/staging-auth-handler-cutover-v5.trigger)" = "CUTOVER_TUTOP_STAGING_AUTH_HANDLER_V1"
+          test "${{ inputs.retry_ack }}" = "RETRY_ONLY_AFTER_PROVIDER_CAPABILITY_CHANGE"
           test "$TUTOP_FIREBASE_PROJECT_ID" = "tutop-beta-vicmdlb-1356585881"
+          echo "Manual retry authorized only for a future provider capability change; automatic push-triggered PATCH retries are retired."
 
       - run: npm ci
 
@@ -70,7 +73,7 @@ jobs:
           grep -q 'no-store' firebase.json
 
       - name: Hosting already deployed — callback diagnostic only
-        run: echo "Reusing the exact staging Hosting payload already deployed; no Hosting redeploy in v5."
+        run: echo "Reusing the exact staging Hosting payload already deployed; no Hosting redeploy."
 
       - name: Apply Auth callback with reachability + rollback guard
         run: node scripts/cutover-staging-auth-email-handler.mjs --apply
