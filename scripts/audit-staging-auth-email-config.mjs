@@ -18,13 +18,19 @@ let callbackUrl=null;
 try { callbackUrl=callbackUri ? new URL(callbackUri) : null; } catch { callbackUrl=null; }
 const callbackPath=callbackUrl?.pathname || '';
 const customHandlerConfigured=callbackPath==='/auth-action.html' || callbackPath==='/auth-action';
+const firebaseDefaultHandler=callbackPath==='/__/auth/action'
+  && Boolean(callbackUrl)
+  && [`${PROJECT}.firebaseapp.com`, `${PROJECT}.web.app`].includes(callbackUrl.hostname);
+const handlerMode=customHandlerConfigured ? 'TUTOP_CUSTOM' : firebaseDefaultHandler ? 'FIREBASE_DEFAULT_MANAGED' : 'UNKNOWN';
 const state={
   status:'READ_ONLY',
   project:PROJECT,
   callback_uri_configured:Boolean(callbackUri),
   callback_uri_origin:callbackUrl?.origin || (callbackUri ? 'INVALID' : null),
   callback_uri_path:callbackPath || null,
+  auth_email_handler_mode:handlerMode,
   custom_tutop_handler_configured:customHandlerConfigured,
+  firebase_default_handler:firebaseDefaultHandler,
   authorized_domain_count:domains.length,
   has_default_firebase_domain:domains.some(d=>d.endsWith('.firebaseapp.com')||d.endsWith('.web.app')),
   mutation:false,
@@ -32,6 +38,7 @@ const state={
 };
 console.log(JSON.stringify(state,null,2));
 if(callbackUri && state.callback_uri_origin==='INVALID') throw new Error('AUTH_EMAIL_CALLBACK_URI_INVALID');
-if(!callbackUri) console.log('GATE FUTURE_AUTH_HANDLER_CALLBACK_REQUIRED: Firebase email callback is not configured.');
-else if(!customHandlerConfigured) console.log('GATE FUTURE_AUTH_CUSTOM_HANDLER_REQUIRED: Firebase Auth still points to a non-TuTop email action handler.');
-else console.log('PASS Firebase Auth points to the TuTop email action handler; exact public reachability still requires Hosting readback.');
+if(!callbackUri) throw new Error('FUTURE_AUTH_HANDLER_CALLBACK_REQUIRED');
+if(handlerMode==='UNKNOWN') throw new Error('FUTURE_AUTH_HANDLER_UNRECOGNIZED');
+if(handlerMode==='FIREBASE_DEFAULT_MANAGED') console.log('PASS AUTH_EMAIL_HANDLER_MODE=FIREBASE_DEFAULT_MANAGED; default Firebase action handler remains the accepted route.');
+else console.log('PASS AUTH_EMAIL_HANDLER_MODE=TUTOP_CUSTOM; exact public reachability remains a separate gate.');
