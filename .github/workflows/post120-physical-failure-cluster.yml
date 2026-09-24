@@ -112,6 +112,23 @@ jobs:
           node scripts/recovery-local-provider-simulation-tests.mjs
           node scripts/ci-auth-readiness-tests.mjs
           node scripts/ci-auth-redaction-contract-tests.mjs
+      - name: Terminal-state / reconciliation / observability contracts
+        run: |
+          node scripts/v2-terminal-state-authority-tests.mjs
+          node scripts/reservation-reconciliation-tests.mjs
+          node scripts/reservation-runner-safety-tests.mjs
+          node scripts/marketplace-observability-tests.mjs
+      - name: Cross-feature privacy / moderation / Topi contracts
+        run: |
+          node scripts/post116-pr84-privacy-integration-tests.mjs
+          node scripts/post116-pr88-moderation-privacy-integration-tests.mjs
+          node scripts/post116-pr85-topi-structured-tests.mjs
+          node scripts/seller-profile-privacy-tests.mjs
+      - name: Release / readiness contracts
+        run: |
+          node scripts/release-091-contract-tests.mjs
+          node scripts/release-092-contract-tests.mjs
+          node scripts/physical-qa-readiness-pack-tests.mjs
       - name: Full source regression
         run: npm run check
       - name: Typecheck
