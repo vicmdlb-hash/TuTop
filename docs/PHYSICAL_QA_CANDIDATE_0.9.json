@@ -36,10 +36,10 @@
     "wallet_lazy": false,
     "favorites_visible": false
   },
-  "physical_release_candidate": true,
-  "candidate_status": "active_exact_head",
-  "replacement_required": false,
+  "physical_release_candidate": false,
+  "candidate_status": "obsolete_physical_fail",
+  "replacement_required": true,
   "generated_at": "2026-09-21T04:28:41Z",
   "activated_at": "2026-09-21T04:28:41Z",
-  "notes": "Build120 exact physical candidate. React/ProductDetail, native Topi, notification activation/token and historical/national publication are the causal Device A retest cluster. Post-Build120 source-only PRs do not change these runtime refs."
+  "notes": "HISTORICAL / OBSOLETE. Build120 failed physical acceptance for auth/email verification, real Topi AI and visible notification activation. User declined another Build120 retest. Preserve artifact/run/SHA fields only as historical provenance; do not reuse this APK. A successor may be generated only after source/config gates, custom email handler reachability and exact future Android signing SHA-256 are satisfied."
 }
