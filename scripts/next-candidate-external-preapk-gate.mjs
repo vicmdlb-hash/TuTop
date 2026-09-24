@@ -53,7 +53,11 @@ const app=(apps.apps||[]).find(x=>x.packageName===PACKAGE&&x.state!=='DELETED');
 if(!app?.name) throw new Error('STAGING_ANDROID_APP_REQUIRED');
 const certs=await get(`https://firebase.googleapis.com/v1beta1/${app.name}/sha`);
 const sha256=(certs.certificates||[]).filter(x=>x.certType==='SHA_256'&&String(x.shaHash||'').trim());
-if(!sha256.length) throw new Error('NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED');
+const normalize=value=>String(value||'').replace(/:/g,'').toUpperCase();
+const expectedSha256=normalize(process.env.TUTOP_EXPECTED_ANDROID_CERT_SHA256||'');
+if(!/^[0-9A-F]{64}$/.test(expectedSha256)) throw new Error('NEXT_CANDIDATE_SIGNED_CERT_SHA256_REQUIRED');
+const exactSha256=sha256.some(x=>normalize(x.shaHash)===expectedSha256);
+if(!exactSha256) throw new Error('NEXT_CANDIDATE_EXACT_ANDROID_SHA256_NOT_REGISTERED');
 
 console.log(JSON.stringify({
   status:'PASS',
@@ -65,6 +69,7 @@ console.log(JSON.stringify({
   auth_handler_domain_authorized:true,
   auth_custom_handler_hardened:hardenedCustomHandler,
   registered_sha256_count:sha256.length,
+  exact_expected_sha256_registered:true,
   mutation:false,
   spend:0,
   production:false,
