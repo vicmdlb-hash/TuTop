@@ -24,12 +24,17 @@ assert.match(service, /source: 'guided' \| 'firebase-ai'/);
 assert.match(service, /No inventes políticas, reembolsos, soporte humano, garantías/);
 assert.match(service, /Nunca solicites contraseñas, códigos de verificación, tokens/);
 assert.match(service, /deterministicAnswer/);
+assert.match(service, /redactTopiRemoteText/);
+assert.match(service, /privacyRedactions/);
+assert.match(service, /privacy_redaction_count/);
+assert.match(service, /aiPrompt\(remoteQuestion, route\)/);
 
 assert.match(ui, /Pregúntale a Topi/);
 assert.match(ui, /Tu amigo para resolver dudas y usar TuTop/);
 assert.match(ui, /Escribe o dicta tu pregunta/);
 assert.match(ui, /startTopiDictation/);
-assert.match(ui, /Por seguridad, no compartas contraseñas, códigos, tarjetas ni tu domicilio exacto/);
+assert.match(ui, /Firebase AI real, tu pregunta se procesa remotamente/);
+assert.match(ui, /omitió datos de contacto o códigos sensibles detectados/);
 assert.match(ui, /answerConsumerSupport/);
 assert.doesNotMatch(ui, /Árbol de decisiones \+ IA/);
 assert.doesNotMatch(ui, /Soporte guiado/);
