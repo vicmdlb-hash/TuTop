@@ -1,0 +1,206 @@
+name: TuTop Build121 post120 physical repair — staging APK
+
+on:
+  push:
+    branches: [candidate/tutop-121-post120-physical-repair]
+    paths:
+      - ops/build121-post120-physical-repair.trigger
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-build121-post120-physical-repair
+  cancel-in-progress: false
+
+jobs:
+  validate-build-promote:
+    if: github.ref_name == 'candidate/tutop-121-post120-physical-repair' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_BETA_VERSION: 0.9.2-beta.11
+      TUTOP_ANDROID_VERSION_CODE: 90215
+      TUTOP_AI_APP_CHECK_REQUIRED: 'true'
+      TUTOP_NEXT_CANDIDATE_IDENTITY_ACK: EXTRACT_EXACT_NEXT_CANDIDATE_APK_IDENTITY
+      TUTOP_ANDROID_SHA256_BIND_ACK: BIND_EXACT_STAGING_ANDROID_SHA256
+      TUTOP_NEXT_CANDIDATE_NATIVE_KEY_ACK: BIND_NEXT_CANDIDATE_STAGING_NATIVE_KEY
+      TUTOP_NEXT_CANDIDATE_APK_PATH: android/app/build/outputs/apk/debug/app-debug.apk
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Exact one-shot promotion trigger
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat ops/build121-post120-physical-repair.trigger)" = "PROMOTE_TUTOP_BUILD121_FROM_PR120_GREEN"
+          test "$GITHUB_REF_NAME" = "candidate/tutop-121-post120-physical-repair"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - run: npm ci
+
+      - name: Historical candidate replacement prebuild gate
+        run: node scripts/physical-qa-candidate-drift.mjs --prebuild
+
+      - name: Build121 promotion contract
+        run: node scripts/build121-candidate-promotion-contract-tests.mjs
+
+      - name: Full source regression before artifact
+        run: npm run check
+
+      - name: Post120 causal repair + provenance gates
+        run: |
+          npm run v2:rules:prepare
+          node scripts/verified-email-beta-contract-tests.mjs
+          node scripts/post117-generated-rules-least-privilege-tests.mjs
+          node scripts/post120-physical-failure-cluster-tests.mjs
+          node scripts/next-candidate-signing-binding-tests.mjs
+          node scripts/build118-deviceA-native-failure-diagnostics-tests.mjs
+          node scripts/post120-admin-account-status-contract-tests.mjs
+          node scripts/post120-fcm-single-target-gate-tests.mjs
+          node scripts/post120-fcm-physical-gate-contract-tests.mjs
+          node --experimental-strip-types scripts/physical-qa-evidence-bundle-tests.mjs
+          node --experimental-strip-types scripts/physical-qa-two-device-gate-tests.mjs
+          node scripts/physical-qa-candidate-drift-tests.mjs
+          node scripts/physical-qa-readiness-pack-tests.mjs
+
+      - name: Install isolated emulator harness
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
+          git diff --exit-code -- package.json package-lock.json
+
+      - name: Firestore + Storage successor security emulator
+        env:
+          GCLOUD_PROJECT: demo-tutop-build121
+          FIREBASE_PROJECT_ID: demo-tutop-build121
+        run: >-
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore,storage
+          --config firebase.v2.json
+          --project demo-tutop-build121
+          "node --test --test-concurrency=1
+          tests/firestore.v2.rules.test.mjs
+          tests/firestore.v2.atomic.test.mjs
+          tests/firestore.v2.acceptance-atomic.test.mjs
+          tests/firestore.v2.auth-status.test.mjs
+          tests/firestore.v2.reputation-trust.test.mjs
+          tests/firestore.v2.governance.test.mjs
+          tests/firestore.v2.runtime-services.test.mjs
+          tests/firestore.v2.account-operations.test.mjs
+          tests/firestore.v2.notification-receipts.test.mjs
+          tests/firestore.v2.transaction-lock.test.mjs
+          tests/firestore.v2.unread-aggregation.test.mjs
+          tests/firestore.v2.review-strike-aggregation.test.mjs
+          tests/firestore.v2.favorite-membership.test.mjs
+          tests/firestore.v2.post106-verified-identity.test.mjs
+          tests/firestore.v2.private-admin-reads.test.mjs
+          tests/firestore.v2.publication-profile-coupling.test.mjs
+          tests/firestore.v2.seller-follows.test.mjs
+          tests/storage.rules.test.mjs"
+
+      - name: Verify dependency manifests stayed immutable
+        run: git diff --exit-code -- package.json package-lock.json
+
+      - name: Read-only live staging gates before artifact
+        run: |
+          node scripts/audit-staging-public-release-web.mjs
+          node scripts/audit-staging-auth-client-config.mjs
+          node scripts/audit-staging-auth-email-config.mjs
+          node scripts/audit-staging-offplay-app-check.mjs
+
+      - name: Read current staging Firebase config
+        run: node scripts/read-existing-staging-build-config.mjs
+
+      - name: Export Build121 staging environment
+        run: node scripts/export-staging-v2-build-env.mjs
+
+      - name: Install ephemeral mobile dependencies
+        run: |
+          npm run deps:mobile
+          git diff --exit-code -- package.json package-lock.json
+
+      - name: Firebase AI real staging runtime smoke
+        run: node scripts/staging-topi-ai-runtime-smoke.mjs
+
+      - name: Production-mode web build
+        run: npm run build
+
+      - name: Android bootstrap + exact Build121 version
+        run: |
+          npm run android:bootstrap
+          node scripts/configure-android-beta-version.mjs
+          npm run android:doctor
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Android lint unit and exact APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon lintDebug testDebugUnitTest assembleDebug
+
+      - name: Extract exact source/APK/package/certificate identity
+        run: node scripts/extract-next-candidate-apk-identity.mjs
+
+      - name: Bind exact APK SHA-256 in staging Firebase
+        run: node scripts/register-staging-android-sha256.mjs
+
+      - name: Bind exact APK SHA-1 in restricted staging API key
+        run: node scripts/register-next-candidate-staging-native-key.mjs
+
+      - name: Read back exact App Check certificate binding
+        run: node scripts/audit-staging-offplay-app-check.mjs
+
+      - name: Exact external pre-promotion gate
+        run: node scripts/next-candidate-external-preapk-gate.mjs
+
+      - name: Inspect exact APK branding and bundled auth UX
+        run: node scripts/build115-apk-branding-artifact-tests.mjs android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Package Build121 exact provenance
+        run: node scripts/package-build121-candidate.mjs
+
+      - name: Prove no AAB / Play / production output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs/bundle || test -z "$(find android/app/build/outputs/bundle -type f -name '*.aab' -print -quit 2>/dev/null)"
+          test -s engineering-candidate/provenance.json
+          test -s "$TUTOP_NEXT_CANDIDATE_APK_PATH"
+          echo "PASS exact staging APK only; no AAB/Play/production"
+
+      - id: candidate_upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: TuTop-build121-${{ github.sha }}
+          path: engineering-candidate/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Candidate artifact summary
+        shell: bash
+        run: |
+          echo "artifact_id=${{ steps.candidate_upload.outputs.artifact-id }}"
+          echo "artifact_url=${{ steps.candidate_upload.outputs.artifact-url }}"
+          echo "artifact_digest=${{ steps.candidate_upload.outputs.artifact-digest }}"
+          cat engineering-candidate/provenance.json
+
+      - name: Remove temporary Firebase config
+        if: always()
+        run: rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json public/tutop-web-config.json
