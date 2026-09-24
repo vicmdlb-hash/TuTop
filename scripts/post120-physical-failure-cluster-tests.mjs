@@ -36,9 +36,17 @@ assert.match(authJs,/mode !== 'verifyEmail'/);
 assert.match(authJs,/accounts:update\?key=/);
 assert.match(authJs,/JSON\.stringify\(\{ oobCode \}\)/);
 assert.doesNotMatch(authJs,/password|refreshToken|idToken/i);
+assert.match(authJs,/target\.origin === location\.origin/);
+assert.doesNotMatch(authJs,/target\.protocol === 'https:' \|\| target\.protocol === 'http:'/);
 
 const authHeaders=(firebase.hosting?.headers||[]).find(x=>x.source==='/auth-action*')?.headers||[];
 assert(authHeaders.some(x=>x.key==='Cache-Control'&&x.value==='no-store'));
+for(const [key,value] of [
+  ['X-Frame-Options','DENY'],
+  ['Referrer-Policy','no-referrer'],
+  ['X-Content-Type-Options','nosniff'],
+  ['Permissions-Policy','camera=(), microphone=(), geolocation=(), payment=()'],
+]) assert(authHeaders.some(x=>x.key===key&&x.value===value), `missing auth-action header ${key}`);
 
 assert.match(appCheckRepair,/allowUnrecognizedVersion:true/);
 assert.match(appCheckRepair,/MEETS_DEVICE_INTEGRITY/);
