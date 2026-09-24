@@ -33,6 +33,7 @@ jobs:
       - run: npm ci
       - name: Physical failure cluster contracts
         run: |
+          node scripts/first-admin-bootstrap-gate-tests.mjs
           node scripts/post120-physical-failure-cluster-tests.mjs
           node scripts/build118-deviceA-native-failure-diagnostics-tests.mjs
           node scripts/post120-admin-account-status-contract-tests.mjs
