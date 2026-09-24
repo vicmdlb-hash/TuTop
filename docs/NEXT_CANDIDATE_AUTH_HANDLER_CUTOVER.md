@@ -1,79 +1,66 @@
-> **2026-09-23 live staging authority:** TuTop's reviewed handler is deployed and reachable at `https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`. Identity Toolkit Admin v2 rejects automated mutation of `notification.sendEmail.callbackUri` with exact provider error `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED`. **Do not retry that PATCH.** Firebase's documented route is the Firebase Console email-template control: Authentication → Templates → edit template → **Customize action URL**.
+# TuTop staging — Firebase Auth email handler authority
 
-# TuTop staging — custom Firebase Auth email handler cutover
+Status: **FIREBASE_DEFAULT_MANAGED = SUPPORTED / CUSTOM HANDLER = OPTIONAL PROVIDER-LIMITED ENHANCEMENT**  
+Project: `tutop-beta-vicmdlb-1356585881`
 
-Status: **HOSTING DEPLOYED / CALLBACK MANUAL-CONSOLE GATE OPEN**  
-Scope: staging only (`tutop-beta-vicmdlb-1356585881`)  
-Build120: historical `obsolete_physical_fail`; never reinstall/retest it.
+## Live result
 
-## Current truth
+TuTop's reviewed custom handler is deployed at:
 
-- Reviewed TuTop handler: `https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`
-- Public handler: deployed.
-- Hardened response policy: `Cache-Control: no-store`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, restrictive `Permissions-Policy`.
-- Current Firebase Auth callback: default managed `/__/auth/action`.
-- Automated callback PATCH: **provider-rejected / retired** with `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED`.
-- Successor APK gate: **BLOCKED** until read-back reports `TUTOP_CUSTOM`.
-- Android signing SHA-256 remains a separate later gate after a deliberately assembled successor artifact exists.
+`https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`
 
-## Single remaining human action for this lane
+However:
 
-Open the exact **staging** Firebase project, then:
+- Firebase Console rejects saving it as the custom Action URL.
+- Identity Toolkit Admin v2 also rejects the same callback mutation with
+  `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED`.
+- Repeated automated PATCH attempts are retired.
+- Firebase's supported default email action handler remains:
+  `https://tutop-beta-vicmdlb-1356585881.firebaseapp.com/__/auth/action`.
 
-1. Authentication.
-2. Templates.
-3. Edit the verification email template.
-4. Choose **Customize action URL**.
-5. Set:
-   `https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html`
-6. Save.
-7. Do not change production, sender domain, SMTP, branding, Play, or Android settings.
+Firebase documents that projects have a default managed action handler and that a custom
+handler is optional. Therefore failure to customize the URL is classified as
+`PROVIDER_LIMITATION / OPTIONAL_ENHANCEMENT`, not a blocker for the next Android QA
+candidate.
 
-Firebase documents this console flow for custom email action handlers. The same customized action URL is used by the project's user-management email templates.
+## Required protections while using Firebase default handler
 
-## Automated read-back after the console save
+TuTop successor source MUST keep:
 
-Run:
+1. Firebase `emailVerified` as the authoritative verification bit.
+2. automatic verification refresh when the app regains focus/visibility;
+3. manual “Ya verifiqué / comprobar” recovery;
+4. in-app paste-link recovery for `verifyEmail` that:
+   - extracts the Firebase `oobCode`;
+   - applies it through Firebase;
+   - requires returned UID == currently signed-in UID;
+5. sensitive writes remain fail-closed until Firebase reports `emailVerified=true`;
+6. safe resend-verification flow;
+7. no phone alias presented as SMS-verified identity.
 
-`node scripts/audit-staging-auth-email-config.mjs`
+These are source/CI contracts and do not turn CI into physical PASS.
 
-Required truth:
-- `auth_email_handler_mode=TUTOP_CUSTOM`
-- `custom_tutop_handler_configured=true`
-- callback origin `https://tutop-beta-vicmdlb-1356585881.web.app`
-- callback path `/auth-action.html` or `/auth-action`
+## Optional custom handler
 
-Then run:
+Keep the reviewed custom handler deployed as an optional future enhancement. If Google later
+allows `Customize action URL`, it can be enabled after read-back without changing the
+Android acceptance model.
 
-`node scripts/next-candidate-external-preapk-gate.mjs`
+Do not retry the rejected Identity Toolkit callback PATCH by inertia.
 
-That gate now **fails closed** with `NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFIGURED` while Firebase still points to the default managed handler.
+## Next-candidate promotion gates
 
-## Controlled verification evidence after the callback changes
+The Auth handler mode passes when it is either:
 
-Use staging identities only.
+- `FIREBASE_DEFAULT_MANAGED` on the exact staging Firebase domain; or
+- `TUTOP_CUSTOM` with public reachability + hardened headers.
 
-Required:
-1. verification email opens the TuTop handler and `verifyEmail` succeeds;
-2. password reset opens the TuTop handler and only accepts two matching passwords of at least 8 characters;
-3. recover-email applies the Firebase OOB code safely;
-4. expired/reused codes fail safely;
-5. cross-account in-app paste-link redemption is rejected by UID binding;
-6. returning to the app refreshes verification state automatically;
-7. sensitive marketplace writes remain blocked until Firebase reports `emailVerified=true`;
-8. browser storage/diagnostics contain no password, ID token, refresh token, or OOB secret.
+Unknown/external handlers fail closed.
 
-Browser proof is not Device A physical PASS.
+The independent Android gate still requires:
 
-## Rollback
+- the exact signing SHA-256 of the deliberately assembled successor artifact;
+- registration/read-back of that exact SHA-256 in staging Firebase/App Check;
+- source/config/Rules suite green.
 
-If the custom handler causes regressions, restore the Firebase-managed action URL from Firebase Console, rerun the read-only audit, and keep successor APK blocked.
-
-## Promotion rule
-
-No successor APK may be assembled/promoted while either is true:
-
-- `NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFIGURED`
-- `NEXT_CANDIDATE_SIGNED_CERT_SHA256_REQUIRED` / exact SHA-256 not registered
-
-Even after both pass, physical acceptance remains separate.
+Physical acceptance remains separate.
