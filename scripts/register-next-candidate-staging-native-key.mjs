@@ -2,6 +2,7 @@ import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
 const PACKAGE='mx.tutop.app';
+const BRANCH='fix/post120-physical-failure-cluster';
 const ACK='BIND_NEXT_CANDIDATE_STAGING_NATIVE_KEY';
 
 function required(name){const v=String(process.env[name]||'').trim();if(!v)throw new Error('MISSING_'+name);return v;}
@@ -9,6 +10,7 @@ function sha1(v){const x=String(v||'').replace(/:/g,'').toUpperCase();if(!/^[0-9
 function apk(v){const x=String(v||'').toLowerCase();if(!/^[0-9a-f]{64}$/.test(x))throw new Error('APK_SHA256_INVALID');return x;}
 
 if(process.env.GITHUB_ACTIONS!=='true')throw new Error('GITHUB_ACTIONS_REQUIRED');
+if(String(process.env.GITHUB_REF_NAME||'')!==BRANCH)throw new Error('EXACT_BINDING_BRANCH_REQUIRED');
 if(String(process.env.TUTOP_FIREBASE_PROJECT_ID||'')!==PROJECT)throw new Error('STAGING_PROJECT_REQUIRED');
 if(String(process.env.TUTOP_NEXT_CANDIDATE_NATIVE_KEY_ACK||'')!==ACK)throw new Error('NEXT_CANDIDATE_NATIVE_KEY_ACK_REQUIRED');
 
