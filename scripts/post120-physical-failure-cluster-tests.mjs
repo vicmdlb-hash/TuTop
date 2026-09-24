@@ -36,7 +36,7 @@ assert(authHeaders.some(x=>x.key==='Cache-Control'&&x.value==='no-store'));
 assert.match(appCheckRepair,/allowUnrecognizedVersion:true/);
 assert.match(appCheckRepair,/MEETS_DEVICE_INTEGRITY/);
 assert.match(appCheckRepair,/requireLicensed:false/);
-assert.match(appCheckRepair,/ANDROID_SHA256_CERT_REQUIRED_BEFORE_APPCHECK_REPAIR/);
+assert.match(appCheckRepair,/ANDROID_SHA256_CERT_REQUIRED_FOR_NEXT_CANDIDATE/);
 assert.match(certBind,/certType:'SHA_256'/);
 assert.match(certBind,/BIND_EXACT_STAGING_ANDROID_SHA256/);
 
