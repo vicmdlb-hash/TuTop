@@ -34,10 +34,24 @@ assert.match(sha1,/NEXT_CANDIDATE_SHA1_READBACK_FAILED/);
 assert.match(sha1,/API_TARGETS_CHANGED/);
 
 assert.match(audit,/EXPECTED_ANDROID_CERT_SHA256_NOT_REGISTERED/);
+
+for (const promotion of [external]) {
+  assert.match(promotion,/GITHUB_ACTIONS_REQUIRED/);
+  assert.match(promotion,/GITHUB_REF_NAME/);
+  assert.match(promotion,/fix\/post120-physical-failure-cluster/);
+  assert.match(promotion,/EXACT_PROMOTION_BRANCH_REQUIRED/);
+  assert.match(promotion,/GITHUB_SHA/);
+  assert.match(promotion,/SOURCE_SHA_INVALID/);
+  assert.match(promotion,/TUTOP_NEXT_CANDIDATE_APK_SHA256/);
+  assert.match(promotion,/APK_SHA256_INVALID/);
+  assert.match(promotion,/source_sha:sourceSha/);
+  assert.match(promotion,/apk_sha256:apkSha256/);
+}
 assert.match(external,/NEXT_CANDIDATE_SIGNED_CERT_SHA256_REQUIRED/);
 assert.match(external,/NEXT_CANDIDATE_EXACT_ANDROID_SHA256_NOT_REGISTERED/);
 assert.doesNotMatch(external,/NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED/);
 
 console.log('PASS future candidate signing identity is extracted from the exact signed APK');
 console.log('PASS exact SHA-1 API-key and SHA-256 Firebase bindings require exact branch + source SHA + APK SHA-256 + explicit ACK and read back before promotion');
+console.log('PASS pre-promotion external gate is bound to the same exact source branch and APK provenance');
 console.log('PASS no private signing key is introduced by the source-only preparation');
