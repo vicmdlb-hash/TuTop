@@ -48,7 +48,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Static bootstrap gate tests
-        run: node scripts/first-admin-bootstrap-gate-tests.mjs
+        run: |
+          node --check scripts/build120-first-admin-bootstrap.mjs
+          node scripts/first-admin-bootstrap-gate-tests.mjs
       - name: Push path proves no mutation
         if: github.event_name == 'push'
         run: echo "PASS source validation only; no staging mutation"
