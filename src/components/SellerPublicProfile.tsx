@@ -144,6 +144,7 @@ export default function SellerPublicProfile({
               <p className="mt-1 text-[9px] leading-4 text-slate-500">{reputationDetail}</p>
               <p className="mt-2 text-[8px] leading-4 text-slate-600">{trustedFreshnessNote}</p>
             </div>
+            <p className="mt-3 text-[8px] leading-4 text-slate-600">No publica teléfono, correo ni credenciales del vendedor. El perfil público muestra sólo identidad/reputación permitida y publicaciones activas.</p>
           </section>
 
           <section className="mt-5">
