@@ -73,6 +73,17 @@ jobs:
           node scripts/post116-counteroffer-atomic-reservation-tests.mjs
           node scripts/post116-nearby-moderation-freshness-tests.mjs
           node scripts/reservation-lock-residue-audit-tests.mjs
+      - name: Reliability / account-bound local-state contracts
+        run: |
+          node scripts/post116-firebase-request-timeout-tests.mjs
+          node scripts/firebase-session-hardening-tests.mjs
+          node scripts/native-secure-session-091-contract-tests.mjs
+          node scripts/post116-durable-publish-draft-tests.mjs
+          node scripts/post116-account-personalization-isolation-tests.mjs
+      - name: Accessibility source contracts
+        run: |
+          node scripts/post116-accessibility-semantics-tests.mjs
+          node scripts/post120-accessibility-hardening-tests.mjs
       - name: Full source regression
         run: npm run check
       - name: Typecheck
