@@ -41,5 +41,5 @@
   "replacement_required": true,
   "generated_at": "2026-09-21T04:28:41Z",
   "activated_at": "2026-09-21T04:28:41Z",
-  "notes": "HISTORICAL / OBSOLETE. Build120 failed physical acceptance for auth/email verification, real Topi AI and visible notification activation. User declined another Build120 retest. Preserve artifact/run/SHA fields only as historical provenance; do not reuse this APK. A successor may be generated only after source/config gates, custom email handler reachability and exact future Android signing SHA-256 are satisfied."
+  "notes": "HISTORICAL / OBSOLETE. Build120 failed physical acceptance for auth/email verification, real Topi AI and visible notification activation. User declined another Build120 retest. Preserve artifact/run/SHA fields only as historical provenance; do not reuse this APK. A successor may be generated only after current source/config gates pass and the exact future Android signing SHA-256 is registered/read back by the canonical pre-APK gate. Firebase default managed /__/auth/action is supported; TuTop custom email handler reachability is optional and must not block a successor while FIREBASE_DEFAULT_MANAGED remains accepted by the canonical gate."
 }
