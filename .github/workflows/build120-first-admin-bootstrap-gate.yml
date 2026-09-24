@@ -1,0 +1,61 @@
+name: Build120 first-admin bootstrap gate
+on:
+  push:
+    branches: [ops/build120-first-admin-bootstrap-gate]
+  pull_request:
+    branches: [candidate/tutop-120-deviceA-publication-repair]
+  workflow_dispatch:
+    inputs:
+      uid:
+        description: Exact staging Firebase Auth UID to authorize as first moderator
+        required: true
+        type: string
+      role:
+        description: Minimum moderation role for this account
+        required: true
+        type: choice
+        options:
+          - institution_moderator
+          - moderator
+      institution_id:
+        description: Required only for institution_moderator; leave blank for moderator
+        required: false
+        type: string
+      confirm:
+        description: Type BOOTSTRAP_FIRST_STAGING_ADMIN:<UID>:<ROLE>:<INSTITUTION_OR_DASH>
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+      TUTOP_FIRST_ADMIN_UID: ${{ github.event_name == 'workflow_dispatch' && inputs.uid || 'dryrun_uid_12345678' }}
+      TUTOP_FIRST_ADMIN_ROLE: ${{ github.event_name == 'workflow_dispatch' && inputs.role || 'moderator' }}
+      TUTOP_FIRST_ADMIN_INSTITUTION_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.institution_id || '' }}
+      TUTOP_FIRST_ADMIN_ACK: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Static bootstrap gate tests
+        run: |
+          node --check scripts/build120-first-admin-bootstrap.mjs
+          node scripts/first-admin-bootstrap-gate-tests.mjs
+      - name: Push path proves no mutation
+        if: github.event_name == 'push'
+        run: echo "PASS source validation only; no staging mutation"
+      - name: Explicit workflow dispatch bootstrap
+        if: github.event_name == 'workflow_dispatch'
+        run: node scripts/build120-first-admin-bootstrap.mjs --apply
+      - name: Prove no APK/AAB/deploy
+        run: echo "PASS no APK/AAB/Rules deploy/Hosting deploy"
