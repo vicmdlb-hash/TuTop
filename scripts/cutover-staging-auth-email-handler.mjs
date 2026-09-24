@@ -1,7 +1,7 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
-const TARGET='https://tutop-beta-vicmdlb-1356585881.firebaseapp.com/auth-action.html';
+const TARGET='https://tutop-beta-vicmdlb-1356585881.web.app/auth-action.html';
 const DEFAULT='https://tutop-beta-vicmdlb-1356585881.firebaseapp.com/__/auth/action';
 const ACK='CUTOVER_TUTOP_STAGING_AUTH_HANDLER_V1';
 
@@ -43,16 +43,24 @@ async function patchCallback(uri){
 }
 
 async function assertHandlerReachable(){
-  const r=await fetch(TARGET,{redirect:'error',headers:{'Cache-Control':'no-cache'}});
-  const html=await r.text();
-  if(!r.ok) throw new Error(`AUTH_HANDLER_NOT_REACHABLE_${r.status}`);
-  if(!/Acción de cuenta TuTop/i.test(html)||!/auth-action\.js/i.test(html)) throw new Error('AUTH_HANDLER_CONTENT_MISMATCH');
-  const cache=String(r.headers.get('cache-control')||'').toLowerCase();
-  const frame=String(r.headers.get('x-frame-options')||'').toUpperCase();
-  const referrer=String(r.headers.get('referrer-policy')||'').toLowerCase();
-  if(!cache.includes('no-store')) throw new Error('AUTH_HANDLER_CACHE_UNSAFE');
-  if(frame!=='DENY') throw new Error('AUTH_HANDLER_FRAME_UNSAFE');
-  if(referrer!=='no-referrer') throw new Error('AUTH_HANDLER_REFERRER_UNSAFE');
+  let lastStatus=0;
+  for(let attempt=1;attempt<=8;attempt+=1){
+    const r=await fetch(TARGET,{redirect:'error',headers:{'Cache-Control':'no-cache'}});
+    lastStatus=r.status;
+    const html=await r.text();
+    if(r.ok){
+      if(!/Acción de cuenta TuTop/i.test(html)||!/auth-action\\.js/i.test(html)) throw new Error('AUTH_HANDLER_CONTENT_MISMATCH');
+      const cache=String(r.headers.get('cache-control')||'').toLowerCase();
+      const frame=String(r.headers.get('x-frame-options')||'').toUpperCase();
+      const referrer=String(r.headers.get('referrer-policy')||'').toLowerCase();
+      if(!cache.includes('no-store')) throw new Error('AUTH_HANDLER_CACHE_UNSAFE');
+      if(frame!=='DENY') throw new Error('AUTH_HANDLER_FRAME_UNSAFE');
+      if(referrer!=='no-referrer') throw new Error('AUTH_HANDLER_REFERRER_UNSAFE');
+      return;
+    }
+    if(attempt<8) await new Promise(resolve=>setTimeout(resolve,1500));
+  }
+  throw new Error(`AUTH_HANDLER_NOT_REACHABLE_${lastStatus}`);
 }
 
 await assertHandlerReachable();
