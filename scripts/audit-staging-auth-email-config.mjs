@@ -40,5 +40,5 @@ console.log(JSON.stringify(state,null,2));
 if(callbackUri && state.callback_uri_origin==='INVALID') throw new Error('AUTH_EMAIL_CALLBACK_URI_INVALID');
 if(!callbackUri) throw new Error('FUTURE_AUTH_HANDLER_CALLBACK_REQUIRED');
 if(handlerMode==='UNKNOWN') throw new Error('FUTURE_AUTH_HANDLER_UNRECOGNIZED');
-if(handlerMode==='FIREBASE_DEFAULT_MANAGED') console.log('PASS AUTH_EMAIL_HANDLER_MODE=FIREBASE_DEFAULT_MANAGED; default Firebase action handler remains the accepted route.');
+if(handlerMode==='FIREBASE_DEFAULT_MANAGED') console.log('INFO AUTH_EMAIL_HANDLER_MODE=FIREBASE_DEFAULT_MANAGED; current staging route is readable but successor pre-APK remains blocked on manual Firebase Console custom Action URL.');
 else console.log('PASS AUTH_EMAIL_HANDLER_MODE=TUTOP_CUSTOM; exact public reachability remains a separate gate.');
