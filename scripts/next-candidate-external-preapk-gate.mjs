@@ -23,6 +23,7 @@ const firebaseDefaultHandler=callbackUrl.pathname==='/__/auth/action'
   && [`${PROJECT}.firebaseapp.com`, `${PROJECT}.web.app`].includes(callbackUrl.hostname);
 const handlerMode=customHandler ? 'TUTOP_CUSTOM' : firebaseDefaultHandler ? 'FIREBASE_DEFAULT_MANAGED' : 'UNKNOWN';
 if(handlerMode==='UNKNOWN') throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_UNRECOGNIZED');
+if(handlerMode!=='TUTOP_CUSTOM') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFIGURED');
 
 let hardenedCustomHandler=false;
 if(customHandler){
