@@ -1,18 +1,45 @@
-name: Post120 staging App Check off-Play repair
+name: Post120 staging App Check audit + guarded repair
 
 on:
   push:
     branches: [fix/post120-physical-failure-cluster]
+  workflow_dispatch:
+    inputs:
+      repair_ack:
+        description: Type REPAIR_STAGING_OFFPLAY_APP_CHECK to allow a deliberate staging repair.
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: tutop-staging-app-check-offplay-repair
+  group: tutop-staging-app-check-offplay
   cancel-in-progress: false
 
 jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Read-only staging App Check audit
+        run: node scripts/audit-staging-offplay-app-check.mjs
+      - name: Prove read-only / no build / no deploy
+        run: echo "PASS App Check staging audit only; mutation=false; no APK/AAB/Rules/Hosting/Play/production"
+
   repair:
+    if: github.event_name == 'workflow_dispatch' && inputs.repair_ack == 'REPAIR_STAGING_OFFPLAY_APP_CHECK'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -27,8 +54,16 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Explicit manual repair guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ inputs.repair_ack }}" = "REPAIR_STAGING_OFFPLAY_APP_CHECK"
+          test "$TUTOP_FIREBASE_PROJECT_ID" = "tutop-beta-vicmdlb-1356585881"
       - run: npm ci
       - name: Repair exact staging Play Integrity for off-Play QA
         run: node scripts/repair-staging-offplay-app-check.mjs
-      - name: Prove staging-only / no deploy / no build
-        run: echo "PASS App Check staging config only; no APK/AAB/Rules/Hosting/Play/production"
+      - name: Read back repaired staging App Check policy
+        run: node scripts/audit-staging-offplay-app-check.mjs
+      - name: Prove staging-only / no build / no deploy
+        run: echo "PASS App Check guarded staging repair only; no APK/AAB/Rules/Hosting/Play/production"
