@@ -13,6 +13,7 @@ for (const script of [
   'scripts/harden-nearby-v2-rules.mjs',
   'scripts/harden-listing-video-rules.mjs',
   'scripts/harden-verified-email-beta-rules.mjs',
+  'scripts/harden-private-admin-read-rules.mjs',
 ]) execFileSync(process.execPath, [script], { stdio: 'inherit' });
 
 const rules = fs.readFileSync('firebase/firestore.v2.generated.rules', 'utf8');
