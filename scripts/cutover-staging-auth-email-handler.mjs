@@ -53,9 +53,13 @@ async function assertHandlerReachable(){
       const cache=String(r.headers.get('cache-control')||'').toLowerCase();
       const frame=String(r.headers.get('x-frame-options')||'').toUpperCase();
       const referrer=String(r.headers.get('referrer-policy')||'').toLowerCase();
+      const permissions=String(r.headers.get('permissions-policy')||'').toLowerCase();
+      const contentType=String(r.headers.get('x-content-type-options')||'').toLowerCase();
       if(!cache.includes('no-store')) throw new Error('AUTH_HANDLER_CACHE_UNSAFE');
       if(frame!=='DENY') throw new Error('AUTH_HANDLER_FRAME_UNSAFE');
       if(referrer!=='no-referrer') throw new Error('AUTH_HANDLER_REFERRER_UNSAFE');
+      if(!permissions.includes('camera=()') || !permissions.includes('microphone=()') || !permissions.includes('geolocation=()')) throw new Error('AUTH_HANDLER_PERMISSIONS_UNSAFE');
+      if(contentType!=='nosniff') throw new Error('AUTH_HANDLER_CONTENT_TYPE_UNSAFE');
       return;
     }
     if(attempt<8) await new Promise(resolve=>setTimeout(resolve,1500));
