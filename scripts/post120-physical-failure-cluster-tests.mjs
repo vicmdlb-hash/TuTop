@@ -33,11 +33,15 @@ assert.match(auth,/searchParams\.get\('oobCode'\)/);
 
 assert.match(authHtml,/auth-action\.js/);
 assert.doesNotMatch(authHtml,/<script(?![^>]*\ssrc=)[^>]*>/i);
-assert.match(authJs,/mode !== 'verifyEmail'/);
-assert.match(authJs,/accounts:update\?key=/);
-assert.match(authJs,/JSON\.stringify\(\{ oobCode \}\)/);
-assert.doesNotMatch(authJs,/password|refreshToken|idToken/i);
+assert.match(authJs,/\['verifyEmail', 'recoverEmail', 'resetPassword'\]/);
+assert.match(authJs,/accounts:update/);
+assert.match(authJs,/accounts:resetPassword/);
+assert.match(authJs,/newPassword: password/);
 assert.match(authJs,/target\.origin === location\.origin/);
+assert.doesNotMatch(authJs,/localStorage|sessionStorage|refreshToken|idToken/);
+assert.doesNotMatch(authJs,/console\.(?:log|error|warn).*password/i);
+assert.match(authHtml,/id="reset-form"/);
+assert.match(authHtml,/autocomplete="new-password"/);
 assert.doesNotMatch(authJs,/target\.protocol === 'https:' \|\| target\.protocol === 'http:'/);
 
 const authHeaders=(firebase.hosting?.headers||[]).find(x=>x.source==='/auth-action*')?.headers||[];
