@@ -31,6 +31,12 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Generate and validate exact V2 Rules
+        run: |
+          npm run v2:rules:prepare
+          node scripts/verified-email-beta-contract-tests.mjs
+          node scripts/post117-generated-rules-least-privilege-tests.mjs
+          node scripts/v2-rules-access-budget-tests.mjs
       - name: Physical failure cluster contracts
         run: |
           node scripts/first-admin-bootstrap-gate-tests.mjs
