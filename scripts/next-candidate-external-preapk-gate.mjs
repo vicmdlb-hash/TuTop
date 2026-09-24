@@ -27,8 +27,14 @@ if(!/Acción de cuenta TuTop/i.test(handlerText) || !/auth-action\.js/i.test(han
 }
 const cacheControl=String(handlerResponse.headers.get('cache-control')||'').toLowerCase();
 const frameOptions=String(handlerResponse.headers.get('x-frame-options')||'').toUpperCase();
+const referrerPolicy=String(handlerResponse.headers.get('referrer-policy')||'').toLowerCase();
+const permissionsPolicy=String(handlerResponse.headers.get('permissions-policy')||'').toLowerCase();
+const contentTypeOptions=String(handlerResponse.headers.get('x-content-type-options')||'').toLowerCase();
 if(!cacheControl.includes('no-store')) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CACHE_UNSAFE');
 if(frameOptions!=='DENY') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_FRAME_UNSAFE');
+if(referrerPolicy!=='no-referrer') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_REFERRER_UNSAFE');
+if(!permissionsPolicy.includes('camera=()') || !permissionsPolicy.includes('microphone=()') || !permissionsPolicy.includes('geolocation=()')) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_PERMISSIONS_UNSAFE');
+if(contentTypeOptions!=='nosniff') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_TYPE_UNSAFE');
 
 const apps=await get(`https://firebase.googleapis.com/v1beta1/projects/${PROJECT}/androidApps?pageSize=100`);
 const app=(apps.apps||[]).find(x=>x.packageName===PACKAGE&&x.state!=='DELETED');
