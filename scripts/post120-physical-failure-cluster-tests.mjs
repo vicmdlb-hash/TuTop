@@ -10,6 +10,7 @@ const authJs=fs.readFileSync('public/auth-action.js','utf8');
 const firebase=JSON.parse(fs.readFileSync('firebase.json','utf8'));
 const appCheckRepair=fs.readFileSync('scripts/repair-staging-offplay-app-check.mjs','utf8');
 const certBind=fs.readFileSync('scripts/register-staging-android-sha256.mjs','utf8');
+const externalGate=fs.readFileSync('scripts/next-candidate-external-preapk-gate.mjs','utf8');
 
 assert.match(android,/android\.permission\.POST_NOTIFICATIONS/);
 assert.match(android,/falta POST_NOTIFICATIONS para Android 13\+/);
@@ -54,5 +55,8 @@ assert.match(appCheckRepair,/requireLicensed:false/);
 assert.match(appCheckRepair,/NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED/);
 assert.match(certBind,/certType:'SHA_256'/);
 assert.match(certBind,/BIND_EXACT_STAGING_ANDROID_SHA256/);
+assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFIGURED/);
+assert.match(externalGate,/NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED/);
+assert.match(externalGate,/auth_custom_handler:true/);
 
 console.log('PASS physical-failure repair contracts: email verification handler, Android notifications, Topi App Check diagnostics and off-Play attestation guards');
