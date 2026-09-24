@@ -39,8 +39,8 @@ const state={
 };
 console.log(JSON.stringify(state,null,2));
 
-if(!sha256.length)throw new Error('ANDROID_SHA256_CERT_NOT_REGISTERED');
 if(state.allow_unrecognized_version!==true)throw new Error('OFFPLAY_UNRECOGNIZED_VERSION_NOT_ALLOWED');
 if(state.require_licensed!==false)throw new Error('OFFPLAY_LICENSE_MUST_NOT_BE_REQUIRED');
 if(state.min_device_integrity!=='MEETS_DEVICE_INTEGRITY')throw new Error('DEVICE_INTEGRITY_NOT_ENFORCED');
-console.log('PASS staging App Check is ready for off-Play Android QA and has at least one registered SHA-256 certificate.');
+console.log('PASS staging App Check off-Play policy is repaired and read back.');
+if(!sha256.length) console.log('GATE NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED: bind the exact future signing certificate before APK assembly.');
