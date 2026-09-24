@@ -108,11 +108,19 @@ export function evaluatePrebuildCandidateState(candidate, drift, currentVersion 
     return { pass: true, reason: 'prior_version_candidate_preserved' };
   }
 
-  const explicitlyObsolete = candidate.physical_release_candidate === false
+  const obsoleteRuntimeDrift = candidate.physical_release_candidate === false
     && candidate.candidate_status === 'obsolete_runtime_drift'
     && candidate.replacement_required === true;
-  if (!drift.runtime_refs_fresh && explicitlyObsolete) {
+  if (!drift.runtime_refs_fresh && obsoleteRuntimeDrift) {
     return { pass: true, reason: 'obsolete_candidate_acknowledged_replacement_required' };
+  }
+
+  const obsoletePhysicalFail = candidate.physical_release_candidate === false
+    && candidate.candidate_status === 'obsolete_physical_fail'
+    && candidate.replacement_required === true
+    && drift.identity_valid === true;
+  if (obsoletePhysicalFail) {
+    return { pass: true, reason: 'physical_fail_candidate_acknowledged_replacement_required' };
   }
   return { pass: false, reason: 'candidate_state_inconsistent_with_runtime_drift' };
 }
