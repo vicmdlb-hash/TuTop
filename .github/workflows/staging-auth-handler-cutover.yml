@@ -1,0 +1,94 @@
+name: Staging Auth email handler cutover — one shot
+
+on:
+  push:
+    branches: [fix/post120-physical-failure-cluster]
+    paths:
+      - ops/staging-auth-handler-cutover.trigger
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-staging-auth-handler-cutover
+  cancel-in-progress: false
+
+jobs:
+  cutover:
+    if: github.ref_name == 'fix/post120-physical-failure-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_AUTH_HANDLER_CUTOVER_ACK: CUTOVER_TUTOP_STAGING_AUTH_HANDLER_V1
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Exact one-shot trigger
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat ops/staging-auth-handler-cutover.trigger)" = "CUTOVER_TUTOP_STAGING_AUTH_HANDLER_V1"
+          test "$TUTOP_FIREBASE_PROJECT_ID" = "tutop-beta-vicmdlb-1356585881"
+
+      - run: npm ci
+
+      - name: Predeploy source and Rules gates
+        run: |
+          npm run v2:rules:prepare
+          node scripts/verified-email-beta-contract-tests.mjs
+          node scripts/post117-generated-rules-least-privilege-tests.mjs
+          node scripts/post120-physical-failure-cluster-tests.mjs
+          npm run typecheck
+
+      - name: Read existing staging Firebase config
+        run: node scripts/read-existing-staging-build-config.mjs
+
+      - name: Prepare exact staging Hosting payload
+        run: node scripts/prepare-candidate120-hosting-assets.mjs
+
+      - name: Build web payload
+        run: npm run build
+
+      - name: Verify auth handler payload before deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/auth-action.html
+          test -s dist/auth-action.js
+          test -s dist/tutop-web-config.json
+          grep -q 'Acción de cuenta TuTop' dist/auth-action.html
+          grep -q "'verifyEmail', 'recoverEmail', 'resetPassword'" dist/auth-action.js
+          grep -q 'X-Frame-Options' firebase.json
+          grep -q 'no-store' firebase.json
+
+      - name: Deploy staging Hosting only
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes firebase-tools@15.29.0 deploy             --config firebase.json             --project "$TUTOP_FIREBASE_PROJECT_ID"             --only hosting             --non-interactive
+
+      - name: Apply Auth callback with reachability + rollback guard
+        run: node scripts/cutover-staging-auth-email-handler.mjs --apply
+
+      - name: Read back Auth config
+        run: node scripts/audit-staging-auth-email-config.mjs
+
+      - name: Prove no Android/release artifact
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS staging web/Auth cutover only; no APK/AAB/Build121/Play/production"
+
+      - name: Remove temporary Firebase config
+        if: always()
+        run: rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json public/tutop-web-config.json
