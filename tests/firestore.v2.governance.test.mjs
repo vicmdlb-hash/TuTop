@@ -176,13 +176,14 @@ test('reviewer de verificación no obtiene permisos generales de moderación', a
   await assertFails(getDoc(doc(verify, 'reports/r-uatx')));
 });
 
-test('listings_v2 requiere identidad de campus y propietario real', async () => {
+test('listings_v2 usa selección canónica de campus y mantiene propietario real', async () => {
   await seedBase();
   const seller = verifiedContext(env, 'uatx-user').firestore();
   const windowStart = now();
   await assertSucceeds(createListingWithRate(seller, 'l1', canonicalListing(), 1, windowStart));
-  await assertFails(createListingWithRate(seller, 'l2', { ...canonicalListing(), institution_id: 'buap', campus_id: 'buap-cu' }, 2, windowStart));
-  await assertFails(createListingWithRate(seller, 'l3', { ...canonicalListing(), seller_id: 'buap-user' }, 2, windowStart));
+  await assertSucceeds(createListingWithRate(seller, 'l2', { ...canonicalListing(), institution_id: 'buap', campus_id: 'buap-cu' }, 2, windowStart));
+  await assertFails(createListingWithRate(seller, 'l3', { ...canonicalListing(), institution_id: 'buap', campus_id: 'uatx-riberena' }, 3, windowStart));
+  await assertFails(createListingWithRate(seller, 'l4', { ...canonicalListing(), seller_id: 'buap-user' }, 3, windowStart));
 });
 
 test('listing pendiente es privado hasta aprobación y moderación respeta institución', async () => {
