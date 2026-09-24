@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: tutop-post120-physical-failure-cluster
+  group: tutop-post120-physical-failure-cluster-v2
   cancel-in-progress: true
 
 jobs:
