@@ -1,4 +1,5 @@
 import { classifySupportQuery, supportNode, supportTreeFacts, type SupportRouteId } from '../lib/supportDecisionTree';
+import { redactTopiRemoteText, type TopiPrivacyRedaction } from '../lib/topiPrivacy';
 import { recordDiagnostic } from './localDiagnostics';
 import { generateNativeTopiText, nativeTopiAIStatus } from './nativeTopiAI';
 
@@ -6,6 +7,7 @@ export type SupportAnswer = {
   text: string;
   source: 'guided' | 'firebase-ai' | 'unavailable';
   route: SupportRouteId;
+  privacyRedactions?: TopiPrivacyRedaction[];
 };
 
 function safeQuestion(value: string) {
@@ -63,11 +65,24 @@ export async function answerConsumerSupport(question: string, routeHint: Support
   const clean = safeQuestion(question);
   if (clean.length < 3) return deterministicAnswer(clean, routeHint);
   const route = resolveRoute(clean, routeHint);
-  const generated = await generateNativeTopiText(aiPrompt(clean, route));
+  const privacy = redactTopiRemoteText(clean, 900);
+  const remoteQuestion = privacy.text || '';
+  const generated = await generateNativeTopiText(aiPrompt(remoteQuestion, route));
   const text = generated?.text?.replace(/^```(?:text)?\s*/i, '').replace(/\s*```$/i, '').trim().slice(0, 900);
   if (text) {
-    recordDiagnostic('ai', 'support_real_ai_success');
-    return { text, source: 'firebase-ai', route };
+    recordDiagnostic('ai', 'support_real_ai_success', {
+      privacy_redaction_count: privacy.redactions.length,
+      email: privacy.redactions.includes('email'),
+      phone: privacy.redactions.includes('phone'),
+      otp: privacy.redactions.includes('otp'),
+      token: privacy.redactions.includes('token'),
+    });
+    return {
+      text,
+      source: 'firebase-ai',
+      route,
+      ...(privacy.redactions.length ? { privacyRedactions: privacy.redactions } : {}),
+    };
   }
 
   // In the private physical-QA build a typed free-form question is an AI test.
