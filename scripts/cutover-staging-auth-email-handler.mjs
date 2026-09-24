@@ -49,7 +49,7 @@ async function assertHandlerReachable(){
     lastStatus=r.status;
     const html=await r.text();
     if(r.ok){
-      if(!/Acción de cuenta TuTop/i.test(html)||!/auth-action\\.js/i.test(html)) throw new Error('AUTH_HANDLER_CONTENT_MISMATCH');
+      if(!/Acción de cuenta TuTop/i.test(html)||!/auth-action\.js/i.test(html)) throw new Error('AUTH_HANDLER_CONTENT_MISMATCH');
       const cache=String(r.headers.get('cache-control')||'').toLowerCase();
       const frame=String(r.headers.get('x-frame-options')||'').toUpperCase();
       const referrer=String(r.headers.get('referrer-policy')||'').toLowerCase();
