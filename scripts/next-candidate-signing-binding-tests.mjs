@@ -9,6 +9,11 @@ const external=fs.readFileSync('scripts/next-candidate-external-preapk-gate.mjs'
 
 assert.match(extract,/APKSIGNER_REQUIRED/);
 assert.match(extract,/Signer #1 certificate/);
+assert.match(extract,/GITHUB_REF_NAME/);
+assert.match(extract,/EXACT_EXTRACTION_BRANCH_REQUIRED/);
+assert.match(extract,/GITHUB_SHA/);
+assert.match(extract,/SOURCE_SHA_INVALID/);
+assert.match(extract,/TUTOP_NEXT_CANDIDATE_SOURCE_SHA/);
 assert.match(extract,/TUTOP_ANDROID_CERT_SHA1/);
 assert.match(extract,/TUTOP_ANDROID_CERT_SHA256/);
 assert.match(extract,/TUTOP_EXPECTED_ANDROID_CERT_SHA256/);
@@ -21,6 +26,9 @@ for (const binding of [sha256, sha1]) {
   assert.match(binding,/EXACT_BINDING_BRANCH_REQUIRED/);
   assert.match(binding,/GITHUB_SHA/);
   assert.match(binding,/SOURCE_SHA_INVALID/);
+  assert.match(binding,/TUTOP_NEXT_CANDIDATE_SOURCE_SHA/);
+  assert.match(binding,/EXTRACTED_SOURCE_SHA_INVALID/);
+  assert.match(binding,/CANDIDATE_SOURCE_SHA_MISMATCH/);
   assert.match(binding,/TUTOP_NEXT_CANDIDATE_APK_SHA256/);
   assert.match(binding,/APK_SHA256_INVALID/);
 }
@@ -35,23 +43,24 @@ assert.match(sha1,/API_TARGETS_CHANGED/);
 
 assert.match(audit,/EXPECTED_ANDROID_CERT_SHA256_NOT_REGISTERED/);
 
-for (const promotion of [external]) {
-  assert.match(promotion,/GITHUB_ACTIONS_REQUIRED/);
-  assert.match(promotion,/GITHUB_REF_NAME/);
-  assert.match(promotion,/fix\/post120-physical-failure-cluster/);
-  assert.match(promotion,/EXACT_PROMOTION_BRANCH_REQUIRED/);
-  assert.match(promotion,/GITHUB_SHA/);
-  assert.match(promotion,/SOURCE_SHA_INVALID/);
-  assert.match(promotion,/TUTOP_NEXT_CANDIDATE_APK_SHA256/);
-  assert.match(promotion,/APK_SHA256_INVALID/);
-  assert.match(promotion,/source_sha:sourceSha/);
-  assert.match(promotion,/apk_sha256:apkSha256/);
-}
+assert.match(external,/GITHUB_ACTIONS_REQUIRED/);
+assert.match(external,/GITHUB_REF_NAME/);
+assert.match(external,/fix\/post120-physical-failure-cluster/);
+assert.match(external,/EXACT_PROMOTION_BRANCH_REQUIRED/);
+assert.match(external,/GITHUB_SHA/);
+assert.match(external,/SOURCE_SHA_INVALID/);
+assert.match(external,/TUTOP_NEXT_CANDIDATE_SOURCE_SHA/);
+assert.match(external,/EXTRACTED_SOURCE_SHA_INVALID/);
+assert.match(external,/CANDIDATE_SOURCE_SHA_MISMATCH/);
+assert.match(external,/TUTOP_NEXT_CANDIDATE_APK_SHA256/);
+assert.match(external,/APK_SHA256_INVALID/);
+assert.match(external,/source_sha:sourceSha/);
+assert.match(external,/apk_sha256:apkSha256/);
 assert.match(external,/NEXT_CANDIDATE_SIGNED_CERT_SHA256_REQUIRED/);
 assert.match(external,/NEXT_CANDIDATE_EXACT_ANDROID_SHA256_NOT_REGISTERED/);
 assert.doesNotMatch(external,/NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED/);
 
-console.log('PASS future candidate signing identity is extracted from the exact signed APK');
-console.log('PASS exact SHA-1 API-key and SHA-256 Firebase bindings require exact branch + source SHA + APK SHA-256 + explicit ACK and read back before promotion');
-console.log('PASS pre-promotion external gate is bound to the same exact source branch and APK provenance');
+console.log('PASS exact source SHA is exported together with the signed APK identity');
+console.log('PASS exact SHA-1 API-key and SHA-256 Firebase bindings require extraction source continuity + exact APK identity + explicit ACK');
+console.log('PASS pre-promotion external gate requires the same source/artifact provenance chain');
 console.log('PASS no private signing key is introduced by the source-only preparation');
