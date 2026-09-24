@@ -2,7 +2,7 @@ import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
 const PACKAGE='mx.tutop.app';
-const BRANCH='fix/post120-physical-failure-cluster';
+const BRANCH='candidate/tutop-121-post120-physical-repair';
 
 function required(name){const value=String(process.env[name]||'').trim();if(!value)throw new Error('MISSING_'+name);return value;}
 function apk(value){const normalized=String(value||'').toLowerCase();if(!/^[0-9a-f]{64}$/.test(normalized))throw new Error('APK_SHA256_INVALID');return normalized;}
