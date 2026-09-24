@@ -127,8 +127,11 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
         && request.resource.data.seller_id == request.auth.uid
         && request.resource.data.institution_id is string && request.resource.data.institution_id.size() >= 2
         && request.resource.data.campus_id is string && request.resource.data.campus_id.size() >= 2
+        // Canonical selected institution/campus is authoritative for a new listing.
+        // seller_id is already bound to request.auth.uid and validUniversityMetadata()
+        // validates catalog existence + campus→institution integrity. Do not re-bind
+        // publication to a possibly stale users/{uid} profile snapshot.
         && validUniversityMetadata(request.resource.data)
-        && productMatchesSellerIdentity(request.resource.data, request.auth.uid)
         && request.resource.data.category_id is string && request.resource.data.category_id.size() >= 2 && request.resource.data.category_id.size() <= 80
         && (!('subcategory_id' in request.resource.data) || (request.resource.data.subcategory_id is string && request.resource.data.subcategory_id.size() <= 80))
         && request.resource.data.title is string && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 120
