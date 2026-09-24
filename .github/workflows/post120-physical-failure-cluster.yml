@@ -41,6 +41,7 @@ jobs:
         run: |
           node scripts/first-admin-bootstrap-gate-tests.mjs
           node scripts/post120-physical-failure-cluster-tests.mjs
+          node scripts/apksigner-certificate-digest-tests.mjs
           node scripts/next-candidate-signing-binding-tests.mjs
           node scripts/build121-candidate-promotion-contract-tests.mjs
           node scripts/build118-deviceA-native-failure-diagnostics-tests.mjs
