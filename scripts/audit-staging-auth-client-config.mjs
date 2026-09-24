@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
@@ -26,32 +25,29 @@ if(init.projectId!==PROJECT) throw new Error('HOSTING_INIT_PROJECT_MISMATCH');
 if(String(init.apiKey||'')!==String(sdk.apiKey)) throw new Error('HOSTING_INIT_API_KEY_MISMATCH');
 if(String(init.appId||'')!==String(sdk.appId)) throw new Error('HOSTING_INIT_APP_ID_MISMATCH');
 
-const syntheticEmail='tutop-auth-key-probe-never-real@example.invalid';
-const probe=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${encodeURIComponent(sdk.apiKey)}`,{
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({email:syntheticEmail,password:'NeverARealTuTopPassword!9',returnSecureToken:true}),
-});
-const probeText=await probe.text();let probeBody={};try{probeBody=probeText?JSON.parse(probeText):{};}catch{}
-const message=String(probeBody?.error?.message||'');
-if(probe.ok) throw new Error('AUTH_KEY_PROBE_UNEXPECTED_SIGNIN');
-if(/API_KEY_INVALID|PROJECT_DISABLED|CONFIGURATION_NOT_FOUND|INVALID_API_KEY/i.test(message)) {
-  throw new Error('STAGING_AUTH_CLIENT_API_KEY_REJECTED');
-}
-// A valid key should reach normal credential handling. Enumeration protection commonly
-// returns INVALID_LOGIN_CREDENTIALS; older projects may return EMAIL_NOT_FOUND/USER_NOT_FOUND.
-if(!/INVALID_LOGIN_CREDENTIALS|EMAIL_NOT_FOUND|USER_NOT_FOUND|INVALID_PASSWORD/i.test(message)) {
-  throw new Error('STAGING_AUTH_CLIENT_KEY_PROBE_UNEXPECTED_'+message.replace(/[^A-Z0-9_]/gi,'_').slice(0,80));
-}
+// Validate the client key through read-only API Keys metadata instead of repeatedly
+// issuing synthetic password sign-ins, which can trigger Identity Toolkit abuse/rate limits.
+const lookup=await adminGet(`https://apikeys.googleapis.com/v2/keys:lookupKey?keyString=${encodeURIComponent(sdk.apiKey)}`);
+const keyName=String(lookup?.name||'').trim();
+if(!keyName) throw new Error('STAGING_AUTH_CLIENT_API_KEY_LOOKUP_MISSING');
+const key=await adminGet(`https://apikeys.googleapis.com/v2/${keyName}`);
+if(String(key?.name||'')!==keyName) throw new Error('STAGING_AUTH_CLIENT_API_KEY_READBACK_MISMATCH');
+
+const targets=Array.isArray(key?.restrictions?.apiTargets)?key.restrictions.apiTargets:[];
+const services=new Set(targets.map(x=>String(x?.service||'')).filter(Boolean));
+const identityToolkitAllowed=targets.length===0 || services.has('identitytoolkit.googleapis.com');
+if(!identityToolkitAllowed) throw new Error('STAGING_AUTH_CLIENT_KEY_IDENTITY_TOOLKIT_NOT_ALLOWED');
 
 console.log(JSON.stringify({
   status:'PASS',
   project:PROJECT,
   hosting_init_matches_firebase_web_config:true,
-  auth_client_api_key_accepted:true,
-  synthetic_probe_created_account:false,
+  auth_client_api_key_lookup:true,
+  identity_toolkit_allowed:identityToolkitAllowed,
+  api_target_restriction_mode:targets.length===0?'UNRESTRICTED_API_TARGETS':'EXPLICIT_API_TARGETS',
+  synthetic_credential_probe:false,
   sent_email:false,
   mutation:false,
   spend:0,
 },null,2));
-console.log('PASS Hosting Firebase metadata and live Identity Toolkit client-key path agree for staging.');
+console.log('PASS Hosting Firebase metadata, Firebase web config and read-only API-key restrictions agree for staging Auth.');
