@@ -109,6 +109,7 @@ export default function TopiSupportAssistant() {
               <div className="flex flex-wrap items-center gap-2"><Sparkles className={`h-4 w-4 ${answer.source === 'unavailable' ? 'text-rose-300' : 'text-emerald-300'}`} /><strong className="text-[10px] text-emerald-200">Topi</strong><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${sourceChip.className}`}>{sourceChip.label}</span></div>
               <p className="mt-2 whitespace-pre-wrap text-[10px] leading-5 text-slate-300">{answer.text}</p>
               {answer.source === 'guided' && <p className="mt-2 text-[8px] leading-4 text-slate-600">Esta respuesta viene del árbol seguro de TuTop; no se presenta como respuesta generada por IA.</p>}
+              {answer.source === 'firebase-ai' && answer.privacyRedactions?.length ? <p className="mt-2 text-[8px] leading-4 text-emerald-200/70">Antes de enviar la pregunta a Firebase AI, TuTop omitió datos de contacto o códigos sensibles detectados.</p> : null}
               {answer.source === 'unavailable' && <p className="mt-2 text-[8px] leading-4 text-rose-200/70">Esta beta no sustituye una falla de Firebase AI con una respuesta local silenciosa.</p>}
             </div>
           )}
@@ -121,7 +122,7 @@ export default function TopiSupportAssistant() {
               <button type="button" disabled={busy || question.trim().length < 3} onClick={() => void ask()} className="grid h-10 w-10 place-items-center rounded-xl bg-violet-600 text-white disabled:opacity-40" aria-label="Preguntar a Topi">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
             </div>
             {voiceNote && <p className="mt-2 text-[8px] leading-4 text-violet-200/80">{voiceNote}</p>}
-            <p className="mt-2 text-[8px] leading-4 text-slate-600">Por seguridad, no compartas contraseñas, códigos, tarjetas ni tu domicilio exacto.</p>
+            <p className="mt-2 text-[8px] leading-4 text-slate-600">Si la respuesta se marca como Firebase AI real, tu pregunta se procesa remotamente después de omitir emails, teléfonos y códigos sensibles evidentes. Por seguridad, no compartas contraseñas, tarjetas ni tu domicilio exacto.</p>
           </div>
         </div>
       </section>
