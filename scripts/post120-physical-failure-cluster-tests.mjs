@@ -58,5 +58,9 @@ assert.match(certBind,/BIND_EXACT_STAGING_ANDROID_SHA256/);
 assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFIGURED/);
 assert.match(externalGate,/NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED/);
 assert.match(externalGate,/auth_custom_handler:true/);
+assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_REACHABLE/);
+assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_MISMATCH/);
+assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CACHE_UNSAFE/);
+assert.match(externalGate,/NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_FRAME_UNSAFE/);
 
 console.log('PASS physical-failure repair contracts: email verification handler, Android notifications, Topi App Check diagnostics and off-Play attestation guards');
