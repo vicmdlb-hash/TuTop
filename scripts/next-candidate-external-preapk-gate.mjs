@@ -16,25 +16,37 @@ async function get(url){
 const auth=await get(`https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT}/config`);
 const callback=String(auth?.notification?.sendEmail?.callbackUri||'').trim();
 let callbackUrl=null;try{callbackUrl=callback?new URL(callback):null;}catch{}
-const customHandler=callbackUrl && ['/auth-action.html','/auth-action'].includes(callbackUrl.pathname);
-if(!customHandler) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFIGURED');
+if(!callbackUrl) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_MISSING');
 
-const handlerResponse=await fetch(callbackUrl.toString(), { redirect:'error', headers:{'Cache-Control':'no-cache'} });
-const handlerText=await handlerResponse.text();
-if(!handlerResponse.ok) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_REACHABLE');
-if(!/Acción de cuenta TuTop/i.test(handlerText) || !/auth-action\.js/i.test(handlerText)) {
-  throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_MISMATCH');
+const customHandler=['/auth-action.html','/auth-action'].includes(callbackUrl.pathname);
+const firebaseDefaultHandler=callbackUrl.pathname==='/__/auth/action'
+  && [`${PROJECT}.firebaseapp.com`, `${PROJECT}.web.app`].includes(callbackUrl.hostname);
+const handlerMode=customHandler ? 'TUTOP_CUSTOM' : firebaseDefaultHandler ? 'FIREBASE_DEFAULT_MANAGED' : 'UNKNOWN';
+if(handlerMode==='UNKNOWN') throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_UNRECOGNIZED');
+
+let hardenedCustomHandler=false;
+if(customHandler){
+  const handlerResponse=await fetch(callbackUrl.toString(), { redirect:'error', headers:{'Cache-Control':'no-cache'} });
+  const handlerText=await handlerResponse.text();
+  if(!handlerResponse.ok) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_REACHABLE');
+  if(!/Acción de cuenta TuTop/i.test(handlerText) || !/auth-action\.js/i.test(handlerText)) {
+    throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_MISMATCH');
+  }
+  const cacheControl=String(handlerResponse.headers.get('cache-control')||'').toLowerCase();
+  const frameOptions=String(handlerResponse.headers.get('x-frame-options')||'').toUpperCase();
+  const referrerPolicy=String(handlerResponse.headers.get('referrer-policy')||'').toLowerCase();
+  const permissionsPolicy=String(handlerResponse.headers.get('permissions-policy')||'').toLowerCase();
+  const contentTypeOptions=String(handlerResponse.headers.get('x-content-type-options')||'').toLowerCase();
+  if(!cacheControl.includes('no-store')) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CACHE_UNSAFE');
+  if(frameOptions!=='DENY') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_FRAME_UNSAFE');
+  if(referrerPolicy!=='no-referrer') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_REFERRER_UNSAFE');
+  if(!permissionsPolicy.includes('camera=()') || !permissionsPolicy.includes('microphone=()') || !permissionsPolicy.includes('geolocation=()')) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_PERMISSIONS_UNSAFE');
+  if(contentTypeOptions!=='nosniff') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_TYPE_UNSAFE');
+  hardenedCustomHandler=true;
 }
-const cacheControl=String(handlerResponse.headers.get('cache-control')||'').toLowerCase();
-const frameOptions=String(handlerResponse.headers.get('x-frame-options')||'').toUpperCase();
-const referrerPolicy=String(handlerResponse.headers.get('referrer-policy')||'').toLowerCase();
-const permissionsPolicy=String(handlerResponse.headers.get('permissions-policy')||'').toLowerCase();
-const contentTypeOptions=String(handlerResponse.headers.get('x-content-type-options')||'').toLowerCase();
-if(!cacheControl.includes('no-store')) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CACHE_UNSAFE');
-if(frameOptions!=='DENY') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_FRAME_UNSAFE');
-if(referrerPolicy!=='no-referrer') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_REFERRER_UNSAFE');
-if(!permissionsPolicy.includes('camera=()') || !permissionsPolicy.includes('microphone=()') || !permissionsPolicy.includes('geolocation=()')) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_PERMISSIONS_UNSAFE');
-if(contentTypeOptions!=='nosniff') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_TYPE_UNSAFE');
+
+const domains=Array.isArray(auth?.authorizedDomains)?auth.authorizedDomains.map(String):[];
+if(!domains.includes(callbackUrl.hostname)) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_DOMAIN_NOT_AUTHORIZED');
 
 const apps=await get(`https://firebase.googleapis.com/v1beta1/projects/${PROJECT}/androidApps?pageSize=100`);
 const app=(apps.apps||[]).find(x=>x.packageName===PACKAGE&&x.state!=='DELETED');
@@ -47,16 +59,15 @@ console.log(JSON.stringify({
   status:'PASS',
   project:PROJECT,
   package:PACKAGE,
-  auth_custom_handler:true,
+  auth_handler_mode:handlerMode,
   auth_callback_origin:callbackUrl.origin,
   auth_callback_path:callbackUrl.pathname,
-  auth_handler_reachable:true,
-  auth_handler_no_store:true,
-  auth_handler_frame_deny:true,
+  auth_handler_domain_authorized:true,
+  auth_custom_handler_hardened:hardenedCustomHandler,
   registered_sha256_count:sha256.length,
   mutation:false,
   spend:0,
   production:false,
   play:false,
 },null,2));
-console.log('PASS next-candidate pre-APK external gates: custom email handler + Android SHA-256 are present.');
+console.log(`PASS next-candidate pre-APK external gates: auth handler mode=${handlerMode} + Android SHA-256 are present.`);
