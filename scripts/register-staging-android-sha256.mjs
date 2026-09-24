@@ -15,6 +15,9 @@ if(String(process.env.TUTOP_ANDROID_SHA256_BIND_ACK||'')!=='BIND_EXACT_STAGING_A
 
 const sourceSha=required('GITHUB_SHA');
 if(!/^[0-9a-f]{40}$/.test(sourceSha))throw new Error('SOURCE_SHA_INVALID');
+const extractedSourceSha=required('TUTOP_NEXT_CANDIDATE_SOURCE_SHA');
+if(!/^[0-9a-f]{40}$/.test(extractedSourceSha))throw new Error('EXTRACTED_SOURCE_SHA_INVALID');
+if(extractedSourceSha!==sourceSha)throw new Error('CANDIDATE_SOURCE_SHA_MISMATCH');
 const apkSha256=apk(required('TUTOP_NEXT_CANDIDATE_APK_SHA256'));
 const sha256=normalize(required('TUTOP_ANDROID_CERT_SHA256'));
 
