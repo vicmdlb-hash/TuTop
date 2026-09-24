@@ -9,6 +9,7 @@ const authHtml=fs.readFileSync('public/auth-action.html','utf8');
 const authJs=fs.readFileSync('public/auth-action.js','utf8');
 const firebase=JSON.parse(fs.readFileSync('firebase.json','utf8'));
 const appCheckRepair=fs.readFileSync('scripts/repair-staging-offplay-app-check.mjs','utf8');
+const appCheckAudit=fs.readFileSync('scripts/audit-staging-offplay-app-check.mjs','utf8');
 const certBind=fs.readFileSync('scripts/register-staging-android-sha256.mjs','utf8');
 const externalGate=fs.readFileSync('scripts/next-candidate-external-preapk-gate.mjs','utf8');
 
@@ -56,7 +57,8 @@ for(const [key,value] of [
 assert.match(appCheckRepair,/allowUnrecognizedVersion:true/);
 assert.match(appCheckRepair,/MEETS_DEVICE_INTEGRITY/);
 assert.match(appCheckRepair,/requireLicensed:false/);
-assert.match(appCheckRepair,/EXPECTED_ANDROID_CERT_SHA256_NOT_REGISTERED/);
+assert.match(appCheckRepair,/INFO no successor signing SHA-256 exists yet/);
+assert.match(appCheckAudit,/EXPECTED_ANDROID_CERT_SHA256_NOT_REGISTERED/);
 assert.match(certBind,/certType:'SHA_256'/);
 assert.match(certBind,/BIND_EXACT_STAGING_ANDROID_SHA256/);
 assert.match(externalGate,/NEXT_CANDIDATE_SIGNED_CERT_SHA256_REQUIRED/);
