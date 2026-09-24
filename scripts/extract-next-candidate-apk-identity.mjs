@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { extractApkSignerDigest } from './apksigner-certificate-digest.mjs';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
 const PACKAGE='mx.tutop.app';
@@ -37,14 +38,8 @@ if(!packageName)throw new Error('APK_PACKAGE_NAME_MISSING');
 if(packageName!==PACKAGE)throw new Error('APK_PACKAGE_MISMATCH');
 
 const output=execFileSync(apksigner,['verify','--print-certs',apk],{encoding:'utf8'});
-const digest=(kind,length)=>{
-  const re=new RegExp(`Signer #1 certificate ${kind} digest:\\s*([0-9A-Fa-f:]+)`,'i');
-  const m=output.match(re); const v=String(m?.[1]||'').replace(/:/g,'').toUpperCase();
-  if(!new RegExp(`^[0-9A-F]{${length}}$`).test(v))throw new Error(`APK_CERT_${kind.replace(/-/g,'')}_INVALID`);
-  return v;
-};
-const certSha1=digest('SHA-1',40);
-const certSha256=digest('SHA-256',64);
+const certSha1=extractApkSignerDigest(output,'SHA-1',40);
+const certSha256=extractApkSignerDigest(output,'SHA-256',64);
 const githubEnv=required('GITHUB_ENV');
 fs.appendFileSync(githubEnv,[
   `TUTOP_NEXT_CANDIDATE_SOURCE_SHA=${sourceSha}`,
