@@ -22,7 +22,7 @@ if(!customHandler) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_CONFI
 const handlerResponse=await fetch(callbackUrl.toString(), { redirect:'error', headers:{'Cache-Control':'no-cache'} });
 const handlerText=await handlerResponse.text();
 if(!handlerResponse.ok) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_REACHABLE');
-if(!/Verificación de correo TuTop/i.test(handlerText) || !/auth-action\.js/i.test(handlerText)) {
+if(!/Acción de cuenta TuTop/i.test(handlerText) || !/auth-action\.js/i.test(handlerText)) {
   throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_MISMATCH');
 }
 const cacheControl=String(handlerResponse.headers.get('cache-control')||'').toLowerCase();
