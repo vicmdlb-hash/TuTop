@@ -46,6 +46,20 @@ jobs:
           node scripts/post120-admin-account-status-contract-tests.mjs
           node scripts/post120-fcm-single-target-gate-tests.mjs
           node scripts/post120-fcm-physical-gate-contract-tests.mjs
+      - name: Privacy / account-erasure contracts
+        run: |
+          node scripts/account-erasure-tests.mjs
+          node scripts/post116-erasure-completion-attestation-tests.mjs
+          node scripts/post116-erasure-user-status-truth-tests.mjs
+          node scripts/retention-matrix-tests.mjs
+          node scripts/legal-retention-dossier-tests.mjs
+      - name: Push account-isolation contracts
+        run: |
+          node scripts/post116-push-account-isolation-tests.mjs
+          node scripts/post116-push-ownership-contract-tests.mjs
+          node scripts/post116-push-health-contract-tests.mjs
+          node scripts/post120-fcm-single-target-gate-tests.mjs
+          node scripts/post120-fcm-physical-gate-contract-tests.mjs
       - name: Full source regression
         run: npm run check
       - name: Typecheck
