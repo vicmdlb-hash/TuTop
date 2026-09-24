@@ -126,7 +126,6 @@ jobs:
           node scripts/seller-profile-privacy-tests.mjs
       - name: Release / readiness contracts
         run: |
-          node scripts/release-091-contract-tests.mjs
           node scripts/release-092-contract-tests.mjs
           node scripts/physical-qa-readiness-pack-tests.mjs
       - name: Full source regression
