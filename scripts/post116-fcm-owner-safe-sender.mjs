@@ -1,18 +1,22 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { eligibleRecipientTargets, isPermanentFcmTokenError } from './fcm-token-ownership-lib.mjs';
-import { validateBuild120FcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './build120-fcm-physical-gate-lib.mjs';
+import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const apply = process.argv.includes('--apply');
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
 const limit = Math.max(1, Math.min(500, Number(process.env.TUTOP_POST110_FCM_LIMIT || 300)));
-const applyGate = validateBuild120FcmApplyGate({
+const applyGate = validatePhysicalQaFcmApplyGate({
   apply,
   maintenanceAllow: allow,
   ack: process.env.TUTOP_FCM_PHYSICAL_APPLY_ACK,
   candidateSha: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_SHA,
+  candidateArtifactId: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_ARTIFACT_ID,
+  candidateBuildRunId: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_BUILD_RUN_ID,
+  candidateApkSha256: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_APK_SHA256,
+  candidateCertSha256: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_CERT_SHA256,
   notificationId: process.env.TUTOP_FCM_PHYSICAL_NOTIFICATION_ID,
   recipientUid: process.env.TUTOP_FCM_PHYSICAL_RECIPIENT_UID,
   deviceTokenRecordId: process.env.TUTOP_FCM_PHYSICAL_DEVICE_TOKEN_RECORD_ID,
@@ -196,5 +200,10 @@ console.log(JSON.stringify({
   notification_id_in_payload: true,
   single_target_apply_guard: apply ? true : null,
   selected_device_token_record_id: apply ? applyGate.deviceTokenRecordId : null,
+  candidate_sha: applyGate.authority?.sha || null,
+  candidate_artifact_id: applyGate.authority?.artifactId || null,
+  candidate_build_run_id: applyGate.authority?.buildRunId || null,
+  candidate_apk_sha256: applyGate.authority?.apkSha256 || null,
+  candidate_cert_sha256: applyGate.authority?.certSha256 || null,
   real_fcm_sent: apply && delivered > 0,
 }, null, 2));
