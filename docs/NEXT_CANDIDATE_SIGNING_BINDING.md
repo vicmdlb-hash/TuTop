@@ -17,9 +17,12 @@ The correct private-QA sequence is:
    and their explicit binding ACK.
 7. Read back App Check with `TUTOP_EXPECTED_ANDROID_CERT_SHA256` set to the
    extracted exact SHA-256.
-8. Run the external pre-promotion gate.
-9. Only after all exact bindings are green may the APK be packaged/uploaded for
-   physical QA.
+8. Run `next-candidate-external-preapk-gate.mjs` from the same exact source branch
+   with the same Git source SHA and APK SHA-256 provenance. The gate must fail closed
+   if source/artifact provenance is missing or malformed, even when the certificate
+   itself is already registered.
+9. Only after all exact bindings and the provenance-bound external gate are green may
+   the APK be packaged/uploaded for physical QA.
 
 The source/config phase may prepare and test these contracts, but must not fabricate
 a certificate, APK hash or future candidate identity. A source-only `CONTINUA`
