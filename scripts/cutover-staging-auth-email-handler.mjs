@@ -36,8 +36,9 @@ async function patchCallback(uri){
   });
   const t=await r.text(); let b={}; try{b=t?JSON.parse(t):{};}catch{}
   if(!r.ok){
-    const code=String(b?.error?.status||b?.error?.message||`HTTP_${r.status}`).slice(0,180);
-    throw new Error(`AUTH_CALLBACK_PATCH_FAILED_${r.status}:${code}`);
+    const status=String(b?.error?.status||'UNKNOWN').replace(/[^A-Z0-9_\-]/gi,'_').slice(0,80);
+    const message=String(b?.error?.message||'').replace(/[\r\n]+/g,' ').slice(0,260);
+    throw new Error(`AUTH_CALLBACK_PATCH_FAILED_${r.status}:${status}:${message}`);
   }
   return b;
 }
