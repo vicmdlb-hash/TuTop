@@ -54,9 +54,11 @@ async function main() {
     returnLink.hidden = false;
     if (continueUrl) {
       try {
-        const target = new URL(continueUrl);
-        const allowed = target.protocol === 'https:' || target.protocol === 'http:';
-        if (allowed) returnLink.href = target.toString();
+        const target = new URL(continueUrl, location.origin);
+        // Never turn a Firebase email action into an open redirect. Until an
+        // explicit mobile deep-link allowlist exists, only same-origin returns
+        // are accepted; every other value falls back to TuTop root.
+        if (target.origin === location.origin) returnLink.href = target.toString();
       } catch { /* keep safe root fallback */ }
     }
   } catch (error) {
