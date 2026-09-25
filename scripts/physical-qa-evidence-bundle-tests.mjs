@@ -34,7 +34,7 @@ assert.equal(pending.release_blocked, true);
 assert(pending.pending_cases >= 10);
 
 const passReport = {
-  generated_at: '2026-09-07T02:45:00.000Z',
+  generated_at: new Date(now - 5 * 60_000).toISOString(),
   version: candidateManifest.app_version,
   platform: 'android',
   native_runtime: true,
