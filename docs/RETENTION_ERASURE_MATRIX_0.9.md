@@ -2,6 +2,23 @@
 
 > Estado: **borrador técnico para revisión legal/privacidad**. No sustituye asesoría jurídica ni autoriza producción.
 
+
+## Snapshot técnico de ingeniería — Build121 exacto
+
+Este snapshot identifica la evidencia que ingeniería entrega para revisión; **no constituye aprobación legal, Data Safety final, autorización de Play ni release**.
+
+- app: `0.9.2-beta.11` / Android versionCode `90215`
+- package: `mx.tutop.app`
+- source SHA del APK: `579bdecd7e193b8661276f114b9d3e097792d8d6`
+- artifact ID: `10835643904`
+- artifact digest: `sha256:ebd4629a9d1d5c693eb635227c0d94ed2246c2bcf87a891b46cb8c2d317c54f9`
+- APK SHA-256: `acd939e5aa4d078270b2fb485e9a41741638e4501cd3c3167871c9ca7bc6f6b8`
+- signing cert SHA-256: `192B19F3E67ED7B69FA6862429E232B892979A6C8C97800845F6A1D1948FF79A`
+- staging project: `tutop-beta-vicmdlb-1356585881`
+- physical state: Device A/B, real Topi, real FCM and physical App Check siguen pendientes; este snapshot no es release candidate.
+- Topi remote redaction probada por ingeniería: email, teléfono, OTP y patrones de token; **no** se afirma redacción genérica de domicilios/direcciones.
+- superficies técnicas existentes: borrador `public/privacy.html`, recurso `public/delete-account.html`, matriz de borrado/retención y dossier legal.
+
 | Colección | Finalidad técnica | Acción al eliminar cuenta | Motivo técnico | Plazo productivo final |
 |---|---|---|---|---|
 | `users` | Perfil principal | Eliminar | Retirar identidad activa | PENDIENTE LEGAL |
