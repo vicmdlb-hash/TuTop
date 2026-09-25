@@ -1,6 +1,6 @@
 # TuTop 0.9 — Android Physical QA
 
-> **Build120 exact candidate:** `0.9.2-beta.10` · source `554f4ef6d0429b0059738d8cd6e1b6e4890bda91` · artifact `10622421310` · APK SHA-256 `9855a2e51587f3115f9c270c28d61b1f5c4aa4db7813dacc16b3fe700d458cc0`. Todos los resultados empiezan en PENDING; CI no sustituye observación física.
+> **Build121 exact candidate:** `0.9.2-beta.11` · versionCode `90215` · source `579bdecd7e193b8661276f114b9d3e097792d8d6` · artifact `10835643904` · APK SHA-256 `acd939e5aa4d078270b2fb485e9a41741638e4501cd3c3167871c9ca7bc6f6b8`. Todos los resultados empiezan en PENDING; CI no sustituye observación física.
 
 Este protocolo valida comportamiento físico. Los gates CI, emulator y Firebase staging **no sustituyen** estas pruebas.
 
@@ -17,7 +17,7 @@ El reporte QA nunca debe incluir contraseñas, OTP, `idToken`, `refreshToken`, t
 3. Cerrar/reabrir: sesión e identidad siguen disponibles.
 4. Publicar listing campus con hasta 4 fotos.
 5. Publicar listing `Todo México`: sin Paquetería debe permitir continuar cuando exista otra forma válida de entrega; Paquetería es opcional, no obligatoria.
-6. Moderar/aprobar listing en staging y comprobar que otra cuenta lo descubre.
+6. Moderación: actualmente `admins_total=0`; marcar BLOCKED hasta que exista una identidad staging legítima con rol/scope mínimo. Cuando exista, aprobar un listing pendiente y comprobar que otra cuenta lo descubre.
 7. Segunda cuenta: favorito → contacto → chat → oferta → contraoferta → aceptación.
 8. Reserva → Punto TuTop → confirmación bilateral → listing sold_out → review/reputación.
 9. Perfil seller: editar listing aprobado devuelve a pending y deja de ser público hasta re-aprobación.
@@ -67,7 +67,7 @@ Para un futuro enforcement, completar una copia privada del esquema `docs/APP_CH
 ## Cuenta y privacidad
 
 34. Cambiar Clave TuTop con sesión válida y comprobar login con nueva clave.
-35. En Build120 no se espera todavía el flujo post-candidate de recuperación por email. No debe fingir recuperación por SMS; la mejora de password-reset posterior a Build120 no forma parte de esta APK.
+35. Recuperación/credenciales: no debe fingir recuperación por SMS. Si Build121 expone un flujo de recuperación, comprobar únicamente el comportamiento físicamente visible y que no cree una identidad/UID duplicado; si no está disponible, registrar N/A o BLOCKED sin inferir PASS.
 36. Solicitar eliminación y comprobar estado de solicitud; no ejecutar borrado destructivo en cuenta real de QA sin autorización explícita.
 
 ## Criterio de salida de 0.9 Physical QA
@@ -76,9 +76,10 @@ Para un futuro enforcement, completar una copia privada del esquema `docs/APP_CH
 - Flujo marketplace completo PASS en al menos 2 cuentas reales de staging.
 - Instalación/reinstalación PASS.
 - Offline/reconnect sin duplicación o pérdida silenciosa.
-- Push foreground/background/cold-start + tap PASS en al menos un Android compatible.
+- Push foreground/background/cold-start + tap/deep-link PASS con evidencia real de dos dispositivos/perfiles para el gate FCM final.
 - Reporte QA sin `fail` estructural (staging/V2).
-- App Check token observado antes de considerar enforcement.
+- Account switch A→logout/offline-reconnect→B sin heredar token FCM, ubicación ni personalización.
+- App Check token observado en Device A+B antes de considerar enforcement.
 - Todos los bugs encontrados tienen causa raíz, fix y regresión automatizada cuando sea posible.
 
 No autoriza `main`, producción, billing, Play Store, App Check enforcement ni alianzas oficiales.
