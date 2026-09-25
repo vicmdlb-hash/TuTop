@@ -20,6 +20,9 @@ const candidate = {
 const expected = {
   artifact_name: candidate.artifact_name,
   artifact_id: candidate.artifact_id,
+  artifact_url: candidate.artifact_url,
+  artifact_digest: candidate.artifact_digest,
+  apk_cert_sha256: candidate.apk_cert_sha256,
   build_run_id: candidate.build_run_id,
   build_commit_sha: candidate.build_commit_sha,
   build_tree_sha: candidate.build_tree_sha,
@@ -84,7 +87,7 @@ function bundle(slot, model, viewport, session, offset = 0) {
   const startedAt = new Date(started).toISOString();
   const completedAt = new Date(completed).toISOString();
   return {
-    schema: 'tutop.physical-qa-evidence.v1', app_version: candidate.app_version, environment: 'staging', candidate: expected,
+    schema: 'tutop.physical-qa-evidence.v1', app_version: candidate.app_version, android_version_code: candidate.android_version_code, environment: 'staging', candidate: expected,
     evidence_session_id: session,
     evidence_started_at: startedAt,
     evidence_completed_at: completedAt,
