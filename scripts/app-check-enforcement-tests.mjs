@@ -2,17 +2,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { validateAppCheckPhysicalEvidence } from './app-check-enforcement-readiness.mjs';
 
-const historical = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
-assert.equal(historical.physical_release_candidate, false);
-assert.equal(historical.candidate_status, 'obsolete_physical_fail');
-assert.equal(historical.replacement_required, true);
-const candidate = { ...historical, physical_release_candidate: true, candidate_status: 'synthetic_contract_fixture', replacement_required: false };
+const candidate = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
+assert.equal(candidate.app_version, '0.9.2-beta.11');
+assert.equal(candidate.physical_release_candidate, true);
+assert.equal(candidate.candidate_status, 'active_exact_head');
+assert.equal(candidate.replacement_required, false);
+assert.equal(candidate.build_commit_sha, '579bdecd7e193b8661276f114b9d3e097792d8d6');
+assert.equal(candidate.build_run_id, 36064382977);
+assert.equal(candidate.artifact_id, 10835643904);
 
-const now = Date.parse('2026-09-07T04:30:00.000Z');
+const now = Date.parse('2026-09-25T02:20:00.000Z');
 const valid = {
   status: 'verified',
   platform: 'android',
-  app_version: '0.9.0-beta.0',
+  app_version: candidate.app_version,
   staging_project: 'tutop-beta-vicmdlb-1356585881',
   candidate_apk_sha256: candidate.apk_sha256,
   candidate_artifact_id: candidate.artifact_id,
@@ -20,11 +23,11 @@ const valid = {
   candidate_build_tree_sha: candidate.build_tree_sha,
   device_count: 2,
   devices: [
-    { slot: 'A', physical: true, evidence_session_id: 'appcheck-session-a', profile_fingerprint_sha256: 'a'.repeat(64), app_check_token_observed: true, verified_at: '2026-09-07T04:20:00.000Z' },
-    { slot: 'B', physical: true, evidence_session_id: 'appcheck-session-b', profile_fingerprint_sha256: 'b'.repeat(64), app_check_token_observed: true, verified_at: '2026-09-07T04:21:00.000Z' },
+    { slot: 'A', physical: true, evidence_session_id: 'appcheck-session-a', profile_fingerprint_sha256: 'a'.repeat(64), app_check_token_observed: true, verified_at: '2026-09-25T02:10:00.000Z' },
+    { slot: 'B', physical: true, evidence_session_id: 'appcheck-session-b', profile_fingerprint_sha256: 'b'.repeat(64), app_check_token_observed: true, verified_at: '2026-09-25T02:11:00.000Z' },
   ],
   app_check_token_observed: true,
-  verified_at: '2026-09-07T04:22:00.000Z',
+  verified_at: '2026-09-25T02:12:00.000Z',
   contains_raw_token: false,
 };
 const ready = validateAppCheckPhysicalEvidence(valid, now, candidate);
@@ -90,8 +93,8 @@ for (const [field, value, expectedError] of [
   assert(result.errors.includes(expectedError));
 }
 
-console.log('PASS retired Build120 manifest remains historical App Check provenance and is not an active candidate');
-console.log('PASS App Check enforcement accepts fresh verified Android evidence only against an explicit candidate');
+console.log('PASS Build121 active manifest is the exact App Check physical evidence authority');
+console.log('PASS App Check enforcement accepts fresh verified Android evidence only against the exact active candidate version/artifact');
 console.log('PASS two independent A/B device records, sessions and sanitized fingerprints are required');
 console.log('PASS fake device_count, duplicate evidence, stale devices and nested raw tokens fail closed');
 console.log('App Check enforcement readiness contract: PASS');
