@@ -54,7 +54,9 @@ function scanSensitive(value, errors, pathParts = []) {
     return;
   }
   if (typeof value !== 'string') return;
-  if (/\b\d{10,13}\b/.test(value)) errors.push(`posible número telefónico/identificador sensible sin redactar en ${pathParts.join('.') || 'root'}`);
+  const field = String(pathParts.at(-1) || '');
+  const urlField = /(?:^|_)url$/i.test(field);
+  if (!urlField && /\b\d{10,13}\b/.test(value)) errors.push(`posible número telefónico/identificador sensible sin redactar en ${pathParts.join('.') || 'root'}`);
   if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push(`posible token/identificador largo sin redactar en ${pathParts.join('.') || 'root'}`);
 }
 
