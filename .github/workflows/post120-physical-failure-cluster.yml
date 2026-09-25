@@ -163,6 +163,50 @@ jobs:
         run: npm run build
       - name: Staging moderation identity readback — no mutation
         run: node scripts/audit-staging-moderation-identity.mjs
+      - name: One-shot Build121 policy preview — staging Hosting channel only
+        if: contains(github.event.head_commit.message, '[policy-preview]')
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TUTOP_FIREBASE_PROJECT_ID" = "tutop-beta-vicmdlb-1356585881"
+          node scripts/read-existing-staging-build-config.mjs
+          TUTOP_HOSTING_WEB_CONFIG_OUTPUT=dist/tutop-web-config.json node scripts/prepare-candidate120-hosting-assets.mjs
+          test -s dist/privacy.html
+          test -s dist/delete-account.html
+          grep -q 'Build121' dist/privacy.html
+          grep -q 'artifact 10835643904' dist/privacy.html
+          ! grep -Eq 'Build120|Candidate120|Hosting todavía no se ha desplegado' dist/privacy.html
+          npx --yes firebase-tools@15.29.0 hosting:channel:deploy build121-policy \
+            --project "$TUTOP_FIREBASE_PROJECT_ID" \
+            --expires 7d \
+            --non-interactive \
+            --json > policy-preview.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const raw=JSON.parse(fs.readFileSync('policy-preview.json','utf8'));
+          const text=JSON.stringify(raw);
+          const urls=[...text.matchAll(/https:\/\/[^"\\s]+/g)].map(m=>m[0]).filter(u=>u.includes('.web.app'));
+          if(!urls.length) throw new Error('POLICY_PREVIEW_URL_NOT_FOUND');
+          const url=urls[0].replace(/[\\]+/g,'');
+          fs.appendFileSync(process.env.GITHUB_ENV, `TUTOP_POLICY_PREVIEW_URL=${url}\n`);
+          console.log(`POLICY_PREVIEW_URL=${url}`);
+          NODE
+          for attempt in 1 2 3 4 5 6; do
+            html="$(curl -fsSL -H 'Cache-Control: no-cache' "$TUTOP_POLICY_PREVIEW_URL/privacy.html" || true)"
+            if printf '%s' "$html" | grep -q 'Build121'; then
+              printf '%s' "$html" | grep -q 'artifact 10835643904'
+              ! printf '%s' "$html" | grep -Eq 'Build120|Candidate120|Hosting todavía no se ha desplegado'
+              echo "PASS isolated Hosting preview has current Build121 privacy authority."
+              break
+            fi
+            if [ "$attempt" = "6" ]; then
+              echo "Preview did not converge to Build121 privacy authority." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "PASS preview channel only; live Hosting untouched."
+
       - name: Public staging release-web readback — no mutation
         run: node scripts/audit-staging-public-release-web.mjs
       - name: Live staging Auth client config/key readback — no mutation
