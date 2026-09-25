@@ -2,13 +2,24 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { validateFcmPhysicalFixture } from './fcm-physical-fixture-validator.mjs';
 const candidate = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
-const binding = { artifact_id: candidate.artifact_id, build_run_id: candidate.build_run_id, build_tree_sha: candidate.build_tree_sha, apk_sha256: candidate.apk_sha256 };
+const binding = {
+  artifact_id: candidate.artifact_id,
+  artifact_url: candidate.artifact_url,
+  artifact_digest: candidate.artifact_digest,
+  build_run_id: candidate.build_run_id,
+  build_commit_sha: candidate.build_commit_sha,
+  build_tree_sha: candidate.build_tree_sha,
+  apk_sha256: candidate.apk_sha256,
+  apk_cert_sha256: candidate.apk_cert_sha256,
+};
 const now = Date.parse('2026-09-07T04:30:00.000Z');
 const startedAt = '2026-09-07T04:29:00.000Z';
 const completedAt = '2026-09-07T04:29:50.000Z';
 const valid = {
   schema: 'tutop.fcm-physical-fixture.v1', candidate: binding, device_slot: 'A',
+  two_device_required: true,
   evidence_session_id: 'fcm-session-device-a', evidence_started_at: startedAt, evidence_completed_at: completedAt,
+  account_switch_isolation_required: true,
   scenarios: [
     { name: 'foreground', events: [
       { at_ms: 1_000, kind: 'app_foreground' }, { at_ms: 2_000, kind: 'push_received', correlation: 'fg-a001', target: 'chat' },
