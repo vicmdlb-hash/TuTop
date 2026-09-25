@@ -28,10 +28,22 @@ if(!/Acción de cuenta TuTop/i.test(auth.text)) throw new Error('AUTH_ACTION_PAG
 const authCache=String(auth.response.headers.get('cache-control')||'').toLowerCase();
 if(!authCache.includes('no-store')) throw new Error('AUTH_ACTION_CACHE_UNSAFE');
 
+const privacyCurrentBuild121 =
+  /Build121/.test(privacy.text) &&
+  /artifact 10835643904/.test(privacy.text) &&
+  !/Build120|Candidate120/i.test(privacy.text) &&
+  !/Hosting todavía no se ha desplegado/i.test(privacy.text);
+const requireCurrentPrivacy = String(process.env.TUTOP_REQUIRE_PUBLIC_PRIVACY_BUILD121 || '').trim() === '1';
+if (requireCurrentPrivacy && !privacyCurrentBuild121) {
+  throw new Error('PRIVACY_LIVE_CURRENT_BUILD121_AUTHORITY_REQUIRED');
+}
+
 console.log(JSON.stringify({
   status:'PASS',
   host:HOST,
   privacy_public:true,
+  privacy_current_build121:privacyCurrentBuild121,
+  privacy_authority_mode:requireCurrentPrivacy?'strict':'advisory',
   deletion_public:true,
   deletion_authenticated_request_flow:true,
   deletion_client_destructive_delete:false,
@@ -40,4 +52,4 @@ console.log(JSON.stringify({
   spend:0,
   production:false,
 },null,2));
-console.log('PASS staging public privacy/deletion/auth pages are externally reachable with expected safety markers.');
+console.log(`PASS staging public privacy/deletion/auth pages are externally reachable; privacy Build121 parity=${privacyCurrentBuild121?'CURRENT':'DRIFT'} mode=${requireCurrentPrivacy?'strict':'advisory'}.`);
