@@ -16,10 +16,15 @@ const valid = {
   status: 'verified',
   platform: 'android',
   app_version: candidate.app_version,
-  staging_project: 'tutop-beta-vicmdlb-1356585881',
+  android_version_code: candidate.android_version_code,
+  staging_project: candidate.staging_project,
   candidate_apk_sha256: candidate.apk_sha256,
+  candidate_apk_cert_sha256: candidate.apk_cert_sha256,
   candidate_artifact_id: candidate.artifact_id,
+  candidate_artifact_url: candidate.artifact_url,
+  candidate_artifact_digest: candidate.artifact_digest,
   candidate_build_run_id: candidate.build_run_id,
+  candidate_build_commit_sha: candidate.build_commit_sha,
   candidate_build_tree_sha: candidate.build_tree_sha,
   device_count: 2,
   devices: [
@@ -81,9 +86,14 @@ rawNestedToken.devices[0].app_check_token = 'must-never-be-stored';
 assert(validateAppCheckPhysicalEvidence(rawNestedToken, now, candidate).errors.includes('raw_token_must_not_be_stored'));
 
 for (const [field, value, expectedError] of [
+  ['android_version_code', candidate.android_version_code + 1, 'android_version_code_candidate_mismatch'],
   ['candidate_apk_sha256', '71975f84cd26adb1526db895e76dcb455aed2f258e3f6cf01035c9fd90c95321', 'wrong_apk_candidate'],
+  ['candidate_apk_cert_sha256', '0'.repeat(64), 'wrong_apk_cert_candidate'],
   ['candidate_artifact_id', 10002002950, 'wrong_artifact_candidate'],
+  ['candidate_artifact_url', 'https://example.invalid/wrong-artifact', 'wrong_artifact_url_candidate'],
+  ['candidate_artifact_digest', 'sha256:' + '0'.repeat(64), 'wrong_artifact_digest_candidate'],
   ['candidate_build_run_id', 34075660334, 'wrong_build_run_candidate'],
+  ['candidate_build_commit_sha', '0'.repeat(40), 'wrong_build_commit_candidate'],
   ['candidate_build_tree_sha', '0000000000000000000000000000000000000000', 'wrong_build_tree_candidate'],
 ]) {
   const staleCandidate = structuredClone(valid);
@@ -94,7 +104,7 @@ for (const [field, value, expectedError] of [
 }
 
 console.log('PASS Build121 active manifest is the exact App Check physical evidence authority');
-console.log('PASS App Check enforcement accepts fresh verified Android evidence only against the exact active candidate version/artifact');
+console.log('PASS App Check enforcement binds versionCode, APK/cert, artifact URL/digest and build commit/tree to exact Build121');
 console.log('PASS two independent A/B device records, sessions and sanitized fingerprints are required');
 console.log('PASS fake device_count, duplicate evidence, stale devices and nested raw tokens fail closed');
 console.log('App Check enforcement readiness contract: PASS');
