@@ -22,8 +22,8 @@ const allowedCase = new Set(['pass','warn','fail','pending','not_applicable']);
 const forbiddenKeys = new Set(['refreshToken','idToken','password','FIREBASE_TOKEN']);
 const requiredDeviceFields = ['label','manufacturer','model','android_version','viewport','installation'];
 const requiredCandidateFields = [
-  'artifact_name','artifact_id','build_run_id','build_commit_sha','build_tree_sha','apk_sha256',
-  'gate_run_id','gate_commit_sha','staging_smoke_run_id','staging_smoke_commit_sha',
+  'artifact_name','artifact_id','artifact_url','artifact_digest','build_run_id','build_commit_sha','build_tree_sha',
+  'apk_sha256','apk_cert_sha256','gate_run_id','gate_commit_sha','staging_smoke_run_id','staging_smoke_commit_sha',
 ];
 const MAX_DIAGNOSTIC_AGE_MS = 24 * 60 * 60_000;
 const CANDIDATE_MANIFEST_PATH = path.resolve('docs/PHYSICAL_QA_CANDIDATE_0.9.json');
@@ -100,6 +100,7 @@ export function validatePhysicalQaEvidence(bundle, now = Date.now(), expectedCan
   const warnings = [];
   if (bundle?.schema !== 'tutop.physical-qa-evidence.v1') errors.push('schema inválido');
   if (bundle?.app_version !== expectedCandidate?.app_version) errors.push(`app_version debe coincidir con candidato vigente: ${expectedCandidate?.app_version || 'UNKNOWN'}`);
+  if (bundle?.android_version_code !== expectedCandidate?.android_version_code) errors.push(`android_version_code debe coincidir con candidato vigente: ${expectedCandidate?.android_version_code || 'UNKNOWN'}`);
   if (bundle?.environment !== 'staging') errors.push('environment debe ser staging');
   if (!candidateExactHeadIdentityValid(expectedCandidate)
       || expectedCandidate?.candidate_status !== 'active_exact_head'
