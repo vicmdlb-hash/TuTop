@@ -163,7 +163,7 @@ jobs:
         run: npm run build
       - name: Staging moderation identity readback — no mutation
         run: node scripts/audit-staging-moderation-identity.mjs
-      - name: One-shot Build121 policy preview — staging Hosting channel only (current proof)
+      - name: One-shot Build121 policy preview deploy — staging Hosting channel only
         if: contains(github.event.head_commit.message, '[policy-preview]')
         shell: bash
         run: |
@@ -191,21 +191,26 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, `TUTOP_POLICY_PREVIEW_URL=${url}\n`);
           console.log(`POLICY_PREVIEW_URL=${url}`);
           NODE
+
+      - name: Verify one-shot Build121 policy preview — read only
+        if: contains(github.event.head_commit.message, '[policy-preview]')
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TUTOP_POLICY_PREVIEW_URL"
           for attempt in 1 2 3 4 5 6; do
             html="$(curl -fsSL -H 'Cache-Control: no-cache' "$TUTOP_POLICY_PREVIEW_URL/privacy.html" || true)"
             if printf '%s' "$html" | grep -q 'Build121'; then
               printf '%s' "$html" | grep -q 'artifact 10835643904'
               ! printf '%s' "$html" | grep -Eq 'Build120|Candidate120|Hosting todavía no se ha desplegado'
               echo "PASS isolated Hosting preview has current Build121 privacy authority."
-              break
-            fi
-            if [ "$attempt" = "6" ]; then
-              echo "Preview did not converge to Build121 privacy authority." >&2
-              exit 1
+              echo "PASS preview channel only; live Hosting untouched."
+              exit 0
             fi
             sleep 2
           done
-          echo "PASS preview channel only; live Hosting untouched."
+          echo "Preview did not converge to Build121 privacy authority." >&2
+          exit 1
 
       - name: Public staging release-web readback — no mutation
         run: node scripts/audit-staging-public-release-web.mjs
