@@ -61,6 +61,11 @@ assert.equal(physicalCandidate.physical_evidence, 'NOT_TESTED');
 
 assert.match(privacyDraft, /Privacidad de TuTop — borrador beta/);
 assert.match(privacyDraft, /No es una política legal aprobada para publicación/);
+assert.match(privacyDraft, /Build121/);
+assert.match(privacyDraft, /artifact 10835643904/);
+assert.doesNotMatch(privacyDraft, /Build120|Candidate120/i);
+assert.doesNotMatch(privacyDraft, /Hosting todavía no se ha desplegado/i);
+assert.match(privacyDraft, /disponibilidad pública fue comprobada externamente/i);
 assert.match(privacyDraft, /Firebase AI/);
 assert.match(privacyDraft, /delete-account\.html/);
 assert.match(privacyDraft, /plazos, bases jurídicas, excepciones de retención y aprobación final siguen pendientes/i);
@@ -70,6 +75,10 @@ assert.match(deletionResource, /política final de retención aplicable/);
 assert.match(retentionMatrix, /PENDIENTE LEGAL/);
 assert.match(legalRetentionDossier, /PENDIENTE REVISIÓN LEGAL/);
 assert.match(legalRetentionDossier, /no fija plazos, bases legales, jurisdicción ni excepciones/i);
+assert.match(legalRetentionDossier, /Spark \/ USD 0/);
+assert.match(legalRetentionDossier, /Gemini Developer API habilitada/);
+assert.match(legalRetentionDossier, /AI Monitoring observado: \*\*desactivado\*\*/);
+assert.match(legalRetentionDossier, /Recurso externo de eliminación/i);
 assert.match(topiPrivacy, /TopiPrivacyRedaction = 'email' \| 'phone' \| 'otp' \| 'token'/);
 assert.doesNotMatch(topiPrivacy, /TopiPrivacyRedaction[^\n]*address/i);
 
