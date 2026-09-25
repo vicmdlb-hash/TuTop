@@ -85,7 +85,8 @@ assert.match(sender, /deactivateTokenRecord\(target, 'fcm-permanent-token-error'
 assert.match(sender, /notification: \{ title: 'TuTop', body: 'Tienes actividad nueva en TuTop\.' \}/);
 assert.match(sender, /current_owner_filter: true/);
 assert.match(sender, /supersededActiveTokenRecords\(tokens\)/);
-assert.match(sender, /deactivateTokenRecord\(stale, 'superseded-token-owner'\)/);
+assert.match(sender, /deactivateTokenRecord\(stale, 'superseded-token-owner', \{ preserveOwnershipTime: true \}\)/);
+assert.match(sender, /preserveOwnershipTime \? \{\} : \{ updated_at: at \}/);
 assert.match(sender, /superseded_owner_cleanup_scoped_to_selected_token/);
 assert.match(sender, /permanent_invalid_token_cleanup: apply/);
 assert.doesNotMatch(sender, /notification: \{ title: item\.title/);
