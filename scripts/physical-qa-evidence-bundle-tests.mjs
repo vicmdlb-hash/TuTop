@@ -119,7 +119,17 @@ wrongVersion.diagnostic_report.version = '0.8.5-beta.0';
 const versionResult = validatePhysicalQaEvidence(wrongVersion, now, candidateManifest);
 assert.equal(versionResult.overall, 'fail');
 
+const wrongVersionCode = structuredClone(good);
+wrongVersionCode.android_version_code += 1;
+const wrongVersionCodeResult = validatePhysicalQaEvidence(wrongVersionCode, now, candidateManifest);
+assert.equal(wrongVersionCodeResult.overall, 'fail');
+assert.equal(wrongVersionCodeResult.release_blocked, true);
+assert(wrongVersionCodeResult.errors.some((x) => x.includes('android_version_code')));
+
 for (const mutate of [
+  (x) => { x.candidate.artifact_url = 'https://example.invalid/wrong-artifact'; },
+  (x) => { x.candidate.artifact_digest = 'sha256:' + '0'.repeat(64); },
+  (x) => { x.candidate.apk_cert_sha256 = '0'.repeat(64); },
   (x) => { x.candidate.apk_sha256 = '71975f84cd26adb1526db895e76dcb455aed2f258e3f6cf01035c9fd90c95321'; },
   (x) => { x.candidate.artifact_id += 1; },
   (x) => { x.candidate.build_run_id += 1; },
@@ -158,6 +168,6 @@ assert.equal(missingCandidateResult.overall, 'fail');
 
 console.log('PASS Build121 repository manifest loads only as the active exact-head Physical QA candidate');
 console.log('PASS evidence validator binds directly to the exact promoted Build121 artifact identity');
-console.log('PASS evidence bundles bind APK plus October/staging run IDs and SHAs');
+console.log('PASS evidence bundles bind artifact URL/digest, APK, cert SHA-256, versionCode and staging run IDs/SHAs');
 console.log('PASS sensitive, stale, wrong-runtime and wrong-candidate evidence remains fail-closed');
 console.log('Physical QA evidence bundle contract: PASS');
