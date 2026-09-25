@@ -1,0 +1,120 @@
+name: Post120 Build121 policy preview — staging Hosting only
+
+on:
+  push:
+    branches: [fix/post120-physical-failure-cluster]
+    paths:
+      - 'public/privacy.html'
+      - 'public/delete-account.html'
+      - 'public/delete-account.js'
+      - 'public/auth-action.html'
+      - 'public/auth-action.js'
+      - 'scripts/audit-staging-public-release-web.mjs'
+      - 'scripts/prepare-candidate120-hosting-assets.mjs'
+      - '.github/workflows/post120-policy-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post120-policy-preview
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Guard exact beta target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TUTOP_FIREBASE_PROJECT_ID" = "tutop-beta-vicmdlb-1356585881"
+          test "${GITHUB_REF_NAME}" = "fix/post120-physical-failure-cluster"
+
+      - run: npm ci
+
+      - name: Read existing staging Firebase config
+        run: node scripts/read-existing-staging-build-config.mjs
+
+      - name: Prepare existing beta Hosting runtime config
+        run: node scripts/prepare-candidate120-hosting-assets.mjs
+
+      - name: Build web preview payload
+        run: npm run build
+
+      - name: Prove corrected Build121 policy exists in payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/privacy.html
+          test -s dist/delete-account.html
+          grep -q 'Build121' dist/privacy.html
+          grep -q 'artifact 10835643904' dist/privacy.html
+          ! grep -Eq 'Build120|Candidate120|Hosting todavía no se ha desplegado' dist/privacy.html
+          grep -q 'Solicitar eliminación de mi cuenta TuTop' dist/delete-account.html
+
+      - name: Deploy isolated Firebase Hosting preview channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes firebase-tools@15.29.0 hosting:channel:deploy build121-policy \
+            --project "$TUTOP_FIREBASE_PROJECT_ID" \
+            --expires 7d \
+            --non-interactive \
+            --json | tee preview-deploy.json
+          test -s preview-deploy.json
+
+      - name: Extract preview URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const raw=JSON.parse(fs.readFileSync('preview-deploy.json','utf8'));
+          const text=JSON.stringify(raw);
+          const urls=[...text.matchAll(/https:\/\/[^"\\s]+/g)].map(m=>m[0]).filter(u=>u.includes('.web.app'));
+          if(!urls.length) throw new Error('PREVIEW_URL_NOT_FOUND');
+          const url=urls[0].replace(/[\\]+/g,'');
+          fs.appendFileSync(process.env.GITHUB_ENV, `TUTOP_POLICY_PREVIEW_URL=${url}\n`);
+          console.log(`Preview URL: ${url}`);
+          NODE
+
+      - name: Verify preview policy parity — read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            html="$(curl -fsSL -H 'Cache-Control: no-cache' "$TUTOP_POLICY_PREVIEW_URL/privacy.html" || true)"
+            if printf '%s' "$html" | grep -q 'Build121'; then
+              printf '%s' "$html" | grep -q 'artifact 10835643904'
+              ! printf '%s' "$html" | grep -Eq 'Build120|Candidate120|Hosting todavía no se ha desplegado'
+              echo "PASS Build121 privacy authority on isolated Hosting preview."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Preview did not converge to Build121 privacy authority." >&2
+          exit 1
+
+      - name: Prove no live Hosting / Android / Play mutation
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS preview-channel only; no live Hosting deploy, APK/AAB, Play or production."
