@@ -163,7 +163,7 @@ jobs:
         run: npm run build
       - name: Staging moderation identity readback — no mutation
         run: node scripts/audit-staging-moderation-identity.mjs
-      - name: One-shot Build121 policy preview — staging Hosting channel only
+      - name: One-shot Build121 policy preview — staging Hosting channel only (current proof)
         if: contains(github.event.head_commit.message, '[policy-preview]')
         shell: bash
         run: |
