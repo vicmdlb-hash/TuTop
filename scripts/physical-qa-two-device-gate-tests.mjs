@@ -31,7 +31,10 @@ const expected = {
 };
 const now = Date.parse('2026-09-07T04:30:00.000Z');
 const allPass = Object.fromEntries([
-  'install_boot','auth_identity','reinstall_identity','keyboard','android_back','lifecycle','safe_areas','rotation',
+  'install_boot','second_account_email_verification','auth_identity','reinstall_identity','topi_real_ai',
+  'notification_permission_activation','notification_token_registered','fcm_two_device_receive',
+  'fcm_two_device_tap_deep_link','account_switch_fcm_isolation',
+  'keyboard','android_back','lifecycle','safe_areas','rotation',
   'offline_reconnect','push_foreground','push_background','push_cold_start','push_deep_link','app_check_token_observed',
 ].map((key) => [key, 'pass']));
 
