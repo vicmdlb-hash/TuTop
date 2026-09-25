@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
-import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError } from './fcm-token-ownership-lib.mjs';
+import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords } from './fcm-token-ownership-lib.mjs';
 
 const token = 'fcm-token-shared-abcdefghijklmnopqrstuvwxyz';
 
@@ -16,6 +16,11 @@ const ownership = [
 ];
 assert.equal(eligibleRecipientTargets(ownership, 'A').length, 0, 'old owner must not receive after newer owner registration');
 assert.equal(eligibleRecipientTargets(ownership, 'B').length, 1, 'new owner gets exactly one canonical target');
+assert.deepEqual(
+  supersededActiveTokenRecords(ownership).map((item) => item.id),
+  ['a1'],
+  'trusted maintenance should identify the older active A mapping as safely superseded',
+);
 
 const tombstoned = [
   { id:'a1', owner_uid:'A', token, active:true, updated_at:'2026-09-19T01:00:00Z' },
@@ -28,6 +33,13 @@ const ambiguous = [
   { id:'b1', owner_uid:'B', token, active:true, updated_at:'2026-09-19T04:00:00Z' },
 ];
 assert.equal(currentTokenOwnerRecords(ambiguous).length, 0, 'cross-UID tie fails closed');
+assert.equal(supersededActiveTokenRecords(ambiguous).length, 0, 'ambiguous cross-UID ties must never be auto-cleaned');
+
+const tombstoneCleanup = [
+  { id:'a-old', owner_uid:'A', token, active:true, updated_at:'2026-09-19T01:00:00Z' },
+  { id:'a-off', owner_uid:'A', token, active:false, updated_at:'2026-09-19T05:00:00Z' },
+];
+assert.deepEqual(supersededActiveTokenRecords(tombstoneCleanup).map((item) => item.id), ['a-old'], 'newer tombstone may retire older active record');
 
 assert.equal(isPermanentFcmTokenError(404, '{"error":{"status":"NOT_FOUND","details":[{"errorCode":"UNREGISTERED"}]}}'), true);
 assert.equal(isPermanentFcmTokenError(429, 'RESOURCE_EXHAUSTED'), false);
@@ -72,7 +84,11 @@ assert.match(sender, /isPermanentFcmTokenError\(response\.status, detail\)/);
 assert.match(sender, /deactivateTokenRecord\(target, 'fcm-permanent-token-error'\)/);
 assert.match(sender, /notification: \{ title: 'TuTop', body: 'Tienes actividad nueva en TuTop\.' \}/);
 assert.match(sender, /current_owner_filter: true/);
+assert.match(sender, /supersededActiveTokenRecords\(tokens\)/);
+assert.match(sender, /deactivateTokenRecord\(stale, 'superseded-token-owner', \{ preserveOwnershipTime: true \}\)/);
+assert.match(sender, /preserveOwnershipTime \? \{\} : \{ updated_at: at \}/);
+assert.match(sender, /superseded_owner_cleanup_scoped_to_selected_token/);
 assert.match(sender, /permanent_invalid_token_cleanup: apply/);
 assert.doesNotMatch(sender, /notification: \{ title: item\.title/);
 
-console.log('PASS push account isolation: logout quarantine + current-token owner + recipient UID routing guard + generic notification body');
+console.log('PASS push account isolation: logout quarantine + current-token owner + trusted stale-owner cleanup + recipient UID routing guard + generic notification body');

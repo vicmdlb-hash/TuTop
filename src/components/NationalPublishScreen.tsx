@@ -570,7 +570,7 @@ export default function NationalPublishScreen() {
           <button type="button" onClick={startVoice} className={`absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-xl ${voiceStatus === 'listening' ? 'bg-fuchsia-500 text-white' : 'bg-white/[0.06] text-violet-200'}`} aria-label="Dictar a Topi"><Mic className="h-4 w-4" /></button>
         </div>
         <button disabled={topiBusy} type="button" onClick={() => void applyTopi()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-xs font-black text-white disabled:opacity-60">{topiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{topiBusy ? 'Topi está preparando…' : 'Topi, prepara mi anuncio'}</button>
-        <p className="mt-2 text-[8px] leading-4 text-slate-600">TuTop no adjunta automáticamente fotos, tokens ni ubicación del dispositivo a Topi. Antes del envío remoto se omiten emails, teléfonos y códigos sensibles evidentes. No escribas domicilio exacto ni secretos. La IA nunca publica por ti: sólo propone y tú confirmas.</p>
+        <p className="mt-2 text-[8px] leading-4 text-slate-600">Cuando Topi usa Firebase AI real, el texto necesario se procesa remotamente. TuTop no adjunta automáticamente fotos ni ubicación del dispositivo; antes del envío se omiten emails, teléfonos y códigos sensibles evidentes. No escribas domicilio exacto, contraseñas ni secretos. La IA nunca publica por ti: sólo propone y tú confirmas.</p>
       </section>
 
       <section className="publish-card">

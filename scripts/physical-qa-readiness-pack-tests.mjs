@@ -14,6 +14,8 @@ const legal = readText('docs/LEGAL_RETENTION_REVIEW_DOSSIER_0.9.md');
 const oidc = readText('docs/CI_OIDC_WIF_PARITY_CHECKLIST_0.9.md');
 const cron = readText('docs/TRUSTED_CRON_DEFAULT_BRANCH_PATCH_0.9.md');
 const cutoverRunbook = readText('docs/V2_COST_CUTOVER_RUNBOOK_0.9.md');
+const physicalRunbook = readText('docs/PHYSICAL_QA_EXECUTION_RUNBOOK_0.9.md');
+const androidPhysicalQa = readText('docs/ANDROID_PHYSICAL_QA_0.9.md');
 
 assert.equal(candidate.schema, 'tutop.physical-qa-candidate.v1');
 assert.equal(candidate.environment, 'staging');
@@ -23,7 +25,7 @@ assert(Number.isSafeInteger(candidate.artifact_id) && candidate.artifact_id > 0)
 assert(Number.isSafeInteger(candidate.build_run_id) && candidate.build_run_id > 0);
 
 const obsolete = candidate.physical_release_candidate === false
-  && candidate.candidate_status === 'obsolete_runtime_drift'
+  && ['obsolete_runtime_drift', 'obsolete_physical_fail'].includes(candidate.candidate_status)
   && candidate.replacement_required === true;
 const active = candidate.physical_release_candidate === true
   && candidate.candidate_status === 'active_exact_head'
@@ -96,6 +98,14 @@ assert(cron.includes('**NO APLICAR AHORA.**'));
 assert(cron.includes('el cron NO está activo automáticamente'));
 assert(cutoverRunbook.includes('PREPARADO / DESACTIVADO POR DEFECTO'));
 assert(cutoverRunbook.includes('Physical QA A+B'));
+assert(physicalRunbook.includes('# TuTop Build121 — Physical acceptance runbook'));
+assert(physicalRunbook.includes('artifact ID: `10835643904`'));
+assert(physicalRunbook.includes('APK SHA-256: `acd939e5aa4d078270b2fb485e9a41741638e4501cd3c3167871c9ca7bc6f6b8`'));
+assert(!/TuTop Build120|PR #107 \/ Build120|Start a new Build120|pending\/false for Build120/.test(physicalRunbook));
+assert(androidPhysicalQa.includes('**Build121 exact candidate:**'));
+assert(androidPhysicalQa.includes('artifact `10835643904`'));
+assert(androidPhysicalQa.includes('Device A+B'));
+assert(!/Build120 exact candidate|En Build120 no se espera/.test(androidPhysicalQa));
 
 console.log(`PASS Physical QA candidate state is fail-closed and explicit: ${candidate.candidate_status}`);
 console.log(`PASS Device A/B, FCM and App Check templates remain bound to the ${active ? 'active exact-head' : 'historical obsolete'} candidate without synthesized physical evidence`);

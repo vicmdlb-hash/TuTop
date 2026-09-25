@@ -44,4 +44,4 @@ if (failures) {
   console.error(`Admin doctor: ${failures} fallo(s).`);
   process.exit(1);
 }
-console.log('Admin doctor Spark: PASS. Pendiente externo: Firebase real + bootstrap admins/{uid}.active=true.');
+console.log('Admin doctor Spark: PASS. Pendiente externo: identidad staging legítima con admins/{uid}.active=true + role permitido; institution_moderator requiere institution_id. No usar bootstrap active-only.');

@@ -2,6 +2,37 @@
 
 Estado: **PENDIENTE REVISIÓN LEGAL**. Este dossier no fija plazos, bases legales, jurisdicción ni excepciones. Ingeniería sólo prepara las preguntas y la evidencia técnica para una decisión autorizada.
 
+
+## Snapshot técnico de ingeniería — Build121 exacto
+
+Este snapshot identifica la evidencia que ingeniería entrega para revisión; **no constituye aprobación legal, Data Safety final, autorización de Play ni release**.
+
+- app: `0.9.2-beta.11` / Android versionCode `90215`
+- package: `mx.tutop.app`
+- source SHA del APK: `579bdecd7e193b8661276f114b9d3e097792d8d6`
+- artifact ID: `10835643904`
+- artifact digest: `sha256:ebd4629a9d1d5c693eb635227c0d94ed2246c2bcf87a891b46cb8c2d317c54f9`
+- APK SHA-256: `acd939e5aa4d078270b2fb485e9a41741638e4501cd3c3167871c9ca7bc6f6b8`
+- signing cert SHA-256: `192B19F3E67ED7B69FA6862429E232B892979A6C8C97800845F6A1D1948FF79A`
+- staging project: `tutop-beta-vicmdlb-1356585881`
+- physical state: Device A/B, real Topi, real FCM and physical App Check siguen pendientes; este snapshot no es release candidate.
+- Topi remote redaction probada por ingeniería: email, teléfono, OTP y patrones de token; **no** se afirma redacción genérica de domicilios/direcciones.
+- superficies técnicas existentes: borrador `public/privacy.html`, recurso `public/delete-account.html`, matriz de borrado/retención y dossier legal.
+
+## Readback técnico de release-policy — 24/25 de septiembre de 2026
+
+Este bloque registra hechos observados para el revisor; **no sustituye ninguna decisión legal ni la declaración final de Data Safety**.
+
+- Proyecto Firebase observado: `tutop-beta-vicmdlb-1356585881`.
+- Plan observado en consola: **Spark / USD 0**; no se modificó billing.
+- Proveedor observado: **Gemini Developer API habilitada**; **Agent Platform Gemini API deshabilitada**.
+- Firebase AI Monitoring observado: **desactivado**. El control de muestreo 100% visible estaba inactivo por estar Monitoring apagado; no se cambió ninguna opción.
+- URL pública de privacidad: `/privacy.html` es accesible externamente, pero sigue siendo borrador beta y conserva pendientes de identidad/contacto/retención/aprobación jurídica.
+- Recurso externo de eliminación: `/delete-account.html` fue comprobado públicamente y permite iniciar/consultar la solicitud de la cuenta autenticada sin exigir reinstalar ni abrir la app.
+- Build121 exacto compila/apunta a Android API 36.
+- R5 Data Safety permanece bloqueado hasta que exista política final aprobada, reglas de retención autorizadas, mapeo del artefacto/AAB final y respuestas finales de Play.
+- Device A/B, segunda cuenta, Topi real, FCM real y App Check físico permanecen pendientes; ninguna evidencia de consola sustituye esos gates.
+
 ## Registro de decisión obligatorio
 
 - Jurisdicción aplicable: **PENDIENTE LEGAL**

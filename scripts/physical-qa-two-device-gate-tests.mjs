@@ -20,6 +20,9 @@ const candidate = {
 const expected = {
   artifact_name: candidate.artifact_name,
   artifact_id: candidate.artifact_id,
+  artifact_url: candidate.artifact_url,
+  artifact_digest: candidate.artifact_digest,
+  apk_cert_sha256: candidate.apk_cert_sha256,
   build_run_id: candidate.build_run_id,
   build_commit_sha: candidate.build_commit_sha,
   build_tree_sha: candidate.build_tree_sha,
@@ -31,18 +34,32 @@ const expected = {
 };
 const now = Date.parse('2026-09-07T04:30:00.000Z');
 const allPass = Object.fromEntries([
-  'install_boot','auth_identity','reinstall_identity','keyboard','android_back','lifecycle','safe_areas','rotation',
+  'install_boot','second_account_email_verification','auth_identity','reinstall_identity','topi_real_ai',
+  'notification_permission_activation','notification_token_registered','fcm_two_device_receive',
+  'fcm_two_device_tap_deep_link','account_switch_fcm_isolation',
+  'keyboard','android_back','lifecycle','safe_areas','rotation',
   'offline_reconnect','push_foreground','push_background','push_cold_start','push_deep_link','app_check_token_observed',
 ].map((key) => [key, 'pass']));
 
 function fcmFixture(slot, session, startedAt, completedAt) {
   return {
     schema: 'tutop.fcm-physical-fixture.v1',
-    candidate: { artifact_id: candidate.artifact_id, build_run_id: candidate.build_run_id, build_tree_sha: candidate.build_tree_sha, apk_sha256: candidate.apk_sha256 },
+    candidate: {
+      artifact_id: candidate.artifact_id,
+      artifact_url: candidate.artifact_url,
+      artifact_digest: candidate.artifact_digest,
+      build_run_id: candidate.build_run_id,
+      build_commit_sha: candidate.build_commit_sha,
+      build_tree_sha: candidate.build_tree_sha,
+      apk_sha256: candidate.apk_sha256,
+      apk_cert_sha256: candidate.apk_cert_sha256,
+    },
     device_slot: slot,
+    two_device_required: true,
     evidence_session_id: session,
     evidence_started_at: startedAt,
     evidence_completed_at: completedAt,
+    account_switch_isolation_required: true,
     scenarios: [
       { name: 'foreground', events: [
         { at_ms: 1_000, kind: 'app_foreground' },
@@ -81,7 +98,7 @@ function bundle(slot, model, viewport, session, offset = 0) {
   const startedAt = new Date(started).toISOString();
   const completedAt = new Date(completed).toISOString();
   return {
-    schema: 'tutop.physical-qa-evidence.v1', app_version: candidate.app_version, environment: 'staging', candidate: expected,
+    schema: 'tutop.physical-qa-evidence.v1', app_version: candidate.app_version, android_version_code: candidate.android_version_code, environment: 'staging', candidate: expected,
     evidence_session_id: session,
     evidence_started_at: startedAt,
     evidence_completed_at: completedAt,

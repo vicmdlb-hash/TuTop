@@ -17,6 +17,7 @@ let manifest = fs.readFileSync(manifestPath, 'utf8');
 const permissions = [
   '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
   '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
+  '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
 ];
 
 const manifestMarker = '<manifest';
@@ -78,6 +79,7 @@ if (manifest.includes('android.permission.CAMERA')) stop('Capacitor Camera 8 no 
 if (manifest.includes('READ_EXTERNAL_STORAGE') || manifest.includes('WRITE_EXTERNAL_STORAGE')) stop('TuTop no debe recuperar permisos legacy de almacenamiento.');
 if (!manifest.includes('android.permission.ACCESS_COARSE_LOCATION')) stop('falta permiso de ubicación aproximada.');
 if (!manifest.includes('android.permission.RECORD_AUDIO')) stop('falta permiso de micrófono bajo demanda.');
+if (!manifest.includes('android.permission.POST_NOTIFICATIONS')) stop('falta POST_NOTIFICATIONS para Android 13+.');
 if (!manifest.includes('photopicker_activity:0:required')) stop('falta backport del Photo Picker para Android compatible.');
 if (!manifest.includes('xmlns:tools="http://schemas.android.com/tools"')) stop('falta namespace tools requerido por el Photo Picker backport.');
 if (!manifest.includes('tools:ignore="MissingClass"')) stop('falta supresión acotada de MissingClass para el Photo Picker backport.');
@@ -85,4 +87,4 @@ if (!manifest.includes('android:allowBackup="false"')) stop('allowBackup debe qu
 if (!manifest.includes('android:usesCleartextTraffic="false"')) stop('cleartext traffic debe quedar desactivado.');
 
 fs.writeFileSync(manifestPath, manifest);
-console.log('✅ Android 0.9.2: coarse location + mic bajo demanda + camera/photo picker sin permisos legacy + backport Photo Picker.');
+console.log('✅ Android 0.9.2: coarse location + mic bajo demanda + POST_NOTIFICATIONS + camera/photo picker sin permisos legacy + backport Photo Picker.');

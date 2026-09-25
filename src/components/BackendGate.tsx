@@ -274,6 +274,40 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
 function EmailVerificationScreen({ status, onVerified, onSignOut }: { status: VerifiedEmailBetaStatus; onVerified: () => void; onSignOut: () => void }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [verificationLink, setVerificationLink] = useState('');
+
+  // Verification happens in the browser/email client. When the user returns to
+  // TuTop, re-check automatically instead of leaving them trapped behind a
+  // manual button. Security Rules remain authoritative; this never bypasses
+  // Firebase emailVerified.
+  useEffect(() => {
+    let cancelled = false;
+    let probing = false;
+    const probe = async () => {
+      if (cancelled || probing || document.visibilityState !== 'visible' || !navigator.onLine) return;
+      probing = true;
+      try {
+        const current = await verifiedEmailBetaAuth.refreshVerificationStatus();
+        if (!cancelled && current.emailVerified) onVerified();
+      } catch {
+        // Manual "comprobar" keeps the visible error path. Background probes
+        // stay quiet so a temporary network failure does not spam the user.
+      } finally {
+        probing = false;
+      }
+    };
+    const visible = () => { if (document.visibilityState === 'visible') void probe(); };
+    window.addEventListener('focus', visible);
+    document.addEventListener('visibilitychange', visible);
+    const timer = window.setInterval(() => { void probe(); }, 15_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', visible);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [status.uid, onVerified]);
+
   const check = async () => {
     try {
       setBusy(true); setMessage('');
@@ -286,6 +320,23 @@ function EmailVerificationScreen({ status, onVerified, onSignOut }: { status: Ve
     }
     finally { setBusy(false); }
   };
+  const applyLink = async () => {
+    try {
+      setBusy(true); setMessage('');
+      const current = await verifiedEmailBetaAuth.applyVerificationLink(verificationLink);
+      if (current.emailVerified) { onVerified(); return; }
+      setMessage('El enlace se procesó, pero Firebase todavía no refleja el correo como verificado. Solicita uno nuevo.');
+    } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
+      if (/EXPIRED_OOB_CODE|INVALID_OOB_CODE|AUTH_LINK_REQUIRED|AUTH_LINK_MODE_INVALID/i.test(raw)) {
+        setMessage('Ese enlace de verificación ya venció, fue usado o no es válido. Reenvía el correo y pega el enlace más reciente.');
+      } else if (/AUTH_UID_MISMATCH/i.test(raw)) {
+        setMessage('Ese enlace pertenece a otra cuenta. Usa el correo de la cuenta con la que iniciaste sesión.');
+      } else {
+        setMessage(friendlyError(raw));
+      }
+    } finally { setBusy(false); }
+  };
   const resend = async () => {
     try {
       setBusy(true); setMessage('');
@@ -294,7 +345,7 @@ function EmailVerificationScreen({ status, onVerified, onSignOut }: { status: Ve
     } catch (error) { setMessage(friendlyError(error instanceof Error ? error.message : String(error))); }
     finally { setBusy(false); }
   };
-  return <div className="grid min-h-screen place-items-center bg-[#070b12] px-6 text-center text-white"><div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0b111c] p-6"><Mail className="mx-auto h-10 w-10 text-violet-300" /><h1 className="mt-4 text-xl font-black">Verifica tu correo</h1><p className="mt-2 text-sm leading-6 text-slate-400">Abre el enlace de verificación de <strong className="text-slate-200">{status.email}</strong>. Si no recibiste el correo, pulsa “Reenviar correo”. Hasta verificarlo puedes conservar tu cuenta, pero publicación, chat, ofertas y reservaciones permanecen bloqueados por Security Rules.</p>{message && <p className="mt-4 rounded-xl bg-white/5 p-3 text-xs text-slate-300">{message}</p>}<button disabled={busy} onClick={() => void check()} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 py-3 text-sm font-black disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Ya verifiqué · comprobar</button><button disabled={busy} onClick={() => void resend()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-white/5 py-3 text-xs font-bold text-slate-300 disabled:opacity-50"><RefreshCw className="h-4 w-4" />Reenviar correo</button><button onClick={onSignOut} className="mt-4 text-xs font-bold text-slate-500">Usar otra cuenta</button></div></div>;
+  return <div className="grid min-h-screen place-items-center bg-[#070b12] px-6 text-center text-white"><div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0b111c] p-6"><Mail className="mx-auto h-10 w-10 text-violet-300" /><h1 className="mt-4 text-xl font-black">Verifica tu correo</h1><p className="mt-2 text-sm leading-6 text-slate-400">Abre el enlace de verificación de <strong className="text-slate-200">{status.email}</strong>. TuTop volverá a comprobar el estado al regresar. Si el navegador no logra terminar la verificación, copia el enlace completo del correo y pégalo aquí. Publicación, chat, ofertas y reservaciones permanecen bloqueados por Security Rules hasta que Firebase confirme <code>emailVerified</code>.</p>{message && <p className="mt-4 rounded-xl bg-white/5 p-3 text-xs text-slate-300">{message}</p>}<div className="mt-4"><input value={verificationLink} onChange={(event) => setVerificationLink(event.target.value)} className="auth-input text-left text-xs" inputMode="url" autoComplete="off" placeholder="Pega el enlace de verificación si el navegador falló" /><button disabled={busy || !verificationLink.trim()} onClick={() => void applyLink()} className="mt-2 w-full rounded-2xl bg-emerald-500/10 py-2.5 text-xs font-black text-emerald-300 disabled:opacity-40">Verificar con este enlace</button></div><button disabled={busy} onClick={() => void check()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 py-3 text-sm font-black disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Ya verifiqué · comprobar</button><button disabled={busy} onClick={() => void resend()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-white/5 py-3 text-xs font-bold text-slate-300 disabled:opacity-50"><RefreshCw className="h-4 w-4" />Reenviar correo</button><button onClick={onSignOut} className="mt-4 text-xs font-bold text-slate-500">Usar otra cuenta</button></div></div>;
 }
 
 function LegacyIdentityScreen({ onMigrated, onSignOut }: { onMigrated: () => void; onSignOut: () => void }) {

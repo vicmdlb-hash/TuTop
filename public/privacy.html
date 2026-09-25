@@ -11,7 +11,7 @@
 </head>
 <body>
   <h1>Privacidad de TuTop — borrador beta</h1>
-  <p class="note"><strong>No es una política legal aprobada para publicación.</strong> Este borrador técnico está reconciliado con Build120 / PR #107 / SHA 554f4ef6d0429b0059738d8cd6e1b6e4890bda91. Build120 no está aprobada para release y conserva fallos físicos abiertos en autenticación/verificación, Topi real y activación de notificaciones; la política final debe revisarse jurídicamente y contra la candidata exacta que eventualmente se autorice para Play.</p>
+  <p class="note"><strong>No es una política legal aprobada para publicación.</strong> Este borrador técnico está reconciliado con Build121 (0.9.2-beta.11 / versionCode 90215 / source SHA 579bdecd7e193b8661276f114b9d3e097792d8d6 / artifact 10835643904). Build121 es el único candidato físico exacto activo, pero todavía no es release candidate: Device A/B, segunda cuenta, Topi real, FCM extremo a extremo y App Check físico siguen pendientes. La política final debe revisarse jurídicamente y contra el artefacto exacto que eventualmente se autorice para Play.</p>
 
   <h2>Cuenta e identidad</h2>
   <p>TuTop usa Firebase Authentication. La candidata actual trabaja con correo real y estado de verificación de correo. El flujo de recuperación legacy puede partir de un alias telefónico existente y la Clave TuTop para conservar el mismo UID; ese teléfono sigue siendo opcional/no verificado y TuTop no lo presenta como verificado por SMS.</p>
@@ -20,7 +20,7 @@
   <p>Según la superficie técnica revisada, TuTop puede manejar datos de perfil y universidad/campus; publicaciones y fotografías; chats y mensajes; ofertas, reservas y transacciones; favoritos, búsquedas guardadas, reseñas y reportes; preferencias de notificaciones; tokens de dispositivo para push; solicitudes de eliminación; y evidencia de verificación cuando el usuario usa ese flujo.</p>
 
   <h2>Ubicación</h2>
-  <p>Nearby puede solicitar ubicación aproximada bajo demanda. Build120 declara ubicación coarse y rechaza ubicación precisa y ubicación en segundo plano para este flujo. La ubicación de una publicación requiere opt-in explícito.</p>
+  <p>Nearby puede solicitar ubicación aproximada bajo demanda. Build121 declara ubicación coarse y rechaza ubicación precisa y ubicación en segundo plano para este flujo. La ubicación de una publicación requiere opt-in explícito.</p>
 
   <h2>Topi / Firebase AI</h2>
   <p>Cuando se usa Topi con IA remota habilitada, una pregunta del usuario se sanea y limita antes de enviarse a Firebase AI Logic 17.17.0. La respuesta y el modelo regresan al cliente. La declaración final de privacidad/Data Safety debe considerar además los metadatos y datos que procese el SDK/proveedor y el estado efectivo de AI monitoring/logging.</p>
@@ -32,13 +32,13 @@
   <p>La candidata incluye Firebase Cloud Messaging y preferencias de notificación. El dispositivo puede registrar o desactivar un token push. La aceptación física extremo a extremo de FCM continúa pendiente y no debe confundirse con validación de código.</p>
 
   <h2>Fotos y video</h2>
-  <p>El flujo de fotos puede usar Camera/Photo Picker y lectura local de archivos. Build120 no declara permiso CAMERA ni permisos legacy de almacenamiento para este flujo. El código de video/Firebase Storage permanece bloqueado por los gates actuales.</p>
+  <p>El flujo de fotos puede usar Camera/Photo Picker y lectura local de archivos. Build121 no declara permiso CAMERA ni permisos legacy de almacenamiento para este flujo. El código de video/Firebase Storage permanece bloqueado por los gates actuales.</p>
 
   <h2>Eliminación de cuenta</h2>
-  <p>Desde <strong>Perfil → Notificaciones y privacidad V2 → Eliminar cuenta y datos</strong> una cuenta autenticada puede registrar una solicitud de eliminación. Candidate120 también incluye un flujo web autenticado propio para que una cuenta existente pueda iniciar o consultar esa solicitud sin abrir ni reinstalar la app.</p>
+  <p>Desde <strong>Perfil → Notificaciones y privacidad V2 → Eliminar cuenta y datos</strong> una cuenta autenticada puede registrar una solicitud de eliminación. Build121 también incluye un flujo web autenticado propio para que una cuenta existente pueda iniciar o consultar esa solicitud sin abrir ni reinstalar la app.</p>
   <p>El flujo web usa la misma identidad Firebase de TuTop, deriva el UID de la sesión autenticada y sólo puede crear o consultar la solicitud del propio usuario. El navegador no ejecuta la eliminación destructiva ni puede marcar una solicitud como completada.</p>
   <p><a href="/delete-account.html">Solicitar o consultar la eliminación de una cuenta TuTop desde la web</a>.</p>
-  <p><strong>Estado de release:</strong> el flujo externo está implementado y validado por build en PR #112, pero Firebase Hosting todavía no se ha desplegado para esta candidata. Por eso la disponibilidad pública de esa URL sigue pendiente de un deploy autorizado y una prueba externa posterior.</p>
+  <p><strong>Estado de release:</strong> el recurso externo está desplegado en el entorno beta y su disponibilidad pública fue comprobada externamente sin requerir abrir ni reinstalar la app. Esta comprobación técnica de alcance no equivale a aprobación jurídica, aprobación de Google Play ni a que Build121 sea release candidate.</p>
 
   <h2>Consultas de privacidad</h2>
   <p>TuTop todavía no ha establecido un canal público final para consultas generales de privacidad. Antes de una publicación en Google Play deberá existir un mecanismo público aprobado y coherente con la identidad final del desarrollador. Este borrador no publica automáticamente un correo personal ni la dirección <code>noreply</code> de Firebase como contacto.</p>
@@ -54,6 +54,6 @@
   <h2>Estado de publicación</h2>
   <p>TuTop continúa en beta controlada. Play Store, producción, billing, signing/AAB, Storage/video y merge permanecen bloqueados por los gates actuales.</p>
 
-  <p>Última revisión técnica del borrador: 23 de septiembre de 2026.</p>
+  <p>Última revisión técnica del borrador: 25 de septiembre de 2026.</p>
 </body>
 </html>

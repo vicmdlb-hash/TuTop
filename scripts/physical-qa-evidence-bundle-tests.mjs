@@ -2,34 +2,23 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { validatePhysicalQaEvidence, loadPhysicalQaCandidate } from './physical-qa-evidence-bundle.mjs';
 
-const now = Date.parse('2026-09-07T02:50:00.000Z');
+const now = Date.parse('2026-09-24T22:15:00.000Z');
 const template = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_EVIDENCE_BUNDLE_0.9.json', 'utf8'));
-const historical = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
-assert.equal(historical.physical_release_candidate, true);
-assert.equal(historical.candidate_status, 'active_exact_head');
-assert.equal(historical.replacement_required, false);
-const loadedHistorical = loadPhysicalQaCandidate();
-assert.equal(loadedHistorical.artifact_id, historical.artifact_id);
-assert.equal(loadedHistorical.build_commit_sha, historical.build_commit_sha);
-
-const exactSha = String(historical.build_commit_sha || '1'.repeat(40));
-const candidateManifest = {
-  ...historical,
-  physical_release_candidate: true,
-  candidate_status: 'active_exact_head',
-  replacement_required: false,
-  build_commit_sha: exactSha,
-  gate_commit_sha: exactSha,
-  staging_smoke_commit_sha: exactSha,
-  artifact_id: 10002986519,
-  build_run_id: 34088114928,
-  gate_run_id: 34088114001,
-  staging_smoke_run_id: 34088114501,
-};
+const candidateManifest = loadPhysicalQaCandidate();
+assert.equal(candidateManifest.app_version, '0.9.2-beta.11');
+assert.equal(candidateManifest.physical_release_candidate, true);
+assert.equal(candidateManifest.candidate_status, 'active_exact_head');
+assert.equal(candidateManifest.replacement_required, false);
+assert.equal(candidateManifest.build_commit_sha, '579bdecd7e193b8661276f114b9d3e097792d8d6');
+assert.equal(candidateManifest.build_run_id, 36064382977);
+assert.equal(candidateManifest.artifact_id, 10835643904);
 
 const candidateBinding = {
   artifact_name: candidateManifest.artifact_name,
   artifact_id: candidateManifest.artifact_id,
+  artifact_url: candidateManifest.artifact_url,
+  artifact_digest: candidateManifest.artifact_digest,
+  apk_cert_sha256: candidateManifest.apk_cert_sha256,
   build_run_id: candidateManifest.build_run_id,
   build_commit_sha: candidateManifest.build_commit_sha,
   build_tree_sha: candidateManifest.build_tree_sha,
@@ -48,8 +37,8 @@ assert.equal(pending.release_blocked, true);
 assert(pending.pending_cases >= 10);
 
 const passReport = {
-  generated_at: '2026-09-07T02:45:00.000Z',
-  version: '0.9.2-beta.10',
+  generated_at: new Date(now - 5 * 60_000).toISOString(),
+  version: candidateManifest.app_version,
   platform: 'android',
   native_runtime: true,
   viewport: { width: 412, height: 915, dpr: 2.6 },
@@ -130,7 +119,17 @@ wrongVersion.diagnostic_report.version = '0.8.5-beta.0';
 const versionResult = validatePhysicalQaEvidence(wrongVersion, now, candidateManifest);
 assert.equal(versionResult.overall, 'fail');
 
+const wrongVersionCode = structuredClone(good);
+wrongVersionCode.android_version_code += 1;
+const wrongVersionCodeResult = validatePhysicalQaEvidence(wrongVersionCode, now, candidateManifest);
+assert.equal(wrongVersionCodeResult.overall, 'fail');
+assert.equal(wrongVersionCodeResult.release_blocked, true);
+assert(wrongVersionCodeResult.errors.some((x) => x.includes('android_version_code')));
+
 for (const mutate of [
+  (x) => { x.candidate.artifact_url = 'https://example.invalid/wrong-artifact'; },
+  (x) => { x.candidate.artifact_digest = 'sha256:' + '0'.repeat(64); },
+  (x) => { x.candidate.apk_cert_sha256 = '0'.repeat(64); },
   (x) => { x.candidate.apk_sha256 = '71975f84cd26adb1526db895e76dcb455aed2f258e3f6cf01035c9fd90c95321'; },
   (x) => { x.candidate.artifact_id += 1; },
   (x) => { x.candidate.build_run_id += 1; },
@@ -167,8 +166,8 @@ delete missingCandidate.candidate;
 const missingCandidateResult = validatePhysicalQaEvidence(missingCandidate, now, candidateManifest);
 assert.equal(missingCandidateResult.overall, 'fail');
 
-console.log('PASS Build120 repository manifest is the active exact-runtime Physical QA candidate');
-console.log('PASS evidence validator uses Build120-compatible active_exact_head identity');
-console.log('PASS evidence bundles bind APK plus October/staging run IDs and SHAs');
+console.log('PASS Build121 repository manifest loads only as the active exact-head Physical QA candidate');
+console.log('PASS evidence validator binds directly to the exact promoted Build121 artifact identity');
+console.log('PASS evidence bundles bind artifact URL/digest, APK, cert SHA-256, versionCode and staging run IDs/SHAs');
 console.log('PASS sensitive, stale, wrong-runtime and wrong-candidate evidence remains fail-closed');
 console.log('Physical QA evidence bundle contract: PASS');

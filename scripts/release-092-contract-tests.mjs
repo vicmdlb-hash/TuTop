@@ -20,6 +20,14 @@ const prepareAndroid = read('scripts/prepare-staging-android-app.mjs');
 const registrationSmoke = read('scripts/staging-app-registration-smoke.mjs');
 const generator = read('scripts/generate-physical-qa-candidate.mjs');
 const verifier = read('scripts/verify-generated-physical-qa-candidate.mjs');
+const physicalCandidate = JSON.parse(read('docs/PHYSICAL_QA_CANDIDATE_0.9.json'));
+const privacyDraft = read('public/privacy.html');
+const deletionResource = read('public/delete-account.html');
+const retentionMatrix = read('docs/RETENTION_ERASURE_MATRIX_0.9.md');
+const legalRetentionDossier = read('docs/LEGAL_RETENTION_REVIEW_DOSSIER_0.9.md');
+const topiPrivacy = read('src/lib/topiPrivacy.ts');
+const fcmPhysicalTemplate = JSON.parse(read('docs/FCM_PHYSICAL_FIXTURE_TEMPLATE_0.9.json'));
+const appCheckPhysicalTemplate = JSON.parse(read('docs/APP_CHECK_PHYSICAL_EVIDENCE_TEMPLATE.json'));
 
 assert.equal(pkg.version, '0.9.2-beta.0');
 assert.equal(lock.version, '0.9.2-beta.0');
@@ -31,6 +39,73 @@ assert.equal(project.billingAllowed, false);
 assert.equal(project.productionPublishingAllowed, false);
 assert.match(env, /VITE_TUTOP_APP_VERSION=0\.9\.2-beta\.0/);
 assert.match(env, /VITE_TUTOP_MEDIA_STORAGE_ENABLED=false/);
+
+// Build121 exact engineering / Data Safety preflight.
+// This intentionally does NOT approve privacy terms, legal retention, Play
+// publication or production. It only proves that engineering evidence is tied
+// to the exact active physical candidate and that unresolved legal fields remain
+// explicit instead of being silently inferred.
+assert.equal(physicalCandidate.app_version, '0.9.2-beta.11');
+assert.equal(physicalCandidate.android_version_code, 90215);
+assert.equal(physicalCandidate.application_id, 'mx.tutop.app');
+assert.equal(physicalCandidate.staging_project, 'tutop-beta-vicmdlb-1356585881');
+assert.equal(physicalCandidate.build_commit_sha, '579bdecd7e193b8661276f114b9d3e097792d8d6');
+assert.equal(physicalCandidate.artifact_id, 10835643904);
+assert.equal(physicalCandidate.artifact_digest, 'sha256:ebd4629a9d1d5c693eb635227c0d94ed2246c2bcf87a891b46cb8c2d317c54f9');
+assert.equal(physicalCandidate.apk_sha256, 'acd939e5aa4d078270b2fb485e9a41741638e4501cd3c3167871c9ca7bc6f6b8');
+assert.equal(physicalCandidate.apk_cert_sha256, '192B19F3E67ED7B69FA6862429E232B892979A6C8C97800845F6A1D1948FF79A');
+assert.equal(physicalCandidate.physical_release_candidate, true);
+assert.equal(physicalCandidate.candidate_status, 'active_exact_head');
+assert.equal(physicalCandidate.replacement_required, false);
+assert.equal(physicalCandidate.physical_evidence, 'NOT_TESTED');
+
+assert.match(privacyDraft, /Privacidad de TuTop — borrador beta/);
+assert.match(privacyDraft, /No es una política legal aprobada para publicación/);
+assert.match(privacyDraft, /Build121/);
+assert.match(privacyDraft, /artifact 10835643904/);
+assert.doesNotMatch(privacyDraft, /Build120|Candidate120/i);
+assert.doesNotMatch(privacyDraft, /Hosting todavía no se ha desplegado/i);
+assert.match(privacyDraft, /disponibilidad pública fue comprobada externamente/i);
+assert.match(privacyDraft, /Firebase AI/);
+assert.match(privacyDraft, /delete-account\.html/);
+assert.match(privacyDraft, /plazos, bases jurídicas, excepciones de retención y aprobación final siguen pendientes/i);
+assert.match(deletionResource, /Solicitar eliminación de mi cuenta TuTop/);
+assert.match(deletionResource, /El navegador no puede marcarla como completada ni borrar directamente la cuenta de Firebase Authentication/);
+assert.match(deletionResource, /política final de retención aplicable/);
+assert.match(retentionMatrix, /PENDIENTE LEGAL/);
+assert.match(legalRetentionDossier, /PENDIENTE REVISIÓN LEGAL/);
+assert.match(legalRetentionDossier, /no fija plazos, bases legales, jurisdicción ni excepciones/i);
+assert.match(legalRetentionDossier, /Spark \/ USD 0/);
+assert.match(legalRetentionDossier, /Gemini Developer API habilitada/);
+assert.match(legalRetentionDossier, /AI Monitoring observado: \*\*desactivado\*\*/);
+assert.match(legalRetentionDossier, /Recurso externo de eliminación/i);
+assert.match(topiPrivacy, /TopiPrivacyRedaction = 'email' \| 'phone' \| 'otp' \| 'token'/);
+assert.doesNotMatch(topiPrivacy, /TopiPrivacyRedaction[^\n]*address/i);
+
+for (const template of [fcmPhysicalTemplate.candidate, {
+  artifact_id: appCheckPhysicalTemplate.candidate_artifact_id,
+  artifact_url: appCheckPhysicalTemplate.candidate_artifact_url,
+  artifact_digest: appCheckPhysicalTemplate.candidate_artifact_digest,
+  build_run_id: appCheckPhysicalTemplate.candidate_build_run_id,
+  build_commit_sha: appCheckPhysicalTemplate.candidate_build_commit_sha,
+  build_tree_sha: appCheckPhysicalTemplate.candidate_build_tree_sha,
+  apk_sha256: appCheckPhysicalTemplate.candidate_apk_sha256,
+  apk_cert_sha256: appCheckPhysicalTemplate.candidate_apk_cert_sha256,
+}]) {
+  assert.equal(template.artifact_id, physicalCandidate.artifact_id);
+  assert.equal(template.artifact_url, physicalCandidate.artifact_url);
+  assert.equal(template.artifact_digest, physicalCandidate.artifact_digest);
+  assert.equal(template.build_run_id, physicalCandidate.build_run_id);
+  assert.equal(template.build_commit_sha, physicalCandidate.build_commit_sha);
+  assert.equal(template.build_tree_sha, physicalCandidate.build_tree_sha);
+  assert.equal(template.apk_sha256, physicalCandidate.apk_sha256);
+  assert.equal(template.apk_cert_sha256, physicalCandidate.apk_cert_sha256);
+}
+assert.equal(fcmPhysicalTemplate.two_device_required, true);
+assert.equal(fcmPhysicalTemplate.account_switch_isolation_required, true);
+assert.equal(appCheckPhysicalTemplate.android_version_code, physicalCandidate.android_version_code);
+assert.equal(appCheckPhysicalTemplate.status, 'pending_human');
+assert.equal(appCheckPhysicalTemplate.app_check_token_observed, false);
 
 assert.match(workflow, /feat\/tutop-0\.9\.2-hardening/);
 assert.match(workflow, /TUTOP_BETA_VERSION: 0\.9\.2-beta\.0/);
@@ -131,4 +206,5 @@ assert.match(verifier, /build_commit_sha/);
 assert.match(verifier, /gate_commit_sha/);
 assert.match(verifier, /staging_smoke_commit_sha/);
 
+console.log('✅ Build121 Data Safety engineering preflight: exact candidate identity + draft privacy/deletion surfaces + legal-retention placeholders + FCM/App Check provenance PASS');
 console.log('✅ TuTop 0.9.2 release contract: exact-SHA hosted full-quality + Firebase-token fallback + app-like registration/publication proof + orphan-safe wipe + Capacitor 8 native APIs PASS');

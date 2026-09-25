@@ -30,7 +30,13 @@ assert.doesNotMatch(runner, /status: 'cancelled'/);
 assert.doesNotMatch(runner, /status: 'no_show'/);
 assert.doesNotMatch(runner, /meetup_scheduled.*status:/s);
 
-assert.match(backend, /Client authority ends at the authoritative sale close/);
+const finalizeStart = backend.indexOf('  async finalizeCompletedListing');
+const finalizeEnd = backend.indexOf('  async disputeTransaction', finalizeStart);
+assert.ok(finalizeStart >= 0 && finalizeEnd > finalizeStart, 'finalizeCompletedListing block must remain discoverable');
+const finalizeBlock = backend.slice(finalizeStart, finalizeEnd);
+assert.match(finalizeBlock, /status: 'sold_out'/);
+assert.doesNotMatch(finalizeBlock, /delete:/);
+assert.doesNotMatch(finalizeBlock, /terminalTransactionWrites/);
 assert.doesNotMatch(backend, /releaseCompletedLockBestEffort/);
 assert.match(lockRuleHardener, /completed queda reservado a cleanup trusted/);
 assert.doesNotMatch(lockRuleHardener, /data\.status == 'completed'.*allow delete/s);

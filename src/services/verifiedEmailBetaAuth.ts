@@ -353,6 +353,25 @@ export const verifiedEmailBetaAuth = {
     return migrateLegacySessionToEmail(stored, emailInput, requestGeneration);
   },
 
+  async applyVerificationLink(linkInput: string) {
+    const stored = readCompatibleSession();
+    if (!stored?.idToken || !stored.uid) throw new Error('AUTH_REQUIRED');
+    let parsed: URL;
+    try { parsed = new URL(String(linkInput || '').trim()); }
+    catch { throw new Error('AUTH_LINK_REQUIRED'); }
+    if (parsed.searchParams.get('mode') !== 'verifyEmail') throw new Error('AUTH_LINK_MODE_INVALID');
+    const oobCode = String(parsed.searchParams.get('oobCode') || '').trim();
+    if (oobCode.length < 8 || oobCode.length > 4096) throw new Error('AUTH_LINK_REQUIRED');
+
+    const response = await identityRequest('accounts:update', { oobCode }) as AuthPayload;
+    if (!response?.localId || response.localId !== stored.uid) {
+      throw new Error('AUTH_UID_MISMATCH');
+    }
+    const current = await this.refreshVerificationStatus();
+    if (!current.emailVerified) throw new Error('EMAIL_VERIFICATION_PENDING');
+    return current;
+  },
+
   async resendVerificationEmail() {
     const stored = readCompatibleSession();
     if (!stored?.idToken) throw new Error('AUTH_REQUIRED');

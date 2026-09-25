@@ -1,38 +1,40 @@
-# TuTop Build120 — Physical acceptance runbook
+# TuTop Build121 — Physical acceptance runbook
 
 Status: **READY FOR PHYSICAL QA / DEVICE A NOT TESTED**.
 
 ## Exact candidate
-- PR #107 / Build120
-- source SHA: `554f4ef6d0429b0059738d8cd6e1b6e4890bda91`
-- version: `0.9.2-beta.10`
-- versionCode: `90214`
-- workflow run: `35560814829` SUCCESS
-- artifact ID: `10622421310`
-- GitHub artifact: `TuTop-build120-554f4ef6d0429b0059738d8cd6e1b6e4890bda91`
-- APK file: `TuTop-build120-554f4ef6d042-deviceA-publication-repair-staging.apk`
-- APK size: `21,552,607` bytes
-- APK SHA-256: `9855a2e51587f3115f9c270c28d61b1f5c4aa4db7813dacc16b3fe700d458cc0`
+- PR #120 / Build121
+- source SHA: `579bdecd7e193b8661276f114b9d3e097792d8d6`
+- version: `0.9.2-beta.11`
+- versionCode: `90215`
+- workflow run: `36064382977` SUCCESS
+- artifact ID: `10835643904`
+- GitHub artifact: `TuTop-build121-579bdecd7e193b8661276f114b9d3e097792d8d6`
+- APK file: `TuTop-build121-579bdecd7e19-post120-physical-repair-staging.apk`
+- APK SHA-256: `acd939e5aa4d078270b2fb485e9a41741638e4501cd3c3167871c9ca7bc6f6b8`
 
 Issue #20 remains the physical SSOT. CI/staging PASS is not physical PASS.
 
 ## Before installation
 1. Verify the APK SHA-256 matches exactly.
 2. Record installation mode: upgrade / clean / reinstall.
-3. Start a new Build120 evidence session. Do not copy Build118/Build119 PASS/FAIL values.
+3. Start a new Build121 evidence session. Do not copy Build118/Build119/Build120 PASS/FAIL values.
 4. Never record password, OTP, raw ID/refresh/FCM/App Check token, phone number or hardware ID.
 
 ## Session A_CORE — first priority
-The first Build120 session must start with the **causal failure cluster observed on Build118 plus the national-publication defect found during the Build119 audit**.
+The first Build121 session must start with the **failure cluster that Build121 was explicitly promoted to repair: second-account/email verification, Topi real AI, notification activation/token health, and real two-device FCM/account isolation**.
 
-Then in the same Device A session verify, in this exact causal order:
+Then verify, in this exact causal order:
 1. install/boot without crash;
-2. ProductDetail opens without React #300;
-3. Topi real Firebase AI returns a usable response;
+2. second controlled account can verify email and enter the same verified identity reliably;
+3. Topi real Firebase AI returns a usable response on Device A and, when available, Device B;
 4. Android notification permission visibly reflects the real state;
 5. FCM token registration health reaches registered/reconciled state without exposing the token;
-6. the historical Publish path succeeds;
-7. a `Todo México` listing can publish **without mandatory Paquetería** when another valid delivery method is selected.
+6. A → logout (including offline/reconnect when feasible) → B leaves exactly one current token owner and no cross-account personalization/location residue;
+7. with Device B available, an authentic A→B marketplace event reaches foreground/background/cold-start and tap opens the exact deep-link;
+8. ProductDetail opens without React #300;
+9. the historical Publish path succeeds;
+10. a `Todo México` listing can publish **without mandatory Paquetería** when another valid delivery method is selected.
 
 After that causal cluster, continue with:
 - auth + verified email + university/campus identity;
@@ -47,7 +49,7 @@ After that causal cluster, continue with:
 - text scaling + TalkBack/focus;
 - keyboard, Android Back, lifecycle, safe areas and rotation.
 
-Do **not** expect post-Build120 source-only features (PR109–PR114) to appear in this APK unless they are later promoted into a deliberate successor.
+Do **not** expect source/control changes made after Build121 promotion to appear in this APK. Build121 runtime identity is frozen to source `579bdecd7e193b8661276f114b9d3e097792d8d6`; later PR #120 docs/tests/control-plane work does not alter the installed APK.
 
 This session covers issues #10 #12 #20 #31 #33 #38 #39 #44 #45.
 
@@ -63,7 +65,7 @@ Use a seller and two authentic buyers/profiles. Prove reserved availability and 
 Covers #50.
 
 ## Moderation
-Currently blocked by the separate fact that staging has zero authorized moderation admins. Do not invent/elevate one merely for QA. Once an authorized identity exists:
+Currently blocked by a fresh read-only staging audit: `admins_total=0`, `active_admins=0`, `first_admin_record_needed=true`. Do not invent/elevate one merely for QA. Once an authorized identity exists:
 pending must not look public → approve → public → remoderate/reject → Nearby invalidates stale approved state.
 
 Covers #35 #36 #62.
@@ -75,6 +77,6 @@ foreground, background, cold-start, tap/deep-link, exact outbox/notification cor
 Covers #11 #37; observe #52 again if account switching is part of the test.
 
 ## Evidence truth
-All templates are reset to pending/false for Build120. Only physically observed results may become PASS/FAIL/BLOCKED. Keep sessions <=6h and evidence <=24h for the two-device final gate.
+All templates are reset to pending/false for Build121. Only physically observed results may become PASS/FAIL/BLOCKED. Keep sessions <=6h and evidence <=24h for the two-device final gate.
 
 Full release remains blocked even if Device A core passes until remaining external/two-device/legal/release gates are resolved.

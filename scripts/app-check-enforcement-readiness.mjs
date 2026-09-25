@@ -35,9 +35,10 @@ export function validateAppCheckPhysicalEvidence(input, now = Date.now(), expect
   if (!input || typeof input !== 'object') return { ready: false, errors: ['evidence_missing'] };
   if (input.status !== 'verified') errors.push('status_not_verified');
   if (input.platform !== 'android') errors.push('platform_not_android');
-  if (!/^0\.9\.0-beta\./.test(String(input.app_version || ''))) errors.push('app_version_not_0_9_beta');
+  if (String(input.app_version || '') !== String(expectedCandidate.app_version || '')) errors.push('app_version_candidate_mismatch');
+  if (Number(input.android_version_code) !== Number(expectedCandidate.android_version_code)) errors.push('android_version_code_candidate_mismatch');
   if (input.app_check_token_observed !== true) errors.push('app_check_token_not_observed');
-  if (input.staging_project !== 'tutop-beta-vicmdlb-1356585881') errors.push('wrong_staging_project');
+  if (input.staging_project !== expectedCandidate.staging_project) errors.push('wrong_staging_project');
   if (input.contains_raw_token === true || hasForbiddenKey(input.devices)) errors.push('raw_token_must_not_be_stored');
 
   const devices = Array.isArray(input.devices) ? input.devices : [];
@@ -60,8 +61,12 @@ export function validateAppCheckPhysicalEvidence(input, now = Date.now(), expect
   else if (verifiedAt > now + 5 * 60_000 || now - verifiedAt > MAX_EVIDENCE_AGE_MS) errors.push('evidence_stale_or_future');
 
   if (input.candidate_apk_sha256 !== expectedCandidate.apk_sha256) errors.push('wrong_apk_candidate');
+  if (input.candidate_apk_cert_sha256 !== expectedCandidate.apk_cert_sha256) errors.push('wrong_apk_cert_candidate');
   if (input.candidate_artifact_id !== expectedCandidate.artifact_id) errors.push('wrong_artifact_candidate');
+  if (input.candidate_artifact_url !== expectedCandidate.artifact_url) errors.push('wrong_artifact_url_candidate');
+  if (input.candidate_artifact_digest !== expectedCandidate.artifact_digest) errors.push('wrong_artifact_digest_candidate');
   if (input.candidate_build_run_id !== expectedCandidate.build_run_id) errors.push('wrong_build_run_candidate');
+  if (input.candidate_build_commit_sha !== expectedCandidate.build_commit_sha) errors.push('wrong_build_commit_candidate');
   if (input.candidate_build_tree_sha !== expectedCandidate.build_tree_sha) errors.push('wrong_build_tree_candidate');
 
   return {

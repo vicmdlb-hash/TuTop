@@ -53,6 +53,52 @@ export function eligibleRecipientTargets(records = [], recipientUid = '') {
   return currentTokenOwnerRecords(records).filter((target) => String(target.owner_uid || '') === uid);
 }
 
+/**
+ * Returns active records that are safely superseded by a unique newest record
+ * for the same raw token. Ambiguous cross-UID ties are never auto-cleaned.
+ * This is intentionally separate from delivery filtering so trusted maintenance
+ * can retire stale mappings before a physical send without changing app runtime.
+ */
+export function supersededActiveTokenRecords(records = []) {
+  const groups = new Map();
+  for (const record of records) {
+    const token = tokenKey(record);
+    if (!token) continue;
+    const list = groups.get(token) || [];
+    list.push(record);
+    groups.set(token, list);
+  }
+
+  const stale = [];
+  for (const [token, list] of groups) {
+    const ranked = [...list].sort((a, b) => {
+      const byTime = recordTime(b) - recordTime(a);
+      if (byTime) return byTime;
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+    const newestTime = recordTime(ranked[0]);
+    const newest = ranked.filter((item) => recordTime(item) === newestTime);
+    const owners = new Set(newest.map((item) => String(item.owner_uid || '')).filter(Boolean));
+    if (owners.size !== 1) continue;
+
+    const owner = [...owners][0];
+    const sameOwnerNewest = newest.filter((item) => String(item.owner_uid || '') === owner)
+      .sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')));
+    const winner = sameOwnerNewest[0];
+    if (!winner) continue;
+
+    for (const record of ranked) {
+      if (record === winner || record?.active === false) continue;
+      const older = recordTime(record) < newestTime;
+      const sameOwnerTieDuplicate = recordTime(record) === newestTime
+        && String(record.owner_uid || '') === owner
+        && String(record.id || '') !== String(winner.id || '');
+      if (older || sameOwnerTieDuplicate) stale.push({ ...record, token });
+    }
+  }
+  return stale;
+}
+
 export function isPermanentFcmTokenError(status, body = '') {
   const text = String(body || '');
   if (Number(status) === 404 && /UNREGISTERED|NOT_FOUND|registration token/i.test(text)) return true;

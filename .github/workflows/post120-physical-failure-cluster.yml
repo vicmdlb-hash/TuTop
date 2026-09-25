@@ -1,0 +1,229 @@
+name: Post120 physical failure cluster — source repair only
+
+on:
+  push:
+    branches: [fix/post120-physical-failure-cluster]
+  pull_request:
+    branches: [integration/post120-green-suite]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-post120-physical-failure-cluster-v3-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/post120-physical-failure-cluster'
+    runs-on: ubuntu-24.04
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Generate and validate exact V2 Rules
+        run: |
+          npm run v2:rules:prepare
+          node scripts/verified-email-beta-contract-tests.mjs
+          node scripts/post117-generated-rules-least-privilege-tests.mjs
+          node scripts/v2-rules-access-budget-tests.mjs
+      - name: Physical failure cluster contracts
+        run: |
+          node scripts/first-admin-bootstrap-gate-tests.mjs
+          node scripts/post120-physical-failure-cluster-tests.mjs
+          node scripts/apksigner-certificate-digest-tests.mjs
+          node scripts/next-candidate-signing-binding-tests.mjs
+          node scripts/build121-candidate-promotion-contract-tests.mjs
+          node scripts/build118-deviceA-native-failure-diagnostics-tests.mjs
+          node scripts/post120-admin-account-status-contract-tests.mjs
+          node scripts/post120-fcm-single-target-gate-tests.mjs
+          node scripts/post120-fcm-physical-gate-contract-tests.mjs
+      - name: Privacy / account-erasure contracts
+        run: |
+          node scripts/account-erasure-tests.mjs
+          node scripts/post116-erasure-completion-attestation-tests.mjs
+          node scripts/post116-erasure-user-status-truth-tests.mjs
+          node scripts/retention-matrix-tests.mjs
+          node scripts/legal-retention-dossier-tests.mjs
+      - name: Push account-isolation contracts
+        run: |
+          node scripts/post116-push-account-isolation-tests.mjs
+          node scripts/post116-push-ownership-contract-tests.mjs
+          node scripts/post116-push-health-contract-tests.mjs
+          node scripts/post120-fcm-single-target-gate-tests.mjs
+          node scripts/post120-fcm-physical-gate-contract-tests.mjs
+      - name: Location / privacy truth contracts
+        run: |
+          node scripts/post116-pr84-privacy-integration-tests.mjs
+          node scripts/post116-pr88-moderation-privacy-integration-tests.mjs
+          node scripts/seller-profile-privacy-tests.mjs
+      - name: Marketplace truth contracts
+        run: |
+          node scripts/post116-seller-moderation-truth-tests.mjs
+          node scripts/post116-listing-moderation-race-tests.mjs
+          node scripts/post116-reservation-availability-tests.mjs
+          node scripts/post116-counteroffer-atomic-reservation-tests.mjs
+          node scripts/post116-nearby-moderation-freshness-tests.mjs
+          node scripts/reservation-lock-residue-audit-tests.mjs
+      - name: Reliability / account-bound local-state contracts
+        run: |
+          node scripts/post116-firebase-request-timeout-tests.mjs
+          node scripts/firebase-session-hardening-tests.mjs
+          node scripts/native-secure-session-091-contract-tests.mjs
+          node scripts/post116-durable-publish-draft-tests.mjs
+          node scripts/post116-account-personalization-isolation-tests.mjs
+      - name: Accessibility source contracts
+        run: |
+          node scripts/post116-accessibility-semantics-tests.mjs
+          node scripts/post120-accessibility-hardening-tests.mjs
+      - name: Offline / reconnect / runtime recovery contracts
+        run: |
+          node scripts/offline-performance-tests.mjs
+          node scripts/offline-reconnect-chaos-tests.mjs
+          node scripts/offline-reconnect-extreme-tests.mjs
+          node scripts/native-runtime-recovery-tests.mjs
+          node scripts/post106-runtime-recovery-contract-tests.mjs
+          node scripts/build118-publication-recovery-tests.mjs
+      - name: Notification ecosystem contracts
+        run: |
+          node scripts/post120-notification-producer-coverage-tests.mjs
+          node scripts/post120-notification-preference-projection-tests.mjs
+          node scripts/post120-notification-kind-projection-tests.mjs
+          node scripts/post120-inapp-notification-routing-contract-tests.mjs
+          node scripts/post120-inapp-notification-routing-tests.mjs
+          node scripts/post120-followed-seller-notification-tests.mjs
+          node scripts/post120-listing-saved-notification-tests.mjs
+          node scripts/post120-safety-notification-contract-tests.mjs
+      - name: Security / credentials / recovery abuse contracts
+        run: |
+          node scripts/security-tests.mjs
+          node scripts/native-security-tests.mjs
+          node scripts/credential-retention-tests.mjs
+          node scripts/account-recovery-tests.mjs
+          node scripts/recovery-local-provider-abuse-tests.mjs
+          node scripts/recovery-local-provider-simulation-tests.mjs
+          node scripts/ci-auth-readiness-tests.mjs
+          node scripts/ci-auth-redaction-contract-tests.mjs
+      - name: Terminal-state / reconciliation / observability contracts
+        run: |
+          node scripts/v2-terminal-state-authority-tests.mjs
+          node scripts/reservation-reconciliation-tests.mjs
+          node scripts/reservation-runner-safety-tests.mjs
+          node scripts/marketplace-observability-tests.mjs
+      - name: Cross-feature privacy / moderation / Topi contracts
+        run: |
+          node scripts/post116-pr84-privacy-integration-tests.mjs
+          node scripts/post116-pr88-moderation-privacy-integration-tests.mjs
+          node scripts/post116-pr85-topi-structured-tests.mjs
+          node scripts/seller-profile-privacy-tests.mjs
+      - name: Release / readiness contracts
+        run: |
+          node scripts/release-092-contract-tests.mjs
+          node scripts/physical-qa-readiness-pack-tests.mjs
+      - name: Idempotency / concurrency contracts
+        run: |
+          node scripts/chat-message-idempotency-tests.mjs
+          node scripts/offer-idempotency-tests.mjs
+          node scripts/transaction-retry-idempotency-tests.mjs
+          node scripts/post116-publish-idempotency-tests.mjs
+          node scripts/post116-listing-moderation-race-tests.mjs
+      - name: Favorites / saved-search truth contracts
+        run: |
+          node scripts/post120-favorite-listing-transition-contract-tests.mjs
+          node scripts/post120-favorite-listing-transition-tests.mjs
+          node scripts/post120-saved-search-alert-contract-tests.mjs
+          node scripts/post120-saved-search-alert-projector-tests.mjs
+          node scripts/post120-saved-search-manager-tests.mjs
+          node scripts/saved-search-notification-tests.mjs
+      - name: Release evidence / retention / signing contracts
+        run: |
+          node --experimental-strip-types scripts/physical-qa-evidence-bundle-tests.mjs
+          node --experimental-strip-types scripts/physical-qa-two-device-gate-tests.mjs
+          node scripts/physical-qa-candidate-drift-tests.mjs
+          node scripts/next-candidate-signing-binding-tests.mjs
+          node scripts/retention-matrix-tests.mjs
+          node scripts/legal-retention-review-tests.mjs
+          node scripts/legal-retention-dossier-tests.mjs
+          node scripts/app-check-enforcement-tests.mjs
+      - name: Full source regression
+        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Web build
+        run: npm run build
+      - name: Staging moderation identity readback — no mutation
+        run: node scripts/audit-staging-moderation-identity.mjs
+      - name: One-shot Build121 policy preview deploy — staging Hosting channel only
+        if: contains(github.event.head_commit.message, '[policy-preview]')
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TUTOP_FIREBASE_PROJECT_ID" = "tutop-beta-vicmdlb-1356585881"
+          node scripts/read-existing-staging-build-config.mjs
+          TUTOP_HOSTING_WEB_CONFIG_OUTPUT=dist/tutop-web-config.json node scripts/prepare-candidate120-hosting-assets.mjs
+          test -s dist/privacy.html
+          test -s dist/delete-account.html
+          grep -q 'Build121' dist/privacy.html
+          grep -q 'artifact 10835643904' dist/privacy.html
+          ! grep -Eq 'Build120|Candidate120|Hosting todavía no se ha desplegado' dist/privacy.html
+          npx --yes firebase-tools@15.29.0 hosting:channel:deploy build121-policy \
+            --project "$TUTOP_FIREBASE_PROJECT_ID" \
+            --expires 7d \
+            --non-interactive \
+            --json > policy-preview.json
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const raw=JSON.parse(fs.readFileSync('policy-preview.json','utf8'));
+          const text=JSON.stringify(raw);
+          const urls=[...text.matchAll(/https:\/\/[^"\\s]+/g)].map(m=>m[0]).filter(u=>u.includes('.web.app'));
+          if(!urls.length) throw new Error('POLICY_PREVIEW_URL_NOT_FOUND');
+          const url=urls[0].replace(/[\\]+/g,'');
+          fs.appendFileSync(process.env.GITHUB_ENV, `TUTOP_POLICY_PREVIEW_URL=${url}\n`);
+          console.log(`POLICY_PREVIEW_URL=${url}`);
+          NODE
+
+      - name: Verify one-shot Build121 policy preview — read only
+        if: contains(github.event.head_commit.message, '[policy-preview]')
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TUTOP_POLICY_PREVIEW_URL"
+          for attempt in 1 2 3 4 5 6; do
+            html="$(curl -fsSL -H 'Cache-Control: no-cache' "$TUTOP_POLICY_PREVIEW_URL/privacy.html" || true)"
+            if printf '%s' "$html" | grep -q 'Build121'; then
+              printf '%s' "$html" | grep -q 'artifact 10835643904'
+              ! printf '%s' "$html" | grep -Eq 'Build120|Candidate120|Hosting todavía no se ha desplegado'
+              echo "PASS isolated Hosting preview has current Build121 privacy authority."
+              echo "PASS preview channel only; live Hosting untouched."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Preview did not converge to Build121 privacy authority." >&2
+          exit 1
+
+      - name: Public staging release-web readback — no mutation
+        run: node scripts/audit-staging-public-release-web.mjs
+      - name: Live staging Auth client config/key readback — no mutation
+        run: node scripts/audit-staging-auth-client-config.mjs
+      - name: Live staging Auth email configuration readback — no mutation
+        run: node scripts/audit-staging-auth-email-config.mjs
+      - name: Live staging App Check readback — no mutation
+        run: node scripts/audit-staging-offplay-app-check.mjs
+      - name: Prove no candidate artifact
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d android/app/build/outputs || test -z "$(find android/app/build/outputs -type f \( -name '*.apk' -o -name '*.aab' \) -print -quit 2>/dev/null)"
+          echo "PASS source repair only; no APK/AAB/Build121"

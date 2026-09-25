@@ -1,15 +1,21 @@
 {
   "schema": "tutop.fcm-physical-fixture.v1",
   "candidate": {
-    "artifact_id": 10622421310,
-    "build_run_id": 35560814829,
-    "build_tree_sha": "61485d3c218cc553a230be09dab3217b2774b44e",
-    "apk_sha256": "9855a2e51587f3115f9c270c28d61b1f5c4aa4db7813dacc16b3fe700d458cc0"
+    "artifact_id": 10835643904,
+    "artifact_url": "https://github.com/vicmdlb-hash/TuTop/actions/runs/36064382977/artifacts/10835643904",
+    "artifact_digest": "sha256:ebd4629a9d1d5c693eb635227c0d94ed2246c2bcf87a891b46cb8c2d317c54f9",
+    "build_run_id": 36064382977,
+    "build_commit_sha": "579bdecd7e193b8661276f114b9d3e097792d8d6",
+    "build_tree_sha": "99e3d1952be7eccc7ed6bdd090f4435b305648ee",
+    "apk_sha256": "acd939e5aa4d078270b2fb485e9a41741638e4501cd3c3167871c9ca7bc6f6b8",
+    "apk_cert_sha256": "192B19F3E67ED7B69FA6862429E232B892979A6C8C97800845F6A1D1948FF79A"
   },
   "device_slot": "A|B",
+  "two_device_required": true,
   "evidence_session_id": "PENDIENTE-FCM-SESSION",
   "evidence_started_at": "PENDIENTE-ISO8601",
   "evidence_completed_at": "PENDIENTE-ISO8601",
+  "account_switch_isolation_required": true,
   "scenarios": [
     {
       "name": "foreground",
@@ -28,5 +34,5 @@
       "events": []
     }
   ],
-  "notes": "Build120 FCM template. No raw token, notification ID, phone, UID or PASS is prefilled. Use a safe correlation alias only after an authorized physical send."
+  "notes": "Build121 two-device FCM template. Required chain: authentic event → trusted outbox → exact token owner → send → receive → tap → exact deep-link/receipt. No raw token, notification ID, phone or UID is prefilled; no PASS is synthesized."
 }

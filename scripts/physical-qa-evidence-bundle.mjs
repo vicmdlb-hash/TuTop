@@ -5,15 +5,25 @@ import { evaluatePhysicalQaReport } from '../src/lib/physicalQaEvaluator.ts';
 import { candidateExactHeadIdentityValid } from './physical-qa-candidate-drift.mjs';
 
 const requiredCases = [
-  'install_boot','auth_identity','reinstall_identity','keyboard','android_back','lifecycle','safe_areas','rotation',
+  'install_boot',
+  'second_account_email_verification',
+  'auth_identity',
+  'reinstall_identity',
+  'topi_real_ai',
+  'notification_permission_activation',
+  'notification_token_registered',
+  'fcm_two_device_receive',
+  'fcm_two_device_tap_deep_link',
+  'account_switch_fcm_isolation',
+  'keyboard','android_back','lifecycle','safe_areas','rotation',
   'offline_reconnect','push_foreground','push_background','push_cold_start','push_deep_link','app_check_token_observed',
 ];
 const allowedCase = new Set(['pass','warn','fail','pending','not_applicable']);
 const forbiddenKeys = new Set(['refreshToken','idToken','password','FIREBASE_TOKEN']);
 const requiredDeviceFields = ['label','manufacturer','model','android_version','viewport','installation'];
 const requiredCandidateFields = [
-  'artifact_name','artifact_id','build_run_id','build_commit_sha','build_tree_sha','apk_sha256',
-  'gate_run_id','gate_commit_sha','staging_smoke_run_id','staging_smoke_commit_sha',
+  'artifact_name','artifact_id','artifact_url','artifact_digest','build_run_id','build_commit_sha','build_tree_sha',
+  'apk_sha256','apk_cert_sha256','gate_run_id','gate_commit_sha','staging_smoke_run_id','staging_smoke_commit_sha',
 ];
 const MAX_DIAGNOSTIC_AGE_MS = 24 * 60 * 60_000;
 const CANDIDATE_MANIFEST_PATH = path.resolve('docs/PHYSICAL_QA_CANDIDATE_0.9.json');
@@ -44,7 +54,9 @@ function scanSensitive(value, errors, pathParts = []) {
     return;
   }
   if (typeof value !== 'string') return;
-  if (/\b\d{10,13}\b/.test(value)) errors.push(`posible número telefónico/identificador sensible sin redactar en ${pathParts.join('.') || 'root'}`);
+  const field = String(pathParts.at(-1) || '');
+  const urlField = /(?:^|_)url$/i.test(field);
+  if (!urlField && /\b\d{10,13}\b/.test(value)) errors.push(`posible número telefónico/identificador sensible sin redactar en ${pathParts.join('.') || 'root'}`);
   if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push(`posible token/identificador largo sin redactar en ${pathParts.join('.') || 'root'}`);
 }
 
@@ -90,6 +102,7 @@ export function validatePhysicalQaEvidence(bundle, now = Date.now(), expectedCan
   const warnings = [];
   if (bundle?.schema !== 'tutop.physical-qa-evidence.v1') errors.push('schema inválido');
   if (bundle?.app_version !== expectedCandidate?.app_version) errors.push(`app_version debe coincidir con candidato vigente: ${expectedCandidate?.app_version || 'UNKNOWN'}`);
+  if (bundle?.android_version_code !== expectedCandidate?.android_version_code) errors.push(`android_version_code debe coincidir con candidato vigente: ${expectedCandidate?.android_version_code || 'UNKNOWN'}`);
   if (bundle?.environment !== 'staging') errors.push('environment debe ser staging');
   if (!candidateExactHeadIdentityValid(expectedCandidate)
       || expectedCandidate?.candidate_status !== 'active_exact_head'
