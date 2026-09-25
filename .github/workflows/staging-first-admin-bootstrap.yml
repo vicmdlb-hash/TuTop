@@ -1,0 +1,102 @@
+name: Staging first moderation admin — explicit human gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      uid:
+        description: Existing staging Auth UID selected by the project owner
+        required: true
+        type: string
+      role:
+        description: Minimum moderation role
+        required: true
+        type: choice
+        options:
+          - moderator
+          - institution_moderator
+      institution_id:
+        description: Required only for institution_moderator; leave empty for moderator
+        required: false
+        default: ''
+        type: string
+      apply:
+        description: Actually create the first staging admin after dry-run
+        required: true
+        default: false
+        type: boolean
+      exact_ack:
+        description: Required only when apply=true. Format BOOTSTRAP_FIRST_STAGING_ADMIN:<uid>:<role>:<institution-or->
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-staging-first-admin-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  first-admin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.TUTOP_FIREBASE_OAUTH_CLIENT_SECRET }}
+      TUTOP_FIRST_ADMIN_UID: ${{ inputs.uid }}
+      TUTOP_FIRST_ADMIN_ROLE: ${{ inputs.role }}
+      TUTOP_FIRST_ADMIN_INSTITUTION_ID: ${{ inputs.institution_id }}
+      TUTOP_FIRST_ADMIN_ACK: ${{ inputs.exact_ack }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/post120-physical-failure-cluster
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Guard exact staging project and input shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TUTOP_FIREBASE_PROJECT_ID" = "tutop-beta-vicmdlb-1356585881"
+          test -n "$TUTOP_FIRST_ADMIN_UID"
+          case "$TUTOP_FIRST_ADMIN_ROLE" in
+            moderator)
+              test -z "$TUTOP_FIRST_ADMIN_INSTITUTION_ID"
+              ;;
+            institution_moderator)
+              test -n "$TUTOP_FIRST_ADMIN_INSTITUTION_ID"
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+
+      - name: Dry-run first-admin gate — no mutation
+        run: node scripts/build120-first-admin-bootstrap.mjs
+
+      - name: Verify exact acknowledgement for apply
+        if: ${{ inputs.apply }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scope="${TUTOP_FIRST_ADMIN_INSTITUTION_ID:--}"
+          expected="BOOTSTRAP_FIRST_STAGING_ADMIN:${TUTOP_FIRST_ADMIN_UID}:${TUTOP_FIRST_ADMIN_ROLE}:${scope}"
+          test "$TUTOP_FIRST_ADMIN_ACK" = "$expected"
+
+      - name: Apply first staging moderation admin
+        if: ${{ inputs.apply }}
+        run: node scripts/build120-first-admin-bootstrap.mjs --apply
+
+      - name: No implicit apply
+        if: ${{ !inputs.apply }}
+        run: echo "PASS dry-run only; no admin mutation requested."
