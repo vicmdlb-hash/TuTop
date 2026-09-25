@@ -111,7 +111,7 @@ async function markSent(item) {
   });
 }
 
-async function deactivateTokenRecord(target, reason) {
+async function deactivateTokenRecord(target, reason, { preserveOwnershipTime = false } = {}) {
   if (!target?.id) return false;
   const at = new Date().toISOString();
   const name = `projects/${projectId}/databases/(default)/documents/device_tokens/${target.id}`;
@@ -119,7 +119,7 @@ async function deactivateTokenRecord(target, reason) {
     active: false,
     invalidated_at: at,
     invalidation_reason: String(reason || 'fcm-permanent-error').slice(0, 80),
-    updated_at: at,
+    ...(preserveOwnershipTime ? {} : { updated_at: at }),
   });
   await request(`${base}:commit`, {
     method: 'POST',
@@ -165,7 +165,7 @@ for (const item of scopedPending) {
   for (const target of targets) {
     const staleForTarget = supersededActiveTokens.filter((record) => record.token === target.token);
     for (const stale of staleForTarget) {
-      const cleaned = await deactivateTokenRecord(stale, 'superseded-token-owner').catch(() => false);
+      const cleaned = await deactivateTokenRecord(stale, 'superseded-token-owner', { preserveOwnershipTime: true }).catch(() => false);
       if (cleaned) supersededOwnershipDeactivated += 1;
     }
 
