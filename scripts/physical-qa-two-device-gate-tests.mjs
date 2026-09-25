@@ -44,11 +44,22 @@ const allPass = Object.fromEntries([
 function fcmFixture(slot, session, startedAt, completedAt) {
   return {
     schema: 'tutop.fcm-physical-fixture.v1',
-    candidate: { artifact_id: candidate.artifact_id, build_run_id: candidate.build_run_id, build_tree_sha: candidate.build_tree_sha, apk_sha256: candidate.apk_sha256 },
+    candidate: {
+      artifact_id: candidate.artifact_id,
+      artifact_url: candidate.artifact_url,
+      artifact_digest: candidate.artifact_digest,
+      build_run_id: candidate.build_run_id,
+      build_commit_sha: candidate.build_commit_sha,
+      build_tree_sha: candidate.build_tree_sha,
+      apk_sha256: candidate.apk_sha256,
+      apk_cert_sha256: candidate.apk_cert_sha256,
+    },
     device_slot: slot,
+    two_device_required: true,
     evidence_session_id: session,
     evidence_started_at: startedAt,
     evidence_completed_at: completedAt,
+    account_switch_isolation_required: true,
     scenarios: [
       { name: 'foreground', events: [
         { at_ms: 1_000, kind: 'app_foreground' },
