@@ -35,7 +35,7 @@ export function validateAppCheckPhysicalEvidence(input, now = Date.now(), expect
   if (!input || typeof input !== 'object') return { ready: false, errors: ['evidence_missing'] };
   if (input.status !== 'verified') errors.push('status_not_verified');
   if (input.platform !== 'android') errors.push('platform_not_android');
-  if (!/^0\.9\.0-beta\./.test(String(input.app_version || ''))) errors.push('app_version_not_0_9_beta');
+  if (String(input.app_version || '') !== String(expectedCandidate.app_version || '')) errors.push('app_version_candidate_mismatch');
   if (input.app_check_token_observed !== true) errors.push('app_check_token_not_observed');
   if (input.staging_project !== 'tutop-beta-vicmdlb-1356585881') errors.push('wrong_staging_project');
   if (input.contains_raw_token === true || hasForbiddenKey(input.devices)) errors.push('raw_token_must_not_be_stored');
