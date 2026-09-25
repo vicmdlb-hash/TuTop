@@ -161,6 +161,8 @@ jobs:
         run: npm run typecheck
       - name: Web build
         run: npm run build
+      - name: Staging moderation identity readback — no mutation
+        run: node scripts/audit-staging-moderation-identity.mjs
       - name: Public staging release-web readback — no mutation
         run: node scripts/audit-staging-public-release-web.mjs
       - name: Live staging Auth client config/key readback — no mutation
