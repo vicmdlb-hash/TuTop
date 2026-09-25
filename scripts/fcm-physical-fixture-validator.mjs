@@ -40,9 +40,11 @@ function validateWindow(fixture, now, errors) {
 export function validateFcmPhysicalFixture(fixture, candidate, now = Date.now()) {
   const errors = [];
   if (fixture?.schema !== 'tutop.fcm-physical-fixture.v1') errors.push('schema inválido');
-  for (const field of ['artifact_id','build_run_id','build_tree_sha','apk_sha256']) {
+  for (const field of ['artifact_id','artifact_url','artifact_digest','build_run_id','build_commit_sha','build_tree_sha','apk_sha256','apk_cert_sha256']) {
     if (fixture?.candidate?.[field] !== candidate?.[field]) errors.push(`candidate.${field} no coincide con APK vigente`);
   }
+  if (fixture?.two_device_required !== true) errors.push('two_device_required debe ser true');
+  if (fixture?.account_switch_isolation_required !== true) errors.push('account_switch_isolation_required debe ser true');
   if (!['A','B'].includes(fixture?.device_slot)) errors.push('device_slot debe ser A o B');
   if (placeholder(fixture?.evidence_session_id)) errors.push('evidence_session_id real requerido');
   const sessionDurationMs = validateWindow(fixture, now, errors);
