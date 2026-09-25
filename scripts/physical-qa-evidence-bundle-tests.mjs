@@ -16,6 +16,9 @@ assert.equal(candidateManifest.artifact_id, 10835643904);
 const candidateBinding = {
   artifact_name: candidateManifest.artifact_name,
   artifact_id: candidateManifest.artifact_id,
+  artifact_url: candidateManifest.artifact_url,
+  artifact_digest: candidateManifest.artifact_digest,
+  apk_cert_sha256: candidateManifest.apk_cert_sha256,
   build_run_id: candidateManifest.build_run_id,
   build_commit_sha: candidateManifest.build_commit_sha,
   build_tree_sha: candidateManifest.build_tree_sha,
