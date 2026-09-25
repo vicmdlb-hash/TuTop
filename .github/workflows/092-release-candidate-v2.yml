@@ -158,6 +158,11 @@ jobs:
       - name: Deploy strict V2 staging rules and indexes
         run: npm run firebase:deploy:staging
 
+      - name: Require current Build121 public privacy authority
+        env:
+          TUTOP_REQUIRE_PUBLIC_PRIVACY_BUILD121: '1'
+        run: node scripts/audit-staging-public-release-web.mjs
+
       - name: Verify composite indexes
         run: node scripts/staging-index-readiness-smoke.mjs
 
