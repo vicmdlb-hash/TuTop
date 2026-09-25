@@ -19,6 +19,20 @@ Este snapshot identifica la evidencia que ingeniería entrega para revisión; **
 - Topi remote redaction probada por ingeniería: email, teléfono, OTP y patrones de token; **no** se afirma redacción genérica de domicilios/direcciones.
 - superficies técnicas existentes: borrador `public/privacy.html`, recurso `public/delete-account.html`, matriz de borrado/retención y dossier legal.
 
+## Readback técnico de release-policy — 24/25 de septiembre de 2026
+
+Este bloque registra hechos observados para el revisor; **no sustituye ninguna decisión legal ni la declaración final de Data Safety**.
+
+- Proyecto Firebase observado: `tutop-beta-vicmdlb-1356585881`.
+- Plan observado en consola: **Spark / USD 0**; no se modificó billing.
+- Proveedor observado: **Gemini Developer API habilitada**; **Agent Platform Gemini API deshabilitada**.
+- Firebase AI Monitoring observado: **desactivado**. El control de muestreo 100% visible estaba inactivo por estar Monitoring apagado; no se cambió ninguna opción.
+- URL pública de privacidad: `/privacy.html` es accesible externamente, pero sigue siendo borrador beta y conserva pendientes de identidad/contacto/retención/aprobación jurídica.
+- Recurso externo de eliminación: `/delete-account.html` fue comprobado públicamente y permite iniciar/consultar la solicitud de la cuenta autenticada sin exigir reinstalar ni abrir la app.
+- Build121 exacto compila/apunta a Android API 36.
+- R5 Data Safety permanece bloqueado hasta que exista política final aprobada, reglas de retención autorizadas, mapeo del artefacto/AAB final y respuestas finales de Play.
+- Device A/B, segunda cuenta, Topi real, FCM real y App Check físico permanecen pendientes; ninguna evidencia de consola sustituye esos gates.
+
 ## Registro de decisión obligatorio
 
 - Jurisdicción aplicable: **PENDIENTE LEGAL**
