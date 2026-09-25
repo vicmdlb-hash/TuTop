@@ -1,6 +1,6 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
-import { eligibleRecipientTargets, isPermanentFcmTokenError } from './fcm-token-ownership-lib.mjs';
+import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords } from './fcm-token-ownership-lib.mjs';
 import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
@@ -136,12 +136,14 @@ async function deactivateTokenRecord(target, reason) {
 
 const [outbox, tokens] = await Promise.all([query('notification_outbox'), query('device_tokens')]);
 const pending = outbox.filter((item) => item.status === 'pending');
+const supersededActiveTokens = supersededActiveTokenRecords(tokens);
 const scopedPending = apply
   ? [selectExactPhysicalNotification(pending, applyGate.notificationId, applyGate.recipientUid)]
   : pending;
 let planned = 0;
 let delivered = 0;
 let waitingForToken = 0;
+let supersededOwnershipDeactivated = 0;
 
 for (const item of scopedPending) {
   const eligibleTargets = eligibleRecipientTargets(tokens, item.recipient_uid);
@@ -161,6 +163,12 @@ for (const item of scopedPending) {
 
   let deliveredForItem = 0;
   for (const target of targets) {
+    const staleForTarget = supersededActiveTokens.filter((record) => record.token === target.token);
+    for (const stale of staleForTarget) {
+      const cleaned = await deactivateTokenRecord(stale, 'superseded-token-owner').catch(() => false);
+      if (cleaned) supersededOwnershipDeactivated += 1;
+    }
+
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -196,6 +204,9 @@ console.log(JSON.stringify({
   delivered,
   waiting_for_device_token: waitingForToken,
   current_owner_filter: true,
+  superseded_active_token_records_detected: supersededActiveTokens.length,
+  superseded_active_token_records_deactivated: apply ? supersededOwnershipDeactivated : 0,
+  superseded_owner_cleanup_scoped_to_selected_token: apply ? true : null,
   permanent_invalid_token_cleanup: apply,
   notification_id_in_payload: true,
   single_target_apply_guard: apply ? true : null,
