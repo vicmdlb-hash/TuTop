@@ -61,7 +61,9 @@ for (const expected of [
   'tests/firestore.v2.review-strike-aggregation.test.mjs',
 ]) assert(october.includes(expected), `October missing ${expected}`);
 assert.equal(october.includes('npm run typecheck'), false, 'October must obtain TypeScript evidence once through npm run build');
-assert.equal(pkg.version, '0.9.1-beta.0');
+// The manifest/workflows above are intentionally frozen historical evidence for
+// the 0.9.1 lane. The active package has since advanced to the 0.9.2 line.
+assert.equal(pkg.version, '0.9.2-beta.0');
 assert.equal(pkg.scripts.typecheck, 'tsc --noEmit');
 assert.equal(pkg.scripts.build, 'npm run typecheck && vite build');
 
@@ -146,3 +148,4 @@ console.log('PASS staging permits only the explicit AI Logic App Check enforceme
 console.log('PASS Android binds October + staging to exact SHA and does not repeat upstream static gates');
 console.log('PASS 0.9.1 candidate identity/version are isolated from 0.9.0');
 console.log('Runtime freeze promotion contract 0.9.1: PASS');
+
