@@ -54,6 +54,8 @@ const commonSteps = [
   [process.execPath, ['--experimental-strip-types', 'scripts/offer-idempotency-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/transaction-retry-idempotency-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/firebase-session-hardening-tests.mjs']],
+  [process.execPath, ['scripts/firebase-cross-client-shared-storage-tests.mjs']],
+  [process.execPath, ['scripts/native-secure-session-write-queue-tests.mjs']],
   [process.execPath, ['scripts/offline-reconnect-chaos-tests.mjs']],
   [process.execPath, ['scripts/offline-reconnect-extreme-tests.mjs']],
   [process.execPath, ['scripts/reservation-lock-residue-audit-tests.mjs']],
