@@ -33,6 +33,8 @@ function harness(initialUid = 'B') {
   const listeners = new Map();
   const operations = [];
   let authGeneration = 0;
+  let authIdentity = initialUid ? { uid: initialUid, refreshToken: 'synthetic-refresh-' + initialUid + '-0' } : null;
+  let phoneSessionSerial = 0;
   const state = {
     user: { id: initialUid }, chats: [], products: [],
     markNotificationRead: (id) => operations.push('read:' + id),
@@ -57,7 +59,10 @@ function harness(initialUid = 'B') {
     './nativeFirebaseSecurity': { NATIVE_NOTIFICATION_EVENT: 'tutop:native-notification' },
     './nationalBackend': { nationalSchemaEnabled: () => true },
     './onlineBackend': { onlineBackend: backend },
-    './verifiedEmailBetaAuth': { verifiedEmailBetaAuth: { sessionGeneration: () => authGeneration } },
+    './verifiedEmailBetaAuth': { verifiedEmailBetaAuth: {
+      sessionGeneration: () => authGeneration,
+      readSessionIdentity: () => authIdentity,
+    } },
   }, { window });
   const send = (detail) => {
     const listener = listeners.get('tutop:native-notification');
@@ -65,7 +70,16 @@ function harness(initialUid = 'B') {
     listener({ detail });
   };
   const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
-  return { backend, state, operations, send, flush, newSession: () => { authGeneration += 1; } };
+  const rotateSession = (uid = authIdentity?.uid, verifiedFlow = false) => {
+    if (verifiedFlow) authGeneration += 1;
+    phoneSessionSerial += 1;
+    authIdentity = uid ? { uid, refreshToken: 'synthetic-refresh-' + uid + '-' + phoneSessionSerial } : null;
+  };
+  return { backend, state, operations, send, flush,
+    newSession: () => rotateSession(undefined, true),
+    phoneRelogin: () => rotateSession(),
+    canonicalSwitch: (uid) => rotateSession(uid),
+  };
 }
 
 {
@@ -144,4 +158,26 @@ function harness(initialUid = 'B') {
   assert.deepEqual(h.operations, ['read:n5', 'chat:chat-a'], 'same-UID reauthentication must invalidate prior snapshot');
 }
 
-console.log('PASS 9 native notification router integration scenarios with mock Auth/store/snapshots, no Firebase');
+{
+  const h = harness('A');
+  let resolve;
+  h.backend.loadSnapshot = () => new Promise((r) => { resolve = r; });
+  h.send({ source: 'action', recipient_uid: 'A', chat_id: 'chat-a', notification_id: 'n6' });
+  assert.deepEqual(h.operations, ['read:n6', 'chat:chat-a']);
+  // Phone-password sign-out/login does not increment verified-email generation.
+  h.phoneRelogin();
+  resolve({ user: { id: 'A' } });
+  await h.flush();
+  assert.deepEqual(h.operations, ['read:n6', 'chat:chat-a'], 'old phone-session snapshot cannot hydrate same UID after token rotation');
+}
+{
+  const h = harness('A');
+  // Another FirebaseRestClient replaced the canonical session, while the
+  // backend and local user cache still point at A. A's intent must be denied.
+  h.canonicalSwitch('B');
+  h.send({ source: 'action', recipient_uid: 'A', chat_id: 'chat-a', notification_id: 'n7' });
+  await h.flush();
+  assert.deepEqual(h.operations, [], 'cached A identity cannot route after canonical B login');
+}
+
+console.log('PASS 11 native notification router integration scenarios with mock Auth/store/snapshots, no Firebase');
