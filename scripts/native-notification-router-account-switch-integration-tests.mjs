@@ -32,6 +32,7 @@ const guard = evaluate(guardJs, {});
 function harness(initialUid = 'B') {
   const listeners = new Map();
   const operations = [];
+  let authGeneration = 0;
   const state = {
     user: { id: initialUid }, chats: [], products: [],
     markNotificationRead: (id) => operations.push('read:' + id),
@@ -56,6 +57,7 @@ function harness(initialUid = 'B') {
     './nativeFirebaseSecurity': { NATIVE_NOTIFICATION_EVENT: 'tutop:native-notification' },
     './nationalBackend': { nationalSchemaEnabled: () => true },
     './onlineBackend': { onlineBackend: backend },
+    './verifiedEmailBetaAuth': { verifiedEmailBetaAuth: { sessionGeneration: () => authGeneration } },
   }, { window });
   const send = (detail) => {
     const listener = listeners.get('tutop:native-notification');
@@ -63,7 +65,7 @@ function harness(initialUid = 'B') {
     listener({ detail });
   };
   const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
-  return { backend, state, operations, send, flush };
+  return { backend, state, operations, send, flush, newSession: () => { authGeneration += 1; } };
 }
 
 {
@@ -125,4 +127,21 @@ function harness(initialUid = 'B') {
   assert.deepEqual(h.operations, ['tab:inbox', 'hydrate:B', 'tab:inbox'], 'cold-store fallback and retry must remain scoped');
 }
 
-console.log('PASS 8 native notification router integration scenarios with mock Auth/store/snapshots, no Firebase');
+
+{
+  const h = harness('A');
+  let resolve;
+  h.backend.loadSnapshot = () => new Promise((r) => { resolve = r; });
+  h.send({ source: 'action', recipient_uid: 'A', chat_id: 'chat-a', notification_id: 'n5' });
+  assert.deepEqual(h.operations, ['read:n5', 'chat:chat-a']);
+  // A logs out and authenticates again as A before an old request finishes.
+  // UID matching alone would erroneously hydrate the obsolete snapshot.
+  h.newSession();
+  h.backend.session = { uid: 'A' };
+  h.state.user.id = 'A';
+  resolve({ user: { id: 'A' } });
+  await h.flush();
+  assert.deepEqual(h.operations, ['read:n5', 'chat:chat-a'], 'same-UID reauthentication must invalidate prior snapshot');
+}
+
+console.log('PASS 9 native notification router integration scenarios with mock Auth/store/snapshots, no Firebase');
