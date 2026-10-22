@@ -61,3 +61,5 @@ jobs:
           esac
       - name: Full existing source regression suite (no deploy or Firebase credentials)
         run: npm run check
+      - name: Verify source checks and compatibility install did not change package manifests
+        run: git diff --exit-code -- package.json package-lock.json
