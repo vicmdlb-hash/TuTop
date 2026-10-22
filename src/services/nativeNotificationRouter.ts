@@ -11,7 +11,11 @@ function activeRecipientUid() {
   try {
     if (!onlineBackend.ready) onlineBackend.configureFromRuntime();
   } catch { /* missing verified Auth must fail closed */ }
-  return String(onlineBackend.session?.uid || '').trim();
+  // A cached FirebaseRestClient may still hold A after a separate client logs
+  // in as B. Route only when it agrees with the canonical stored identity.
+  const cachedUid = String(onlineBackend.session?.uid || '').trim();
+  const canonicalUid = String(verifiedEmailBetaAuth.readSessionIdentity()?.uid || '').trim();
+  return cachedUid && cachedUid === canonicalUid ? canonicalUid : '';
 }
 
 function recipientMatchesActiveSession(intent: NativeNotificationIntent) {
@@ -65,6 +69,8 @@ export function installNativeNotificationRouter() {
     if (!recipientMatchesActiveSession(intent)) return;
     const expectedUid = String(intent.recipient_uid || '').trim();
     const expectedSessionGeneration = verifiedEmailBetaAuth.sessionGeneration();
+    const expectedCanonicalSession = verifiedEmailBetaAuth.readSessionIdentity();
+    if (!expectedCanonicalSession || expectedCanonicalSession.uid !== expectedUid) return;
     const exactTargetResolved = route(intent);
     void onlineBackend.loadSnapshot().then((snapshot) => {
       // An A-owned request can settle after A logs out and B signs in.
@@ -72,6 +78,12 @@ export function installNativeNotificationRouter() {
       const store = useAppStore.getState();
       // UID checks alone are insufficient for logout -> login of the same UID.
       if (verifiedEmailBetaAuth.sessionGeneration() !== expectedSessionGeneration) return;
+      const currentCanonicalSession = verifiedEmailBetaAuth.readSessionIdentity();
+      // The phone-password path does not increment the email-beta generation.
+      // Refresh-token ownership changes across logout/relogin of the same UID.
+      if (!currentCanonicalSession
+        || currentCanonicalSession.uid !== expectedCanonicalSession.uid
+        || currentCanonicalSession.refreshToken !== expectedCanonicalSession.refreshToken) return;
       if (!canApplyNativeNotificationSnapshot(
         expectedUid, activeRecipientUid(), store.user.id, snapshot.user.id,
       )) return;
