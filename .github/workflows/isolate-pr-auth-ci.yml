@@ -1,0 +1,56 @@
+name: TuTop isolated auth safety CI (no deploy)
+on:
+  push:
+    branches:
+      - fix/notification-session-guard-20261021
+      - fix/firebase-cross-client-refresh-ownership-20261021
+
+# Both branches are isolated draft PRs. Never read secrets, publish artifacts,
+# access staging/Firebase, create APKs, or invoke admin/maintenance commands.
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-isolated-auth-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contract:
+    if: github.repository == 'vicmdlb-hash/TuTop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+    steps:
+      - name: Checkout exact isolated branch SHA (no persisted credentials)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Node 22 for TypeScript 7 and Vite 8
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies without install hooks
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Synthetic auth/notification tests only (no external services)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            fix/notification-session-guard-20261021)
+              node --experimental-strip-types scripts/post116-push-account-isolation-tests.mjs
+              ;;
+            fix/firebase-cross-client-refresh-ownership-20261021)
+              node scripts/firebase-cross-client-shared-storage-tests.mjs
+              node scripts/native-secure-session-write-queue-tests.mjs
+              ;;
+            *)
+              echo "Unexpected source branch, fail closed" >&2
+              exit 1
+              ;;
+          esac
+      - name: Compile-time TypeScript check (no services)
+        run: npm run typecheck
+      - name: Local web bundle only (no APK, upload, deploy or backend call)
+        run: npm run build
