@@ -33,6 +33,15 @@ jobs:
           cache: npm
       - name: Install locked dependencies without install hooks
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run TypeScript 7 compiler from the locked project
+        run: npm run typecheck
+      - name: Build local web bundle using TypeScript 7 (no network)
+        run: npm run build
+      - name: Compatibility-only TypeScript 6 for legacy test transpile API
+        # TypeScript 7 provides a native tsc but no programmatic transpileModule.
+        # The pinned TS6 is installed transiently AFTER TS7 compilation; it does
+        # not modify tracked package-lock/package.json or the production bundle.
+        run: npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund typescript@6.0.2
       - name: Synthetic auth/notification tests only (no external services)
         shell: bash
         run: |
@@ -50,7 +59,3 @@ jobs:
               exit 1
               ;;
           esac
-      - name: Compile-time TypeScript check (no services)
-        run: npm run typecheck
-      - name: Local web bundle only (no APK, upload, deploy or backend call)
-        run: npm run build
