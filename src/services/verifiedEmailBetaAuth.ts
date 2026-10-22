@@ -426,6 +426,10 @@ export const verifiedEmailBetaAuth = {
     return { uid: stored.uid, email: stored.email, emailVerified: stored.emailVerified === true };
   },
 
+  // Read-only, process-local generation: changes on login/logout, but not on
+  // ordinary token refresh. Async UI callbacks can reject an obsolete session
+  // even when the user signs out and signs back into the same account.
+  sessionGeneration() { return authGeneration; },
   signOut() {
     clearCanonicalSession();
   },
