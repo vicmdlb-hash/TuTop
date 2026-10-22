@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import './native-notification-router-account-switch-integration-tests.mjs';
+import { canApplyNativeNotificationSnapshot, canRouteNativeNotification } from '../src/lib/nativeNotificationSessionGuard.ts';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError } from './fcm-token-ownership-lib.mjs';
 
@@ -74,5 +76,25 @@ assert.match(sender, /notification: \{ title: 'TuTop', body: 'Tienes actividad n
 assert.match(sender, /current_owner_filter: true/);
 assert.match(sender, /permanent_invalid_token_cleanup: apply/);
 assert.doesNotMatch(sender, /notification: \{ title: item\.title/);
+
+
+// These are executable, synthetic decisions, not merely regexp checks for the
+// presence of a guard somewhere in the router source.
+assert.equal(canRouteNativeNotification('B', 'B', 'B'), true, 'current authenticated recipient may route');
+assert.equal(canRouteNativeNotification(undefined, 'B', 'B'), false, 'missing recipient must fail closed');
+assert.equal(canRouteNativeNotification('   ', 'B', 'B'), false, 'blank recipient must fail closed');
+assert.equal(canRouteNativeNotification('A', 'B', 'B'), false, 'old A action cannot open under B');
+assert.equal(canRouteNativeNotification('B', undefined, 'B'), false, 'cached store identity without Auth is insufficient');
+assert.equal(canRouteNativeNotification('B', 'B', 'A'), false, 'stale A store cannot route under B Auth');
+assert.equal(canRouteNativeNotification(' B ', 'B', 'B'), true, 'normalized valid recipient remains eligible');
+
+assert.equal(canApplyNativeNotificationSnapshot('B', 'B', 'B', 'B'), true, 'matching B snapshot may hydrate');
+assert.equal(canApplyNativeNotificationSnapshot('A', 'B', 'B', 'A'), false, 'late A snapshot cannot hydrate B');
+assert.equal(canApplyNativeNotificationSnapshot('A', undefined, 'A', 'A'), false, 'logout invalidates A snapshot');
+assert.equal(canApplyNativeNotificationSnapshot('B', 'B', 'B', 'A'), false, 'wrong-subject snapshot cannot hydrate');
+assert.equal(canApplyNativeNotificationSnapshot('B', 'B', 'A', 'B'), false, 'stale store UID invalidates completion');
+assert.match(router, /canRouteNativeNotification\(/, 'live router must call pure recipient guard');
+assert.match(router, /canApplyNativeNotificationSnapshot\(/, 'live async handler must check the resolved snapshot');
+assert.doesNotMatch(router, /if \(!intended\) return true/, 'legacy unaddressed notification fallback forbidden');
 
 console.log('PASS push account isolation: logout quarantine + current-token owner + recipient UID routing guard + generic notification body');
