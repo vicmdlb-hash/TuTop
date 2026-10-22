@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import './native-notification-router-account-switch-integration-tests.mjs';
 import { canApplyNativeNotificationSnapshot, canRouteNativeNotification } from '../src/lib/nativeNotificationSessionGuard.ts';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError } from './fcm-token-ownership-lib.mjs';
