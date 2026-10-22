@@ -3,6 +3,7 @@ import { canApplyNativeNotificationSnapshot, canRouteNativeNotification } from '
 import { NATIVE_NOTIFICATION_EVENT, type NativeNotificationIntent } from './nativeFirebaseSecurity';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { onlineBackend } from './onlineBackend';
+import { verifiedEmailBetaAuth } from './verifiedEmailBetaAuth';
 
 let installed = false;
 
@@ -63,11 +64,14 @@ export function installNativeNotificationRouter() {
     const intent = event.detail || { source: 'received' };
     if (!recipientMatchesActiveSession(intent)) return;
     const expectedUid = String(intent.recipient_uid || '').trim();
+    const expectedSessionGeneration = verifiedEmailBetaAuth.sessionGeneration();
     const exactTargetResolved = route(intent);
     void onlineBackend.loadSnapshot().then((snapshot) => {
       // An A-owned request can settle after A logs out and B signs in.
       // Never hydrate or retry a target if the verified identity has changed.
       const store = useAppStore.getState();
+      // UID checks alone are insufficient for logout -> login of the same UID.
+      if (verifiedEmailBetaAuth.sessionGeneration() !== expectedSessionGeneration) return;
       if (!canApplyNativeNotificationSnapshot(
         expectedUid, activeRecipientUid(), store.user.id, snapshot.user.id,
       )) return;
