@@ -426,6 +426,16 @@ export const verifiedEmailBetaAuth = {
     return { uid: stored.uid, email: stored.email, emailVerified: stored.emailVerified === true };
   },
 
+  // Read-only, process-local generation: changes on login/logout, but not on
+  // ordinary token refresh. Async UI callbacks can reject an obsolete session
+  // even when the user signs out and signs back into the same account.
+  sessionGeneration() { return authGeneration; },
+  // Read the one project-scoped canonical session regardless of login method.
+  // Returns an in-memory identity witness; do not log, persist or send the token.
+  readSessionIdentity() {
+    const session = readCompatibleSession();
+    return session ? { uid: session.uid, refreshToken: session.refreshToken } : null;
+  },
   signOut() {
     clearCanonicalSession();
   },
