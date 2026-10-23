@@ -120,8 +120,7 @@ if (!apply) {
   process.exit(0);
 }
 
-if (status === 'pending') // Keep completion and audit inseparable; fail closed if either write fails.
-await adminCommitAccountErasureCompletion(uid, processorRunId, { status: 'processing', updated_at: new Date() });
+if (status === 'pending') await adminPatchDocument(`account_deletion_requests/${uid}`, { status: 'processing', updated_at: new Date() });
 
 for (const item of plan.withdrawals) {
   if (item.collection === 'listings_v2') {
@@ -162,7 +161,8 @@ for (const [collection, field] of withdrawals) {
 await adminDeleteTestUsers([uid]);
 
 const completedAt = new Date();
-await adminPatchDocument(`account_deletion_requests/${uid}`, {
+// Auth deletion already succeeded; record completion and audit as one atomic commit.
+await adminCommitAccountErasureCompletion(uid, processorRunId, {
   status: 'completed',
   completed_at: completedAt,
   updated_at: completedAt,
