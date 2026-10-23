@@ -58,6 +58,27 @@ export default function ExploreScreen() {
     return () => window.removeEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, onBaseHydrated);
   }, [scope]);
 
+  // Refresh stale approved-listing visibility on foreground return only.
+  // No background timer or repeated reads while users remain idle.
+  useEffect(() => {
+    if (scope !== 'nearby' || !location) return;
+    let lastRequested = Date.now();
+    const onForeground = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastRequested < 60_000) return;
+      lastRequested = Date.now();
+      setNearbyProducts([]);
+      setNearbyError(null);
+      setNearbyRefreshKey((current) => current + 1);
+    };
+    document.addEventListener('visibilitychange', onForeground);
+    window.addEventListener('focus', onForeground);
+    return () => {
+      document.removeEventListener('visibilitychange', onForeground);
+      window.removeEventListener('focus', onForeground);
+    };
+  }, [scope, location?.latitude, location?.longitude, location?.captured_at, user.id]);
+
   useEffect(() => {
     if (scope !== 'nearby' || !location) return;
     let active = true;

@@ -119,4 +119,11 @@ assert.match(publish,/useEffect\(\(\) => \(\) => \{ locationRequestSerial\.curre
 const h=fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx','utf8');
 assert.match(h,/location\.owner_uid !== useAppStore\.getState\(\)\.user\.id/);
 assert.match(h,/useAppStore\.getState\(\)\.user\.id !== requestUid/);
+
+const exploreFreshness=fs.readFileSync('src/components/ExploreScreen.tsx','utf8');
+assert.match(exploreFreshness,/document\.addEventListener\('visibilitychange', onForeground\)/);
+assert.match(exploreFreshness,/window\.addEventListener\('focus', onForeground\)/);
+assert.match(exploreFreshness,/Date\.now\(\) - lastRequested < 60_000/);
+assert.match(exploreFreshness,/setNearbyProducts\(\[\]\);[\s\S]*setNearbyRefreshKey\(\(current\) => current \+ 1\)/);
+assert.match(exploreFreshness,/document\.removeEventListener\('visibilitychange', onForeground\)/);
 console.log('PASS real Nearby cache/events isolate A/B and stale A async callbacks; no device or Firebase usage');
