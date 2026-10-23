@@ -70,6 +70,8 @@ const commonSteps = [
   [process.execPath, ['--experimental-strip-types', 'scripts/post116-push-account-isolation-tests.mjs']],
   [process.execPath, ['scripts/app-check-enforcement-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-candidate-drift-tests.mjs']],
+  [process.execPath, ['scripts/firestore-query-pagination-tests.mjs']],
+  [process.execPath, ['scripts/account-erasure-atomic-commit-tests.mjs']],
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
 ];
 

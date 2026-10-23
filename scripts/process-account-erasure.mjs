@@ -1,4 +1,4 @@
-import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminListDocuments, adminPatchDocument, adminRunQueryAll } from './staging-v2-admin.mjs';
+import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminListDocuments, adminPatchDocument, adminCommitAccountErasureCompletion, adminRunQueryAll } from './staging-v2-admin.mjs';
 import { buildAccountErasurePlan } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -120,7 +120,8 @@ if (!apply) {
   process.exit(0);
 }
 
-if (status === 'pending') await adminPatchDocument(`account_deletion_requests/${uid}`, { status: 'processing', updated_at: new Date() });
+if (status === 'pending') // Keep completion and audit inseparable; fail closed if either write fails.
+await adminCommitAccountErasureCompletion(uid, processorRunId, { status: 'processing', updated_at: new Date() });
 
 for (const item of plan.withdrawals) {
   if (item.collection === 'listings_v2') {
@@ -173,8 +174,7 @@ await adminPatchDocument(`account_deletion_requests/${uid}`, {
   withdrawn_count: plan.withdrawals.length,
   retained_count: plan.retained_count,
   auth_deleted: true,
-});
-await adminPatchDocument(`audit_log/account-erasure-${uid}-${processorRunId}`, {
+}, {
   admin_uid: 'trusted-runner',
   actor_type: 'trusted_runner',
   role: 'trust_safety',

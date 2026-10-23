@@ -1,5 +1,6 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { collectCursorPages } from './firestore-query-pagination.mjs';
+import { buildAccountErasureFinalCommit } from './account-erasure-atomic-commit.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
 const projectId = assertStagingFreezeContext();
@@ -43,6 +44,21 @@ export async function adminPatchDocument(path, fields) {
   const mask = Object.keys(fields).map((field) => `updateMask.fieldPaths=${encodeURIComponent(field)}`).join('&');
   const payload = { fields: Object.fromEntries(Object.entries(fields).map(([key, item]) => [key, value(item)])) };
   return request(`${firestoreBase}/${path}?${mask}`, { method: 'PATCH', body: JSON.stringify(payload) });
+}
+
+
+export async function adminCommitAccountErasureCompletion(uid, processorRunId, completed, audit) {
+  // Re-read version after destructive work. Never publish completion for
+  // a stale request or without the matching immutable audit entry.
+  const current = await adminGetDocument(`account_deletion_requests/${uid}`);
+  if (!current || current?.fields?.status?.stringValue !== 'processing')
+    throw new Error('ERASURE_ATOMIC_NOT_PROCESSING');
+  if (!current.updateTime) throw new Error('ERASURE_ATOMIC_UPDATE_TIME_MISSING');
+  const payload = buildAccountErasureFinalCommit({
+    projectId, uid, processorRunId, requestUpdateTime: current.updateTime,
+    completed, audit
+  });
+  return request(`${firestoreBase}:commit`, {method:'POST',body:JSON.stringify(payload)});
 }
 
 export async function adminDeleteDocument(path) {
