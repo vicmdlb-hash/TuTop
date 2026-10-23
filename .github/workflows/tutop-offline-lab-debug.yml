@@ -23,7 +23,6 @@ jobs:
       VITE_TUTOP_SCHEMA_V2: 'false'
       VITE_TUTOP_ENVIRONMENT: offline-lab
       VITE_TUTOP_TOPI_REMOTE_ENABLED: 'false'
-      NPM_CONFIG_IGNORE_SCRIPTS: 'true'
       TUTOP_BETA_VERSION: 0.9.2-lab-source-only
     steps:
       - name: Checkout exact branch without retained credentials
@@ -36,7 +35,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 'a18e7828c588a91d7f90a311b4e1e4aa465da5a2'
+          test "$(git rev-parse HEAD^)" = 'aa83a878efc3220dfeeead3e5adb6c62a55bd8e5'
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/tutop-offline-lab-debug.yml'
           test "$VITE_TUTOP_SCHEMA_V2" = false
           test "$VITE_TUTOP_ENVIRONMENT" = offline-lab
@@ -82,8 +81,17 @@ jobs:
       - name: Build offline web resources
         run: npm run build
 
-      - name: Install nonpersistent mobile tools
-        run: npm run deps:mobile
+      - name: Install ephemeral Capacitor dependencies and required sharp binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false --no-audit --no-fund --include=optional \
+            @capacitor/core@8.5.1 @capacitor/android@8.5.1 \
+            @capacitor/geolocation@8.2.2 @capacitor/camera@8.2.4 \
+            @capacitor/filesystem@8.1.0 @capacitor-firebase/messaging@8.5.1 \
+            @capacitor-firebase/app-check@8.5.0 firebase@12.18.0 \
+            @capacitor/cli@8.5.1 @capacitor/assets@3.0.5 sharp@0.34.5
+          node -e "const s=require('sharp'); if (!s.versions?.sharp) process.exit(2); console.log('Verified sharp',s.versions.sharp)"
 
       - name: Ensure npm dependency manifests remain unchanged
         run: git diff --exit-code -- package.json package-lock.json
