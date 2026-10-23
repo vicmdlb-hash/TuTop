@@ -1,4 +1,4 @@
-import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminListDocuments, adminPatchDocument, adminCommitAccountErasureCompletion, adminRunQueryAll } from './staging-v2-admin.mjs';
+import { adminDeleteDocument, adminDeleteTestUsers, adminAssertAuthUserAbsent, adminGetDocument, adminListDocuments, adminPatchDocument, adminCommitAccountErasureCompletion, adminRunQueryAll } from './staging-v2-admin.mjs';
 import { buildAccountErasurePlan } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -159,6 +159,8 @@ for (const [collection, field] of withdrawals) {
 // Auth se borra antes de declarar "completed". Si este paso falla, la solicitud
 // permanece processing y nunca se publica un falso estado de finalización.
 await adminDeleteTestUsers([uid]);
+// Independent admin lookup must prove the deleted Auth UID is absent.
+await adminAssertAuthUserAbsent(uid);
 
 const completedAt = new Date();
 // Auth deletion already succeeded; record completion and audit as one atomic commit.

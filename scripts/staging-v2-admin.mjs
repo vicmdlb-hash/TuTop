@@ -1,4 +1,4 @@
-import { assertAuthBatchDeleteResponse } from './auth-batch-delete-proof.mjs';
+import { assertAuthBatchDeleteResponse, assertAuthAccountAbsent } from './auth-batch-delete-proof.mjs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { collectCursorPages } from './firestore-query-pagination.mjs';
 import { buildAccountErasureFinalCommit } from './account-erasure-atomic-commit.mjs';
@@ -149,6 +149,19 @@ export async function adminListAuthUsers(pageSize = 500) {
     nextPageToken = String(raw?.nextPageToken || '');
   } while (nextPageToken);
   return users;
+}
+
+export async function adminAssertAuthUserAbsent(uid) {
+  // Post-delete independent lookup, not merely trusting batchDelete HTTP 200.
+  // Missing IAM lookup scope, malformed data or a surviving account => STOP.
+  if (typeof uid !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(uid))
+    throw new Error('AUTH_LOOKUP_UID_INVALID');
+  const result = await request(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:lookup`, {
+    method: 'POST',
+    body: JSON.stringify({ localId: [uid] }),
+  });
+  assertAuthAccountAbsent(result, uid);
+  return true;
 }
 
 export async function adminDeleteTestUsers(localIds) {
