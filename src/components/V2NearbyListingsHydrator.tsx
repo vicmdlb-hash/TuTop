@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { getCachedApproxLocation, nearbyGeoCells, NEARBY_LOCATION_EVENT, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { getCachedApproxLocation, nearbyGeoCells, NEARBY_LOCATION_EVENT, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { useAppStore } from '../store/useAppStore';
 import type { Product } from '../types';
@@ -26,11 +26,13 @@ export default function V2NearbyListingsHydrator() {
 
     const hydrate = async (location: ApproxLocation, force = false) => {
       const serial = ++requestSerial;
+      const requestUid = useAppStore.getState().user.id;
+      if (!requestUid) return;
       const cells = nearbyGeoCells(location);
       if (!cells.length) return;
       try {
         const nearby = await canonicalListingsBackend.loadNearbyProducts({ geoCells: cells, limitPerCell: 10, force });
-        if (!active || serial !== requestSerial) return;
+        if (!active || serial !== requestSerial || useAppStore.getState().user.id !== requestUid) return;
         const current = useAppStore.getState().products;
         useAppStore.setState({ products: mergeProducts(current, nearby) });
       } catch {
@@ -46,8 +48,9 @@ export default function V2NearbyListingsHydrator() {
     hydrateCached();
 
     const onLocation = (event: Event) => {
-      const location = (event as CustomEvent<ApproxLocation>).detail;
-      if (location) void hydrate(location);
+      const location = (event as CustomEvent<ScopedApproxLocationEvent>).detail;
+      if (!location?.owner_uid || location.owner_uid !== useAppStore.getState().user.id) return;
+      void hydrate(location);
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
     const onBaseHydrated = () => hydrateCached(true);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Compass, Heart, Loader2, MapPin, Search, SlidersHorizontal, TriangleAlert } from 'lucide-react';
 import { MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
-import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, nearbyGeoCells, nearbyLocationPermission, productDistanceKm, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, nearbyGeoCells, nearbyLocationPermission, productDistanceKm, requestApproxLocation, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { useAppStore } from '../store/useAppStore';
 import type { Product, ProductCategory } from '../types';
@@ -32,15 +32,18 @@ export default function ExploreScreen() {
   const [nearbyRefreshKey, setNearbyRefreshKey] = useState(0);
 
   useEffect(() => {
+    setLocation(getCachedApproxLocation(user.id));
+    setNearbyProducts([]);
+    setLocationMessage(null);
     const onLocation = (event: Event) => {
-      const detail = (event as CustomEvent<ApproxLocation>).detail;
-      if (!detail) return;
+      const detail = (event as CustomEvent<ScopedApproxLocationEvent>).detail;
+      if (detail?.owner_uid !== user.id) return;
       setLocation(detail);
       setLocationMessage(null);
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
     return () => window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
-  }, []);
+  }, [user.id]);
 
   useEffect(() => {
     const onBaseHydrated = () => {
@@ -68,7 +71,7 @@ export default function ExploreScreen() {
       })
       .finally(() => { if (active) setNearbyBusy(false); });
     return () => { active = false; };
-  }, [scope, location?.latitude, location?.longitude, location?.captured_at, nearbyRefreshKey]);
+  }, [scope, location?.latitude, location?.longitude, location?.captured_at, nearbyRefreshKey, user.id]);
 
   const sourceProducts = scope === 'nearby' ? nearbyProducts : products;
 

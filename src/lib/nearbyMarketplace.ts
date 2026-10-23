@@ -35,7 +35,8 @@ export function toApproxLocation(latitude: number, longitude: number, source: Ap
   };
 }
 
-type PersistedApproxLocation = ApproxLocation & { owner_uid: string };
+export type ScopedApproxLocationEvent = ApproxLocation & { owner_uid: string };
+type PersistedApproxLocation = ScopedApproxLocationEvent;
 
 export function getCachedApproxLocation(ownerUid: string, maxAgeMs = 6 * 60 * 60_000): ApproxLocation | null {
   if (!ownerUid) return null;
@@ -62,7 +63,7 @@ export function saveApproxLocation(location: ApproxLocation, ownerUid: string) {
   if (!ownerUid) return;
   const persisted: PersistedApproxLocation = { ...location, owner_uid: ownerUid };
   try { localStorage.setItem(LOCATION_KEY, JSON.stringify(persisted)); } catch { /* optional cache */ }
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ApproxLocation>(NEARBY_LOCATION_EVENT, { detail: location }));
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ScopedApproxLocationEvent>(NEARBY_LOCATION_EVENT, { detail: persisted }));
 }
 
 export function clearApproxLocation(ownerUid?: string) {
