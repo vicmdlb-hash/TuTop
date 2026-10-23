@@ -188,6 +188,7 @@ mockAppStore.setState({ user: { id: A }, products: [] });
 hydrationRequests[0]([{ id: 'stale-A-product', updated_at: '2026-10-23T00:00:00Z' }]);
 await Promise.resolve();
 await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
 assert.equal(hydrationState.products.length, 0, 'stale A result must not return after A -> B -> A');
 mockAppStore.setState({ user: { id: B }, products: [] });
 mockHydrationWindow.dispatchEvent({
@@ -198,6 +199,7 @@ assert.equal(hydrationRequests.length, 2, 'current B must be allowed a new reque
 hydrationRequests[1]([{ id: 'current-B-product', updated_at: '2026-10-23T00:00:01Z' }]);
 await Promise.resolve();
 await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
 assert.equal(hydrationState.products[0]?.id, 'current-B-product');
 assert.equal(hydrationSubscriptions.size, 1);
 hydrationCleanup();
