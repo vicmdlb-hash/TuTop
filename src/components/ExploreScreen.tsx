@@ -34,6 +34,8 @@ export default function ExploreScreen() {
   useEffect(() => {
     setLocation(getCachedApproxLocation(user.id));
     setNearbyProducts([]);
+    setLocationBusy(false);
+    setNearbyBusy(false);
     setLocationMessage(null);
     const onLocation = (event: Event) => {
       const detail = (event as CustomEvent<ScopedApproxLocationEvent>).detail;

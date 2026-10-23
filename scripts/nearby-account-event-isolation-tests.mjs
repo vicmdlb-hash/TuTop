@@ -107,6 +107,8 @@ assert.match(feed,/isOwnerActive:\s*\(\) => useAppStore\.getState\(\)\.user\.id 
 assert.match(feed,/setSearchHistory\(readAccountLocalList\(ACCOUNT_LOCAL_KEYS\.searchHistory, user\.id, 6\)\)/);
 assert.match(explore,/isOwnerActive:\s*\(\) => useAppStore\.getState\(\)\.user\.id === requestUid/);
 assert.match(explore,/if \(useAppStore\.getState\(\)\.user\.id !== requestUid\) return;/);
+assert.match(explore,/setLocationBusy\(false\);/);
+assert.match(explore,/setNearbyBusy\(false\);/);
 const h=fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx','utf8');
 assert.match(h,/location\.owner_uid !== useAppStore\.getState\(\)\.user\.id/);
 assert.match(h,/useAppStore\.getState\(\)\.user\.id !== requestUid/);
