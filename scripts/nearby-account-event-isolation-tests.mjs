@@ -56,18 +56,41 @@ lib.saveApproxLocation(loc,A);
 window.dispatchEvent(new SyntheticCustomEvent(lib.NEARBY_LOCATION_EVENT,{detail:loc}));
 assert.equal(acceptedForB,0,'old/unscoped event must not be delivered as B');
 
-// Emulate A starting a location request just before logout and B logging in.
-const late=lib.requestApproxLocation({ownerUid:A,requestPermission:true});
+// Emulate A location request followed by logout (even with absent cache).
+let currentUid=A;
+const late=lib.requestApproxLocation({ownerUid:A,requestPermission:true,
+  isOwnerActive:()=>currentUid===A});
 assert.equal(pendingPositions.length,1);
-pendingPositions[0]({coords:{latitude:19.318,longitude:-98.257}});
-await late;
-assert.equal(events.at(-1).detail.owner_uid,A,'late A geolocation stays A-scoped');
-assert.equal(acceptedForB,0);
-assert.equal(lib.getCachedApproxLocation(B),null);
+lib.clearApproxLocation(A); // cancels pending A even if another user now owns storage
+currentUid=B;
 lib.saveApproxLocation(loc,B);
+const beforeLateEvents=events.length;
+pendingPositions[0]({coords:{latitude:19.318,longitude:-98.257}});
+assert.equal(await late,null,'late request after logout cannot return A position');
+assert.equal(events.length,beforeLateEvents,'late A request must not emit location');
+assert.equal(lib.getCachedApproxLocation(A),null,'late A must not restore cache');
+assert.equal(lib.getCachedApproxLocation(B)?.longitude,-98.25,'A cannot overwrite B cache');
 assert.equal(acceptedForB,1,'B should accept its own event');
+
+// A->B can also happen through a shared-session change without clear().
+// The live UID predicate must reject the stale account's late response.
+const noLogout=lib.requestApproxLocation({ownerUid:A,requestPermission:true,
+  isOwnerActive:()=>currentUid===A});
+assert.equal(pendingPositions.length,2);
+pendingPositions[1]({coords:{latitude:19.31,longitude:-98.25}});
+assert.equal(await noLogout,null,'different live owner must reject stale result');
+assert.equal(lib.getCachedApproxLocation(B)?.longitude,-98.25);
+
+// Current B is allowed to obtain and use its own approximate location.
+const active=lib.requestApproxLocation({ownerUid:B,requestPermission:true,
+  isOwnerActive:()=>currentUid===B});
+assert.equal(pendingPositions.length,3);
+pendingPositions[2]({coords:{latitude:19.318,longitude:-98.257}});
+assert((await active)?.latitude===19.32);
+assert.equal(events.at(-1).detail.owner_uid,B);
+assert.equal(acceptedForB,2);
 lib.clearApproxLocation(A);
-assert.equal(lib.getCachedApproxLocation(B)?.longitude,-98.25,'A logout cannot erase B cache');
+assert.equal(lib.getCachedApproxLocation(B)?.longitude,-98.26,'A cleanup cannot erase B location');
 lib.clearApproxLocation(B);
 assert.equal(lib.getCachedApproxLocation(B),null);
 
@@ -78,6 +101,12 @@ for(const path of ['src/components/ProductCard.tsx','src/components/ExploreScree
  assert.match(src,/\[user\.id\]/);
  assert.match(src,/set(?:ViewerLocation|Location)\(getCachedApproxLocation\(user\.id\)\)/);
 }
+const feed=fs.readFileSync('src/components/Feed.tsx','utf8');
+const explore=fs.readFileSync('src/components/ExploreScreen.tsx','utf8');
+assert.match(feed,/isOwnerActive:\s*\(\) => useAppStore\.getState\(\)\.user\.id === requestUid/);
+assert.match(feed,/setSearchHistory\(readAccountLocalList\(ACCOUNT_LOCAL_KEYS\.searchHistory, user\.id, 6\)\)/);
+assert.match(explore,/isOwnerActive:\s*\(\) => useAppStore\.getState\(\)\.user\.id === requestUid/);
+assert.match(explore,/if \(useAppStore\.getState\(\)\.user\.id !== requestUid\) return;/);
 const h=fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx','utf8');
 assert.match(h,/location\.owner_uid !== useAppStore\.getState\(\)\.user\.id/);
 assert.match(h,/useAppStore\.getState\(\)\.user\.id !== requestUid/);

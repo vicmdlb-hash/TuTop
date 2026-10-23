@@ -102,7 +102,8 @@ export default function ExploreScreen() {
   }, [sourceProducts, category, query, scope, favorites, location, radiusKm]);
 
   const activateNearby = async () => {
-    if (locationBusy) return;
+    const requestUid = user.id;
+    if (locationBusy || !requestUid || useAppStore.getState().user.id !== requestUid) return;
     setScope('nearby');
     setLocationBusy(true);
     setLocationMessage(null);
@@ -112,12 +113,14 @@ export default function ExploreScreen() {
         setLocation(cached);
         return;
       }
-      const next = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000, ownerUid: user.id });
+      const next = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000, ownerUid: requestUid, isOwnerActive: () => useAppStore.getState().user.id === requestUid });
+      if (useAppStore.getState().user.id !== requestUid) return;
       if (next) {
         setLocation(next);
         return;
       }
       const permission = await nearbyLocationPermission();
+      if (useAppStore.getState().user.id !== requestUid) return;
       if (permission === 'denied') {
         setLocationMessage('Android bloqueó la ubicación para TuTop. Activa ubicación aproximada en los permisos de la app y vuelve a intentarlo.');
       } else if (permission === 'unavailable') {
@@ -126,9 +129,9 @@ export default function ExploreScreen() {
         setLocationMessage('El permiso está disponible, pero Android todavía no entregó una posición aproximada. Espera unos segundos y vuelve a intentar.');
       }
     } catch {
-      setLocationMessage('No pudimos activar la cercanía esta vez. TuTop seguirá funcionando por campus y ciudad; vuelve a intentarlo cuando tengas mejor señal.');
+      if (useAppStore.getState().user.id === requestUid) setLocationMessage('No pudimos activar la cercanía esta vez. TuTop seguirá funcionando por campus y ciudad; vuelve a intentarlo cuando tengas mejor señal.');
     } finally {
-      setLocationBusy(false);
+      if (useAppStore.getState().user.id === requestUid) setLocationBusy(false);
     }
   };
 

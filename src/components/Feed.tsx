@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Bell, BookmarkPlus, Building2, Clock3, Globe2, Heart, ListFilter, LocateFixed, MapPin, PlusCircle, Search, SlidersHorizontal, Sparkles, Store, X } from 'lucide-react';
 import { ACCOUNT_LOCAL_KEYS, readAccountLocalJson, readAccountLocalList, writeAccountLocalJson, writeAccountLocalList } from '../lib/accountLocalState';
@@ -96,9 +96,23 @@ export default function Feed() {
   const recentIds = readAccountLocalList(ACCOUNT_LOCAL_KEYS.recentProducts, user.id, 12);
   const onboardingInterests = readAccountLocalList(ACCOUNT_LOCAL_KEYS.interests, user.id, 8);
 
+  useEffect(() => {
+    // Feed can remain mounted while its authenticated user changes.
+    const scoped = getCachedApproxLocation(user.id);
+    setViewerLocation(scoped);
+    setLocationStatus(scoped ? 'ready' : 'fallback');
+    setSearchHistory(readAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, user.id, 6));
+  }, [user.id]);
+
   const requestLocationAgain = async () => {
+    const requestUid = user.id;
+    if (!requestUid || useAppStore.getState().user.id !== requestUid) return;
     setLocationStatus('asking');
-    const location = await requestApproxLocation({ maximumAgeMs: 0, requestPermission: true, ownerUid: user.id });
+    const location = await requestApproxLocation({
+      maximumAgeMs: 0, requestPermission: true, ownerUid: requestUid,
+      isOwnerActive: () => useAppStore.getState().user.id === requestUid,
+    });
+    if (useAppStore.getState().user.id !== requestUid) return;
     setViewerLocation(location);
     setLocationStatus(location ? 'ready' : 'fallback');
   };
