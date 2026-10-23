@@ -123,6 +123,7 @@ export default function NationalPublishScreen() {
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
+  const locationRequestSerial = useRef(0);
   const nativeDevice = isNativeDeviceRuntime();
   const videoInfraEnabled = mediaStorageEnabled();
   const initialDraft = useMemo(() => readPublishDraft(user.id), [user.id]);
@@ -151,6 +152,10 @@ export default function NationalPublishScreen() {
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening'>('idle');
   const [approxLocation, setApproxLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
   const [locationOptIn, setLocationOptIn] = useState(Boolean(initialDraft?.locationOptIn));
+
+  // Invalidate in-flight geolocation when the form unmounts or its UID changes.
+  // The App keys Publish by UID, but a pending browser/native callback can outlive it.
+  useEffect(() => () => { locationRequestSerial.current += 1; }, [user.id]);
 
   const institutionId = user.institution_id || user.university?.institution_id || '';
   const campusId = user.campus_id || user.university?.campus_id || '';
@@ -325,8 +330,19 @@ export default function NationalPublishScreen() {
   };
 
   const refreshLocation = async () => {
+    const requestUid = user.id;
+    if (!requestUid || useAppStore.getState().user.id !== requestUid) return;
+    const requestSerial = ++locationRequestSerial.current;
+    const stillCurrent = () => locationRequestSerial.current === requestSerial
+      && useAppStore.getState().user.id === requestUid;
     setMessage('Obteniendo una ubicación aproximada para este anuncio…');
-    const location = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000, ownerUid: user.id });
+    const location = await requestApproxLocation({
+      requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000,
+      ownerUid: requestUid, isOwnerActive: stillCurrent,
+    });
+    // Neither switching accounts nor pressing Quitar while permission is pending
+    // may enable location for another account or reinstate revoked listing consent.
+    if (!stillCurrent()) return;
     setApproxLocation(location);
     if (location) {
       setLocationOptIn(true);
@@ -336,12 +352,14 @@ export default function NationalPublishScreen() {
     }
     setLocationOptIn(false);
     const permission = await nearbyLocationPermission();
-    if (permission === 'denied') setMessage('Android tiene bloqueada la ubicación para TuTop. Activa ubicación aproximada para la app y vuelve a intentarlo.');
+    if (!stillCurrent()) return;
+    if (permission === 'denied') setMessage('Android tiene bloqueada la ubicación para TuTop. Activa ubicación aproximada en los permisos de la app y vuelve a intentarlo.');
     else if (permission === 'unavailable') setMessage('No pudimos obtener ubicación del dispositivo. Comprueba que los servicios de ubicación de Android estén encendidos.');
     else setMessage('Android concedió el permiso, pero todavía no entregó una posición. Tu anuncio seguirá funcionando por campus y ciudad; vuelve a intentar ubicación en unos segundos.');
   };
 
   const removeListingLocation = () => {
+    locationRequestSerial.current += 1;
     setLocationOptIn(false);
     recordDiagnostic('location', 'listing_location_opt_in_removed');
     setMessage('Este anuncio no incluirá ubicación aproximada. TuTop puede seguir usando una ubicación cacheada para explorar cerca de ti, pero no la publicará aquí.');

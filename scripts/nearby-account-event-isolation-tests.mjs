@@ -109,6 +109,13 @@ assert.match(explore,/isOwnerActive:\s*\(\) => useAppStore\.getState\(\)\.user\.
 assert.match(explore,/if \(useAppStore\.getState\(\)\.user\.id !== requestUid\) return;/);
 assert.match(explore,/setLocationBusy\(false\);/);
 assert.match(explore,/setNearbyBusy\(false\);/);
+const publish=fs.readFileSync('src/components/NationalPublishScreen.tsx','utf8');
+assert.match(publish,/ownerUid: requestUid, isOwnerActive: stillCurrent/);
+assert.match(publish,/locationRequestSerial\.current === requestSerial/);
+assert.match(publish,/useAppStore\.getState\(\)\.user\.id === requestUid/);
+assert.match(publish,/if \(!stillCurrent\(\)\) return;/);
+assert.match(publish,/const removeListingLocation = \(\) => \{\s*locationRequestSerial\.current \+= 1;/);
+assert.match(publish,/useEffect\(\(\) => \(\) => \{ locationRequestSerial\.current \+= 1; \}, \[user\.id\]\)/);
 const h=fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx','utf8');
 assert.match(h,/location\.owner_uid !== useAppStore\.getState\(\)\.user\.id/);
 assert.match(h,/useAppStore\.getState\(\)\.user\.id !== requestUid/);
