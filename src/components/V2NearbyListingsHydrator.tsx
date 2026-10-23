@@ -23,6 +23,14 @@ export default function V2NearbyListingsHydrator() {
   useEffect(() => {
     let active = true;
     let requestSerial = 0;
+    // Comparing only the UID misses a fast A -> B -> A session change.
+    // Invalidate every pending Nearby request as soon as the live owner changes.
+    let currentOwnerUid = useAppStore.getState().user.id;
+    const unsubscribeOwner = useAppStore.subscribe((state) => {
+      if (state.user.id === currentOwnerUid) return;
+      currentOwnerUid = state.user.id;
+      requestSerial += 1;
+    });
 
     const hydrate = async (location: ApproxLocation, force = false) => {
       const serial = ++requestSerial;
@@ -58,6 +66,7 @@ export default function V2NearbyListingsHydrator() {
     return () => {
       active = false;
       requestSerial += 1;
+      unsubscribeOwner();
       window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
       window.removeEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, onBaseHydrated);
     };

@@ -126,4 +126,81 @@ assert.match(exploreFreshness,/window\.addEventListener\('focus', onForeground\)
 assert.match(exploreFreshness,/Date\.now\(\) - lastRequested < 60_000/);
 assert.match(exploreFreshness,/setNearbyProducts\(\[\]\);[\s\S]*setNearbyRefreshKey\(\(current\) => current \+ 1\)/);
 assert.match(exploreFreshness,/document\.removeEventListener\('visibilitychange', onForeground\)/);
+// Execute the real mounted Nearby hydrator against a controlled async A -> B -> A race.
+// A UID-only comparison passes incorrectly when the same account signs back in.
+const hydratorTsx = fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx', 'utf8');
+const hydratorJs = ts.transpileModule(hydratorTsx, {
+  fileName: 'V2NearbyListingsHydrator.tsx',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
+}).outputText;
+const hydrationRequests = [];
+const hydrationSubscriptions = new Set();
+const hydrationListeners = new Map();
+const hydrationState = { user: { id: A }, products: [] };
+let hydrationCleanup = null;
+const mockAppStore = {
+  getState: () => hydrationState,
+  setState: (patch) => {
+    Object.assign(hydrationState, patch);
+    for (const listener of hydrationSubscriptions) listener(hydrationState);
+  },
+  subscribe: (listener) => {
+    hydrationSubscriptions.add(listener);
+    return () => hydrationSubscriptions.delete(listener);
+  },
+};
+const mockHydrationWindow = {
+  addEventListener(type, listener) {
+    hydrationListeners.set(type, [...(hydrationListeners.get(type) || []), listener]);
+  },
+  removeEventListener(type, listener) {
+    hydrationListeners.set(type, (hydrationListeners.get(type) || []).filter((fn) => fn !== listener));
+  },
+  dispatchEvent(event) {
+    for (const listener of hydrationListeners.get(event.type) || []) listener(event);
+  },
+};
+const hydrationModule = { exports: {} };
+vm.runInNewContext(hydratorJs, {
+  module: hydrationModule, exports: hydrationModule.exports,
+  require(name) {
+    if (name === 'react') return { useEffect: (effect) => { hydrationCleanup = effect(); } };
+    if (name === '../lib/nearbyMarketplace') return {
+      getCachedApproxLocation: (uid) => uid ? loc : null,
+      nearbyGeoCells: () => ['g1:1:1'],
+      NEARBY_LOCATION_EVENT: 'tutop:approx-location',
+    };
+    if (name === '../services/canonicalListingsBackend') return {
+      canonicalListingsBackend: {
+        loadNearbyProducts: () => new Promise((resolve) => hydrationRequests.push(resolve)),
+      },
+    };
+    if (name === '../store/useAppStore') return { useAppStore: mockAppStore };
+    if (name === './V2ListingsHydrator') return { V2_LISTINGS_BASE_HYDRATED_EVENT: 'tutop:v2-listings-base-hydrated' };
+    throw new Error('Unexpected hydrator import: ' + name);
+  },
+  window: mockHydrationWindow, Map, Date, Promise, console,
+}, { timeout: 2500 });
+hydrationModule.exports.default();
+assert.equal(hydrationRequests.length, 1, 'initial A Nearby request expected');
+mockAppStore.setState({ user: { id: B }, products: [] });
+mockAppStore.setState({ user: { id: A }, products: [] });
+hydrationRequests[0]([{ id: 'stale-A-product', updated_at: '2026-10-23T00:00:00Z' }]);
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(hydrationState.products.length, 0, 'stale A result must not return after A -> B -> A');
+mockAppStore.setState({ user: { id: B }, products: [] });
+mockHydrationWindow.dispatchEvent({
+  type: 'tutop:approx-location',
+  detail: { ...loc, owner_uid: B },
+});
+assert.equal(hydrationRequests.length, 2, 'current B must be allowed a new request');
+hydrationRequests[1]([{ id: 'current-B-product', updated_at: '2026-10-23T00:00:01Z' }]);
+await Promise.resolve();
+await Promise.resolve();
+assert.equal(hydrationState.products[0]?.id, 'current-B-product');
+assert.equal(hydrationSubscriptions.size, 1);
+hydrationCleanup();
+assert.equal(hydrationSubscriptions.size, 0, 'cleanup must remove the owner subscription');
+
 console.log('PASS real Nearby cache/events isolate A/B and stale A async callbacks; no device or Firebase usage');
