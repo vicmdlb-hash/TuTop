@@ -1,3 +1,4 @@
+import { assertAuthBatchDeleteResponse } from './auth-batch-delete-proof.mjs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { collectCursorPages } from './firestore-query-pagination.mjs';
 import { buildAccountErasureFinalCommit } from './account-erasure-atomic-commit.mjs';
@@ -153,7 +154,9 @@ export async function adminListAuthUsers(pageSize = 500) {
 export async function adminDeleteTestUsers(localIds) {
   if (!Array.isArray(localIds) || localIds.some((uid) => !String(uid).trim())) throw new Error('UIDs de cleanup inválidos.');
   if (!localIds.length) return null;
-  return request(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:batchDelete`, {
+  const result = await request(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:batchDelete`, {
     method: 'POST', body: JSON.stringify({ localIds, force: true }),
   });
+  assertAuthBatchDeleteResponse(result);
+  return result;
 }

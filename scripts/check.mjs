@@ -72,6 +72,7 @@ const commonSteps = [
   [process.execPath, ['scripts/physical-qa-candidate-drift-tests.mjs']],
   [process.execPath, ['scripts/firestore-query-pagination-tests.mjs']],
   [process.execPath, ['scripts/account-erasure-atomic-commit-tests.mjs']],
+  [process.execPath, ['scripts/auth-batch-delete-proof-tests.mjs']],
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
 ];
 
