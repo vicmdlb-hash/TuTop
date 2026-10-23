@@ -2,9 +2,9 @@
 // Account reset, registration smoke, API enablement and new app creation are independent, gated workflows.
 import fs from 'node:fs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
+import { assertStagingConfigReadContext } from './staging-freeze-guard.mjs';
 import {selectExistingStagingAndroidApp,validateExistingStagingAndroidConfig} from './staging-existing-android-config-guard.mjs';
-const projectId=assertStagingFreezeContext({allowEnv:'TUTOP_ALLOW_ANDROID_APP_SETUP',allowValue:'staging-v2'});
+const projectId=assertStagingConfigReadContext({legacyAllowEnv:'TUTOP_ALLOW_ANDROID_APP_SETUP',legacyAllowValue:'staging-v2'});
 const packageName=String(process.env.TUTOP_ANDROID_PACKAGE_NAME||'mx.tutop.app').trim();
 const output=String(process.env.TUTOP_ANDROID_GOOGLE_SERVICES_PATH||'.tutop-staging-google-services.json').trim();
 if(packageName!=='mx.tutop.app') throw Error('STAGING_ANDROID_PACKAGE_NOT_APPROVED');

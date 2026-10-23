@@ -13,7 +13,7 @@ assert.equal(validateExistingWebConfig(config).projectId,project);
 for(const bad of [null,{}, {...config,projectId:'production'},{...config,apiKey:''},{...config,appId:''},{...config,storageBucket:5}])
   assert.throws(()=>validateExistingWebConfig(bad),/STAGING_WEB_/);
 const source=fs.readFileSync('scripts/prepare-staging-v2-auth.mjs','utf8');
-assert.match(source,/assertStagingFreezeContext/);
+assert.match(source,/assertStagingConfigReadContext/);
 assert.match(source,/method:'GET'/);
 assert.match(source,/flag:'wx'/);
 assert.doesNotMatch(source,/ensureFirebaseAiServices|ensureFirebaseAiApiKeyAllowlist|enableService|method:'POST'|method:'PATCH'|webAppsUrl, \{ method: 'POST'/);

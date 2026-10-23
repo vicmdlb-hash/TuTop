@@ -13,7 +13,7 @@ assert.equal(validateExistingStagingAndroidConfig(enc(valid)).project_info.proje
 for(const bad of [null,{},enc({...valid,project_info:{project_id:'other'}}),enc({...valid,client:[]}),enc({...valid,client:[valid.client[0],valid.client[0]]}),enc({...valid,client:[{...valid.client[0],api_key:[]}]}),{configFilename:'wrong.json',configFileContents:'xx'},{configFilename:'google-services.json',configFileContents:'%%%'}])
   assert.throws(()=>validateExistingStagingAndroidConfig(bad),/STAGING_ANDROID_/);
 const source=fs.readFileSync('scripts/prepare-staging-android-app.mjs','utf8');
-assert.match(source,/assertStagingFreezeContext/);
+assert.match(source,/assertStagingConfigReadContext/);
 assert.match(source,/method:'GET'/);
 assert.match(source,/flag:'wx'/);
 assert.doesNotMatch(source,/reset-staging-accounts|staging-app-registration-smoke|ensureFirebaseAiServices|ensureFirebaseAiApiKeyAllowlist|spawnSync|method:'POST'|method:'PATCH'|method:'DELETE'/);

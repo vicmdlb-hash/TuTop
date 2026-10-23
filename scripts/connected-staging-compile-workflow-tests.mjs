@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const w=fs.readFileSync('.github/workflows/tutop-connected-staging-compile.yml','utf8');
+assert.match(w,/TUTOP_ALLOW_STAGING_CONFIG_READ: read-only-v2/);
+assert.match(w,/prepare-staging-v2-auth\.mjs/);
+assert.match(w,/prepare-staging-android-app\.mjs/);
+assert.match(w,/VITE_TUTOP_SCHEMA_V2: 'true'/);
+assert.match(w,/VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED: 'false'/);
+assert.match(w,/VITE_TUTOP_ENVIRONMENT: staging/);
+assert.match(w,/verify-android-native-plugin-bundle/);
+assert.doesNotMatch(w,/firebase:deploy|reset-staging|gh release|upload-artifact|TUTOP_ALLOW_FIREBASE_DEPLOY/);
+console.log('PASS connected staging Android compile is read-only and never uploads APK or deploys Firebase');
