@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole, Mail, MapPin, Phone, RefreshCw, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
 import { CAMPUSES, INSTITUTIONS } from '../lib/universityNetwork';
 import { clearApproxLocation } from '../lib/nearbyMarketplace';
+import { isCurrentBackendHydration } from '../lib/backendHydrationIdentity';
 import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { prepareNativePushForAccountSignOut } from '../services/nativeFirebaseSecurity';
 import { onlineBackend } from '../services/onlineBackend';
@@ -35,8 +36,11 @@ export default function BackendGate({ children }: { children: ReactNode }) {
   const [verificationPending, setVerificationPending] = useState<VerifiedEmailBetaStatus | null>(null);
   const [legacyIdentity, setLegacyIdentity] = useState(false);
   const syncInFlight = useRef(false);
+  const syncQueued = useRef(false);
+  const authEpoch = useRef(0);
 
   const signOutAll = async () => {
+    authEpoch.current += 1;
     const currentUid = useAppStore.getState().user.id;
     clearApproxLocation(currentUid || undefined);
     // Keep the old authenticated session alive long enough to deactivate its
@@ -53,13 +57,22 @@ export default function BackendGate({ children }: { children: ReactNode }) {
   };
 
   const sync = async (quiet = false) => {
-    if (syncInFlight.current) return;
+    if (syncInFlight.current) {
+      syncQueued.current = true;
+      return;
+    }
     syncInFlight.current = true;
+    const expectedEpoch = authEpoch.current;
+    let expectedUid = '';
+    const stillCurrent = (hydratedUid: string) => isCurrentBackendHydration(
+      expectedUid, onlineBackend.session?.uid, hydratedUid, expectedEpoch, authEpoch.current,
+    );
     try {
       if (!quiet) setLoading(true);
       setError(null);
       onlineBackend.configureFromRuntime();
-      if (!onlineBackend.session) {
+      expectedUid = onlineBackend.session?.uid || '';
+      if (!expectedUid) {
         clearOnline();
         setAuthenticated(false);
         setVerificationPending(null);
@@ -81,6 +94,7 @@ export default function BackendGate({ children }: { children: ReactNode }) {
       }
 
       const verified = await verifiedEmailBetaAuth.refreshVerificationStatus();
+      if (!stillCurrent(expectedUid)) return;
       if (!verified.emailVerified) {
         setAuthenticated(true);
         setVerificationPending(verified);
@@ -92,7 +106,10 @@ export default function BackendGate({ children }: { children: ReactNode }) {
       setLegacyIdentity(false);
       onlineBackend.configureFromRuntime();
       if (nationalSchemaEnabled()) await completePendingUniversityIdentity().catch(() => false);
+      if (!stillCurrent(expectedUid)) return;
       const snapshot = await onlineBackend.loadSnapshot();
+      // Never hydrate account A into B when refresh/auth/registration finishes out of order.
+      if (!stillCurrent(snapshot.user.id)) return;
       hydrateOnline(snapshot);
       setAuthenticated(true);
       setSuspended({ active: snapshot.user.is_suspended === true, reason: snapshot.user.suspension_reason });
@@ -103,6 +120,12 @@ export default function BackendGate({ children }: { children: ReactNode }) {
     } finally {
       syncInFlight.current = false;
       setLoading(false);
+      // A login or user-initiated retry can arrive while a stale fetch is active.
+      // Do not drop it: let the next authenticated UID load after this request.
+      if (syncQueued.current) {
+        syncQueued.current = false;
+        void Promise.resolve().then(() => sync(true));
+      }
     }
   };
 
