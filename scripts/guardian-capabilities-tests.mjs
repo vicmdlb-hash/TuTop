@@ -59,4 +59,31 @@ assert.equal(check('topi_generative', 'under_13', {
   guardian: guardian(['topi_generative']),
   topi: { approved: true, issuer: 'trusted_server', audience: 'all_ages' },
 }).allowed, true);
-console.log('PASS 29 all-ages capability decisions (source contract only; backend enforcement pending)');
+
+// Untrusted runtime JSON must not turn strings, absent fields or unknown
+// capability names into approval. These tests are synthetic only.
+denied(check('not_registered_capability', 'adult'), 'capability_unknown');
+denied(check('not_registered_capability', 'teen_13_17'), 'capability_unknown');
+denied(check('browse_approved', 'adult', { age: age('adult', { revoked: 'false' }) }), 'age_unverified');
+denied(check('browse_approved', 'adult', { age: age('malformed_band') }), 'age_unverified');
+denied(check('browse_approved', 'adult', { age: age('adult', { expiresAtMs: '9999999999999' }) }), 'age_unverified');
+denied(check('browse_approved', 'adult', { uid: {} }), 'age_unverified');
+denied(check('publish_listing', 'under_13', { guardian: guardian(['publish_listing'], { active: 'true' }) }), 'guardian_missing');
+denied(check('publish_listing', 'under_13', { guardian: guardian(['publish_listing'], { consentVersion: null }) }), 'guardian_missing');
+denied(check('publish_listing', 'under_13', { guardian: guardian('publish_listing') }), 'guardian_missing');
+denied(check('publish_listing', 'under_13', { guardian: guardian(null) }), 'guardian_missing');
+denied(check('publish_listing', 'under_13', { guardian: guardian(['publish_listing'], { guardianUid: {} }) }), 'guardian_missing');
+denied(check('publish_listing', 'under_13', { guardian: guardian(['publish_listing'], { guardianUid: '  ' }) }), 'guardian_missing');
+denied(check('topi_generative', 'adult', {
+  topi: { audience: 'all_ages', approved: 'true', issuer: 'trusted_server' },
+}), 'topi_runtime_unapproved');
+denied(check('share_personal_info', 'teen_13_17', {
+  adultAction: adultAction({ authorized: 'true' }),
+}), 'requires_guardian_action');
+denied(check('share_personal_info', 'teen_13_17', {
+  adultAction: adultAction({ actorUid: {} }),
+}), 'requires_guardian_action');
+denied(check('share_personal_info', 'teen_13_17', {
+  adultAction: adultAction({ actorUid: '  ' }),
+}), 'requires_guardian_action');
+console.log('PASS guardian strict runtime-proof rejection cases (synthetic; backend authority still pending)');
