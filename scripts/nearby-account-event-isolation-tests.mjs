@@ -137,6 +137,26 @@ assert.match(feedDiscovery, /const list = publicProducts.filter/);
 assert.match(feedDiscovery, /const myPendingProducts = mySellerProducts.filter/);
 assert.match(exploreDiscovery, /const publicProducts = useMemo/);
 assert.match(exploreDiscovery, /return publicProducts\s+\.filter/);
+// Public seller profile must share the fail-closed V2 visibility guard,
+// not accidentally expose owner's pending listings through a public overlay.
+const sellerPublicProfile = fs.readFileSync('src/components/SellerPublicProfile.tsx', 'utf8');
+assert.match(sellerPublicProfile, /import \{ isPublicDiscoveryProduct \} from '\.\.\/lib\/publicDiscovery'/);
+assert.match(sellerPublicProfile, /product\.vendedor_id === sellerId && product\.estado === 'Activo' && isPublicDiscoveryProduct\(product, nationalSchemaEnabled\(\)\)/);
+const sellerInventory = [
+  { vendedor_id: 'seller-A', estado: 'Activo', moderation_status: 'approved', id: 'approved-public' },
+  { vendedor_id: 'seller-A', estado: 'Activo', moderation_status: 'pending', id: 'own-pending' },
+  { vendedor_id: 'seller-A', estado: 'Activo', moderation_status: 'review', id: 'review' },
+  { vendedor_id: 'seller-A', estado: 'Activo', moderation_status: 'rejected', id: 'rejected' },
+  { vendedor_id: 'seller-B', estado: 'Activo', moderation_status: 'approved', id: 'other-seller' },
+  { vendedor_id: 'seller-A', estado: 'Inactivo', moderation_status: 'approved', id: 'inactive' },
+];
+const publicSellerIds = sellerInventory.filter((product) =>
+  product.vendedor_id === 'seller-A' && product.estado === 'Activo' && publicFilter(product, true)
+).map((product) => product.id);
+assert.deepEqual(publicSellerIds, ['approved-public'], 'only approved active current seller listings can appear on public profile');
+assert.equal(sellerInventory.filter((product) => product.vendedor_id === 'seller-A' && product.estado === 'Activo').length, 4,
+  'private seller inventory remains separate and is not deleted');
+
 
 const h=fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx','utf8');
 assert.match(h,/location\.owner_uid !== useAppStore\.getState\(\)\.user\.id/);

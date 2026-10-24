@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, BadgeCheck, Loader2, PackageCheck, ShieldCheck, Store, UserCheck, UserPlus } from 'lucide-react';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
+import { isPublicDiscoveryProduct } from '../lib/publicDiscovery';
 import {
   trustedReputationAgeHours,
   trustedReputationBackend,
@@ -90,7 +91,9 @@ export default function SellerPublicProfile({
   };
 
   const activeListings = products
-    .filter((product) => product.vendedor_id === sellerId && product.estado === 'Activo')
+    // This is a public profile, including when the seller views their own.
+    // Do not expose seller-owned pending/rejected V2 listings as public inventory.
+    .filter((product) => product.vendedor_id === sellerId && product.estado === 'Activo' && isPublicDiscoveryProduct(product, nationalSchemaEnabled()))
     .sort((a, b) => new Date(b.updated_at || b.fecha_creacion).getTime() - new Date(a.updated_at || a.fecha_creacion).getTime());
 
   const hasTrustedEvidence = Boolean(trusted && (trusted.seller_review_count > 0 || trusted.completed_as_seller > 0));
