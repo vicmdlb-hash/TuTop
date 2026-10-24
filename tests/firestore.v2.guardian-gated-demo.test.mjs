@@ -83,9 +83,16 @@ const createMessage = (db) => countedWrite(db, 'message_create', batch => {
     sender_id: 'buyer', text: 'Hola', created_at: now(),
   });
 });
-async function seedChat() {
+async function seedChat({ vetted = false, revoked = false, expiresAt = future() } = {}) {
   await env.withSecurityRulesDisabled(async (ctx) =>
-    setDoc(doc(ctx.firestore(), 'chats/chat-buyer-listing'), chat()));
+    setDoc(doc(ctx.firestore(), 'chats/chat-buyer-listing'), {
+      ...chat(),
+      ...(vetted ? {
+        guardian_pair_vetted: true,
+        guardian_pair_revoked: revoked,
+        guardian_pair_expires_at: expiresAt,
+      } : {}),
+    }));
 }
 
 test('isolated age proof gate accepts a server-issued adult claim and rejects revoked claim', async () => {
@@ -135,9 +142,30 @@ test('under-13 cannot send messages or make offers inside historical chats', asy
   await assertFails(createOffer(buyer));
 });
 
-test('verified adult with active adult recipient can create a message', async () => {
+test('unvetted, expired and revoked pair permissions fail closed for an adult', async () => {
+  await seed('adult');
+  const buyer = verifiedContext(env, 'buyer').firestore();
+  await seedChat();
+  await assertFails(createMessage(buyer));
+  await seedChat({ vetted: true, expiresAt: past() });
+  await assertFails(createMessage(buyer));
+  await seedChat({ vetted: true, revoked: true });
+  await assertFails(createMessage(buyer));
+});
+
+test('client cannot forge server-managed pair authorization on an existing chat', async () => {
   await seed('adult');
   await seedChat();
+  const buyer = verifiedContext(env, 'buyer').firestore();
+  await assertFails(updateDoc(doc(buyer, 'chats/chat-buyer-listing'), {
+    guardian_pair_vetted: true, guardian_pair_revoked: false,
+    guardian_pair_expires_at: future(), updated_at: now(),
+  }));
+});
+
+test('verified adult with server-vetted active recipient can create a message', async () => {
+  await seed('adult');
+  await seedChat({ vetted: true });
   try {
     await assertSucceeds(createMessage(verifiedContext(env, 'buyer').firestore()));
   } catch (error) {
