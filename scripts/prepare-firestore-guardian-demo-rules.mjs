@@ -80,8 +80,13 @@ function guardSection(start, end, old, guard, name) {
     throw new Error('GUARDIAN_DEMO_SECTION_DRIFT ' + name);
   }
   const section = rules.slice(first, last);
-  exactlyOne(section, old, name);
-  rules = rules.slice(0, first) + section.replace(old, old.replace(/^(allow (?:create|update): if [^\n]+)/, '$1 && ' + guard)) + rules.slice(last);
+  // Generated V2 inserts other top-level collections inside broad intervals;
+  // restrict the mutation to the first target match body, never a neighbour.
+  const nextRoot = section.indexOf('\n    match /', start.length);
+  const scoped = nextRoot < 0 ? section : section.slice(0, nextRoot);
+  exactlyOne(scoped, old, name);
+  const guarded = scoped.replace(old, old.replace(/^(allow (?:create|update): if [^\n]+)/, '$1 && ' + guard));
+  rules = rules.slice(0, first) + guarded + section.slice(scoped.length) + rules.slice(last);
 }
 
 guardSection('    match /listings_v2/{listingId} {', '    match /offers/{offerId} {',
@@ -108,11 +113,11 @@ guardSection('    match /offers/{offerId} {', '    match /transactions_v2/{trans
   'guardianAdultOrTeen(resource.data.buyer_id) && guardianAdultOrTeen(resource.data.seller_id)',
   'offer update');
 guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_requests/{requestId} {',
-  "allow create: if signedIn() && notSuspended()\n        && request.resource.data.keys().hasOnly(['listing_id','chat_id'",
+  'allow create: if signedIn() && notSuspended()',
   'guardianAdultOrTeen(request.resource.data.buyer_id) && guardianAdultOrTeen(request.resource.data.seller_id)',
   'transaction create');
 guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_requests/{requestId} {',
-  "allow update: if signedIn() && notSuspended()\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]",
+  'allow update: if signedIn() && notSuspended()',
   'guardianAdultOrTeen(resource.data.buyer_id) && guardianAdultOrTeen(resource.data.seller_id)',
   'transaction update');
 
