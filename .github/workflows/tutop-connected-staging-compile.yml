@@ -40,7 +40,7 @@ jobs:
           test "${GITHUB_REF_NAME}" = "integration/tutop-121-122-fcm-owner-ci-20261022"
           test "${TUTOP_ALLOW_STAGING_CONFIG_READ}" = read-only-v2
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
-          test "$(git rev-parse HEAD^)" = "f70f6d8db5ce9f11ba87970f4dff993835edaffd"
+          test "$(git rev-parse HEAD^)" = "b2b05850f0b0553d402f8f51bc00f25c24fe2a94"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tutop-connected-staging-compile.yml"
           test -n "${FIREBASE_TOKEN:-}" || { echo 'BLOCKED: Firebase read-only config credentials not connected'; exit 42; }
       - name: Node 22
