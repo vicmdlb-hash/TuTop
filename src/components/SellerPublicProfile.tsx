@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BadgeCheck, Loader2, PackageCheck, ShieldCheck, Store, UserCheck, UserPlus } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Flag, Loader2, PackageCheck, ShieldCheck, Store, UserCheck, UserPlus } from 'lucide-react';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
 import { isPublicDiscoveryProduct } from '../lib/publicDiscovery';
 import {
@@ -9,6 +9,7 @@ import {
   type TrustedReputationSnapshot,
 } from '../services/trustedReputationBackend';
 import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
+import { onlineBackend } from '../services/onlineBackend';
 import { useAppStore } from '../store/useAppStore';
 
 export default function SellerPublicProfile({
@@ -32,6 +33,8 @@ export default function SellerPublicProfile({
   const [followLoaded, setFollowLoaded] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followMessage, setFollowMessage] = useState<string | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -51,6 +54,7 @@ export default function SellerPublicProfile({
   }, [sellerId]);
 
   const canFollow = nationalSchemaEnabled() && Boolean(user.id) && user.id !== sellerId;
+  const canReportUser = Boolean(user.id) && user.id !== sellerId;
 
   useEffect(() => {
     let active = true;
@@ -87,6 +91,28 @@ export default function SellerPublicProfile({
       setFollowMessage('No pudimos cambiar el seguimiento. Revisa tu conexión e inténtalo otra vez.');
     } finally {
       setFollowBusy(false);
+    }
+  };
+
+  // Reuse the existing authenticated user-report backend; reporting is not a block.
+  const reportUser = async () => {
+    if (!canReportUser || reportBusy) return;
+    const reason = window.prompt('¿Por qué quieres reportar a este usuario?');
+    if (!reason || reason.trim().length < 3) return;
+    const reporterUid = user.id;
+    setReportBusy(true);
+    setReportMessage(null);
+    try {
+      await onlineBackend.submitReport('user', sellerId, reason);
+      if (useAppStore.getState().user.id === reporterUid) {
+        setReportMessage('Reporte enviado. El equipo de TuTop revisará este usuario.');
+      }
+    } catch {
+      if (useAppStore.getState().user.id === reporterUid) {
+        setReportMessage('No pudimos enviar el reporte. Inténtalo de nuevo.');
+      }
+    } finally {
+      setReportBusy(false);
     }
   };
 
@@ -139,6 +165,8 @@ export default function SellerPublicProfile({
                   {followed ? 'Siguiendo' : 'Seguir vendedor'}
                 </button>}
                 {followMessage && <p role="status" aria-live="polite" aria-atomic="true" className="mt-2 text-[8px] leading-4 text-amber-200">{followMessage}</p>}
+                {canReportUser && <button type="button" disabled={reportBusy} onClick={() => void reportUser()} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-rose-300/10 bg-rose-400/[0.04] px-3 py-2 text-[9px] font-bold text-rose-200 disabled:opacity-50" aria-label="Reportar usuario"><Flag className="h-3.5 w-3.5" />{reportBusy ? 'Enviando reporte…' : 'Reportar usuario'}</button>}
+                {reportMessage && <p role="status" aria-live="polite" aria-atomic="true" className="mt-2 text-[9px] leading-4 text-amber-200">{reportMessage}</p>}
               </div>
             </div>
 
