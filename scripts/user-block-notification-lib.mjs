@@ -17,3 +17,17 @@ export async function shouldSuppressBlockedDirectNotification(notification, chat
   if (pair.deny) return true;
   return Boolean(await isBlockedEdge(pair.buyer,pair.seller) || await isBlockedEdge(pair.seller,pair.buyer));
 }
+
+export async function resolveDirectNotificationChat(notification, knownChats, fetchChat) {
+  if (!PRIVATE_KINDS.has(String(notification?.kind || ''))) return null;
+  const id = String(notification?.chat_id || '').trim();
+  if (!id || id.includes('/')) return null;
+  const known = knownChats.get(id);
+  if (known) return known;
+  const resolved = await fetchChat(id);
+  if (resolved?.id === id) {
+    knownChats.set(id, resolved);
+    return resolved;
+  }
+  return null;
+}
