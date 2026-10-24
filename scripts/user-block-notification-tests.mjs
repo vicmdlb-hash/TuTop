@@ -44,5 +44,7 @@ assert.match(projector,/resolveDirectNotificationChat/);
 assert.match(projector,/getChatById/);
 assert.doesNotMatch(projector,/blockEdgeCache/);
 assert.match(sender,/if \(await blockedDirectOutbox\(item\)\)/);
+assert.doesNotMatch(sender,/blockEdgeCache/);
+assert.match(sender,/await documentOrNull\(`user_blocks/);
 assert.match(sender,/if \(!\['new_message','offer_received','counter_offer','offer_accepted'\]/);
 console.log('PASS bidirectional direct-message/offer block suppression in projector and FCM sender; transactional notifications remain independent');
