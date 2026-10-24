@@ -1,5 +1,5 @@
 import { adminDeleteDocument, adminDeleteTestUsers, adminAssertAuthUserAbsent, adminGetDocument, adminListDocuments, adminPatchDocument, adminCommitAccountErasureCompletion, adminRunQueryAll, adminRunCollectionGroupQueryAll } from './staging-v2-admin.mjs';
-import { buildAccountErasurePlan } from './account-erasure-planner.mjs';
+import { buildAccountErasurePlan, residualRiskSummary } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const REQUIRED = 'tutop-beta-vicmdlb-1356585881';
@@ -127,10 +127,17 @@ const blockers = [...transactionDocs.values()]
   .filter((item) => !terminalStatuses.has(item.status));
 
 const plan = buildAccountErasurePlan({ projectId, uid, status, apply, directDeletes, queryDeletePaths, withdrawDocs, retained, blockers });
-console.log(JSON.stringify(plan, null, 2));
+// A dry-run may inspect real UIDs, messages, paths, and transaction IDs.
+// Never print a raw erasure plan into CI logs (also used by staging smoke).
+console.log(JSON.stringify({
+  mode: plan.mode,
+  request_status: plan.request_status,
+  ...residualRiskSummary(plan),
+  auth_delete_last: plan.auth_delete_last,
+}, null, 2));
 
 if (plan.blocked) {
-  if (apply) throw new Error(`ACCOUNT_ERASURE_BLOCKED:${plan.blockers.map((item) => `${item.id}:${item.status}`).join(',')}`);
+  if (apply) throw new Error('ACCOUNT_ERASURE_BLOCKED_ACTIVE_OPERATION');
   console.log('DRY-RUN BLOQUEADO: existen operaciones activas; no se modificó Firestore/Auth.');
   process.exit(0);
 }
@@ -163,7 +170,7 @@ await adminDeleteDocument(`users/${uid}`);
 // después de las mutaciones para evitar declarar completion por una primera
 // página incompleta.
 for (const path of [...directDeletes, `users/${uid}`]) {
-  if (await adminGetDocument(path)) throw new Error(`ACCOUNT_ERASURE_DIRECT_RESIDUAL:${path}`);
+  if (await adminGetDocument(path)) throw new Error('ACCOUNT_ERASURE_DIRECT_RESIDUAL');
 }
 // Independent post-delete readback: no outbound OR inbound UID references.
 const remainingOutgoingBlocks = await adminListDocuments(`user_blocks/${uid}/targets`, 500);
@@ -214,4 +221,4 @@ await adminCommitAccountErasureCompletion(uid, processorRunId, {
   created_at: completedAt,
 });
 
-console.log(`✅ Eliminación controlada staging completada para ${uid}. Datos operativos retenidos: ${plan.retained_count}. Run: ${processorRunId}.`);
+console.log(`✅ Eliminación controlada staging completada; registros operativos retenidos: ${plan.retained_count}. Identidades y rutas omitidas del log.`);
