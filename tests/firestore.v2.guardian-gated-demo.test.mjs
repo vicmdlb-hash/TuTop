@@ -2,7 +2,7 @@ import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import { doc, deleteDoc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
 
 // DEMO PROJECT ONLY: this is a migration/security probe, not deployed policy.
 // Exact current app rule generation is transformed into separate proof-gated
@@ -81,8 +81,9 @@ test('isolated age proof gate accepts a server-issued adult claim and rejects re
   await assertSucceeds(setDoc(doc(buyer, 'guardian_demo_probe/buyer'), { signal: 'adult-ok' }));
   await env.withSecurityRulesDisabled(async (ctx) => {
     await updateDoc(doc(ctx.firestore(), 'age_proofs_v2/buyer'), { revoked: true });
+    await deleteDoc(doc(ctx.firestore(), 'guardian_demo_probe/buyer'));
   });
-  await assertFails(setDoc(doc(buyer, 'guardian_demo_probe/buyer-revoked'), { signal: 'no' }));
+  await assertFails(setDoc(doc(buyer, 'guardian_demo_probe/buyer'), { signal: 'revoked-must-deny' }));
 });
 
 test('unknown or missing age proof cannot establish a chat', async () => {
