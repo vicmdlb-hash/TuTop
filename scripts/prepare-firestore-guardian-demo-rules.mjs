@@ -84,8 +84,12 @@ function guardSection(start, end, old, guard, name) {
   // restrict the mutation to the first target match body, never a neighbour.
   const nextRoot = section.indexOf('\n    match /', start.length);
   const scoped = nextRoot < 0 ? section : section.slice(0, nextRoot);
-  exactlyOne(scoped, old, name);
-  const guarded = scoped.replace(old, old.replace(/^(allow (?:create|update): if [^\n]+)/, '$1 && ' + guard));
+  // Some generated transactions contain separate update alternatives. Guard
+  // every matching allow statement, not just the first one (OR semantics).
+  const matches = scoped.split(old).length - 1;
+  if (matches < 1 || matches > 6) throw new Error('GUARDIAN_DEMO_WRITE_DRIFT ' + name + ': ' + matches);
+  const safeStatement = old.replace(/^(allow (?:create|update): if [^\n]+)/, '$1 && ' + guard);
+  const guarded = scoped.split(old).join(safeStatement);
   rules = rules.slice(0, first) + guarded + section.slice(scoped.length) + rules.slice(last);
 }
 
