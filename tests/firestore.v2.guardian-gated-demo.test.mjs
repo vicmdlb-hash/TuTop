@@ -75,6 +75,16 @@ async function seedChat() {
     setDoc(doc(ctx.firestore(), 'chats/chat-buyer-listing'), chat()));
 }
 
+test('isolated age proof gate accepts a server-issued adult claim and rejects revoked claim', async () => {
+  await seed('adult');
+  const buyer = verifiedContext(env, 'buyer').firestore();
+  await assertSucceeds(setDoc(doc(buyer, 'guardian_demo_probe/buyer'), { signal: 'adult-ok' }));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'age_proofs_v2/buyer'), { revoked: true });
+  });
+  await assertFails(setDoc(doc(buyer, 'guardian_demo_probe/buyer-revoked'), { signal: 'no' }));
+});
+
 test('unknown or missing age proof cannot establish a chat', async () => {
   await seed(null);
   await assertFails(createChat(verifiedContext(env, 'buyer').firestore()));
