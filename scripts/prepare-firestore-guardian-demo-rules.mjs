@@ -68,17 +68,29 @@ const helpers = `
     // The client chat create allowlist excludes these fields; client updates
     // cannot touch them. A trusted backend MUST issue and revoke them.
     // This does not yet validate that service or its revocation propagation.
-    function guardianChatReady(chatId) {
-      let chat = chatDoc(chatId).data;
+    function guardianPairReady(chat) {
       return chat.keys().hasAll([
-          'buyer_id','seller_id','guardian_pair_vetted','guardian_pair_expires_at','guardian_pair_revoked'
+          'buyer_id','seller_id','participants',
+          'guardian_pair_vetted','guardian_pair_issued_at',
+          'guardian_pair_expires_at','guardian_pair_revoked'
         ])
         && chat.guardian_pair_vetted == true
         && chat.guardian_pair_revoked == false
+        && chat.guardian_pair_issued_at is timestamp
+        && chat.guardian_pair_issued_at <= request.time
         && chat.guardian_pair_expires_at is timestamp
         && chat.guardian_pair_expires_at > request.time
+        // No cached permission can outlive five minutes without trusted refresh.
+        // This bounds stale authorization; it is NOT instant revocation.
+        && chat.guardian_pair_expires_at <= chat.guardian_pair_issued_at + duration.value(5, 'm')
+        && chat.buyer_id is string && chat.seller_id is string
         && chat.buyer_id != chat.seller_id
+        && chat.participants is list
+        && chat.participants.size() == 2
         && chat.participants.hasAll([chat.buyer_id, chat.seller_id]);
+    }
+    function guardianChatReady(chatId) {
+      return guardianPairReady(chatDoc(chatId).data);
     }
     function guardianCanPublish(uid) {
       return guardianVerifiedAge(uid)
@@ -118,7 +130,7 @@ guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} 
   'chat create');
 guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
   'allow update: if participant(chatId) && notSuspended()',
-  'guardianAdultOrTeen(request.auth.uid) && guardianAdultOrTeen(resource.data.buyer_id) && guardianAdultOrTeen(resource.data.seller_id)',
+  'guardianPairReady(resource.data)',
   'chat update');
 guardSection('      match /messages/{messageId} {', '      match /confirmations/{uid} {',
   'allow create: if participant(chatId) && notSuspended()',
