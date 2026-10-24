@@ -29,6 +29,8 @@ beforeEach(async () => env.clearFirestore());
 const now = () => Timestamp.now();
 const future = () => Timestamp.fromMillis(Date.now() + 60 * 60_000);
 const past = () => Timestamp.fromMillis(Date.now() - 60_000);
+const recent = () => Timestamp.fromMillis(Date.now() - 15_000);
+const pairFuture = () => Timestamp.fromMillis(Date.now() + 2 * 60_000);
 const age = (uid, band, extras = {}) => ({
   subjectUid: uid, band, issuer: 'trusted_server', revoked: false, expires_at: future(), ...extras,
 });
@@ -78,18 +80,21 @@ const createOffer = (db) => countedWrite(db, 'offer_create', batch => {
     expires_at: future(), created_at: now(), updated_at: now(),
   });
 });
-const createMessage = (db) => countedWrite(db, 'message_create', batch => {
-  batch.set(doc(db, 'chats/chat-buyer-listing/messages/m1'), {
+const createMessage = (db, messageId = 'm1') => countedWrite(db, 'message_create', batch => {
+  batch.set(doc(db, 'chats/chat-buyer-listing/messages/' + messageId), {
     sender_id: 'buyer', text: 'Hola', created_at: now(),
   });
 });
-async function seedChat({ vetted = false, revoked = false, expiresAt = future() } = {}) {
+async function seedChat({
+  vetted = false, revoked = false, expiresAt = pairFuture(), issuedAt = recent(),
+} = {}) {
   await env.withSecurityRulesDisabled(async (ctx) =>
     setDoc(doc(ctx.firestore(), 'chats/chat-buyer-listing'), {
       ...chat(),
       ...(vetted ? {
         guardian_pair_vetted: true,
         guardian_pair_revoked: revoked,
+        guardian_pair_issued_at: issuedAt,
         guardian_pair_expires_at: expiresAt,
       } : {}),
     }));
@@ -151,6 +156,10 @@ test('unvetted, expired and revoked pair permissions fail closed for an adult', 
   await assertFails(createMessage(buyer));
   await seedChat({ vetted: true, revoked: true });
   await assertFails(createMessage(buyer));
+  await seedChat({ vetted: true, expiresAt: future() });
+  await assertFails(createMessage(buyer)); // trusted mint must not exceed five minutes
+  await seedChat({ vetted: true, issuedAt: future() });
+  await assertFails(createMessage(buyer)); // future-dated mint is not yet valid
 });
 
 test('client cannot forge server-managed pair authorization on an existing chat', async () => {
@@ -160,6 +169,44 @@ test('client cannot forge server-managed pair authorization on an existing chat'
   await assertFails(updateDoc(doc(buyer, 'chats/chat-buyer-listing'), {
     guardian_pair_vetted: true, guardian_pair_revoked: false,
     guardian_pair_expires_at: future(), updated_at: now(),
+  }));
+});
+
+test('server atomic revocation of age and chat clearance shuts down an active thread', async () => {
+  await seed('adult');
+  await seedChat({ vetted: true });
+  const buyer = verifiedContext(env, 'buyer').firestore();
+  await assertSucceeds(createMessage(buyer, 'before-revocation'));
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'age_proofs_v2/buyer'), { revoked: true });
+    batch.update(doc(db, 'chats/chat-buyer-listing'), {
+      guardian_pair_revoked: true, guardian_pair_expires_at: past(),
+    });
+    // Synthetic test accounting resets only to isolate the access decision.
+    batch.delete(doc(db, 'rate_limits/buyer-message_create'));
+    await batch.commit();
+  });
+  await assertFails(createMessage(buyer, 'after-revocation'));
+  await assertFails(updateDoc(doc(buyer, 'chats/chat-buyer-listing'), {
+    last_message: 'Must not proceed', last_message_at: now(), updated_at: now(),
+  }));
+});
+
+test('revoked or expired chat clearance blocks last-message updates as well as new messages', async () => {
+  await seed('adult');
+  await seedChat({ vetted: true });
+  const buyer = verifiedContext(env, 'buyer').firestore();
+  await assertSucceeds(updateDoc(doc(buyer, 'chats/chat-buyer-listing'), {
+    last_message: 'Authorised', last_message_at: now(), updated_at: now(),
+  }));
+  await env.withSecurityRulesDisabled(async (ctx) =>
+    updateDoc(doc(ctx.firestore(), 'chats/chat-buyer-listing'), {
+      guardian_pair_revoked: true,
+    }));
+  await assertFails(updateDoc(doc(buyer, 'chats/chat-buyer-listing'), {
+    last_message: 'Revoked', last_message_at: now(), updated_at: now(),
   }));
 });
 
