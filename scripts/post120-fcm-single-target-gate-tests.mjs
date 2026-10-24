@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { currentTokenOwnerRecords, eligibleRecipientTargets } from './fcm-token-ownership-lib.mjs';
 import {
   PHYSICAL_QA_FCM_APPLY_ACK,
   loadActivePhysicalQaFcmAuthority,
@@ -76,6 +77,19 @@ assert.throws(() => selectExactPhysicalTarget([
   { id: good.deviceTokenRecordId },
   { id: good.deviceTokenRecordId },
 ], good.deviceTokenRecordId), /FCM_EXACT_DEVICE_TOKEN_RECORD_REQUIRED/);
+
+// Validate owner-only selection with synthetic status and timestamp records.
+const synthetic = (id, owner_uid, active, updated_at) => ({
+  id, token: 'example-record', owner_uid, active, updated_at,
+});
+const activeRecord = synthetic('recent', 'beta', true, '2026-10-24T10:00:00Z');
+const priorRecord = synthetic('prior', 'alpha', true, '2026-10-23T10:00:00Z');
+assert.deepEqual(eligibleRecipientTargets([priorRecord, activeRecord], 'alpha'), []);
+assert.deepEqual(eligibleRecipientTargets([priorRecord, activeRecord], 'beta').map(x => x.id), ['recent']);
+assert.deepEqual(currentTokenOwnerRecords([priorRecord, { ...activeRecord, active: false }]), []);
+assert.deepEqual(currentTokenOwnerRecords([priorRecord, { ...activeRecord, active: 'false' }]), []);
+assert.deepEqual(currentTokenOwnerRecords([priorRecord, { ...activeRecord, updated_at: '' }]), [priorRecord]);
+assert.deepEqual(currentTokenOwnerRecords([activeRecord, { ...activeRecord, id: 'conflict', active: false }]), []);
 
 // Default authority always rejects the historical disabled candidate.
 assert.throws(() => loadActivePhysicalQaFcmAuthority(), /FCM_ACTIVE_CANDIDATE_REQUIRED/);
