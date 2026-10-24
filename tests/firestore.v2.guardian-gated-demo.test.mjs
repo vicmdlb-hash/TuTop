@@ -43,6 +43,12 @@ async function seed(buyerAge = null, sellerAge = 'adult', buyerGrant = null) {
     await setDoc(doc(db, 'users/buyer'), { uid: 'buyer', institution_id: 'uatx', campus_id: 'uatx-riberena', nombre: 'Buyer' });
     await setDoc(doc(db, 'users/seller'), { uid: 'seller', institution_id: 'uatx', campus_id: 'uatx-riberena', nombre: 'Seller' });
     await setDoc(doc(db, 'products/listing'), { vendedor_id: 'seller', estado: 'Activo' });
+    // The actual generated chat/offer rules use canonical listings_v2,
+    // not just the historical products collection.
+    await setDoc(doc(db, 'listings_v2/listing'), {
+      schema_version: 2, seller_id: 'seller', status: 'active',
+      moderation_status: 'approved',
+    });
     if (buyerAge) await setDoc(doc(db, 'age_proofs_v2/buyer'), age('buyer', buyerAge));
     if (sellerAge) await setDoc(doc(db, 'age_proofs_v2/seller'), age('seller', sellerAge));
     if (buyerGrant) await setDoc(doc(db, 'guardian_grants_v2/buyer'), buyerGrant);
