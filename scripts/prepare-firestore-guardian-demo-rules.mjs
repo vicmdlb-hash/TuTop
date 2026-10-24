@@ -133,8 +133,8 @@ guardSection('    match /listings_v2/{listingId} {', '    match /offers/{offerId
 // Read old conversations only when their server-vetted pair grant is live.
 // Moderator access remains explicitly separate for abuse/safety review.
 guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
-  'allow read: if signedIn() && (request.auth.uid in resource.data.participants || isAdmin())',
-  '(isAdmin() || guardianPairReady(resource.data))', 'chat read');
+  'allow read: if signedIn() && (request.auth.uid in resource.data.participants || canReadCommercePrivate())',
+  '(canReadCommercePrivate() || guardianPairReady(resource.data))', 'chat read');
 guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
   'allow create: if signedIn() && notSuspended()',
   'guardianAdultOrTeen(request.auth.uid) && guardianAdultOrTeen(request.resource.data.seller_id)',
@@ -144,8 +144,8 @@ guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} 
   'guardianPairReady(resource.data)',
   'chat update');
 guardSection('      match /messages/{messageId} {', '      match /confirmations/{uid} {',
-  'allow read: if participant(chatId) || isAdmin()',
-  '(isAdmin() || guardianChatReady(chatId))', 'message read');
+  'allow read: if participant(chatId) || canReadCommercePrivate()',
+  '(canReadCommercePrivate() || guardianChatReady(chatId))', 'message read');
 guardSection('      match /messages/{messageId} {', '      match /confirmations/{uid} {',
   'allow create: if participant(chatId) && notSuspended()',
   'guardianChatReady(chatId)',
@@ -153,14 +153,14 @@ guardSection('      match /messages/{messageId} {', '      match /confirmations/
 // Reads of chat receipts remain private after a chat is revoked; writes of
 // delivery confirmations and read status must also require an active grant.
 guardSection('      match /confirmations/{uid} {', '      match /reads/{uid} {',
-  'allow read: if participant(chatId) || isAdmin()',
-  '(isAdmin() || guardianChatReady(chatId))', 'confirmation read');
+  'allow read: if participant(chatId) || canReadCommercePrivate()',
+  '(canReadCommercePrivate() || guardianChatReady(chatId))', 'confirmation read');
 guardSection('      match /confirmations/{uid} {', '      match /reads/{uid} {',
   'allow create: if participant(chatId) && owner(uid) && notSuspended()',
   'guardianChatReady(chatId)', 'confirmation create');
 guardSection('      match /reads/{uid} {', '    match /listings_v2/{listingId} {',
-  'allow read: if participant(chatId) || isAdmin()',
-  '(isAdmin() || guardianChatReady(chatId))', 'read receipt read');
+  'allow read: if participant(chatId) || canReadCommercePrivate()',
+  '(canReadCommercePrivate() || guardianChatReady(chatId))', 'read receipt read');
 guardSection('      match /reads/{uid} {', '    match /listings_v2/{listingId} {',
   'allow create, update: if participant(chatId) && owner(uid) && notSuspended()',
   'guardianChatReady(chatId)', 'read receipt writes');
