@@ -29,6 +29,9 @@ export function currentTokenOwnerRecords(records = []) {
 
   const current = [];
   for (const [token, list] of groups) {
+    // A malformed row on a device cannot safely prove an older owner is still
+    // current. Refuse selection and auto-cleanup instead of reviving that row.
+    if (list.some(row => recordTime(row) <= 0 || typeof row.active !== 'boolean')) continue;
     const ranked = [...list].sort((a, b) => {
       const byTime = recordTime(b) - recordTime(a);
       if (byTime) return byTime;
@@ -74,6 +77,9 @@ export function supersededActiveTokenRecords(records = []) {
 
   const stale = [];
   for (const [token, list] of groups) {
+    // A malformed row on a device cannot safely prove an older owner is still
+    // current. Refuse selection and auto-cleanup instead of reviving that row.
+    if (list.some(row => recordTime(row) <= 0 || typeof row.active !== 'boolean')) continue;
     const ranked = [...list].sort((a, b) => {
       const byTime = recordTime(b) - recordTime(a);
       if (byTime) return byTime;
