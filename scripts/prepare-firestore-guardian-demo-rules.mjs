@@ -81,7 +81,7 @@ function guardSection(start, end, old, guard, name) {
   }
   const section = rules.slice(first, last);
   exactlyOne(section, old, name);
-  rules = rules.slice(0, first) + section.replace(old, old + ' && ' + guard) + rules.slice(last);
+  rules = rules.slice(0, first) + section.replace(old, old.replace(/^(allow (?:create|update): if [^\n]+)/, '$1 && ' + guard)) + rules.slice(last);
 }
 
 guardSection('    match /listings_v2/{listingId} {', '    match /offers/{offerId} {',
@@ -108,11 +108,11 @@ guardSection('    match /offers/{offerId} {', '    match /transactions_v2/{trans
   'guardianAdultOrTeen(resource.data.buyer_id) && guardianAdultOrTeen(resource.data.seller_id)',
   'offer update');
 guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_requests/{requestId} {',
-  'allow create: if signedIn() && notSuspended()',
+  "allow create: if signedIn() && notSuspended()\\n        && request.resource.data.keys().hasOnly(['listing_id','chat_id'",
   'guardianAdultOrTeen(request.resource.data.buyer_id) && guardianAdultOrTeen(request.resource.data.seller_id)',
   'transaction create');
 guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_requests/{requestId} {',
-  'allow update: if signedIn() && notSuspended()',
+  "allow update: if signedIn() && notSuspended()\\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]",
   'guardianAdultOrTeen(resource.data.buyer_id) && guardianAdultOrTeen(resource.data.seller_id)',
   'transaction update');
 
