@@ -66,7 +66,7 @@ jobs:
           --config firebase.v2.json
           --project demo-tutop-post120-rules
           "TUTOP_GUARDIAN_TEST_RULESET=baseline node --test --test-concurrency=1
-          --test-name-pattern='adult and teen verified accounts|verified adult with active adult recipient'
+          --test-name-pattern='adult and teen verified accounts|verified adult with server-vetted active recipient'
           tests/firestore.v2.guardian-gated-demo.test.mjs"
 
       - name: Guardian capability rules emulator challenge (demo only)
