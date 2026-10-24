@@ -30,10 +30,14 @@ denied(check('publish_listing', 'under_13', { guardian: guardian(['publish_listi
 denied(check('publish_listing', 'under_13', { guardian: guardian(['browse_approved']) }), 'guardian_missing');
 assert.equal(check('publish_listing', 'under_13', { guardian: guardian(['publish_listing']) }).allowed, true);
 denied(check('direct_chat', 'under_13', { guardian: guardian(['direct_chat']) }), 'age_restricted');
-denied(check('share_personal_info', 'under_13', { guardian: guardian(['share_personal_info']), adultActionForPersonalInfo: true }), 'age_restricted');
+denied(check('share_personal_info', 'under_13', { guardian: guardian(['share_personal_info']), adultAction: { subjectUid: 'child', actorUid: 'guardian', capability: 'share_personal_info', issuer: 'trusted_server', authorized: true, expiresAtMs: nowMs + 60_000 } }), 'age_restricted');
 denied(check('precise_location', 'under_13', { guardian: guardian(['precise_location']) }), 'age_restricted');
 assert.equal(check('direct_chat', 'teen_13_17').allowed, true);
 denied(check('share_personal_info', 'teen_13_17'), 'requires_guardian_action');
+denied(check('share_personal_info', 'teen_13_17', { adultAction: {
+  subjectUid: 'other', actorUid: 'guardian', capability: 'share_personal_info',
+  issuer: 'trusted_server', authorized: true, expiresAtMs: nowMs + 60_000,
+} }), 'requires_guardian_action');
 assert.equal(check('share_personal_info', 'teen_13_17', { adultActionForPersonalInfo: true }).allowed, true);
 denied(check('precise_location', 'teen_13_17'), 'age_restricted');
 denied(check('topi_generative', 'adult'), 'topi_runtime_unapproved');
@@ -43,4 +47,4 @@ assert.equal(check('topi_generative', 'under_13', {
   guardian: guardian(['topi_generative']),
   topi: { approved: true, issuer: 'trusted_server', audience: 'all_ages' },
 }).allowed, true);
-console.log('PASS 21 all-ages capability decisions (source contract only; backend enforcement pending)');
+console.log('PASS 22 all-ages capability decisions (source contract only; backend enforcement pending)');
