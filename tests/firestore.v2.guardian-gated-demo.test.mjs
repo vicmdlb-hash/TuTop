@@ -10,7 +10,14 @@ import { doc, deleteDoc, setDoc, updateDoc, Timestamp, writeBatch } from 'fireba
 if (process.env.GCLOUD_PROJECT !== 'demo-tutop-post120-rules') {
   throw new Error('GUARDIAN_DEMO_PROJECT_ONLY');
 }
-const rules = fs.readFileSync('firebase/firestore.v2.guardian-demo.rules', 'utf8');
+const ruleset = process.env.TUTOP_GUARDIAN_TEST_RULESET || 'guardian-demo';
+if (!['guardian-demo', 'baseline'].includes(ruleset)) {
+  throw new Error('INVALID_GUARDIAN_TEST_RULESET');
+}
+const rulesPath = ruleset === 'baseline'
+  ? 'firebase/firestore.v2.generated.rules'
+  : 'firebase/firestore.v2.guardian-demo.rules';
+const rules = fs.readFileSync(rulesPath, 'utf8');
 const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
 const [hostname, portRaw] = host.split(':');
 const env = await initializeTestEnvironment({
