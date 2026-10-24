@@ -59,6 +59,14 @@ jobs:
       - name: Prepare independent guardian migration demo rules (no staging/prod)
         run: node scripts/prepare-firestore-guardian-demo-rules.mjs
 
+      - name: Guardian capability rules emulator challenge (demo only)
+        run: >
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore,storage
+          --config firebase.guardian-demo.json
+          --project demo-tutop-post120-rules
+          "node --test --test-concurrency=1 tests/firestore.v2.guardian-gated-demo.test.mjs"
+
       - name: Firestore + Storage emulator security suite
         run: >
           npx --yes firebase-tools@15.29.0 emulators:exec
@@ -86,14 +94,6 @@ jobs:
           tests/firestore.v2.seller-follows.test.mjs
           tests/firestore.v2.user-blocks.test.mjs
           tests/storage.rules.test.mjs"
-
-      - name: Guardian capability rules emulator challenge (demo only)
-        run: >
-          npx --yes firebase-tools@15.29.0 emulators:exec
-          --only firestore,storage
-          --config firebase.guardian-demo.json
-          --project demo-tutop-post120-rules
-          "node --test --test-concurrency=1 tests/firestore.v2.guardian-gated-demo.test.mjs"
 
       - name: Final dependency immutability check
         if: always()
