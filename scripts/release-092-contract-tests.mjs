@@ -103,7 +103,8 @@ assert.match(nativeDevice, /permissions: \['coarseLocation'\]/);
 
 assert.match(nativeAI, /gemini-3\.8-flash/);
 assert.match(nativeAI, /gemini-3\.5-flash-lite/);
-assert.match(nativeAI, /isPrivatePhysicalQaBuild/);
+assert.match(nativeAI, /function appCheckRequired\(\)/);
+assert.doesNotMatch(nativeAI, /isPrivatePhysicalQaBuild/);
 assert.match(appCheck, /play-integrity/);
 assert.doesNotMatch(appCheck, /debugToken:\s*['"][A-Za-z0-9_-]{12,}['"]/);
 
