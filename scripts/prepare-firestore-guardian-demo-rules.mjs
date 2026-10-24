@@ -122,7 +122,12 @@ function guardSection(start, end, old, guard, name) {
   // every matching allow statement, not just the first one (OR semantics).
   const matches = scoped.split(old).length - 1;
   if (matches < 1 || matches > 6) throw new Error('GUARDIAN_DEMO_WRITE_DRIFT ' + name + ': ' + matches);
-  const safeStatement = old.replace(/^(allow (?:create|update|read|create, update): if [^\n]+)/, '$1 && ' + guard);
+  // Wrap the WHOLE original predicate before AND-ing a guardian check.
+  // Without parentheses, "participant || moderator && guardian" would let
+  // participants bypass revocation because && binds tighter than ||.
+  const parsed = old.match(/^(allow (?:create|update|read|create, update): if )([^\n]+)$/);
+  if (!parsed) throw new Error('GUARDIAN_DEMO_UNSAFE_PREDICATE ' + name);
+  const safeStatement = parsed[1] + '(' + parsed[2] + ') && (' + guard + ')';
   const guarded = scoped.split(old).join(safeStatement);
   rules = rules.slice(0, first) + guarded + section.slice(scoped.length) + rules.slice(last);
 }
