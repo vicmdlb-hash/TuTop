@@ -59,6 +59,16 @@ jobs:
       - name: Prepare independent guardian migration demo rules (no staging/prod)
         run: node scripts/prepare-firestore-guardian-demo-rules.mjs
 
+      - name: Differential baseline for identical positive chat and message fixtures
+        run: >
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore,storage
+          --config firebase.v2.json
+          --project demo-tutop-post120-rules
+          "TUTOP_GUARDIAN_TEST_RULESET=baseline node --test --test-concurrency=1
+          --test-name-pattern='adult and teen verified accounts|verified adult with active adult recipient'
+          tests/firestore.v2.guardian-gated-demo.test.mjs"
+
       - name: Guardian capability rules emulator challenge (demo only)
         run: >
           npx --yes firebase-tools@15.29.0 emulators:exec
