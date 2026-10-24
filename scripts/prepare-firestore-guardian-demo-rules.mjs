@@ -106,7 +106,7 @@ guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} 
   'chat update');
 guardSection('      match /messages/{messageId} {', '      match /confirmations/{uid} {',
   'allow create: if participant(chatId) && notSuspended()',
-  'guardianAdultOrTeen(request.auth.uid) && guardianAdultOrTeen(chatDoc(chatId).data.buyer_id) && guardianAdultOrTeen(chatDoc(chatId).data.seller_id)',
+  'guardianAdultOrTeen(chatDoc(chatId).data.buyer_id) && guardianAdultOrTeen(chatDoc(chatId).data.seller_id)',
   'message create');
 guardSection('    match /offers/{offerId} {', '    match /transactions_v2/{transactionId} {',
   'allow create: if signedIn() && notSuspended()',
