@@ -75,7 +75,7 @@ jobs:
           --only firestore,storage
           --config firebase.guardian-demo.json
           --project demo-tutop-post120-rules
-          "node --test --test-concurrency=1 tests/firestore.v2.guardian-gated-demo.test.mjs"
+          "node --test --test-concurrency=1 tests/firestore.v2.guardian-gated-demo.test.mjs tests/firestore.v2.guardian-publication-demo.test.mjs"
 
       - name: Firestore + Storage emulator security suite
         run: >
