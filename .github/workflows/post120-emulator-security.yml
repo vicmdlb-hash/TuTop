@@ -80,6 +80,7 @@ jobs:
           tests/firestore.v2.private-admin-reads.test.mjs
           tests/firestore.v2.publication-profile-coupling.test.mjs
           tests/firestore.v2.seller-follows.test.mjs
+          tests/firestore.v2.user-blocks.test.mjs
           tests/storage.rules.test.mjs"
 
       - name: Final dependency immutability check
