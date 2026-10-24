@@ -7,6 +7,7 @@ function compile(source, names, bindings={}) {
  const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'').replace(/import.meta.env/g,'ENV')).replace(/\bexport /g,'');
  return new Function(...Object.keys(bindings),js+';return {'+names.join(',')+'};')(...Object.values(bindings));
 }
+const { topiRemoteProviderAudienceGate } = compile(read('src/lib/topiAllAgesProviderGate.ts'), ['topiRemoteProviderAudienceGate']);
 const never=()=>new Promise(()=>{});
 async function bounded(promise) {
  let timer; try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('test watchdog: operation never settled')),100);})]);}finally{clearTimeout(timer);}
@@ -28,16 +29,16 @@ const tests=[
   let attempts=0; const {check}=appCheckHarness({initialize:async()=>{if(++attempts===1)throw new Error('cold start');},getToken:async()=>({token:'test-token'})});
   assert.equal(await check.getNativeAppCheckToken(),null); assert.equal(await check.getNativeAppCheckToken(),'test-token');
  }],
- ['private QA AI reaches native provider after unavailable attestation',async()=>{
+ ['private QA AI also denies remote calls without attestation',async()=>{
   const h=appCheckHarness({initialize:async()=>{},getToken:never}); let generated=0;
   h.window.Capacitor.registerPlugin=name=>name==='TuTopAI'?{generate:async()=>{generated++;return {text:'provider fixture'};}}:{initialize:async()=>{},getToken:never};
-  const ai=compile(read('src/services/nativeTopiAI.ts'),['generateNativeTopiText'],{window:h.window,ENV:h.ENV,...h.check,recordDiagnostic:()=>{}});
-  assert.equal((await bounded(ai.generateNativeTopiText('test prompt')))?.provider,'firebase-ai-logic'); assert.equal(generated,1);
+  const ai=compile(read('src/services/nativeTopiAI.ts'),['generateNativeTopiText'],{window:h.window,ENV:h.ENV,...h.check,topiRemoteProviderAudienceGate,recordDiagnostic:()=>{}});
+  assert.equal(await bounded(ai.generateNativeTopiText('test prompt')),null); assert.equal(generated,0);
  }],
  ['production AI stays fail closed without attestation',async()=>{
   const h=appCheckHarness({initialize:async()=>{},getToken:never},false); let generated=0;
   h.window.Capacitor.registerPlugin=name=>name==='TuTopAI'?{generate:async()=>{generated++;return {text:'bad'};}}:{initialize:async()=>{},getToken:never};
-  const ai=compile(read('src/services/nativeTopiAI.ts'),['generateNativeTopiText'],{window:h.window,ENV:h.ENV,...h.check,recordDiagnostic:()=>{}});
+  const ai=compile(read('src/services/nativeTopiAI.ts'),['generateNativeTopiText'],{window:h.window,ENV:h.ENV,...h.check,topiRemoteProviderAudienceGate,recordDiagnostic:()=>{}});
   assert.equal(await bounded(ai.generateNativeTopiText('test prompt')),null); assert.equal(generated,0);
  }],
  ['location watch is removed when callback precedes watch id',async()=>{

@@ -1,5 +1,5 @@
-import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminListDocuments, adminPatchDocument, adminRunQueryAll } from './staging-v2-admin.mjs';
-import { buildAccountErasurePlan } from './account-erasure-planner.mjs';
+import { adminDeleteDocument, adminDeleteTestUsers, adminAssertAuthUserAbsent, adminGetDocument, adminListDocuments, adminPatchDocument, adminCommitAccountErasureCompletion, adminRunQueryAll, adminRunCollectionGroupQueryAll } from './staging-v2-admin.mjs';
+import { buildAccountErasurePlan, residualRiskSummary } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const REQUIRED = 'tutop-beta-vicmdlb-1356585881';
@@ -59,6 +59,26 @@ for (const [collection, field] of queryDeletes) {
   for (const doc of await adminRunQueryAll(collection, [{ field, value: uid }], 500)) queryDeletePaths.push(doc.path);
 }
 
+// A block edge can identify the erased account either as owner or as target.
+// Parent document deletion does not cascade into Firestore subcollections.
+const outgoingBlocks = await adminListDocuments(`user_blocks/${uid}/targets`, 500);
+const incomingBlocks = await adminRunCollectionGroupQueryAll('targets', [{ field: 'blocked_uid', value: uid }], 500);
+const blockPaths = new Set();
+for (const edge of [...outgoingBlocks, ...incomingBlocks]) {
+  const path = String(edge.path || '');
+  const parts = path.split('/');
+  if (parts.length !== 4 || parts[0] !== 'user_blocks' || parts[2] !== 'targets') {
+    throw new Error('ACCOUNT_ERASURE_BLOCK_PATH_INVALID');
+  }
+  const blockerUid = parts[1], blockedUid = parts[3];
+  if (blockerUid !== uid && blockedUid !== uid) throw new Error('ACCOUNT_ERASURE_BLOCK_NOT_RELATED');
+  if (fieldString(edge, 'blocker_uid') !== blockerUid || fieldString(edge, 'blocked_uid') !== blockedUid) {
+    throw new Error('ACCOUNT_ERASURE_BLOCK_EDGE_MISMATCH');
+  }
+  blockPaths.add(path);
+}
+queryDeletePaths.push(...blockPaths);
+
 const withdrawDocs = [];
 for (const [collection, field] of withdrawals) {
   for (const doc of await adminRunQueryAll(collection, [{ field, value: uid }], 500)) withdrawDocs.push({ collection, path: doc.path });
@@ -107,10 +127,17 @@ const blockers = [...transactionDocs.values()]
   .filter((item) => !terminalStatuses.has(item.status));
 
 const plan = buildAccountErasurePlan({ projectId, uid, status, apply, directDeletes, queryDeletePaths, withdrawDocs, retained, blockers });
-console.log(JSON.stringify(plan, null, 2));
+// A dry-run may inspect real UIDs, messages, paths, and transaction IDs.
+// Never print a raw erasure plan into CI logs (also used by staging smoke).
+console.log(JSON.stringify({
+  mode: plan.mode,
+  request_status: plan.request_status,
+  ...residualRiskSummary(plan),
+  auth_delete_last: plan.auth_delete_last,
+}, null, 2));
 
 if (plan.blocked) {
-  if (apply) throw new Error(`ACCOUNT_ERASURE_BLOCKED:${plan.blockers.map((item) => `${item.id}:${item.status}`).join(',')}`);
+  if (apply) throw new Error('ACCOUNT_ERASURE_BLOCKED_ACTIVE_OPERATION');
   console.log('DRY-RUN BLOQUEADO: existen operaciones activas; no se modificó Firestore/Auth.');
   process.exit(0);
 }
@@ -143,7 +170,13 @@ await adminDeleteDocument(`users/${uid}`);
 // después de las mutaciones para evitar declarar completion por una primera
 // página incompleta.
 for (const path of [...directDeletes, `users/${uid}`]) {
-  if (await adminGetDocument(path)) throw new Error(`ACCOUNT_ERASURE_DIRECT_RESIDUAL:${path}`);
+  if (await adminGetDocument(path)) throw new Error('ACCOUNT_ERASURE_DIRECT_RESIDUAL');
+}
+// Independent post-delete readback: no outbound OR inbound UID references.
+const remainingOutgoingBlocks = await adminListDocuments(`user_blocks/${uid}/targets`, 500);
+const remainingIncomingBlocks = await adminRunCollectionGroupQueryAll('targets', [{ field: 'blocked_uid', value: uid }], 500);
+if (remainingOutgoingBlocks.length || remainingIncomingBlocks.length) {
+  throw new Error('ACCOUNT_ERASURE_USER_BLOCK_RESIDUAL');
 }
 for (const [collection, field] of queryDeletes) {
   const remaining = await adminRunQueryAll(collection, [{ field, value: uid }], 500);
@@ -159,9 +192,12 @@ for (const [collection, field] of withdrawals) {
 // Auth se borra antes de declarar "completed". Si este paso falla, la solicitud
 // permanece processing y nunca se publica un falso estado de finalización.
 await adminDeleteTestUsers([uid]);
+// Independent admin lookup must prove the deleted Auth UID is absent.
+await adminAssertAuthUserAbsent(uid);
 
 const completedAt = new Date();
-await adminPatchDocument(`account_deletion_requests/${uid}`, {
+// Auth deletion already succeeded; record completion and audit as one atomic commit.
+await adminCommitAccountErasureCompletion(uid, processorRunId, {
   status: 'completed',
   completed_at: completedAt,
   updated_at: completedAt,
@@ -173,8 +209,7 @@ await adminPatchDocument(`account_deletion_requests/${uid}`, {
   withdrawn_count: plan.withdrawals.length,
   retained_count: plan.retained_count,
   auth_deleted: true,
-});
-await adminPatchDocument(`audit_log/account-erasure-${uid}-${processorRunId}`, {
+}, {
   admin_uid: 'trusted-runner',
   actor_type: 'trusted_runner',
   role: 'trust_safety',
@@ -186,4 +221,4 @@ await adminPatchDocument(`audit_log/account-erasure-${uid}-${processorRunId}`, {
   created_at: completedAt,
 });
 
-console.log(`✅ Eliminación controlada staging completada para ${uid}. Datos operativos retenidos: ${plan.retained_count}. Run: ${processorRunId}.`);
+console.log(`✅ Eliminación controlada staging completada; registros operativos retenidos: ${plan.retained_count}. Identidades y rutas omitidas del log.`);

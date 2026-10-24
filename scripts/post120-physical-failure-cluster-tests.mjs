@@ -22,7 +22,9 @@ assert.match(android,/falta POST_NOTIFICATIONS para Android 13\+/);
 const appCheckIndex=topi.indexOf("return 'app-check'");
 const configIndex=topi.indexOf("return 'firebase-config-rejected'");
 assert(appCheckIndex>=0&&configIndex>=0&&appCheckIndex<configIndex,'App Check must classify before generic 403/config failures');
-assert.match(topi,/app_check_token_missing_best_effort/);
+assert.match(topi,/function appCheckRequired\(\)/);
+assert.match(topi,/return true;/);
+assert.doesNotMatch(topi,/app_check_token_missing_best_effort/);
 assert.match(topi,/app_check: nativeAppCheckStatus\(\)/);
 
 assert.match(gate,/visibilitychange/);

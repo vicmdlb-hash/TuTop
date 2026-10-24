@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, BadgeCheck, Loader2, PackageCheck, ShieldCheck, Store, UserCheck, UserPlus } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Ban, Flag, Loader2, PackageCheck, ShieldCheck, Store, UserCheck, UserPlus } from 'lucide-react';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
+import { isPublicDiscoveryProduct } from '../lib/publicDiscovery';
 import {
   trustedReputationAgeHours,
   trustedReputationBackend,
@@ -8,6 +9,8 @@ import {
   type TrustedReputationSnapshot,
 } from '../services/trustedReputationBackend';
 import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
+import { onlineBackend } from '../services/onlineBackend';
+import { userBlockBackend } from '../services/userBlockBackend';
 import { useAppStore } from '../store/useAppStore';
 
 export default function SellerPublicProfile({
@@ -31,6 +34,12 @@ export default function SellerPublicProfile({
   const [followLoaded, setFollowLoaded] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followMessage, setFollowMessage] = useState<string | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState(false);
+  const [blockLoaded, setBlockLoaded] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [blockMessage, setBlockMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -50,6 +59,49 @@ export default function SellerPublicProfile({
   }, [sellerId]);
 
   const canFollow = nationalSchemaEnabled() && Boolean(user.id) && user.id !== sellerId;
+  const canReportUser = Boolean(user.id) && user.id !== sellerId;
+  const canBlockUser = nationalSchemaEnabled() && canReportUser;
+
+  useEffect(() => {
+    let active = true;
+    const requesterUid = user.id;
+    setBlocked(false);
+    setBlockLoaded(false);
+    setBlockMessage(null);
+    if (!canBlockUser) return () => { active = false; };
+    void userBlockBackend.isBlocked(sellerId).then((value) => {
+      if (active && useAppStore.getState().user.id === requesterUid) {
+        setBlocked(value);
+        setBlockLoaded(true);
+      }
+    }).catch(() => {
+      if (active && useAppStore.getState().user.id === requesterUid) {
+        setBlockMessage('No pudimos consultar tu lista de bloqueos.');
+      }
+    });
+    return () => { active = false; };
+  }, [sellerId, user.id, canBlockUser]);
+
+  const toggleBlock = async () => {
+    if (!canBlockUser || !blockLoaded || blockBusy) return;
+    if (!blocked && !window.confirm('¿Bloquear a este usuario? No podrán iniciarse nuevas conversaciones ni enviarse mensajes u ofertas entre ustedes.')) return;
+    const requesterUid = user.id;
+    setBlockBusy(true);
+    setBlockMessage(null);
+    try {
+      const next = await userBlockBackend.setBlocked(sellerId, !blocked);
+      if (useAppStore.getState().user.id === requesterUid) {
+        setBlocked(next);
+        setBlockMessage(next ? 'Usuario bloqueado.' : 'Usuario desbloqueado.');
+      }
+    } catch {
+      if (useAppStore.getState().user.id === requesterUid) {
+        setBlockMessage('No pudimos cambiar el bloqueo. Inténtalo otra vez.');
+      }
+    } finally {
+      setBlockBusy(false);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -89,8 +141,32 @@ export default function SellerPublicProfile({
     }
   };
 
+  // Reuse the existing authenticated user-report backend; reporting is not a block.
+  const reportUser = async () => {
+    if (!canReportUser || reportBusy) return;
+    const reason = window.prompt('¿Por qué quieres reportar a este usuario?');
+    if (!reason || reason.trim().length < 3) return;
+    const reporterUid = user.id;
+    setReportBusy(true);
+    setReportMessage(null);
+    try {
+      await onlineBackend.submitReport('user', sellerId, reason);
+      if (useAppStore.getState().user.id === reporterUid) {
+        setReportMessage('Reporte enviado. El equipo de TuTop revisará este usuario.');
+      }
+    } catch {
+      if (useAppStore.getState().user.id === reporterUid) {
+        setReportMessage('No pudimos enviar el reporte. Inténtalo de nuevo.');
+      }
+    } finally {
+      setReportBusy(false);
+    }
+  };
+
   const activeListings = products
-    .filter((product) => product.vendedor_id === sellerId && product.estado === 'Activo')
+    // This is a public profile, including when the seller views their own.
+    // Do not expose seller-owned pending/rejected V2 listings as public inventory.
+    .filter((product) => product.vendedor_id === sellerId && product.estado === 'Activo' && isPublicDiscoveryProduct(product, nationalSchemaEnabled()))
     .sort((a, b) => new Date(b.updated_at || b.fecha_creacion).getTime() - new Date(a.updated_at || a.fecha_creacion).getTime());
 
   const hasTrustedEvidence = Boolean(trusted && (trusted.seller_review_count > 0 || trusted.completed_as_seller > 0));
@@ -136,6 +212,10 @@ export default function SellerPublicProfile({
                   {followed ? 'Siguiendo' : 'Seguir vendedor'}
                 </button>}
                 {followMessage && <p role="status" aria-live="polite" aria-atomic="true" className="mt-2 text-[8px] leading-4 text-amber-200">{followMessage}</p>}
+                {canReportUser && <button type="button" disabled={reportBusy} onClick={() => void reportUser()} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-rose-300/10 bg-rose-400/[0.04] px-3 py-2 text-[9px] font-bold text-rose-200 disabled:opacity-50" aria-label="Reportar usuario"><Flag className="h-3.5 w-3.5" />{reportBusy ? 'Enviando reporte…' : 'Reportar usuario'}</button>}
+                {reportMessage && <p role="status" aria-live="polite" aria-atomic="true" className="mt-2 text-[9px] leading-4 text-amber-200">{reportMessage}</p>}
+                {canBlockUser && <button type="button" disabled={!blockLoaded || blockBusy} onClick={() => void toggleBlock()} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-rose-300/10 bg-rose-400/[0.04] px-3 py-2 text-[9px] font-bold text-rose-200 disabled:opacity-50" aria-label={blocked ? 'Desbloquear usuario' : 'Bloquear usuario'}><Ban className="h-3.5 w-3.5" />{blockBusy ? 'Actualizando bloqueo…' : blocked ? 'Desbloquear usuario' : 'Bloquear usuario'}</button>}
+                {blockMessage && <p role="status" aria-live="polite" className="mt-2 text-[9px] leading-4 text-amber-200">{blockMessage}</p>}
               </div>
             </div>
 

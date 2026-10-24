@@ -4,7 +4,7 @@ import { BadgeCheck, CircleDollarSign, Heart, MapPin, MessageCircle, MoreHorizon
 import type { Product } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { feedbackFavorite, feedbackTap } from '../lib/feedback';
-import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, productDistanceKm, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, productDistanceKm, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { parseListingDescription } from '../lib/listingDetails';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
 
@@ -47,13 +47,15 @@ export default function ProductCard({ product }: { product: Product }) {
   const [viewerLocation, setViewerLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
 
   useEffect(() => {
+    // A prior account's delayed geolocation event must never update B's card.
+    setViewerLocation(getCachedApproxLocation(user.id));
     const onLocation = (event: Event) => {
-      const detail = (event as CustomEvent<ApproxLocation>).detail;
-      if (detail) setViewerLocation(detail);
+      const detail = (event as CustomEvent<ScopedApproxLocationEvent>).detail;
+      if (detail?.owner_uid === user.id) setViewerLocation(detail);
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
     return () => window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
-  }, []);
+  }, [user.id]);
 
   const distance = productDistanceKm(viewerLocation, product);
   const proximity = distanceLabel(distance);

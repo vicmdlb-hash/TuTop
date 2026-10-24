@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 const REQUIRED = new Set(['foreground', 'background', 'cold_start', 'deep_link']);
 const ALLOWED_EVENT_KINDS = new Set(['app_foreground', 'app_background', 'app_boot', 'push_received', 'push_action', 'route_opened', 'push_invalid_payload']);
-const FORBIDDEN_KEYS = new Set(['token', 'fcm_token', 'notification_id', 'raw_notification_id', 'phone', 'idToken', 'refreshToken']);
+const FORBIDDEN_KEYS = new Set(['token', 'fcm_token', 'fcmToken', 'appCheckToken', 'app_check_token', 'accessToken', 'access_token', 'authorization', 'authorizationHeader', 'apiKey', 'api_key', 'notification_id', 'raw_notification_id', 'phone', 'idToken', 'refreshToken'].map(key => key.toLowerCase()));
 const SAFE_CORRELATION = /^[a-z0-9_-]{6,80}$/i;
 const MAX_SESSION_MS = 6 * 60 * 60_000;
 const MAX_EVIDENCE_AGE_MS = 24 * 60 * 60_000;
@@ -14,7 +14,7 @@ function scan(value, errors, pathParts = []) {
   if (Array.isArray(value)) return value.forEach((item, index) => scan(item, errors, [...pathParts, String(index)]));
   if (!value || typeof value !== 'object') return;
   for (const [key, child] of Object.entries(value)) {
-    if (FORBIDDEN_KEYS.has(key)) errors.push(`campo sensible prohibido: ${[...pathParts, key].join('.')}`);
+    if (FORBIDDEN_KEYS.has(key.toLowerCase())) errors.push(`campo sensible prohibido: ${[...pathParts, key].join('.')}`);
     scan(child, errors, [...pathParts, key]);
   }
 }
@@ -99,8 +99,22 @@ export function validateFcmPhysicalFixture(fixture, candidate, now = Date.now())
       }
       if (!String(action.target || '').trim()) errors.push(`${name}: acción sin destino lógico`);
     }
-    if (name === 'foreground' && !events.some((event) => event.kind === 'app_foreground')) errors.push('foreground: falta app_foreground');
-    if (name === 'background' && !events.some((event) => event.kind === 'app_background')) errors.push('background: falta app_background');
+    if (name === 'foreground' || name === 'background') {
+      const requiredState = name === 'foreground' ? 'app_foreground' : 'app_background';
+      const transitions = events.filter((event) => ['app_foreground', 'app_background', 'app_boot'].includes(event.kind));
+      if (!transitions.some((event) => event.kind === requiredState)) errors.push(`${name}: falta ${requiredState}`);
+      // State must have been observed BEFORE each receipt, not merely
+      // asserted later in the same session. A later opposite transition
+      // invalidates a stale foreground/background state.
+      for (const receive of received) {
+        const priorStates = transitions.filter((event) => Number.isFinite(event.at_ms)
+          && Number.isFinite(receive.at_ms) && event.at_ms <= receive.at_ms);
+        const lastState = priorStates[priorStates.length - 1];
+        if (lastState?.kind !== requiredState) {
+          errors.push(`${name}: push_received sin estado ${requiredState} previo y vigente`);
+        }
+      }
+    }
     if (name === 'cold_start') {
       const boots = events.filter((event) => event.kind === 'app_boot');
       if (boots.length !== 1) errors.push(`cold_start: se requiere exactamente un app_boot, observados ${boots.length}`);

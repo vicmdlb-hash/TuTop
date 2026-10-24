@@ -31,7 +31,10 @@ const expected = {
 };
 const now = Date.parse('2026-09-07T04:30:00.000Z');
 const allPass = Object.fromEntries([
-  'install_boot','auth_identity','reinstall_identity','keyboard','android_back','lifecycle','safe_areas','rotation',
+  'install_boot','second_account_email_verification','auth_identity','reinstall_identity','topi_real_ai',
+  'notification_permission_activation','notification_token_registered','fcm_two_device_receive',
+  'fcm_two_device_tap_deep_link','account_switch_fcm_isolation',
+  'keyboard','android_back','lifecycle','safe_areas','rotation',
   'offline_reconnect','push_foreground','push_background','push_cold_start','push_deep_link','app_check_token_observed',
 ].map((key) => [key, 'pass']));
 
@@ -123,6 +126,13 @@ function bundle(slot, model, viewport, session, offset = 0) {
 const a = bundle('A', 'Model-A', '412x915', 'session-device-a');
 const b = bundle('B', 'Model-B', '360x800', 'session-device-b', -1_000);
 assert.equal(validateTwoDeviceEvidence([a, b], now, candidate).pass, true);
+for (const mandatory of ["second_account_email_verification","topi_real_ai","notification_permission_activation","notification_token_registered","fcm_two_device_receive","fcm_two_device_tap_deep_link","account_switch_fcm_isolation"]) {
+  const omitted = structuredClone(a);
+  delete omitted.required_cases[mandatory];
+  assert.equal(validateTwoDeviceEvidence([omitted, b], now, candidate).pass, false,
+    `Device A missing ${mandatory} must remain blocked`);
+}
+
 
 assert.equal(validateTwoDeviceEvidence([a, { ...b, device: { ...b.device, model: a.device.model, viewport: a.device.viewport } }], now, candidate).pass, false);
 assert.equal(validateTwoDeviceEvidence([a, { ...b, evidence_session_id: a.evidence_session_id }], now, candidate).pass, false);

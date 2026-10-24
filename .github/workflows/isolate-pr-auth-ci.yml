@@ -1,0 +1,71 @@
+name: TuTop isolated auth safety CI (no deploy)
+on:
+  push:
+    branches:
+      - fix/notification-session-guard-20261021
+      - fix/firebase-cross-client-refresh-ownership-20261021
+      - integration/tutop-121-122-fcm-owner-ci-20261022
+
+# Both branches are isolated draft PRs. Never read secrets, publish artifacts,
+# access staging/Firebase, create APKs, or invoke admin/maintenance commands.
+permissions:
+  contents: read
+
+concurrency:
+  group: tutop-isolated-auth-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contract:
+    if: github.repository == 'vicmdlb-hash/TuTop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+    steps:
+      - name: Checkout exact isolated branch SHA (no persisted credentials)
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Node 22 for TypeScript 7 and Vite 8
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies without install hooks
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run TypeScript 7 compiler from the locked project
+        run: npm run typecheck
+      - name: Build local web bundle using TypeScript 7 (no network)
+        run: npm run build
+      - name: Compatibility-only TypeScript 6 for legacy test transpile API
+        # TypeScript 7 provides a native tsc but no programmatic transpileModule.
+        # The pinned TS6 is installed transiently AFTER TS7 compilation; it does
+        # not modify tracked package-lock/package.json or the production bundle.
+        run: npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund typescript@6.0.2
+      - name: Synthetic auth/notification tests only (no external services)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            fix/notification-session-guard-20261021)
+              node --experimental-strip-types scripts/post116-push-account-isolation-tests.mjs
+              ;;
+            fix/firebase-cross-client-refresh-ownership-20261021)
+              node scripts/firebase-cross-client-shared-storage-tests.mjs
+              node scripts/native-secure-session-write-queue-tests.mjs
+              ;;
+            integration/tutop-121-122-fcm-owner-ci-20261022)
+              node --experimental-strip-types scripts/post116-push-account-isolation-tests.mjs
+              node scripts/firebase-cross-client-shared-storage-tests.mjs
+              node scripts/native-secure-session-write-queue-tests.mjs
+              ;;
+            *)
+              echo "Unexpected source branch, fail closed" >&2
+              exit 1
+              ;;
+          esac
+      - name: Full existing source regression suite (no deploy or Firebase credentials)
+        run: npm run check
+      - name: Verify source checks and compatibility install did not change package manifests
+        run: git diff --exit-code -- package.json package-lock.json

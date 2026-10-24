@@ -59,7 +59,44 @@ const futureWindow = structuredClone(valid); futureWindow.evidence_started_at = 
 assert.equal(validateFcmPhysicalFixture(futureWindow, candidate, now).pass, false);
 const unknownKind = structuredClone(valid); unknownKind.scenarios[0].events.push({ at_ms: 3_000, kind: 'mystery_event' });
 assert.equal(validateFcmPhysicalFixture(unknownKind, candidate, now).pass, false);
+// Synthetic adversarial traces: the app state must PRECEDE a receipt, and
+// the latest state cannot contradict the claimed foreground/background case.
+const foregroundAfterReceive = structuredClone(valid);
+foregroundAfterReceive.scenarios[0].events = [
+  { at_ms: 1_000, kind: 'push_received', correlation: 'fg-a001', target: 'chat' },
+  { at_ms: 2_000, kind: 'app_foreground' },
+];
+assert.equal(validateFcmPhysicalFixture(foregroundAfterReceive, candidate, now).pass, false);
+
+const backgroundAfterReceive = structuredClone(valid);
+backgroundAfterReceive.scenarios[1].events = [
+  { at_ms: 10_000, kind: 'push_received', correlation: 'bg-a001', target: 'listing' },
+  { at_ms: 11_000, kind: 'app_background' },
+  { at_ms: 12_000, kind: 'push_action', correlation: 'bg-a001', target: 'listing' },
+];
+assert.equal(validateFcmPhysicalFixture(backgroundAfterReceive, candidate, now).pass, false);
+
+const staleBackgroundState = structuredClone(valid);
+staleBackgroundState.scenarios[1].events.splice(1, 0,
+  { at_ms: 10_500, kind: 'app_foreground' });
+assert.equal(validateFcmPhysicalFixture(staleBackgroundState, candidate, now).pass, false);
+
+const exposedFcmToken = structuredClone(valid);
+exposedFcmToken.fcmToken = 'synthetic-token-value-do-not-use';
+assert.equal(validateFcmPhysicalFixture(exposedFcmToken, candidate, now).pass, false);
+
+const exposedNestedAccessToken = structuredClone(valid);
+exposedNestedAccessToken.scenarios[0].events[0].access_token = 'synthetic-access-token';
+assert.equal(validateFcmPhysicalFixture(exposedNestedAccessToken, candidate, now).pass, false);
+
+const mixedCaseSecret = structuredClone(valid);
+mixedCaseSecret.scenarios[0].events[0].FCMTOKEN = 'synthetic-not-real';
+assert.equal(validateFcmPhysicalFixture(mixedCaseSecret, candidate, now).pass, false);
+const rawAppCheckSecret = structuredClone(valid);
+rawAppCheckSecret.APP_CHECK_TOKEN = 'synthetic-not-real';
+assert.equal(validateFcmPhysicalFixture(rawAppCheckSecret, candidate, now).pass, false);
+
 console.log('PASS multiple distinct simultaneous pushes can validate without false duplicate detection');
 console.log('PASS duplicate/replayed correlations, duplicate taps, reboot replay and target mismatch fail closed');
-console.log('PASS event/window timing, unknown kinds, invalid payload, stale APK and raw identifiers fail closed');
+console.log('PASS event/window timing, prior app-state consistency, sensitive token names, unknown kinds, invalid payload and stale APK fail closed');
 console.log('FCM physical fixture contract: PASS');

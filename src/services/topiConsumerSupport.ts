@@ -91,6 +91,13 @@ export async function answerConsumerSupport(question: string, routeHint: Support
   if (physicalQaRequiresRealAI()) {
     const reason = nativeTopiAIStatus().reason;
     recordDiagnostic('ai', `support_${reason}`);
+    if (reason === 'audience-provider-not-approved') {
+      return {
+        text: 'Topi generativa no está disponible en esta versión porque su proveedor aún no está aprobado para todas las edades. Puedes usar la guía de ayuda, identificada por separado.',
+        source: 'unavailable',
+        route,
+      };
+    }
     return {
       text: 'Topi no pudo conectarse con la IA en este momento. Revisa tu conexión e inténtalo de nuevo. La guía local sigue disponible en las opciones y se identifica por separado.',
       source: 'unavailable',

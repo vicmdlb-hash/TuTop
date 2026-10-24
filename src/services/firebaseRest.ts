@@ -1,5 +1,6 @@
 import { firebaseFetch } from './firebaseHttp';
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
+import { sameFirebaseSession } from '../lib/firebaseSharedSessionGuard';
 import type { FirebaseRuntimeConfig } from './runtimeConfig';
 
 export interface AuthSession {
@@ -211,17 +212,28 @@ export class FirebaseRestClient {
   }
 
   async getIdToken() {
-    if (!this.session) throw new Error('AUTH_REQUIRED');
-    if (this.session.expiresAt > Date.now() + 60_000) return this.session.idToken;
+    const starting = this.session;
+    if (!starting) throw new Error('AUTH_REQUIRED');
+    // Multiple FirebaseRestClient instances share a project-scoped persisted
+    // session. Do not use an old instance's credentials after a new login.
+    if (!sameFirebaseSession(this.readStoredSession(), starting)) throw new Error('AUTH_SESSION_CHANGED');
+    if (starting.expiresAt > Date.now() + 60_000) return starting.idToken;
     const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded', ...(await appCheckHeader()) };
     const response = await firebaseFetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(this.config.apiKey)}`, {
       method: 'POST', headers,
-      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: this.session.refreshToken }),
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: starting.refreshToken }),
     });
     const data = await readJson(response);
+    // Check immediately before persistence; a different FirebaseRestClient
+    // may have signed out, or signed in as B (or re-signed in as A) meanwhile.
+    if (!sameFirebaseSession(this.session, starting)
+      || !sameFirebaseSession(this.readStoredSession(), starting)
+      || (data.user_id && data.user_id !== starting.uid)) {
+      throw new Error('AUTH_SESSION_CHANGED');
+    }
     const refreshed: AuthSession = {
-      ...this.session, idToken: data.id_token, refreshToken: data.refresh_token || this.session.refreshToken,
-      uid: data.user_id || this.session.uid, expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
+      ...starting, idToken: data.id_token, refreshToken: data.refresh_token || starting.refreshToken,
+      uid: starting.uid, expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
     };
     this.persistSession(refreshed);
     return refreshed.idToken;

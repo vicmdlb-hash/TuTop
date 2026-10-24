@@ -1,5 +1,7 @@
+import { assertAuthBatchDeleteResponse, assertAuthAccountAbsent } from './auth-batch-delete-proof.mjs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { collectCursorPages } from './firestore-query-pagination.mjs';
+import { buildAccountErasureFinalCommit } from './account-erasure-atomic-commit.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
 const projectId = assertStagingFreezeContext();
@@ -45,6 +47,21 @@ export async function adminPatchDocument(path, fields) {
   return request(`${firestoreBase}/${path}?${mask}`, { method: 'PATCH', body: JSON.stringify(payload) });
 }
 
+
+export async function adminCommitAccountErasureCompletion(uid, processorRunId, completed, audit) {
+  // Re-read version after destructive work. Never publish completion for
+  // a stale request or without the matching immutable audit entry.
+  const current = await adminGetDocument(`account_deletion_requests/${uid}`);
+  if (!current || current?.fields?.status?.stringValue !== 'processing')
+    throw new Error('ERASURE_ATOMIC_NOT_PROCESSING');
+  if (!current.updateTime) throw new Error('ERASURE_ATOMIC_UPDATE_TIME_MISSING');
+  const payload = buildAccountErasureFinalCommit({
+    projectId, uid, processorRunId, requestUpdateTime: current.updateTime,
+    completed, audit
+  });
+  return request(`${firestoreBase}:commit`, {method:'POST',body:JSON.stringify(payload)});
+}
+
 export async function adminDeleteDocument(path) {
   return request(`${firestoreBase}/${path}`, { method: 'DELETE' }, [404]);
 }
@@ -76,6 +93,21 @@ export async function adminRunQueryAll(collectionId, filters = [], pageSize = 50
   const where = structuredWhere(filters);
   return collectCursorPages(async ({ afterName, pageSize: size }) => runStructuredQuery({
     from: [{ collectionId }],
+    ...(where ? { where } : {}),
+    orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }],
+    ...(afterName ? { startAt: { values: [{ referenceValue: afterName }], before: false } } : {}),
+    limit: size,
+  }), { pageSize });
+}
+
+// Read references inside nested user block lists with bounded cursor pages.
+// A missing index or permission must propagate an error and prevent erasure.
+export async function adminRunCollectionGroupQueryAll(collectionId, filters = [], pageSize = 500) {
+  const clean = String(collectionId || '').trim();
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(clean)) throw new Error('COLLECTION_GROUP_INVALID');
+  const where = structuredWhere(filters);
+  return collectCursorPages(async ({ afterName, pageSize: size }) => runStructuredQuery({
+    from: [{ collectionId: clean, allDescendants: true }],
     ...(where ? { where } : {}),
     orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }],
     ...(afterName ? { startAt: { values: [{ referenceValue: afterName }], before: false } } : {}),
@@ -134,10 +166,25 @@ export async function adminListAuthUsers(pageSize = 500) {
   return users;
 }
 
+export async function adminAssertAuthUserAbsent(uid) {
+  // Post-delete independent lookup, not merely trusting batchDelete HTTP 200.
+  // Missing IAM lookup scope, malformed data or a surviving account => STOP.
+  if (typeof uid !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(uid))
+    throw new Error('AUTH_LOOKUP_UID_INVALID');
+  const result = await request(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:lookup`, {
+    method: 'POST',
+    body: JSON.stringify({ localId: [uid] }),
+  });
+  assertAuthAccountAbsent(result, uid);
+  return true;
+}
+
 export async function adminDeleteTestUsers(localIds) {
   if (!Array.isArray(localIds) || localIds.some((uid) => !String(uid).trim())) throw new Error('UIDs de cleanup inválidos.');
   if (!localIds.length) return null;
-  return request(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:batchDelete`, {
+  const result = await request(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:batchDelete`, {
     method: 'POST', body: JSON.stringify({ localIds, force: true }),
   });
+  assertAuthBatchDeleteResponse(result);
+  return result;
 }

@@ -1,6 +1,7 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { projectMarketplaceNotifications } from './marketplace-notification-projection-lib.mjs';
 import { notificationPreferenceAllows } from './notification-preference-projection-lib.mjs';
+import { shouldSuppressBlockedDirectNotification, resolveDirectNotificationChat } from './user-block-notification-lib.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
@@ -94,6 +95,19 @@ async function loadNotificationPreferences(uid) {
   return decodeFields(result.data.fields);
 }
 
+async function hasUserBlockEdge(fromUid, toUid) {
+  // A block may be created while this projector is running. Never cache negatives.
+  const path = ['user_blocks', fromUid, 'targets', toUid].map(encodeURIComponent).join('/');
+  const result = await request(`${root}/${path}`, {}, [404]);
+  return result.status !== 404;
+}
+
+async function getChatById(id) {
+  const result = await request(`${root}/chats/${encodeURIComponent(id)}`, {}, [404]);
+  if (result.status === 404) return null;
+  return { id, ...decodeFields(result.data?.fields || {}) };
+}
+
 async function createOutbox(notification) {
   const { id, source_event_at, ...payload } = notification;
   const at = new Date().toISOString();
@@ -136,13 +150,22 @@ const eligible = projected.filter((notification) => notificationPreferenceAllows
   preferencesByUid.get(String(notification.recipient_uid || '')) || {},
 ));
 
+const chatById = new Map(chats.map((chat) => [String(chat.id), chat]));
+let blockedSuppressed = 0;
 let created = 0;
 let duplicates = 0;
 for (const notification of eligible) {
+  const chat = await resolveDirectNotificationChat(notification, chatById, getChatById);
+  if (await shouldSuppressBlockedDirectNotification(
+    notification, chat, hasUserBlockEdge
+  )) {
+    blockedSuppressed += 1;
+    continue;
+  }
   if (!apply) { created += 1; continue; }
   const result = await createOutbox(notification);
   if (result.status === 409) duplicates += 1;
   else created += 1;
 }
 
-console.log(`marketplace-notifications: cutoff=${cutoffIso}; projected=${projected.length} eligible=${eligible.length} suppressed_by_preferences=${projected.length - eligible.length} ${apply ? `created=${created} duplicates=${duplicates}` : 'dry-run'}; chats=${chats.length} messages=${messages.length} offers=${offers.length} transactions=${transactions.length}.`);
+console.log(`marketplace-notifications: cutoff=${cutoffIso}; projected=${projected.length} eligible=${eligible.length} suppressed_by_preferences=${projected.length - eligible.length} suppressed_by_user_blocks=${blockedSuppressed} ${apply ? `created=${created} duplicates=${duplicates}` : 'dry-run'}; chats=${chats.length} messages=${messages.length} offers=${offers.length} transactions=${transactions.length}.`);

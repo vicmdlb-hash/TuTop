@@ -11,34 +11,34 @@
 </head>
 <body>
   <h1>Privacidad de TuTop — borrador beta</h1>
-  <p class="note"><strong>No es una política legal aprobada para publicación.</strong> Este borrador técnico está reconciliado con Build120 / PR #107 / SHA 554f4ef6d0429b0059738d8cd6e1b6e4890bda91. Build120 no está aprobada para release y conserva fallos físicos abiertos en autenticación/verificación, Topi real y activación de notificaciones; la política final debe revisarse jurídicamente y contra la candidata exacta que eventualmente se autorice para Play.</p>
+  <p class="note"><strong>No es una política legal aprobada ni una declaración de cumplimiento para publicación.</strong> Este texto es un borrador técnico de la rama de integración del PR #123, revisado el 24 de octubre de 2026. Build120 y Build121 son antecedentes históricos, no candidatos actuales. El PR #123 permanece en borrador y sin fusionar; todavía no existe APK exacto firmado y aceptado, ni pruebas físicas R6 aprobadas en los dos dispositivos. El aviso final y Data Safety requieren contrastar el backend real, el artefacto autorizado y la revisión jurídica antes de cualquier publicación.</p>
 
   <h2>Cuenta e identidad</h2>
-  <p>TuTop usa Firebase Authentication. La candidata actual trabaja con correo real y estado de verificación de correo. El flujo de recuperación legacy puede partir de un alias telefónico existente y la Clave TuTop para conservar el mismo UID; ese teléfono sigue siendo opcional/no verificado y TuTop no lo presenta como verificado por SMS.</p>
+  <p>TuTop usa Firebase Authentication. La beta técnica contempla correo real y estado de verificación de correo, pero su comportamiento completo en dispositivos físicos continúa sin aceptación. El flujo de recuperación legacy puede partir de un alias telefónico existente y la Clave TuTop para conservar el mismo UID; ese teléfono sigue siendo opcional/no verificado y TuTop no lo presenta como verificado por SMS.</p>
 
   <h2>Datos y contenido usados por la beta</h2>
   <p>Según la superficie técnica revisada, TuTop puede manejar datos de perfil y universidad/campus; publicaciones y fotografías; chats y mensajes; ofertas, reservas y transacciones; favoritos, búsquedas guardadas, reseñas y reportes; preferencias de notificaciones; tokens de dispositivo para push; solicitudes de eliminación; y evidencia de verificación cuando el usuario usa ese flujo.</p>
 
   <h2>Ubicación</h2>
-  <p>Nearby puede solicitar ubicación aproximada bajo demanda. Build120 declara ubicación coarse y rechaza ubicación precisa y ubicación en segundo plano para este flujo. La ubicación de una publicación requiere opt-in explícito.</p>
+  <p>El diseño de Nearby contempla solicitud de ubicación aproximada bajo demanda, sin justificar recopilación precisa ni en segundo plano. La ubicación de una publicación debe requerir consentimiento explícito por publicación; la implementación y los permisos del APK definitivo aún deben verificarse.</p>
 
   <h2>Topi / Firebase AI</h2>
-  <p>Cuando se usa Topi con IA remota habilitada, una pregunta del usuario se sanea y limita antes de enviarse a Firebase AI Logic 17.17.0. La respuesta y el modelo regresan al cliente. La declaración final de privacidad/Data Safety debe considerar además los metadatos y datos que procese el SDK/proveedor y el estado efectivo de AI monitoring/logging.</p>
+  <p>El puente nativo remoto de Topi hacia Firebase AI Logic se encuentra bloqueado preventivamente en la rama PR #123 mediante la razón audience-provider-not-approved para la audiencia prevista, que incluye menores de edad. Este bloqueo técnico no aporta una IA generativa alternativa ni demuestra que no existan llamadas heredadas desde otras versiones. Una futura solución generativa exige confirmar proveedor, contrato, tratamiento de preguntas, metadatos, registros, consentimiento y seguridad infantil; no debe enviarse información personal a un proveedor no aprobado.</p>
 
   <h2>Voz y micrófono</h2>
   <p>Topi Voice solicita RECORD_AUDIO bajo demanda y usa Android SpeechRecognizer. TuTop no persiste audio crudo en su capa revisada; el recognizer está configurado con preferencia offline desactivada, por lo que la política final debe contemplar posible procesamiento por el servicio de reconocimiento disponible en el dispositivo.</p>
 
   <h2>Notificaciones</h2>
-  <p>La candidata incluye Firebase Cloud Messaging y preferencias de notificación. El dispositivo puede registrar o desactivar un token push. La aceptación física extremo a extremo de FCM continúa pendiente y no debe confundirse con validación de código.</p>
+  <p>El código de TuTop contempla Firebase Cloud Messaging y preferencias de notificación. El comportamiento real de registro, retirada del token y entrega privada entre cuentas requiere aceptación física con App Check y controles de edad/tutela efectivos; las pruebas de código no demuestran entrega real.</p>
 
   <h2>Fotos y video</h2>
-  <p>El flujo de fotos puede usar Camera/Photo Picker y lectura local de archivos. Build120 no declara permiso CAMERA ni permisos legacy de almacenamiento para este flujo. El código de video/Firebase Storage permanece bloqueado por los gates actuales.</p>
+  <p>El flujo de fotos puede usar Camera/Photo Picker y lectura local de archivos. Los permisos definitivos de cámara, archivos, formatos, video y almacenamiento deben verificarse contra el manifiesto y el APK exacto del sucesor; no se trasladan automáticamente las conclusiones de Build120. Video/Firebase Storage no están autorizados para despliegue.</p>
 
   <h2>Eliminación de cuenta</h2>
-  <p>Desde <strong>Perfil → Notificaciones y privacidad V2 → Eliminar cuenta y datos</strong> una cuenta autenticada puede registrar una solicitud de eliminación. Candidate120 también incluye un flujo web autenticado propio para que una cuenta existente pueda iniciar o consultar esa solicitud sin abrir ni reinstalar la app.</p>
+  <p>Desde <strong>Perfil → Notificaciones y privacidad V2 → Eliminar cuenta y datos</strong> una cuenta autenticada puede registrar una solicitud de eliminación. La fuente histórica contiene además un flujo web autenticado para iniciar o consultar una solicitud sin reinstalar la aplicación. Su estado operativo actual y su aplicación a la versión final requieren validación independiente.</p>
   <p>El flujo web usa la misma identidad Firebase de TuTop, deriva el UID de la sesión autenticada y sólo puede crear o consultar la solicitud del propio usuario. El navegador no ejecuta la eliminación destructiva ni puede marcar una solicitud como completada.</p>
   <p><a href="/delete-account.html">Solicitar o consultar la eliminación de una cuenta TuTop desde la web</a>.</p>
-  <p><strong>Estado de release:</strong> el flujo externo está implementado y validado por build en PR #112, pero Firebase Hosting todavía no se ha desplegado para esta candidata. Por eso la disponibilidad pública de esa URL sigue pendiente de un deploy autorizado y una prueba externa posterior.</p>
+  <p><strong>Estado de release:</strong> este repositorio no acredita por sí mismo que el recurso web externo esté desplegado y accesible hoy, ni que una solicitud ya genere borrado definitivo verificable. La ruta pública, la disponibilidad externa, la ejecución completa de eliminación y la política de retención deben auditarse separadamente antes de declararlas operativas.</p>
 
   <h2>Consultas de privacidad</h2>
   <p>TuTop todavía no ha establecido un canal público final para consultas generales de privacidad. Antes de una publicación en Google Play deberá existir un mecanismo público aprobado y coherente con la identidad final del desarrollador. Este borrador no publica automáticamente un correo personal ni la dirección <code>noreply</code> de Firebase como contacto.</p>
@@ -54,6 +54,6 @@
   <h2>Estado de publicación</h2>
   <p>TuTop continúa en beta controlada. Play Store, producción, billing, signing/AAB, Storage/video y merge permanecen bloqueados por los gates actuales.</p>
 
-  <p>Última revisión técnica del borrador: 23 de septiembre de 2026.</p>
+  <p>Última revisión técnica del borrador de fuente: 24 de octubre de 2026. No constituye aprobación legal ni prueba de despliegue.</p>
 </body>
 </html>

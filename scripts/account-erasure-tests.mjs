@@ -17,6 +17,16 @@ for (const collection of ['account_deletion_requests','transactions_v2','listing
   assert.match(policy, new RegExp(`collection: '${collection}'.*disposition: 'retain_operational'`), `${collection} debe tener retención operativa`);
 }
 
+const indexManifest = JSON.parse(fs.readFileSync('firebase/firestore.indexes.json','utf8'));
+assert(indexManifest.fieldOverrides.some(item => item.collectionGroup === 'targets' && item.fieldPath === 'blocked_uid' && item.indexes.some(index => index.queryScope === 'COLLECTION_GROUP')), 'incoming private block query needs collection-group index');
+assert.match(policy, /collection: 'user_blocks\/\*\/targets'.*disposition: 'delete'/);
+assert.match(processor, /adminRunCollectionGroupQueryAll\('targets'/);
+assert.match(processor, /ACCOUNT_ERASURE_BLOCK_EDGE_MISMATCH/);
+assert.match(processor, /ACCOUNT_ERASURE_USER_BLOCK_RESIDUAL/);
+assert.match(processor, /queryDeletePaths\.push\(\.\.\.blockPaths\)/);
+const adminSource = fs.readFileSync('scripts/staging-v2-admin.mjs','utf8');
+assert.match(adminSource, /export async function adminRunCollectionGroupQueryAll/);
+assert.match(adminSource, /allDescendants: true/);
 assert.match(processor, /projectId !== REQUIRED/);
 assert.match(processor, /TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed'/);
 assert.match(processor, /buildAccountErasurePlan/);
@@ -35,6 +45,13 @@ assert.match(planner, /mode: apply \? 'apply' : 'dry-run'/);
 assert.match(planner, /blocked: normalizedBlockers\.length > 0/);
 assert.match(planner, /safe_to_execute_in_staging: !plan\.blocked/);
 assert.match(planner, /auth_delete_last: true/);
+// CI/staging logs must never reveal full UID, Firestore document paths,
+// chat identifiers or transaction IDs from a real erasure plan.
+assert.match(processor, /residualRiskSummary\(plan\)/);
+assert.doesNotMatch(processor, /console\.log\(JSON\.stringify\(plan/);
+assert.doesNotMatch(processor, /ACCOUNT_ERASURE_BLOCKED:\$\{plan\.blockers/);
+assert.doesNotMatch(processor, /ACCOUNT_ERASURE_DIRECT_RESIDUAL:\$\{path\}/);
+assert.doesNotMatch(processor, /Eliminación controlada staging completada para \$\{uid\}/);
 assert.match(processor, /DRY-RUN: no se modificó Firestore\/Auth/);
 assert.match(processor, /DRY-RUN BLOQUEADO/);
 assert.match(processor, /status: 'archived'/);

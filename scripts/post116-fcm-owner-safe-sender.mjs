@@ -1,18 +1,23 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
-import { eligibleRecipientTargets, isPermanentFcmTokenError } from './fcm-token-ownership-lib.mjs';
-import { validateBuild120FcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './build120-fcm-physical-gate-lib.mjs';
+import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
+import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords } from './fcm-token-ownership-lib.mjs';
+import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const apply = process.argv.includes('--apply');
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
 const limit = Math.max(1, Math.min(500, Number(process.env.TUTOP_POST110_FCM_LIMIT || 300)));
-const applyGate = validateBuild120FcmApplyGate({
+const applyGate = validatePhysicalQaFcmApplyGate({
   apply,
   maintenanceAllow: allow,
   ack: process.env.TUTOP_FCM_PHYSICAL_APPLY_ACK,
   candidateSha: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_SHA,
+  candidateArtifactId: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_ARTIFACT_ID,
+  candidateBuildRunId: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_BUILD_RUN_ID,
+  candidateApkSha256: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_APK_SHA256,
+  candidateCertSha256: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_CERT_SHA256,
   notificationId: process.env.TUTOP_FCM_PHYSICAL_NOTIFICATION_ID,
   recipientUid: process.env.TUTOP_FCM_PHYSICAL_RECIPIENT_UID,
   deviceTokenRecordId: process.env.TUTOP_FCM_PHYSICAL_DEVICE_TOKEN_RECORD_ID,
@@ -87,6 +92,32 @@ async function query(collectionId) {
   }));
 }
 
+async function documentOrNull(path) {
+  const uri = path.split('/').map(encodeURIComponent).join('/');
+  const response = await fetch(`${base}/${uri}`, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`BLOCK_CHECK_FAILED:${response.status}`);
+  const result = await response.json();
+  return { id: String(result.name || '').split('/').pop(), ...decodeFields(result.fields || {}) };
+}
+
+const blockChatCache = new Map();
+async function hasUserBlockEdge(fromUid, toUid) {
+  // Read again for each pending direct notice; an earlier negative can expire.
+  return Boolean(await documentOrNull(`user_blocks/${fromUid}/targets/${toUid}`));
+}
+
+async function blockedDirectOutbox(item) {
+  if (!['new_message','offer_received','counter_offer','offer_accepted'].includes(item.kind)) return false;
+  const chatId = String(item.chat_id || '');
+  if (!blockChatCache.has(chatId)) {
+    blockChatCache.set(chatId, chatId ? await documentOrNull(`chats/${chatId}`) : null);
+  }
+  return shouldSuppressBlockedDirectNotification(item, blockChatCache.get(chatId), hasUserBlockEdge);
+}
+
 async function markSent(item) {
   const at = new Date().toISOString();
   const name = `projects/${projectId}/databases/(default)/documents/notification_outbox/${item.id}`;
@@ -107,7 +138,7 @@ async function markSent(item) {
   });
 }
 
-async function deactivateTokenRecord(target, reason) {
+async function deactivateTokenRecord(target, reason, { preserveOwnershipTime = false } = {}) {
   if (!target?.id) return false;
   const at = new Date().toISOString();
   const name = `projects/${projectId}/databases/(default)/documents/device_tokens/${target.id}`;
@@ -115,7 +146,7 @@ async function deactivateTokenRecord(target, reason) {
     active: false,
     invalidated_at: at,
     invalidation_reason: String(reason || 'fcm-permanent-error').slice(0, 80),
-    updated_at: at,
+    ...(preserveOwnershipTime ? {} : { updated_at: at }),
   });
   await request(`${base}:commit`, {
     method: 'POST',
@@ -132,14 +163,21 @@ async function deactivateTokenRecord(target, reason) {
 
 const [outbox, tokens] = await Promise.all([query('notification_outbox'), query('device_tokens')]);
 const pending = outbox.filter((item) => item.status === 'pending');
+const supersededActiveTokens = supersededActiveTokenRecords(tokens);
 const scopedPending = apply
   ? [selectExactPhysicalNotification(pending, applyGate.notificationId, applyGate.recipientUid)]
   : pending;
 let planned = 0;
 let delivered = 0;
 let waitingForToken = 0;
+let blockedSuppressed = 0;
+let supersededOwnershipDeactivated = 0;
 
 for (const item of scopedPending) {
+  if (await blockedDirectOutbox(item)) {
+    blockedSuppressed += 1;
+    continue;
+  }
   const eligibleTargets = eligibleRecipientTargets(tokens, item.recipient_uid);
   const targets = apply
     ? [selectExactPhysicalTarget(eligibleTargets, applyGate.deviceTokenRecordId)]
@@ -157,6 +195,12 @@ for (const item of scopedPending) {
 
   let deliveredForItem = 0;
   for (const target of targets) {
+    const staleForTarget = supersededActiveTokens.filter((record) => record.token === target.token);
+    for (const stale of staleForTarget) {
+      const cleaned = await deactivateTokenRecord(stale, 'superseded-token-owner', { preserveOwnershipTime: true }).catch(() => false);
+      if (cleaned) supersededOwnershipDeactivated += 1;
+    }
+
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -191,10 +235,19 @@ console.log(JSON.stringify({
   planned_deliveries: planned,
   delivered,
   waiting_for_device_token: waitingForToken,
+  suppressed_by_user_blocks: blockedSuppressed,
   current_owner_filter: true,
+  superseded_active_token_records_detected: supersededActiveTokens.length,
+  superseded_active_token_records_deactivated: apply ? supersededOwnershipDeactivated : 0,
+  superseded_owner_cleanup_scoped_to_selected_token: apply ? true : null,
   permanent_invalid_token_cleanup: apply,
   notification_id_in_payload: true,
   single_target_apply_guard: apply ? true : null,
   selected_device_token_record_id: apply ? applyGate.deviceTokenRecordId : null,
+  candidate_sha: applyGate.authority?.sha || null,
+  candidate_artifact_id: applyGate.authority?.artifactId || null,
+  candidate_build_run_id: applyGate.authority?.buildRunId || null,
+  candidate_apk_sha256: applyGate.authority?.apkSha256 || null,
+  candidate_cert_sha256: applyGate.authority?.certSha256 || null,
   real_fcm_sent: apply && delivered > 0,
 }, null, 2));

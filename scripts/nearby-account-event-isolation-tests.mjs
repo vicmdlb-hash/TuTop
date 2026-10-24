@@ -1,0 +1,280 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+
+// Run the actual cache/event implementation in a synthetic web runtime.
+const source = fs.readFileSync('src/lib/nearbyMarketplace.ts','utf8');
+const js = ts.transpileModule(source,{fileName:'nearbyMarketplace.ts',
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+const backing = new Map();
+const events = [];
+const listeners = new Map();
+const localStorage = {
+  getItem:k=>backing.get(k)??null,
+  setItem:(k,v)=>backing.set(k,v),
+  removeItem:k=>backing.delete(k),
+};
+const window = {
+  dispatchEvent(ev) { events.push(ev); (listeners.get(ev.type)||[]).forEach(fn=>fn(ev)); },
+  addEventListener(type, fn) { listeners.set(type,[...(listeners.get(type)||[]),fn]); },
+};
+class SyntheticCustomEvent {
+  constructor(type, options) { this.type=type;this.detail=options.detail; }
+}
+const pendingPositions = [];
+const navigator = { geolocation:{
+  getCurrentPosition(success) { pendingPositions.push(success); }
+}};
+const module = {exports:{}};
+vm.runInNewContext(js,{
+  module,exports:module.exports,require(name){
+    assert.equal(name,'../services/nativeDeviceCapabilities');
+    return {isNativeDeviceRuntime:()=>false};
+  },localStorage,window,CustomEvent:SyntheticCustomEvent,navigator,
+  Date,Math,JSON,Number,String,Promise,Set,console,URLSearchParams,
+},{timeout:2500});
+const lib = module.exports;
+const A='synthetic-user-A', B='synthetic-user-B';
+const key='tutop.approx-location.v1';
+const loc=lib.toApproxLocation(19.314,-98.251);
+assert(loc);
+backing.set(key,JSON.stringify(loc)); // legacy unscoped cache cannot cross to anyone
+assert.equal(lib.getCachedApproxLocation(A),null);
+assert.equal(lib.getCachedApproxLocation(B),null);
+lib.saveApproxLocation(loc,A);
+assert.equal(JSON.parse(backing.get(key)).owner_uid,A);
+assert.equal(events.at(-1).detail.owner_uid,A,'event must be identity scoped');
+assert.equal(lib.getCachedApproxLocation(B),null,'B cannot use cached A location');
+assert.equal(lib.getCachedApproxLocation(A).latitude,19.31);
+
+let acceptedForB=0;
+window.addEventListener(lib.NEARBY_LOCATION_EVENT, ev=>{
+ if(ev.detail?.owner_uid===B) acceptedForB++;
+});
+lib.saveApproxLocation(loc,A);
+window.dispatchEvent(new SyntheticCustomEvent(lib.NEARBY_LOCATION_EVENT,{detail:loc}));
+assert.equal(acceptedForB,0,'old/unscoped event must not be delivered as B');
+
+// Emulate A location request followed by logout (even with absent cache).
+let currentUid=A;
+const late=lib.requestApproxLocation({ownerUid:A,requestPermission:true,
+  isOwnerActive:()=>currentUid===A});
+assert.equal(pendingPositions.length,1);
+lib.clearApproxLocation(A); // cancels pending A even if another user now owns storage
+currentUid=B;
+lib.saveApproxLocation(loc,B);
+const beforeLateEvents=events.length;
+pendingPositions[0]({coords:{latitude:19.318,longitude:-98.257}});
+assert.equal(await late,null,'late request after logout cannot return A position');
+assert.equal(events.length,beforeLateEvents,'late A request must not emit location');
+assert.equal(lib.getCachedApproxLocation(A),null,'late A must not restore cache');
+assert.equal(lib.getCachedApproxLocation(B)?.longitude,-98.25,'A cannot overwrite B cache');
+assert.equal(acceptedForB,1,'B should accept its own event');
+
+// A->B can also happen through a shared-session change without clear().
+// The live UID predicate must reject the stale account's late response.
+const noLogout=lib.requestApproxLocation({ownerUid:A,requestPermission:true,
+  isOwnerActive:()=>currentUid===A});
+assert.equal(pendingPositions.length,2);
+pendingPositions[1]({coords:{latitude:19.31,longitude:-98.25}});
+assert.equal(await noLogout,null,'different live owner must reject stale result');
+assert.equal(lib.getCachedApproxLocation(B)?.longitude,-98.25);
+
+// Current B is allowed to obtain and use its own approximate location.
+const active=lib.requestApproxLocation({ownerUid:B,requestPermission:true,
+  isOwnerActive:()=>currentUid===B});
+assert.equal(pendingPositions.length,3);
+pendingPositions[2]({coords:{latitude:19.318,longitude:-98.257}});
+assert((await active)?.latitude===19.32);
+assert.equal(events.at(-1).detail.owner_uid,B);
+assert.equal(acceptedForB,2);
+lib.clearApproxLocation(A);
+assert.equal(lib.getCachedApproxLocation(B)?.longitude,-98.26,'A cleanup cannot erase B location');
+lib.clearApproxLocation(B);
+assert.equal(lib.getCachedApproxLocation(B),null);
+
+// Full consumer contracts prevent cross-account UI dispatch and stale async hydration.
+for(const path of ['src/components/ProductCard.tsx','src/components/ExploreScreen.tsx']){
+ const src=fs.readFileSync(path,'utf8');
+ assert.match(src,/detail\?\.owner_uid === user\.id|detail\?\.owner_uid !== user\.id/);
+ assert.match(src,/\[user\.id\]/);
+ assert.match(src,/set(?:ViewerLocation|Location)\(getCachedApproxLocation\(user\.id\)\)/);
+}
+const feed=fs.readFileSync('src/components/Feed.tsx','utf8');
+const explore=fs.readFileSync('src/components/ExploreScreen.tsx','utf8');
+assert.match(feed,/isOwnerActive:\s*\(\) => useAppStore\.getState\(\)\.user\.id === requestUid/);
+assert.match(feed,/setSearchHistory\(readAccountLocalList\(ACCOUNT_LOCAL_KEYS\.searchHistory, user\.id, 6\)\)/);
+assert.match(explore,/isOwnerActive:\s*\(\) => useAppStore\.getState\(\)\.user\.id === requestUid/);
+assert.match(explore,/if \(useAppStore\.getState\(\)\.user\.id !== requestUid\) return;/);
+assert.match(explore,/setLocationBusy\(false\);/);
+assert.match(explore,/setNearbyBusy\(false\);/);
+const publish=fs.readFileSync('src/components/NationalPublishScreen.tsx','utf8');
+assert.match(publish,/ownerUid: requestUid, isOwnerActive: stillCurrent/);
+assert.match(publish,/locationRequestSerial\.current === requestSerial/);
+assert.match(publish,/useAppStore\.getState\(\)\.user\.id === requestUid/);
+assert.match(publish,/if \(!stillCurrent\(\)\) return;/);
+assert.match(publish,/const removeListingLocation = \(\) => \{\s*locationRequestSerial\.current \+= 1;/);
+assert.match(publish,/useEffect\(\(\) => \(\) => \{ locationRequestSerial\.current \+= 1; \}, \[user\.id\]\)/);
+// Run the real V2 public moderation filter and verify buyer/seller separation.
+const filterSource = fs.readFileSync('src/lib/publicDiscovery.ts', 'utf8');
+const filterJs = ts.transpileModule(filterSource, {
+  fileName: 'publicDiscovery.ts',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText;
+const filterModule = { exports: {} };
+vm.runInNewContext(filterJs, { module: filterModule, exports: filterModule.exports }, { timeout: 2500 });
+const publicFilter = filterModule.exports.isPublicDiscoveryProduct;
+for (const status of ['pending', 'review', 'rejected', undefined]) {
+  assert.equal(publicFilter({ moderation_status: status }, true), false, 'V2 discovery rejects nonapproved status');
+}
+assert.equal(publicFilter({ moderation_status: 'approved' }, true), true);
+assert.equal(publicFilter({ moderation_status: undefined }, false), true, 'legacy catalog remains compatible');
+const feedDiscovery = fs.readFileSync('src/components/Feed.tsx', 'utf8');
+const exploreDiscovery = fs.readFileSync('src/components/ExploreScreen.tsx', 'utf8');
+assert.match(feedDiscovery, /const publicProducts = useMemo/);
+assert.match(feedDiscovery, /const list = publicProducts.filter/);
+assert.match(feedDiscovery, /const myPendingProducts = mySellerProducts.filter/);
+assert.match(exploreDiscovery, /const publicProducts = useMemo/);
+assert.match(exploreDiscovery, /return publicProducts\s+\.filter/);
+// Public seller profile must share the fail-closed V2 visibility guard,
+// not accidentally expose owner's pending listings through a public overlay.
+const sellerPublicProfile = fs.readFileSync('src/components/SellerPublicProfile.tsx', 'utf8');
+assert.match(sellerPublicProfile, /import \{ isPublicDiscoveryProduct \} from '\.\.\/lib\/publicDiscovery'/);
+assert.match(sellerPublicProfile, /product\.vendedor_id === sellerId && product\.estado === 'Activo' && isPublicDiscoveryProduct\(product, nationalSchemaEnabled\(\)\)/);
+const sellerInventory = [
+  { vendedor_id: 'seller-A', estado: 'Activo', moderation_status: 'approved', id: 'approved-public' },
+  { vendedor_id: 'seller-A', estado: 'Activo', moderation_status: 'pending', id: 'own-pending' },
+  { vendedor_id: 'seller-A', estado: 'Activo', moderation_status: 'review', id: 'review' },
+  { vendedor_id: 'seller-A', estado: 'Activo', moderation_status: 'rejected', id: 'rejected' },
+  { vendedor_id: 'seller-B', estado: 'Activo', moderation_status: 'approved', id: 'other-seller' },
+  { vendedor_id: 'seller-A', estado: 'Inactivo', moderation_status: 'approved', id: 'inactive' },
+];
+const publicSellerIds = sellerInventory.filter((product) =>
+  product.vendedor_id === 'seller-A' && product.estado === 'Activo' && publicFilter(product, true)
+).map((product) => product.id);
+assert.deepEqual(publicSellerIds, ['approved-public'], 'only approved active current seller listings can appear on public profile');
+assert.equal(sellerInventory.filter((product) => product.vendedor_id === 'seller-A' && product.estado === 'Activo').length, 4,
+  'private seller inventory remains separate and is not deleted');
+
+
+const h=fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx','utf8');
+assert.match(h,/location\.owner_uid !== useAppStore\.getState\(\)\.user\.id/);
+assert.match(h,/useAppStore\.getState\(\)\.user\.id !== requestUid/);
+
+const exploreFreshness=fs.readFileSync('src/components/ExploreScreen.tsx','utf8');
+assert.match(exploreFreshness,/document\.addEventListener\('visibilitychange', onForeground\)/);
+assert.match(exploreFreshness,/window\.addEventListener\('focus', onForeground\)/);
+assert.match(exploreFreshness,/Date\.now\(\) - lastRequested < 60_000/);
+assert.match(exploreFreshness,/setNearbyProducts\(\[\]\);[\s\S]*setNearbyRefreshKey\(\(current\) => current \+ 1\)/);
+assert.match(exploreFreshness,/document\.removeEventListener\('visibilitychange', onForeground\)/);
+// Execute the real mounted Nearby hydrator against a controlled async A -> B -> A race.
+// A UID-only comparison passes incorrectly when the same account signs back in.
+const hydratorTsx = fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx', 'utf8');
+const hydratorJs = ts.transpileModule(hydratorTsx, {
+  fileName: 'V2NearbyListingsHydrator.tsx',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
+}).outputText;
+const hydrationRequests = [];
+const hydrationSubscriptions = new Set();
+const hydrationListeners = new Map();
+const hydrationState = { user: { id: A }, products: [] };
+let hydrationCleanup = null;
+const mockAppStore = {
+  getState: () => hydrationState,
+  setState: (patch) => {
+    Object.assign(hydrationState, patch);
+    for (const listener of hydrationSubscriptions) listener(hydrationState);
+  },
+  subscribe: (listener) => {
+    hydrationSubscriptions.add(listener);
+    return () => hydrationSubscriptions.delete(listener);
+  },
+};
+const mockHydrationWindow = {
+  addEventListener(type, listener) {
+    hydrationListeners.set(type, [...(hydrationListeners.get(type) || []), listener]);
+  },
+  removeEventListener(type, listener) {
+    hydrationListeners.set(type, (hydrationListeners.get(type) || []).filter((fn) => fn !== listener));
+  },
+  dispatchEvent(event) {
+    for (const listener of hydrationListeners.get(event.type) || []) listener(event);
+  },
+};
+const hydrationModule = { exports: {} };
+vm.runInNewContext(hydratorJs, {
+  module: hydrationModule, exports: hydrationModule.exports,
+  require(name) {
+    if (name === 'react') return { useEffect: (effect) => { hydrationCleanup = effect(); } };
+    if (name === '../lib/nearbyMarketplace') return {
+      getCachedApproxLocation: (uid) => uid ? loc : null,
+      nearbyGeoCells: () => ['g1:1:1'],
+      NEARBY_LOCATION_EVENT: 'tutop:approx-location',
+    };
+    if (name === '../services/canonicalListingsBackend') return {
+      canonicalListingsBackend: {
+        loadNearbyProducts: () => new Promise((resolve) => hydrationRequests.push(resolve)),
+      },
+    };
+    if (name === '../store/useAppStore') return { useAppStore: mockAppStore };
+    if (name === './V2ListingsHydrator') return { V2_LISTINGS_BASE_HYDRATED_EVENT: 'tutop:v2-listings-base-hydrated' };
+    throw new Error('Unexpected hydrator import: ' + name);
+  },
+  window: mockHydrationWindow, Map, Date, Promise, console,
+}, { timeout: 2500 });
+hydrationModule.exports.default();
+assert.equal(hydrationRequests.length, 1, 'initial A Nearby request expected');
+mockAppStore.setState({ user: { id: B }, products: [] });
+mockAppStore.setState({ user: { id: A }, products: [] });
+hydrationRequests[0]([{ id: 'stale-A-product', updated_at: '2026-10-23T00:00:00Z' }]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hydrationState.products.length, 0, 'stale A result must not return after A -> B -> A');
+mockAppStore.setState({ user: { id: B }, products: [] });
+mockHydrationWindow.dispatchEvent({
+  type: 'tutop:approx-location',
+  detail: { ...loc, owner_uid: B },
+});
+assert.equal(hydrationRequests.length, 2, 'current B must be allowed a new request');
+hydrationRequests[1]([{ id: 'current-B-product', updated_at: '2026-10-23T00:00:01Z' }]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hydrationState.products[0]?.id, 'current-B-product');
+
+// A fresh Nearby result that omits an earlier approved listing must evict it.
+mockHydrationWindow.dispatchEvent({
+  type: 'tutop:approx-location', detail: { ...loc, owner_uid: B },
+});
+assert.equal(hydrationRequests.length, 3);
+hydrationRequests[2]([]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hydrationState.products.length, 0, 'withdrawn Nearby-only listing must be evicted');
+
+// Authoritative base records must survive that same Nearby reconciliation.
+mockAppStore.setState({ products: [{ id: 'base-authoritative-product', updated_at: '2026-10-23T00:00:02Z' }] });
+mockHydrationWindow.dispatchEvent({ type: 'tutop:v2-listings-base-hydrated' });
+assert.equal(hydrationRequests.length, 4);
+hydrationRequests[3]([{ id: 'nearby-only-product', updated_at: '2026-10-23T00:00:03Z' }]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hydrationState.products.length, 2);
+mockHydrationWindow.dispatchEvent({
+  type: 'tutop:approx-location', detail: { ...loc, owner_uid: B },
+});
+assert.equal(hydrationRequests.length, 5);
+hydrationRequests[4]([]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hydrationState.products.map((product) => product.id).join(','), 'base-authoritative-product');
+assert.equal(hydrationSubscriptions.size, 1);
+hydrationCleanup();
+assert.equal(hydrationSubscriptions.size, 0, 'cleanup must remove the owner subscription');
+
+console.log('PASS real Nearby cache/events isolate A/B and stale A async callbacks; no device or Firebase usage');

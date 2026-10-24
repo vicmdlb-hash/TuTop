@@ -13,6 +13,9 @@ const LOCATION_KEY = 'tutop.approx-location.v1';
 export const NEARBY_LOCATION_EVENT = 'tutop:approx-location';
 export const NEARBY_RADIUS_OPTIONS = [5, 10, 25, 50] as const;
 const GEO_CELL_DEGREES = 1;
+// Increment even when no cache exists: pending native/browser location must
+// never recreate an account's location after logout or consent reset.
+let locationLifecycleEpoch = 0;
 
 function validCoordinate(latitude: number, longitude: number) {
   return Number.isFinite(latitude) && Number.isFinite(longitude)
@@ -35,7 +38,8 @@ export function toApproxLocation(latitude: number, longitude: number, source: Ap
   };
 }
 
-type PersistedApproxLocation = ApproxLocation & { owner_uid: string };
+export type ScopedApproxLocationEvent = ApproxLocation & { owner_uid: string };
+type PersistedApproxLocation = ScopedApproxLocationEvent;
 
 export function getCachedApproxLocation(ownerUid: string, maxAgeMs = 6 * 60 * 60_000): ApproxLocation | null {
   if (!ownerUid) return null;
@@ -62,10 +66,11 @@ export function saveApproxLocation(location: ApproxLocation, ownerUid: string) {
   if (!ownerUid) return;
   const persisted: PersistedApproxLocation = { ...location, owner_uid: ownerUid };
   try { localStorage.setItem(LOCATION_KEY, JSON.stringify(persisted)); } catch { /* optional cache */ }
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ApproxLocation>(NEARBY_LOCATION_EVENT, { detail: location }));
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ScopedApproxLocationEvent>(NEARBY_LOCATION_EVENT, { detail: persisted }));
 }
 
 export function clearApproxLocation(ownerUid?: string) {
+  locationLifecycleEpoch += 1;
   try {
     const raw = localStorage.getItem(LOCATION_KEY);
     if (!raw) return;
@@ -108,7 +113,8 @@ function requestBrowserLocation(options: { timeoutMs?: number; maximumAgeMs?: nu
   });
 }
 
-export async function requestApproxLocation(options: { timeoutMs?: number; maximumAgeMs?: number; requestPermission?: boolean; ownerUid?: string } = {}) {
+export async function requestApproxLocation(options: { timeoutMs?: number; maximumAgeMs?: number; requestPermission?: boolean; ownerUid?: string; isOwnerActive?: () => boolean } = {}) {
+  const initialEpoch = locationLifecycleEpoch;
   let location: ApproxLocation | null;
   if (isNativeDeviceRuntime()) {
     const position = await getNativeApproxPosition({
@@ -120,6 +126,9 @@ export async function requestApproxLocation(options: { timeoutMs?: number; maxim
   } else {
     location = await requestBrowserLocation(options);
   }
+  // Explicit account check rejects A->B without logout; epoch rejects any
+  // request that resolves after logout even if A reauthenticates later.
+  if (initialEpoch !== locationLifecycleEpoch || (options.isOwnerActive && !options.isOwnerActive())) return null;
   if (location && options.ownerUid) saveApproxLocation(location, options.ownerUid);
   return location;
 }
