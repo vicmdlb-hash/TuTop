@@ -138,5 +138,21 @@ test('under-13 cannot send messages or make offers inside historical chats', asy
 test('verified adult with active adult recipient can create a message', async () => {
   await seed('adult');
   await seedChat();
-  await assertSucceeds(createMessage(verifiedContext(env, 'buyer').firestore()));
+  try {
+    await assertSucceeds(createMessage(verifiedContext(env, 'buyer').firestore()));
+  } catch (error) {
+    // Synthetic demo project only. Inspect the official local emulator
+    // expression report to differentiate access-call exhaustion vs failed
+    // predicates. Never log real account records or auth tokens.
+    const url = `http://${hostname}:${Number(portRaw || 8080)}/emulator/v1/projects/${process.env.GCLOUD_PROJECT}:ruleCoverage`;
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      const report = await response.text();
+      console.error('GUARDIAN_DEMO_RULE_COVERAGE_STATUS', response.status);
+      console.error('GUARDIAN_DEMO_RULE_COVERAGE_TAIL', report.slice(-9500));
+    } catch (coverageError) {
+      console.error('GUARDIAN_DEMO_COVERAGE_UNAVAILABLE', String(coverageError));
+    }
+    throw error;
+  }
 });
