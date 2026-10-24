@@ -28,22 +28,28 @@ const helpers = `
     function guardianGrantDoc(uid) {
       return /databases/$(database)/documents/guardian_grants_v2/$(uid);
     }
-    function guardianVerifiedAge(uid) {
+    function guardianAgeDataAllowed(uid, acceptedBands, proof) {
+      return proof.keys().hasAll(['subjectUid','band','issuer','revoked','expires_at'])
+        && proof.subjectUid == uid
+        && proof.issuer == 'trusted_server'
+        && proof.revoked == false
+        && proof.expires_at is timestamp
+        && proof.expires_at > request.time
+        && proof.band in acceptedBands;
+    }
+    function guardianAgeAllowed(uid, acceptedBands) {
       return signedIn() && uid is string && uid.size() > 0
         && exists(guardianAgeDoc(uid))
-        && get(guardianAgeDoc(uid)).data.keys().hasAll([
-          'subjectUid','band','issuer','revoked','expires_at'
-        ])
-        && get(guardianAgeDoc(uid)).data.subjectUid == uid
-        && get(guardianAgeDoc(uid)).data.issuer == 'trusted_server'
-        && get(guardianAgeDoc(uid)).data.revoked == false
-        && get(guardianAgeDoc(uid)).data.expires_at is timestamp
-        && get(guardianAgeDoc(uid)).data.expires_at > request.time
-        && get(guardianAgeDoc(uid)).data.band in ['under_13','teen_13_17','adult'];
+        // Evaluate the trusted proof once per operation instead of repeating
+        // several get() expressions. The current Rules V2 is near the 1,000
+        // expression evaluation budget in social write batches.
+        && guardianAgeDataAllowed(uid, acceptedBands, get(guardianAgeDoc(uid)).data);
+    }
+    function guardianVerifiedAge(uid) {
+      return guardianAgeAllowed(uid, ['under_13','teen_13_17','adult']);
     }
     function guardianAdultOrTeen(uid) {
-      return guardianVerifiedAge(uid)
-        && get(guardianAgeDoc(uid)).data.band in ['adult','teen_13_17'];
+      return guardianAgeAllowed(uid, ['adult','teen_13_17']);
     }
     function guardianValidGrant(uid, cap) {
       return exists(guardianGrantDoc(uid))
