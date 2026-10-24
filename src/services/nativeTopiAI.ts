@@ -1,5 +1,6 @@
 import { getNativeAppCheckToken, initializeNativeAppCheck, nativeAppCheckStatus } from './nativeAppCheckToken';
 import { recordDiagnostic } from './localDiagnostics';
+import { topiRemoteProviderAudienceGate } from '../lib/topiAllAgesProviderGate';
 
 type CapacitorPlugin = Record<string, (...args: any[]) => Promise<any>>;
 type CapacitorRuntime = {
@@ -9,7 +10,7 @@ type CapacitorRuntime = {
   Plugins?: Record<string, CapacitorPlugin>;
 };
 
-export type NativeTopiAIReason = 'ready' | 'not-native' | 'disabled' | 'plugin-missing' | 'app-check-unavailable' | 'request-failed' | 'empty-response';
+export type NativeTopiAIReason = 'ready' | 'not-native' | 'disabled' | 'audience-provider-not-approved' | 'plugin-missing' | 'app-check-unavailable' | 'request-failed' | 'empty-response';
 export type NativeTopiAIFailureKind = 'none' | 'timeout' | 'network' | 'firebase-config-rejected' | 'app-check' | 'capacity' | 'native-request';
 const AI_REQUEST_TIMEOUT_MS = 20_000;
 const AI_TRANSIENT_RETRY_DELAY_MS = 650;
@@ -66,13 +67,16 @@ function appCheckRequired() {
 }
 
 export function nativeTopiAIAvailable() {
-  if (!nativeRuntime()) return false;
-  return firebaseAIEnabled() && Boolean(plugin()?.generate);
+  if (!nativeRuntime() || !firebaseAIEnabled()) return false;
+  // Feature flag and App Check do NOT establish permission for under-18.
+  if (!topiRemoteProviderAudienceGate().allowed) return false;
+  return Boolean(plugin()?.generate);
 }
 
 export function nativeTopiAIStatus() {
   if (!nativeRuntime()) return { available: false, reason: 'not-native' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
   if (!firebaseAIEnabled()) return { available: false, reason: 'disabled' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
+  if (!topiRemoteProviderAudienceGate().allowed) return { available: false, reason: 'audience-provider-not-approved' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
   if (!plugin()?.generate) return { available: false, reason: 'plugin-missing' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
   return { available: lastReason === 'ready', reason: lastReason, failureKind: lastFailureKind, model: lastModel, appCheck: nativeAppCheckStatus() };
 }
@@ -93,6 +97,12 @@ function delay(ms: number) {
 export async function generateNativeTopiText(prompt: string): Promise<{ text: string; model: string; provider: 'firebase-ai-logic' } | null> {
   if (!nativeRuntime()) { setReason('not-native'); return null; }
   if (!firebaseAIEnabled()) { setReason('disabled'); return null; }
+  // Abort BEFORE reading the prompt, plugin, token, model or remote transport.
+  // This mixed-age release cannot inherit Gemini Developer API eligibility.
+  if (!topiRemoteProviderAudienceGate().allowed) {
+    setReason('audience-provider-not-approved', { mixed_age_release: true });
+    return null;
+  }
   const ai = plugin();
   if (!ai?.generate) { setReason('plugin-missing'); return null; }
   const clean = prompt.replace(/\u0000/g, '').trim().slice(0, 6000);
