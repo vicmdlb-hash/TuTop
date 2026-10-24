@@ -103,14 +103,10 @@ async function documentOrNull(path) {
   return { id: String(result.name || '').split('/').pop(), ...decodeFields(result.fields || {}) };
 }
 
-const blockEdgeCache = new Map();
 const blockChatCache = new Map();
 async function hasUserBlockEdge(fromUid, toUid) {
-  const key = `${fromUid}/${toUid}`;
-  if (!blockEdgeCache.has(key)) {
-    blockEdgeCache.set(key, Boolean(await documentOrNull(`user_blocks/${fromUid}/targets/${toUid}`)));
-  }
-  return blockEdgeCache.get(key);
+  // Read again for each pending direct notice; an earlier negative can expire.
+  return Boolean(await documentOrNull(`user_blocks/${fromUid}/targets/${toUid}`));
 }
 
 async function blockedDirectOutbox(item) {
