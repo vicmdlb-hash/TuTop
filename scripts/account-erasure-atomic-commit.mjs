@@ -32,7 +32,7 @@ export function buildAccountErasureFinalCommit({projectId,uid,processorRunId,req
       Number.isSafeInteger(completed[k])&&completed[k]>=0)) throw Error('ERASURE_ATOMIC_COMPLETION_PROOF_INVALID');
   if(!audit||audit.actor_type!=='trusted_runner'||audit.role!=='trust_safety'
     ||!safeId(audit.admin_uid)
-    ||audit.action!=='account_erasure_completed
+    ||audit.action!=='account_erasure_completed'
     ||audit.target_type!=='account_deletion_request'||audit.target_id!==uid
     ||audit.processor_run_id!==processorRunId
     ||audit.residual_manifest_version!==completed.residual_manifest_version
