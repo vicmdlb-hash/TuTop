@@ -100,6 +100,21 @@ export async function adminRunQueryAll(collectionId, filters = [], pageSize = 50
   }), { pageSize });
 }
 
+// Read references inside nested user block lists with bounded cursor pages.
+// A missing index or permission must propagate an error and prevent erasure.
+export async function adminRunCollectionGroupQueryAll(collectionId, filters = [], pageSize = 500) {
+  const clean = String(collectionId || '').trim();
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(clean)) throw new Error('COLLECTION_GROUP_INVALID');
+  const where = structuredWhere(filters);
+  return collectCursorPages(async ({ afterName, pageSize: size }) => runStructuredQuery({
+    from: [{ collectionId: clean, allDescendants: true }],
+    ...(where ? { where } : {}),
+    orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }],
+    ...(afterName ? { startAt: { values: [{ referenceValue: afterName }], before: false } } : {}),
+    limit: size,
+  }), { pageSize });
+}
+
 // Collection-group scan used by destructive staging cleanup. allDescendants=true
 // is essential: a Firestore subcollection can survive even when its parent chat
 // document no longer exists, so parent traversal alone cannot prove a clean beta.
