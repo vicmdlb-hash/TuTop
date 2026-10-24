@@ -45,6 +45,13 @@ assert.match(planner, /mode: apply \? 'apply' : 'dry-run'/);
 assert.match(planner, /blocked: normalizedBlockers\.length > 0/);
 assert.match(planner, /safe_to_execute_in_staging: !plan\.blocked/);
 assert.match(planner, /auth_delete_last: true/);
+// CI/staging logs must never reveal full UID, Firestore document paths,
+// chat identifiers or transaction IDs from a real erasure plan.
+assert.match(processor, /residualRiskSummary\(plan\)/);
+assert.doesNotMatch(processor, /console\.log\(JSON\.stringify\(plan/);
+assert.doesNotMatch(processor, /ACCOUNT_ERASURE_BLOCKED:\$\{plan\.blockers/);
+assert.doesNotMatch(processor, /ACCOUNT_ERASURE_DIRECT_RESIDUAL:\$\{path\}/);
+assert.doesNotMatch(processor, /Eliminación controlada staging completada para \$\{uid\}/);
 assert.match(processor, /DRY-RUN: no se modificó Firestore\/Auth/);
 assert.match(processor, /DRY-RUN BLOQUEADO/);
 assert.match(processor, /status: 'archived'/);
