@@ -1,4 +1,4 @@
-import { adminDeleteDocument, adminDeleteTestUsers, adminAssertAuthUserAbsent, adminGetDocument, adminListDocuments, adminPatchDocument, adminCommitAccountErasureCompletion, adminRunQueryAll } from './staging-v2-admin.mjs';
+import { adminDeleteDocument, adminDeleteTestUsers, adminAssertAuthUserAbsent, adminGetDocument, adminListDocuments, adminPatchDocument, adminCommitAccountErasureCompletion, adminRunQueryAll, adminRunCollectionGroupQueryAll } from './staging-v2-admin.mjs';
 import { buildAccountErasurePlan } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -58,6 +58,26 @@ const queryDeletePaths = [];
 for (const [collection, field] of queryDeletes) {
   for (const doc of await adminRunQueryAll(collection, [{ field, value: uid }], 500)) queryDeletePaths.push(doc.path);
 }
+
+// A block edge can identify the erased account either as owner or as target.
+// Parent document deletion does not cascade into Firestore subcollections.
+const outgoingBlocks = await adminListDocuments(`user_blocks/${uid}/targets`, 500);
+const incomingBlocks = await adminRunCollectionGroupQueryAll('targets', [{ field: 'blocked_uid', value: uid }], 500);
+const blockPaths = new Set();
+for (const edge of [...outgoingBlocks, ...incomingBlocks]) {
+  const path = String(edge.path || '');
+  const parts = path.split('/');
+  if (parts.length !== 4 || parts[0] !== 'user_blocks' || parts[2] !== 'targets') {
+    throw new Error('ACCOUNT_ERASURE_BLOCK_PATH_INVALID');
+  }
+  const blockerUid = parts[1], blockedUid = parts[3];
+  if (blockerUid !== uid && blockedUid !== uid) throw new Error('ACCOUNT_ERASURE_BLOCK_NOT_RELATED');
+  if (fieldString(edge, 'blocker_uid') !== blockerUid || fieldString(edge, 'blocked_uid') !== blockedUid) {
+    throw new Error('ACCOUNT_ERASURE_BLOCK_EDGE_MISMATCH');
+  }
+  blockPaths.add(path);
+}
+queryDeletePaths.push(...blockPaths);
 
 const withdrawDocs = [];
 for (const [collection, field] of withdrawals) {
@@ -144,6 +164,12 @@ await adminDeleteDocument(`users/${uid}`);
 // página incompleta.
 for (const path of [...directDeletes, `users/${uid}`]) {
   if (await adminGetDocument(path)) throw new Error(`ACCOUNT_ERASURE_DIRECT_RESIDUAL:${path}`);
+}
+// Independent post-delete readback: no outbound OR inbound UID references.
+const remainingOutgoingBlocks = await adminListDocuments(`user_blocks/${uid}/targets`, 500);
+const remainingIncomingBlocks = await adminRunCollectionGroupQueryAll('targets', [{ field: 'blocked_uid', value: uid }], 500);
+if (remainingOutgoingBlocks.length || remainingIncomingBlocks.length) {
+  throw new Error('ACCOUNT_ERASURE_USER_BLOCK_RESIDUAL');
 }
 for (const [collection, field] of queryDeletes) {
   const remaining = await adminRunQueryAll(collection, [{ field, value: uid }], 500);
