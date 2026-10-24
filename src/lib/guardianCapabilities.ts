@@ -51,6 +51,7 @@ export type CapabilityDecision = {
   allowed: boolean;
   reason:
     | 'age_unverified'
+    | 'capability_unknown'
     | 'guardian_missing'
     | 'requires_guardian_action'
     | 'age_restricted'
@@ -61,17 +62,28 @@ export type CapabilityDecision = {
 const DENIED = (reason: CapabilityDecision['reason']): CapabilityDecision =>
   ({ allowed: false, reason });
 const ALLOWED: CapabilityDecision = { allowed: true, reason: 'approved' };
+const KNOWN_CAPABILITIES: ReadonlySet<Capability> = new Set([
+  'browse_approved', 'publish_listing', 'direct_chat', 'make_offer',
+  'share_personal_info', 'precise_location', 'topi_generative',
+]);
+const VERIFIED_BANDS: ReadonlySet<AgeBand> = new Set([
+  'under_13', 'teen_13_17', 'adult',
+]);
 
 function trustedAge(uid: string, proof: TrustedAgeProof | null, nowMs: number): AgeBand {
-  return proof && uid && proof.subjectUid === uid && proof.issuer === 'trusted_server'
-    && !proof.revoked && Number.isFinite(proof.expiresAtMs) && proof.expiresAtMs > nowMs
+  return proof && typeof uid === 'string' && uid.trim().length > 0
+    && proof.subjectUid === uid && proof.issuer === 'trusted_server'
+    && proof.revoked === false && VERIFIED_BANDS.has(proof.band)
+    && Number.isFinite(proof.expiresAtMs) && proof.expiresAtMs > nowMs
     ? proof.band : 'unknown';
 }
 function trustedGuardian(uid: string, proof: GuardianProof | null, cap: Capability, nowMs: number) {
   return Boolean(proof && proof.issuer === 'trusted_server' && proof.childUid === uid
-    && proof.guardianUid && proof.guardianUid !== uid && proof.active
+    && typeof proof.guardianUid === 'string' && proof.guardianUid.trim().length > 0
+    && proof.guardianUid !== uid && proof.active === true
     && Number.isFinite(proof.expiresAtMs) && proof.expiresAtMs > nowMs
-    && proof.consentVersion.trim() && proof.approvedCapabilities.includes(cap));
+    && typeof proof.consentVersion === 'string' && proof.consentVersion.trim().length > 0
+    && Array.isArray(proof.approvedCapabilities) && proof.approvedCapabilities.includes(cap));
 }
 
 /**
@@ -88,13 +100,17 @@ export function decideCapability(input: {
   adultAction?: VerifiedAdultAction | null;
   nowMs: number;
 }): CapabilityDecision {
+  if (!input || typeof input !== 'object') return DENIED('age_unverified');
   const { uid, capability, nowMs } = input;
-  if (!uid || !Number.isFinite(nowMs)) return DENIED('age_unverified');
+  if (typeof uid !== 'string' || uid.trim().length === 0 || !Number.isFinite(nowMs))
+    return DENIED('age_unverified');
+  // TypeScript types do not validate Firestore/JSON data at runtime.
+  if (!KNOWN_CAPABILITIES.has(capability)) return DENIED('capability_unknown');
   const band = trustedAge(uid, input.age, nowMs);
   if (band === 'unknown') return DENIED('age_unverified');
 
   if (capability === 'topi_generative') {
-    if (!input.topi || input.topi.issuer !== 'trusted_server' || !input.topi.approved
+    if (!input.topi || input.topi.issuer !== 'trusted_server' || input.topi.approved !== true
       || input.topi.audience !== 'all_ages') return DENIED('topi_runtime_unapproved');
   }
 
@@ -103,8 +119,9 @@ export function decideCapability(input: {
     if (capability === 'share_personal_info') {
       const action = input.adultAction;
       if (!action || action.issuer !== 'trusted_server' || action.subjectUid !== uid
-        || !action.actorUid || action.actorUid === uid
-        || action.capability !== 'share_personal_info' || !action.authorized
+        || typeof action.actorUid !== 'string' || action.actorUid.trim().length === 0
+        || action.actorUid === uid
+        || action.capability !== 'share_personal_info' || action.authorized !== true
         || !Number.isFinite(action.expiresAtMs) || action.expiresAtMs <= nowMs)
         return DENIED('requires_guardian_action');
     }
