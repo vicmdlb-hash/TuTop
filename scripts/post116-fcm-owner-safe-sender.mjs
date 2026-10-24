@@ -1,5 +1,6 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
+import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
 import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords } from './fcm-token-ownership-lib.mjs';
 import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
 
@@ -91,6 +92,36 @@ async function query(collectionId) {
   }));
 }
 
+async function documentOrNull(path) {
+  const uri = path.split('/').map(encodeURIComponent).join('/');
+  const response = await fetch(`${base}/${uri}`, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`BLOCK_CHECK_FAILED:${response.status}`);
+  const result = await response.json();
+  return { id: String(result.name || '').split('/').pop(), ...decodeFields(result.fields || {}) };
+}
+
+const blockEdgeCache = new Map();
+const blockChatCache = new Map();
+async function hasUserBlockEdge(fromUid, toUid) {
+  const key = `${fromUid}/${toUid}`;
+  if (!blockEdgeCache.has(key)) {
+    blockEdgeCache.set(key, Boolean(await documentOrNull(`user_blocks/${fromUid}/targets/${toUid}`)));
+  }
+  return blockEdgeCache.get(key);
+}
+
+async function blockedDirectOutbox(item) {
+  if (!['new_message','offer_received','counter_offer','offer_accepted'].includes(item.kind)) return false;
+  const chatId = String(item.chat_id || '');
+  if (!blockChatCache.has(chatId)) {
+    blockChatCache.set(chatId, chatId ? await documentOrNull(`chats/${chatId}`) : null);
+  }
+  return shouldSuppressBlockedDirectNotification(item, blockChatCache.get(chatId), hasUserBlockEdge);
+}
+
 async function markSent(item) {
   const at = new Date().toISOString();
   const name = `projects/${projectId}/databases/(default)/documents/notification_outbox/${item.id}`;
@@ -143,9 +174,14 @@ const scopedPending = apply
 let planned = 0;
 let delivered = 0;
 let waitingForToken = 0;
+let blockedSuppressed = 0;
 let supersededOwnershipDeactivated = 0;
 
 for (const item of scopedPending) {
+  if (await blockedDirectOutbox(item)) {
+    blockedSuppressed += 1;
+    continue;
+  }
   const eligibleTargets = eligibleRecipientTargets(tokens, item.recipient_uid);
   const targets = apply
     ? [selectExactPhysicalTarget(eligibleTargets, applyGate.deviceTokenRecordId)]
@@ -203,6 +239,7 @@ console.log(JSON.stringify({
   planned_deliveries: planned,
   delivered,
   waiting_for_device_token: waitingForToken,
+  suppressed_by_user_blocks: blockedSuppressed,
   current_owner_filter: true,
   superseded_active_token_records_detected: supersededActiveTokens.length,
   superseded_active_token_records_deactivated: apply ? supersededOwnershipDeactivated : 0,

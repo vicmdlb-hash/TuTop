@@ -1,6 +1,7 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { projectMarketplaceNotifications } from './marketplace-notification-projection-lib.mjs';
 import { notificationPreferenceAllows } from './notification-preference-projection-lib.mjs';
+import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
@@ -94,6 +95,17 @@ async function loadNotificationPreferences(uid) {
   return decodeFields(result.data.fields);
 }
 
+const blockEdgeCache = new Map();
+async function hasUserBlockEdge(fromUid, toUid) {
+  const key = `${fromUid}/${toUid}`;
+  if (blockEdgeCache.has(key)) return blockEdgeCache.get(key);
+  const path = ['user_blocks', fromUid, 'targets', toUid].map(encodeURIComponent).join('/');
+  const result = await request(`${root}/${path}`, {}, [404]);
+  const exists = result.status !== 404;
+  blockEdgeCache.set(key, exists);
+  return exists;
+}
+
 async function createOutbox(notification) {
   const { id, source_event_at, ...payload } = notification;
   const at = new Date().toISOString();
@@ -136,13 +148,21 @@ const eligible = projected.filter((notification) => notificationPreferenceAllows
   preferencesByUid.get(String(notification.recipient_uid || '')) || {},
 ));
 
+const chatById = new Map(chats.map((chat) => [String(chat.id), chat]));
+let blockedSuppressed = 0;
 let created = 0;
 let duplicates = 0;
 for (const notification of eligible) {
+  if (await shouldSuppressBlockedDirectNotification(
+    notification, chatById.get(String(notification.chat_id || '')), hasUserBlockEdge
+  )) {
+    blockedSuppressed += 1;
+    continue;
+  }
   if (!apply) { created += 1; continue; }
   const result = await createOutbox(notification);
   if (result.status === 409) duplicates += 1;
   else created += 1;
 }
 
-console.log(`marketplace-notifications: cutoff=${cutoffIso}; projected=${projected.length} eligible=${eligible.length} suppressed_by_preferences=${projected.length - eligible.length} ${apply ? `created=${created} duplicates=${duplicates}` : 'dry-run'}; chats=${chats.length} messages=${messages.length} offers=${offers.length} transactions=${transactions.length}.`);
+console.log(`marketplace-notifications: cutoff=${cutoffIso}; projected=${projected.length} eligible=${eligible.length} suppressed_by_preferences=${projected.length - eligible.length} suppressed_by_user_blocks=${blockedSuppressed} ${apply ? `created=${created} duplicates=${duplicates}` : 'dry-run'}; chats=${chats.length} messages=${messages.length} offers=${offers.length} transactions=${transactions.length}.`);
