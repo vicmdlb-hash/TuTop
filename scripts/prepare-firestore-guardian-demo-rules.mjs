@@ -38,11 +38,10 @@ const helpers = `
         && proof.band in acceptedBands;
     }
     function guardianAgeAllowed(uid, acceptedBands) {
-      return signedIn() && uid is string && uid.size() > 0
-        && exists(guardianAgeDoc(uid))
-        // Evaluate the trusted proof once per operation instead of repeating
-        // several get() expressions. The current Rules V2 is near the 1,000
-        // expression evaluation budget in social write batches.
+      // A non-existent or malformed trusted proof fails closed on get().
+      // Avoid a second exists() lookup; the V2 social rule set already
+      // approaches the 1,000-expression / access-call limits.
+      return signedIn() && uid is string
         && guardianAgeDataAllowed(uid, acceptedBands, get(guardianAgeDoc(uid)).data);
     }
     function guardianVerifiedAge(uid) {
@@ -52,23 +51,25 @@ const helpers = `
       return guardianAgeAllowed(uid, ['adult','teen_13_17']);
     }
     function guardianValidGrant(uid, cap) {
-      return exists(guardianGrantDoc(uid))
-        && get(guardianGrantDoc(uid)).data.keys().hasAll([
+      // Load once instead of repeatedly re-evaluating get() and keys().
+      // A missing field denies; it never promotes client-provided grants.
+      let proof = get(guardianGrantDoc(uid)).data;
+      return proof.keys().hasAll([
           'childUid','guardianUid','issuer','active','consentVersion',
           'approvedCapabilities','expires_at'
         ])
-        && get(guardianGrantDoc(uid)).data.childUid == uid
-        && get(guardianGrantDoc(uid)).data.guardianUid is string
-        && get(guardianGrantDoc(uid)).data.guardianUid.size() > 0
-        && get(guardianGrantDoc(uid)).data.guardianUid != uid
-        && get(guardianGrantDoc(uid)).data.issuer == 'trusted_server'
-        && get(guardianGrantDoc(uid)).data.active == true
-        && get(guardianGrantDoc(uid)).data.consentVersion is string
-        && get(guardianGrantDoc(uid)).data.consentVersion.size() > 0
-        && get(guardianGrantDoc(uid)).data.expires_at is timestamp
-        && get(guardianGrantDoc(uid)).data.expires_at > request.time
-        && get(guardianGrantDoc(uid)).data.approvedCapabilities is list
-        && cap in get(guardianGrantDoc(uid)).data.approvedCapabilities;
+        && proof.childUid == uid
+        && proof.guardianUid is string
+        && proof.guardianUid.size() > 0
+        && proof.guardianUid != uid
+        && proof.issuer == 'trusted_server'
+        && proof.active == true
+        && proof.consentVersion is string
+        && proof.consentVersion.size() > 0
+        && proof.expires_at is timestamp
+        && proof.expires_at > request.time
+        && proof.approvedCapabilities is list
+        && cap in proof.approvedCapabilities;
     }
     // An already-read chat snapshot can carry server-managed pair admission.
     // The client chat create allowlist excludes these fields; client updates
@@ -99,9 +100,12 @@ const helpers = `
       return guardianPairReady(chatDoc(chatId).data);
     }
     function guardianCanPublish(uid) {
-      return guardianVerifiedAge(uid)
-        && (get(guardianAgeDoc(uid)).data.band in ['adult','teen_13_17']
-          || (get(guardianAgeDoc(uid)).data.band == 'under_13'
+      // One age proof read, then one grant read only for the under13 branch.
+      let proof = get(guardianAgeDoc(uid)).data;
+      return signedIn() && uid is string
+        && guardianAgeDataAllowed(uid, ['adult','teen_13_17','under_13'], proof)
+        && (proof.band in ['adult','teen_13_17']
+          || (proof.band == 'under_13'
             && guardianValidGrant(uid, 'publish_listing')));
     }
 `;
