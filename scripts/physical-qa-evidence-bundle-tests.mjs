@@ -76,6 +76,14 @@ const pass = validatePhysicalQaEvidence(good, now, candidateManifest);
 assert.equal(pass.overall, 'pass');
 assert.equal(pass.release_blocked, false);
 assert.equal(pass.candidate_artifact_id, candidateManifest.artifact_id);
+for (const mandatory of ["second_account_email_verification","topi_real_ai","notification_permission_activation","notification_token_registered","fcm_two_device_receive","fcm_two_device_tap_deep_link","account_switch_fcm_isolation"]) {
+  const omitted = structuredClone(good);
+  delete omitted.required_cases[mandatory];
+  const denied = validatePhysicalQaEvidence(omitted, now, candidateManifest);
+  assert.equal(denied.release_blocked, true, `missing ${mandatory} must block R6`);
+  assert(denied.errors.some((error) => error.includes(`required_cases.${mandatory}`)));
+}
+
 
 const leaked = structuredClone(good);
 leaked.password = 'secret';
