@@ -2,7 +2,7 @@ import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, deleteDoc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import { doc, deleteDoc, getDoc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
 
 // DEMO PROJECT ONLY: this is a migration/security probe, not deployed policy.
 // Exact current app rule generation is transformed into separate proof-gated
@@ -208,6 +208,73 @@ test('revoked or expired chat clearance blocks last-message updates as well as n
   await assertFails(updateDoc(doc(buyer, 'chats/chat-buyer-listing'), {
     last_message: 'Revoked', last_message_at: now(), updated_at: now(),
   }));
+});
+
+test('approved participants can read historical chat, message and receipt documents', async () => {
+  await seed('adult');
+  await seedChat({ vetted: true });
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'chats/chat-buyer-listing/messages/historical'), {
+      sender_id: 'seller', text: 'Existing conversation', created_at: now(),
+    });
+    await setDoc(doc(db, 'chats/chat-buyer-listing/confirmations/buyer'), {
+      user_id: 'buyer', created_at: now(),
+    });
+    await setDoc(doc(db, 'chats/chat-buyer-listing/reads/buyer'), {
+      user_id: 'buyer', read_at: now(),
+    });
+  });
+  const buyer = verifiedContext(env, 'buyer').firestore();
+  for (const path of [
+    'chats/chat-buyer-listing',
+    'chats/chat-buyer-listing/messages/historical',
+    'chats/chat-buyer-listing/confirmations/buyer',
+    'chats/chat-buyer-listing/reads/buyer',
+  ]) await assertSucceeds(getDoc(doc(buyer, path)));
+});
+
+test('revocation denies historical chat, messages and receipts to former participants', async () => {
+  await seed('adult');
+  await seedChat({ vetted: true });
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'chats/chat-buyer-listing/messages/historical'), {
+      sender_id: 'seller', text: 'Old message', created_at: now(),
+    });
+    await setDoc(doc(db, 'chats/chat-buyer-listing/confirmations/buyer'), {
+      user_id: 'buyer', created_at: now(),
+    });
+    await setDoc(doc(db, 'chats/chat-buyer-listing/reads/buyer'), {
+      user_id: 'buyer', read_at: now(),
+    });
+    await updateDoc(doc(db, 'chats/chat-buyer-listing'), { guardian_pair_revoked: true });
+  });
+  const buyer = verifiedContext(env, 'buyer').firestore();
+  for (const path of [
+    'chats/chat-buyer-listing',
+    'chats/chat-buyer-listing/messages/historical',
+    'chats/chat-buyer-listing/confirmations/buyer',
+    'chats/chat-buyer-listing/reads/buyer',
+  ]) await assertFails(getDoc(doc(buyer, path)));
+  await assertFails(setDoc(doc(buyer, 'chats/chat-buyer-listing/reads/new'), {
+    user_id: 'buyer', read_at: now(),
+  }));
+  await assertFails(setDoc(doc(buyer, 'chats/chat-buyer-listing/confirmations/buyer-new'), {
+    user_id: 'buyer', created_at: now(),
+  }));
+});
+
+test('unvetted historical chat and message are not visible to a child', async () => {
+  await seed('under_13');
+  await seedChat();
+  await env.withSecurityRulesDisabled(async (ctx) =>
+    setDoc(doc(ctx.firestore(), 'chats/chat-buyer-listing/messages/old'), {
+      sender_id: 'seller', text: 'Archive', created_at: now(),
+    }));
+  const buyer = verifiedContext(env, 'buyer').firestore();
+  await assertFails(getDoc(doc(buyer, 'chats/chat-buyer-listing')));
+  await assertFails(getDoc(doc(buyer, 'chats/chat-buyer-listing/messages/old')));
 });
 
 test('verified adult with server-vetted active recipient can create a message', async () => {
