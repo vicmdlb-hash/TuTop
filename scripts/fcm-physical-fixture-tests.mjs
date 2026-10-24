@@ -89,6 +89,13 @@ const exposedNestedAccessToken = structuredClone(valid);
 exposedNestedAccessToken.scenarios[0].events[0].access_token = 'synthetic-access-token';
 assert.equal(validateFcmPhysicalFixture(exposedNestedAccessToken, candidate, now).pass, false);
 
+const mixedCaseSecret = structuredClone(valid);
+mixedCaseSecret.scenarios[0].events[0].FCMTOKEN = 'synthetic-not-real';
+assert.equal(validateFcmPhysicalFixture(mixedCaseSecret, candidate, now).pass, false);
+const rawAppCheckSecret = structuredClone(valid);
+rawAppCheckSecret.APP_CHECK_TOKEN = 'synthetic-not-real';
+assert.equal(validateFcmPhysicalFixture(rawAppCheckSecret, candidate, now).pass, false);
+
 console.log('PASS multiple distinct simultaneous pushes can validate without false duplicate detection');
 console.log('PASS duplicate/replayed correlations, duplicate taps, reboot replay and target mismatch fail closed');
 console.log('PASS event/window timing, prior app-state consistency, sensitive token names, unknown kinds, invalid payload and stale APK fail closed');
