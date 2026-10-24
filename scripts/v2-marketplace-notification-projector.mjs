@@ -1,7 +1,7 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { projectMarketplaceNotifications } from './marketplace-notification-projection-lib.mjs';
 import { notificationPreferenceAllows } from './notification-preference-projection-lib.mjs';
-import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
+import { shouldSuppressBlockedDirectNotification, resolveDirectNotificationChat } from './user-block-notification-lib.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
@@ -95,15 +95,17 @@ async function loadNotificationPreferences(uid) {
   return decodeFields(result.data.fields);
 }
 
-const blockEdgeCache = new Map();
 async function hasUserBlockEdge(fromUid, toUid) {
-  const key = `${fromUid}/${toUid}`;
-  if (blockEdgeCache.has(key)) return blockEdgeCache.get(key);
+  // A block may be created while this projector is running. Never cache negatives.
   const path = ['user_blocks', fromUid, 'targets', toUid].map(encodeURIComponent).join('/');
   const result = await request(`${root}/${path}`, {}, [404]);
-  const exists = result.status !== 404;
-  blockEdgeCache.set(key, exists);
-  return exists;
+  return result.status !== 404;
+}
+
+async function getChatById(id) {
+  const result = await request(`${root}/chats/${encodeURIComponent(id)}`, {}, [404]);
+  if (result.status === 404) return null;
+  return { id, ...decodeFields(result.data?.fields || {}) };
 }
 
 async function createOutbox(notification) {
@@ -153,8 +155,9 @@ let blockedSuppressed = 0;
 let created = 0;
 let duplicates = 0;
 for (const notification of eligible) {
+  const chat = await resolveDirectNotificationChat(notification, chatById, getChatById);
   if (await shouldSuppressBlockedDirectNotification(
-    notification, chatById.get(String(notification.chat_id || '')), hasUserBlockEdge
+    notification, chat, hasUserBlockEdge
   )) {
     blockedSuppressed += 1;
     continue;
