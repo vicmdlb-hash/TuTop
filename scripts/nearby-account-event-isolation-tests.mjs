@@ -116,6 +116,28 @@ assert.match(publish,/useAppStore\.getState\(\)\.user\.id === requestUid/);
 assert.match(publish,/if \(!stillCurrent\(\)\) return;/);
 assert.match(publish,/const removeListingLocation = \(\) => \{\s*locationRequestSerial\.current \+= 1;/);
 assert.match(publish,/useEffect\(\(\) => \(\) => \{ locationRequestSerial\.current \+= 1; \}, \[user\.id\]\)/);
+// Run the real V2 public moderation filter and verify buyer/seller separation.
+const filterSource = fs.readFileSync('src/lib/publicDiscovery.ts', 'utf8');
+const filterJs = ts.transpileModule(filterSource, {
+  fileName: 'publicDiscovery.ts',
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText;
+const filterModule = { exports: {} };
+vm.runInNewContext(filterJs, { module: filterModule, exports: filterModule.exports }, { timeout: 2500 });
+const publicFilter = filterModule.exports.isPublicDiscoveryProduct;
+for (const status of ['pending', 'review', 'rejected', undefined]) {
+  assert.equal(publicFilter({ moderation_status: status }, true), false, 'V2 discovery rejects nonapproved status');
+}
+assert.equal(publicFilter({ moderation_status: 'approved' }, true), true);
+assert.equal(publicFilter({ moderation_status: undefined }, false), true, 'legacy catalog remains compatible');
+const feedDiscovery = fs.readFileSync('src/components/Feed.tsx', 'utf8');
+const exploreDiscovery = fs.readFileSync('src/components/ExploreScreen.tsx', 'utf8');
+assert.match(feedDiscovery, /const publicProducts = useMemo/);
+assert.match(feedDiscovery, /const list = publicProducts.filter/);
+assert.match(feedDiscovery, /const myPendingProducts = mySellerProducts.filter/);
+assert.match(exploreDiscovery, /const publicProducts = useMemo/);
+assert.match(exploreDiscovery, /return publicProducts\s+\.filter/);
+
 const h=fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx','utf8');
 assert.match(h,/location\.owner_uid !== useAppStore\.getState\(\)\.user\.id/);
 assert.match(h,/useAppStore\.getState\(\)\.user\.id !== requestUid/);
@@ -201,6 +223,36 @@ await Promise.resolve();
 await Promise.resolve();
 await new Promise((resolve) => setImmediate(resolve));
 assert.equal(hydrationState.products[0]?.id, 'current-B-product');
+
+// A fresh Nearby result that omits an earlier approved listing must evict it.
+mockHydrationWindow.dispatchEvent({
+  type: 'tutop:approx-location', detail: { ...loc, owner_uid: B },
+});
+assert.equal(hydrationRequests.length, 3);
+hydrationRequests[2]([]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hydrationState.products.length, 0, 'withdrawn Nearby-only listing must be evicted');
+
+// Authoritative base records must survive that same Nearby reconciliation.
+mockAppStore.setState({ products: [{ id: 'base-authoritative-product', updated_at: '2026-10-23T00:00:02Z' }] });
+mockHydrationWindow.dispatchEvent({ type: 'tutop:v2-listings-base-hydrated' });
+assert.equal(hydrationRequests.length, 4);
+hydrationRequests[3]([{ id: 'nearby-only-product', updated_at: '2026-10-23T00:00:03Z' }]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hydrationState.products.length, 2);
+mockHydrationWindow.dispatchEvent({
+  type: 'tutop:approx-location', detail: { ...loc, owner_uid: B },
+});
+assert.equal(hydrationRequests.length, 5);
+hydrationRequests[4]([]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hydrationState.products.map((product) => product.id).join(','), 'base-authoritative-product');
 assert.equal(hydrationSubscriptions.size, 1);
 hydrationCleanup();
 assert.equal(hydrationSubscriptions.size, 0, 'cleanup must remove the owner subscription');

@@ -5,6 +5,7 @@ import { ACCOUNT_LOCAL_KEYS, readAccountLocalJson, readAccountLocalList, writeAc
 import { NEARBY_RADIUS_OPTIONS, getCachedApproxLocation, productDistanceKm, requestApproxLocation, withinRadius, type ApproxLocation } from '../lib/nearbyMarketplace';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant';
 import { parseListingDescription } from '../lib/listingDetails';
+import { isPublicDiscoveryProduct } from '../lib/publicDiscovery';
 import { normalizeSearchText, sortMarketplace } from '../lib/marketplaceCore';
 import { defaultScopeForCategory } from '../lib/universityNetwork';
 import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
@@ -118,6 +119,10 @@ export default function Feed() {
   };
 
   const scopedProducts = products;
+  const publicProducts = useMemo(
+    () => scopedProducts.filter((product) => isPublicDiscoveryProduct(product, nationalSchemaEnabled())),
+    [scopedProducts],
+  );
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
   const activeFilterCount = Number(Boolean(maxPrice)) + Number(favoritesOnly) + Number(verifiedOnly) + Number(negotiableOnly) + Number(deliveryOnly) + Number(sortMode !== 'relevant');
   const mySellerProducts = scopedProducts.filter((product) => product.vendedor_id === user.id && product.estado === 'Activo');
@@ -129,17 +134,17 @@ export default function Feed() {
     const counts = new Map<string, number>();
     onboardingInterests.forEach((category) => counts.set(normalizeCategory(category), (counts.get(normalizeCategory(category)) || 0) + 3));
     const ids = new Set([...favorites, ...recentIds]);
-    scopedProducts.filter((product) => ids.has(product.id)).forEach((product) => {
+    publicProducts.filter((product) => ids.has(product.id)).forEach((product) => {
       const category = normalizeCategory(product.categoria);
       counts.set(category, (counts.get(category) || 0) + 1);
     });
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([category]) => category);
-  }, [scopedProducts, favorites, onboardingInterests.join('|'), recentIds.join('|')]);
+  }, [publicProducts, favorites, onboardingInterests.join('|'), recentIds.join('|')]);
 
   const regularProducts = useMemo(() => {
     const needle = normalizeSearchText(query);
     const priceLimit = Number(maxPrice) || Infinity;
-    const list = scopedProducts.filter((product) => {
+    const list = publicProducts.filter((product) => {
       const parsed = parseListingDescription(product.descripcion);
       const detailSearch = Object.entries(parsed.details).map(([key, value]) => `${key} ${value}`).join(' ');
       const searchable = normalizeSearchText(`${product.titulo} ${parsed.body} ${detailSearch} ${normalizeCategory(product.categoria)} ${product.vendedor_nombre} ${product.vendedor_handle || ''} ${product.facultad} ${product.city_name || ''}`);
@@ -160,10 +165,10 @@ export default function Feed() {
       return list.sort((a, b) => (productDistanceKm(viewerLocation, a) ?? Number.POSITIVE_INFINITY) - (productDistanceKm(viewerLocation, b) ?? Number.POSITIVE_INFINITY));
     }
     return sortMarketplace(list, { query, user, favoriteCategories: interestCategories });
-  }, [scopedProducts, currentFacultad, selectedCategoria, query, sortMode, maxPrice, favoritesOnly, verifiedOnly, negotiableOnly, deliveryOnly, favorites, browseScope, user, interestCategories, viewerLocation, nearbyRadius]);
+  }, [publicProducts, currentFacultad, selectedCategoria, query, sortMode, maxPrice, favoritesOnly, verifiedOnly, negotiableOnly, deliveryOnly, favorites, browseScope, user, interestCategories, viewerLocation, nearbyRadius]);
 
   const topProducts = useMemo(() => regularProducts.filter((product) => product.es_top).sort((a, b) => a.jerarquia_top - b.jerarquia_top).slice(0, 3), [regularProducts]);
-  const recentProducts = useMemo(() => recentIds.map((id) => scopedProducts.find((product) => product.id === id)).filter((product): product is Product => Boolean(product && product.estado === 'Activo' && visibleByPublicationScope(product, user, currentFacultad))).slice(0, 4), [scopedProducts, user, currentFacultad, recentIds.join('|')]);
+  const recentProducts = useMemo(() => recentIds.map((id) => publicProducts.find((product) => product.id === id)).filter((product): product is Product => Boolean(product && product.estado === 'Activo' && visibleByPublicationScope(product, user, currentFacultad))).slice(0, 4), [publicProducts, user, currentFacultad, recentIds.join('|')]);
 
   const clearFilters = () => { setSortMode('relevant'); setMaxPrice(''); setFavoritesOnly(false); setVerifiedOnly(false); setNegotiableOnly(false); setDeliveryOnly(false); };
 

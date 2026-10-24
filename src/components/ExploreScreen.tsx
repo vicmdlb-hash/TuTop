@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Compass, Heart, Loader2, MapPin, Search, SlidersHorizontal, TriangleAlert } from 'lucide-react';
 import { MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
+import { isPublicDiscoveryProduct } from '../lib/publicDiscovery';
 import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, nearbyGeoCells, nearbyLocationPermission, productDistanceKm, requestApproxLocation, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
+import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { useAppStore } from '../store/useAppStore';
 import type { Product, ProductCategory } from '../types';
 import ProductCard from './ProductCard';
@@ -97,15 +99,19 @@ export default function ExploreScreen() {
   }, [scope, location?.latitude, location?.longitude, location?.captured_at, nearbyRefreshKey, user.id]);
 
   const sourceProducts = scope === 'nearby' ? nearbyProducts : products;
+  const publicProducts = useMemo(
+    () => sourceProducts.filter((product) => isPublicDiscoveryProduct(product, nationalSchemaEnabled())),
+    [sourceProducts],
+  );
 
   const visibleCategories = useMemo(() => {
-    const present = new Set(sourceProducts.map((product) => product.categoria));
+    const present = new Set(publicProducts.map((product) => product.categoria));
     return MARKETPLACE_CATEGORIES.filter((item) => present.has(item)).slice(0, 10);
-  }, [sourceProducts]);
+  }, [publicProducts]);
 
   const filtered = useMemo(() => {
     const cleanQuery = normalized(query.trim());
-    return sourceProducts
+    return publicProducts
       .filter((product) => product.estado === 'Activo')
       .filter((product) => category === 'Todas' || product.categoria === category)
       .filter((product) => {
@@ -122,7 +128,7 @@ export default function ExploreScreen() {
         return true;
       })
       .sort((a, b) => Date.parse(b.fecha_creacion) - Date.parse(a.fecha_creacion));
-  }, [sourceProducts, category, query, scope, favorites, location, radiusKm]);
+  }, [publicProducts, category, query, scope, favorites, location, radiusKm]);
 
   const activateNearby = async () => {
     const requestUid = user.id;
