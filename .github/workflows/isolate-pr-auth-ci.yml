@@ -24,11 +24,11 @@ jobs:
       CI: 'true'
     steps:
       - name: Checkout exact isolated branch SHA (no persisted credentials)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Node 22 for TypeScript 7 and Vite 8
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
