@@ -35,13 +35,16 @@ export function currentTokenOwnerRecords(records = []) {
       return String(a.id || '').localeCompare(String(b.id || ''));
     });
     const newestTime = recordTime(ranked[0]);
+    // Unverified dates or a conflicting active/inactive tie cannot prove
+    // current ownership; do not send to a possibly revoked device.
+    if (newestTime <= 0) continue;
     const newest = ranked.filter((item) => recordTime(item) === newestTime);
     const owners = new Set(newest.map((item) => String(item.owner_uid || '')).filter(Boolean));
-    if (owners.size !== 1) continue;
+    if (owners.size !== 1 || newest.some((item) => item.active !== true)) continue;
     const owner = [...owners][0];
     const sameOwnerNewest = newest.filter((item) => String(item.owner_uid || '') === owner);
     const winner = sameOwnerNewest.sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')))[0];
-    if (!winner || winner.active === false) continue;
+    if (!winner || winner.active !== true) continue;
     current.push({ ...winner, token });
   }
   return current;
@@ -77,7 +80,11 @@ export function supersededActiveTokenRecords(records = []) {
       return String(a.id || '').localeCompare(String(b.id || ''));
     });
     const newestTime = recordTime(ranked[0]);
+    if (newestTime <= 0) continue;
     const newest = ranked.filter((item) => recordTime(item) === newestTime);
+    // If a tie contains a revocation/malformed status, never pick an
+    // alphabetical winner to mutate potentially current ownership.
+    if (newest.some((item) => item.active !== newest[0].active)) continue;
     const owners = new Set(newest.map((item) => String(item.owner_uid || '')).filter(Boolean));
     if (owners.size !== 1) continue;
 
@@ -88,7 +95,7 @@ export function supersededActiveTokenRecords(records = []) {
     if (!winner) continue;
 
     for (const record of ranked) {
-      if (record === winner || record?.active === false) continue;
+      if (record === winner || record?.active !== true) continue;
       const older = recordTime(record) < newestTime;
       const sameOwnerTieDuplicate = recordTime(record) === newestTime
         && String(record.owner_uid || '') === owner
