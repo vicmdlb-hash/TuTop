@@ -87,11 +87,11 @@ function guardSection(start, end, old, guard, name) {
 guardSection('    match /listings_v2/{listingId} {', '    match /offers/{offerId} {',
   'allow create: if signedIn() && notSuspended()',
   'guardianCanPublish(request.auth.uid)', 'listing create');
-guardSection('    match /chats/{chatId} {', '    match /offers/{offerId} {',
+guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
   'allow create: if signedIn() && notSuspended()',
   'guardianAdultOrTeen(request.auth.uid) && guardianAdultOrTeen(request.resource.data.seller_id)',
   'chat create');
-guardSection('    match /chats/{chatId} {', '    match /offers/{offerId} {',
+guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
   'allow update: if participant(chatId) && notSuspended()',
   'guardianAdultOrTeen(request.auth.uid) && guardianAdultOrTeen(resource.data.buyer_id) && guardianAdultOrTeen(resource.data.seller_id)',
   'chat update');
