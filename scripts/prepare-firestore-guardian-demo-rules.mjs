@@ -125,5 +125,15 @@ guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_
   'guardianAdultOrTeen(resource.data.buyer_id) && guardianAdultOrTeen(resource.data.seller_id)',
   'transaction update');
 
+// Minimal DEMO-ONLY diagnostic isolates proof verification from marketplace
+// payload/rate/participant preconditions; it is never part of default V2.
+const catchAll = '    match /{document=**} { allow read, write: if false; }';
+exactlyOne(rules, catchAll, 'catchall');
+rules = rules.replace(catchAll, `    match /guardian_demo_probe/{uid} {
+      allow create: if owner(uid) && guardianAdultOrTeen(uid);
+      allow read, update, delete: if false;
+    }
+` + catchAll);
+
 fs.writeFileSync(outputPath, rules);
 console.log('GUARDIAN_DEMO_RULES_PREPARED; no deploy; strict migration probe only');
