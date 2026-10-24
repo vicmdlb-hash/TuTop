@@ -11,6 +11,7 @@
 | `notification_receipts` | Estado leído/no leído | Eliminar | Preferencia personal | PENDIENTE LEGAL |
 | `favorites` | Favoritos | Eliminar | Preferencia personal | PENDIENTE LEGAL |
 | `saved_searches` | Búsquedas guardadas | Eliminar | Preferencia personal | PENDIENTE LEGAL |
+| `user_blocks/{uid}/targets/{peer}` | Referencias privadas de bloqueo (identificadores) | Eliminar relaciones tanto salientes como entrantes y comprobar residuos | Impedir que un UID borrado permanezca en listas de terceros | PENDIENTE LEGAL |
 | `wallets` | UCoins beta | Eliminar | No son dinero ni saldo retirable | PENDIENTE LEGAL |
 | `wallet_transactions` | Ledger UCoins beta | Eliminar | Sin valor monetario | PENDIENTE LEGAL |
 | `verificationRequests` | Evidencia privada de verificación | Eliminar | PII sensible operacional | PENDIENTE LEGAL |
