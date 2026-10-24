@@ -17,13 +17,22 @@ export function buildAccountErasureFinalCommit({projectId,uid,processorRunId,req
   if(!safeId(uid,8)||!safeId(processorRunId)) throw Error('ERASURE_ATOMIC_ID_INVALID');
   if(typeof requestUpdateTime!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(requestUpdateTime)
     ||!Number.isFinite(Date.parse(requestUpdateTime))) throw Error('ERASURE_ATOMIC_UPDATE_TIME_REQUIRED');
+  // A completion timestamp cannot predate the request generation it finalizes.
+  // Treat inconsistent audit timestamps as contradictory proof, never success.
+  const requestUpdatedMs = Date.parse(requestUpdateTime);
   if(!completed||completed.status!=='completed'||completed.auth_deleted!==true
     ||completed.processor_run_id!==processorRunId
     ||!(completed.completed_at instanceof Date)||Number.isNaN(completed.completed_at.getTime())
+    ||completed.completed_at.getTime()<requestUpdatedMs
+    ||!(completed.updated_at instanceof Date)
+    ||Number.isNaN(completed.updated_at.getTime())
+    ||completed.updated_at.getTime()!==completed.completed_at.getTime()
     ||!completed.erasure_policy_version||!completed.residual_manifest_version
     ||!['deleted_count','withdrawn_count','retained_count'].every(k=>
       Number.isSafeInteger(completed[k])&&completed[k]>=0)) throw Error('ERASURE_ATOMIC_COMPLETION_PROOF_INVALID');
-  if(!audit||audit.action!=='account_erasure_completed'
+  if(!audit||audit.actor_type!=='trusted_runner'||audit.role!=='trust_safety'
+    ||!safeId(audit.admin_uid)
+    ||audit.action!=='account_erasure_completed
     ||audit.target_type!=='account_deletion_request'||audit.target_id!==uid
     ||audit.processor_run_id!==processorRunId
     ||audit.residual_manifest_version!==completed.residual_manifest_version
