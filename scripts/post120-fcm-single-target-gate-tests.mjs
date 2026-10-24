@@ -88,7 +88,7 @@ assert.deepEqual(eligibleRecipientTargets([priorRecord, activeRecord], 'alpha'),
 assert.deepEqual(eligibleRecipientTargets([priorRecord, activeRecord], 'beta').map(x => x.id), ['recent']);
 assert.deepEqual(currentTokenOwnerRecords([priorRecord, { ...activeRecord, active: false }]), []);
 assert.deepEqual(currentTokenOwnerRecords([priorRecord, { ...activeRecord, active: 'false' }]), []);
-assert.deepEqual(currentTokenOwnerRecords([priorRecord, { ...activeRecord, updated_at: '' }]), [priorRecord]);
+assert.deepEqual(currentTokenOwnerRecords([priorRecord, { ...activeRecord, updated_at: '' }]), []);
 assert.deepEqual(currentTokenOwnerRecords([activeRecord, { ...activeRecord, id: 'conflict', active: false }]), []);
 
 // Default authority always rejects the historical disabled candidate.
