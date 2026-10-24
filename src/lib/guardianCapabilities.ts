@@ -39,6 +39,14 @@ export type TopiRuntimeApproval = {
   // A license identifier or an App Check token alone is NOT approval.
   issuer: 'trusted_server';
 };
+export type VerifiedAdultAction = {
+  subjectUid: string;
+  actorUid: string;
+  capability: 'share_personal_info';
+  issuer: 'trusted_server';
+  authorized: boolean;
+  expiresAtMs: number;
+};
 export type CapabilityDecision = {
   allowed: boolean;
   reason:
@@ -77,7 +85,7 @@ export function decideCapability(input: {
   age: TrustedAgeProof | null;
   guardian?: GuardianProof | null;
   topi?: TopiRuntimeApproval | null;
-  adultActionForPersonalInfo?: boolean;
+  adultAction?: VerifiedAdultAction | null;
   nowMs: number;
 }): CapabilityDecision {
   const { uid, capability, nowMs } = input;
@@ -92,8 +100,14 @@ export function decideCapability(input: {
 
   if (band === 'adult') return ALLOWED;
   if (band === 'teen_13_17') {
-    if (capability === 'share_personal_info' && !input.adultActionForPersonalInfo)
-      return DENIED('requires_guardian_action');
+    if (capability === 'share_personal_info') {
+      const action = input.adultAction;
+      if (!action || action.issuer !== 'trusted_server' || action.subjectUid !== uid
+        || !action.actorUid || action.actorUid === uid
+        || action.capability !== 'share_personal_info' || !action.authorized
+        || !Number.isFinite(action.expiresAtMs) || action.expiresAtMs <= nowMs)
+        return DENIED('requires_guardian_action');
+    }
     if (capability === 'precise_location') return DENIED('age_restricted');
     return ALLOWED;
   }
