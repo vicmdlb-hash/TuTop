@@ -28,6 +28,8 @@ denied(check('publish_listing', 'under_13'), 'guardian_missing');
 denied(check('publish_listing', 'under_13', { guardian: guardian(['publish_listing'], { active: false }) }), 'guardian_missing');
 denied(check('publish_listing', 'under_13', { guardian: guardian(['publish_listing'], { childUid: 'other' }) }), 'guardian_missing');
 denied(check('publish_listing', 'under_13', { guardian: guardian(['browse_approved']) }), 'guardian_missing');
+denied(check('publish_listing', 'under_13', { guardian: guardian(['publish_listing'], { expiresAtMs: nowMs }) }), 'guardian_missing');
+denied(check('publish_listing', 'under_13', { guardian: guardian(['publish_listing'], { issuer: 'client' }) }), 'guardian_missing');
 assert.equal(check('publish_listing', 'under_13', { guardian: guardian(['publish_listing']) }).allowed, true);
 denied(check('direct_chat', 'under_13', { guardian: guardian(['direct_chat']) }), 'age_restricted');
 denied(check('share_personal_info', 'under_13', { guardian: guardian(['share_personal_info']), adultAction: { subjectUid: 'child', actorUid: 'guardian', capability: 'share_personal_info', issuer: 'trusted_server', authorized: true, expiresAtMs: nowMs + 60_000 } }), 'age_restricted');
@@ -38,7 +40,17 @@ denied(check('share_personal_info', 'teen_13_17', { adultAction: {
   subjectUid: 'other', actorUid: 'guardian', capability: 'share_personal_info',
   issuer: 'trusted_server', authorized: true, expiresAtMs: nowMs + 60_000,
 } }), 'requires_guardian_action');
-assert.equal(check('share_personal_info', 'teen_13_17', { adultActionForPersonalInfo: true }).allowed, true);
+const adultAction = (extras = {}) => ({
+  subjectUid: 'child', actorUid: 'adult-guardian',
+  capability: 'share_personal_info', issuer: 'trusted_server',
+  authorized: true, expiresAtMs: nowMs + 60_000, ...extras,
+});
+assert.equal(check('share_personal_info', 'teen_13_17', { adultAction: adultAction() }).allowed, true);
+denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ expiresAtMs: nowMs }) }), 'requires_guardian_action');
+denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ authorized: false }) }), 'requires_guardian_action');
+denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ actorUid: 'child' }) }), 'requires_guardian_action');
+denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ issuer: 'client' }) }), 'requires_guardian_action');
+denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ capability: 'direct_chat' }) }), 'requires_guardian_action');
 denied(check('precise_location', 'teen_13_17'), 'age_restricted');
 denied(check('topi_generative', 'adult'), 'topi_runtime_unapproved');
 denied(check('topi_generative', 'adult', { topi: { approved: true, issuer: 'trusted_server', audience: 'adults_only' } }), 'topi_runtime_unapproved');
@@ -47,4 +59,4 @@ assert.equal(check('topi_generative', 'under_13', {
   guardian: guardian(['topi_generative']),
   topi: { approved: true, issuer: 'trusted_server', audience: 'all_ages' },
 }).allowed, true);
-console.log('PASS 22 all-ages capability decisions (source contract only; backend enforcement pending)');
+console.log('PASS 29 all-ages capability decisions (source contract only; backend enforcement pending)');
