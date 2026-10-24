@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { directUserPair, shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
+import { directUserPair, shouldSuppressBlockedDirectNotification, resolveDirectNotificationChat } from './user-block-notification-lib.mjs';
 
 const chat = { id:'chat-17',buyer_id:'buyer',seller_id:'seller' };
 const offer = { kind:'offer_received',chat_id:'chat-17',recipient_uid:'seller' };
@@ -20,6 +20,18 @@ assert.equal(await shouldSuppressBlockedDirectNotification({...offer, recipient_
 assert.equal(await shouldSuppressBlockedDirectNotification({...offer,chat_id:'another'},chat,edge),true);
 assert.equal(await shouldSuppressBlockedDirectNotification({kind:'transaction_completed',recipient_uid:'seller'},chat,edge),false);
 assert.deepEqual(directUserPair({kind:'new_message',chat_id:'chat-17',recipient_uid:'seller'},chat),{buyer:'buyer',seller:'seller'});
+const recent = new Map([['chat-17',chat]]);
+const oldOffer = {kind:'offer_received',chat_id:'chat-older',recipient_uid:'buyer'};
+let lookups = 0;
+const fetchChat = async id => { lookups++; return id==='chat-older'?{id,buyer_id:'buyer',seller_id:'seller'}:null;};
+const loaded = await resolveDirectNotificationChat(oldOffer,recent,fetchChat);
+assert.equal(loaded.id,'chat-older');
+assert.equal(await shouldSuppressBlockedDirectNotification(oldOffer,loaded,async()=>false),false);
+assert.equal((await resolveDirectNotificationChat(oldOffer,recent,fetchChat)).id,'chat-older');
+assert.equal(lookups,1,'cached chat identity is reused');
+assert.equal(await resolveDirectNotificationChat({...oldOffer,chat_id:'../unsafe'},recent,fetchChat),null);
+assert.equal(await resolveDirectNotificationChat({...oldOffer,chat_id:'missing'},recent,fetchChat),null);
+assert.equal(await resolveDirectNotificationChat({kind:'transaction_completed',chat_id:'chat-older'},recent,fetchChat),null);
 const projector=fs.readFileSync('scripts/v2-marketplace-notification-projector.mjs','utf8');
 const sender=fs.readFileSync('scripts/post116-fcm-owner-safe-sender.mjs','utf8');
 for(const source of [projector,sender]){
@@ -28,6 +40,9 @@ for(const source of [projector,sender]){
  assert.match(source,/suppressed_by_user_blocks/);
 }
 assert.match(projector,/if \(await shouldSuppressBlockedDirectNotification/);
+assert.match(projector,/resolveDirectNotificationChat/);
+assert.match(projector,/getChatById/);
+assert.doesNotMatch(projector,/blockEdgeCache/);
 assert.match(sender,/if \(await blockedDirectOutbox\(item\)\)/);
 assert.match(sender,/if \(!\['new_message','offer_received','counter_offer','offer_accepted'\]/);
 console.log('PASS bidirectional direct-message/offer block suppression in projector and FCM sender; transactional notifications remain independent');
