@@ -64,6 +64,22 @@ const helpers = `
         && get(guardianGrantDoc(uid)).data.approvedCapabilities is list
         && cap in get(guardianGrantDoc(uid)).data.approvedCapabilities;
     }
+    // An already-read chat snapshot can carry server-managed pair admission.
+    // The client chat create allowlist excludes these fields; client updates
+    // cannot touch them. A trusted backend MUST issue and revoke them.
+    // This does not yet validate that service or its revocation propagation.
+    function guardianChatReady(chatId) {
+      let chat = chatDoc(chatId).data;
+      return chat.keys().hasAll([
+          'buyer_id','seller_id','guardian_pair_vetted','guardian_pair_expires_at','guardian_pair_revoked'
+        ])
+        && chat.guardian_pair_vetted == true
+        && chat.guardian_pair_revoked == false
+        && chat.guardian_pair_expires_at is timestamp
+        && chat.guardian_pair_expires_at > request.time
+        && chat.buyer_id != chat.seller_id
+        && chat.participants.hasAll([chat.buyer_id, chat.seller_id]);
+    }
     function guardianCanPublish(uid) {
       return guardianVerifiedAge(uid)
         && (get(guardianAgeDoc(uid)).data.band in ['adult','teen_13_17']
@@ -106,7 +122,7 @@ guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} 
   'chat update');
 guardSection('      match /messages/{messageId} {', '      match /confirmations/{uid} {',
   'allow create: if participant(chatId) && notSuspended()',
-  'guardianAdultOrTeen(chatDoc(chatId).data.buyer_id) && guardianAdultOrTeen(chatDoc(chatId).data.seller_id)',
+  'guardianChatReady(chatId)',
   'message create');
 guardSection('    match /offers/{offerId} {', '    match /transactions_v2/{transactionId} {',
   'allow create: if signedIn() && notSuspended()',
