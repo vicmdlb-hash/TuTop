@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { currentTokenOwnerRecords, eligibleRecipientTargets } from './fcm-token-ownership-lib.mjs';
+import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError } from './fcm-token-ownership-lib.mjs';
 import {
   PHYSICAL_QA_FCM_APPLY_ACK,
   loadActivePhysicalQaFcmAuthority,
@@ -97,6 +97,18 @@ for (const invalidUpdate of ['not-a-date', '', null, 1234]) {
   assert.deepEqual(eligibleRecipientTargets([priorRecord, damaged], 'beta'), []);
 }
 
+
+// Never destroy the ownership mapping for retryable server/rate-limit errors,
+// regardless of the body text. Only documented permanent token statuses count.
+for (const transientStatus of [200, 401, 403, 408, 429, 500, 503]) {
+  assert.equal(isPermanentFcmTokenError(transientStatus,
+    'messaging/registration-token-not-registered'), false);
+}
+assert.equal(isPermanentFcmTokenError(404, 'UNREGISTERED'), true);
+assert.equal(isPermanentFcmTokenError(400,
+  'messaging/registration-token-not-registered'), true);
+assert.equal(isPermanentFcmTokenError(500, 'temporary backend outage'), false);
+assert.equal(isPermanentFcmTokenError(400, 'quota exceeded'), false);
 
 // Default authority always rejects the historical disabled candidate.
 assert.throws(() => loadActivePhysicalQaFcmAuthority(), /FCM_ACTIVE_CANDIDATE_REQUIRED/);
