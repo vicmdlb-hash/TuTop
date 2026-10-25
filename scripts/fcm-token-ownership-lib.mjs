@@ -31,7 +31,13 @@ export function currentTokenOwnerRecords(records = []) {
   for (const [token, list] of groups) {
     // A malformed row on a device cannot safely prove an older owner is still
     // current. Refuse selection and auto-cleanup instead of reviving that row.
-    if (list.some(row => recordTime(row) <= 0 || typeof row.active !== 'boolean')) continue;
+    if (list.some(row =>
+      recordTime(row) <= 0 || typeof row.active !== 'boolean'
+      // A present but malformed last-update timestamp cannot fall back to an
+      // old creation date: that could resurrect a revoked prior recipient.
+      || (row.updated_at !== undefined && row.updated_at !== null
+        && asTime(row.updated_at) <= 0)
+    )) continue;
     const ranked = [...list].sort((a, b) => {
       const byTime = recordTime(b) - recordTime(a);
       if (byTime) return byTime;
@@ -79,7 +85,13 @@ export function supersededActiveTokenRecords(records = []) {
   for (const [token, list] of groups) {
     // A malformed row on a device cannot safely prove an older owner is still
     // current. Refuse selection and auto-cleanup instead of reviving that row.
-    if (list.some(row => recordTime(row) <= 0 || typeof row.active !== 'boolean')) continue;
+    if (list.some(row =>
+      recordTime(row) <= 0 || typeof row.active !== 'boolean'
+      // A present but malformed last-update timestamp cannot fall back to an
+      // old creation date: that could resurrect a revoked prior recipient.
+      || (row.updated_at !== undefined && row.updated_at !== null
+        && asTime(row.updated_at) <= 0)
+    )) continue;
     const ranked = [...list].sort((a, b) => {
       const byTime = recordTime(b) - recordTime(a);
       if (byTime) return byTime;
