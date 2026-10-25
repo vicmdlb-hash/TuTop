@@ -1,7 +1,7 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
-import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory } from './fcm-token-ownership-lib.mjs';
+import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
@@ -96,6 +96,8 @@ async function query(collectionId) {
   return assertCompleteFcmInventory(rows, limit, collectionId).map((row) => ({
     id: row.document.name.split('/').pop(),
     ...decodeFields(row.document.fields || {}),
+    // Metadata from the SAME Firestore response, not an app-written field.
+    _document_update_time: row.document.updateTime,
   }));
 }
 
@@ -161,7 +163,7 @@ async function deactivateTokenRecord(target, reason, { preserveOwnershipTime = f
       writes: [{
         update: { name, fields },
         updateMask: { fieldPaths: Object.keys(fields) },
-        currentDocument: { exists: true },
+        currentDocument: fcmTokenCleanupPrecondition(target),
       }],
     }),
   });
