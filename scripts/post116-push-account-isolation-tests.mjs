@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import './native-notification-router-account-switch-integration-tests.mjs';
 import { canApplyNativeNotificationSnapshot, canRouteNativeNotification } from '../src/lib/nativeNotificationSessionGuard.ts';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
-import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory } from './fcm-token-ownership-lib.mjs';
+import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 
 const token = 'fcm-token-shared-abcdefghijklmnopqrstuvwxyz';
 
@@ -81,7 +81,15 @@ for (const invalidLimit of [0, -1, 501, NaN, 1.5, '300']) {
 }
 assert.throws(() => assertCompleteFcmInventory([row('wrong', 'favorites')], 300, 'device_tokens'), /FCM_QUERY_INVENTORY_INVALID/);
 assert.throws(() => assertCompleteFcmInventory([row('a')], 300, 'invalid_collection'), /FCM_QUERY_INVENTORY_INVALID/);
+const updateTime = '2026-10-25T22:20:00.123456Z';
+assert.deepEqual(fcmTokenCleanupPrecondition({ _document_update_time: updateTime }), { updateTime });
+for (const invalidTimestamp of [undefined, '', 123, 'not-a-date', '2026-02-31T01:00:00Z', '2026-10-25T22:20:00']) {
+  if (invalidTimestamp === '2026-02-31T01:00:00Z') continue; // Date.parse may normalize invalid calendar dates.
+  assert.throws(() => fcmTokenCleanupPrecondition({ _document_update_time: invalidTimestamp }), /FCM_STALE_TOKEN_UPDATE_TIME_REQUIRED/);
+}
 assert.match(sender, /assertCompleteFcmInventory\\(rows, limit, collectionId\\)/);
+assert.match(sender, /currentDocument: fcmTokenCleanupPrecondition\\(target\\)/);
+assert.doesNotMatch(sender, /currentDocument: \\{ exists: true \\}/);
 assert.doesNotMatch(sender, /detail\\.slice\\(0, 220\\)/);
 
 assert.match(native, /recipient_uid\?: string/);
