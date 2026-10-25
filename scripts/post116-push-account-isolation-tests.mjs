@@ -72,6 +72,22 @@ assert.deepEqual(supersededActiveTokenRecords(tombstoneCleanup).map((item) => it
 assert.equal(isPermanentFcmTokenError(404, '{"error":{"status":"NOT_FOUND","details":[{"errorCode":"UNREGISTERED"}]}}'), true);
 assert.equal(isPermanentFcmTokenError(429, 'RESOURCE_EXHAUSTED'), false);
 
+for (const [code, body] of [
+  [404, 'NOT_FOUND'],
+  [404, '{"error":{"status":"NOT_FOUND","message":"Requested project was not found"}}'],
+  [404, 'registration token lookup service unavailable'],
+  [400, '{"error":{"status":"INVALID_ARGUMENT","message":"project identifier invalid"}}'],
+  [400, 'INVALID_ARGUMENT registration service'],
+  [404, 'UNREGISTERED in unrelated response text'],
+  [403, '{"error":{"details":[{"errorCode":"UNREGISTERED"}]}}'],
+]) {
+  assert.equal(isPermanentFcmTokenError(code, body), false,
+    'ambiguous HTTP errors cannot retire FCM owner records');
+}
+assert.equal(isPermanentFcmTokenError(404,
+  '{"error":{"status":"NOT_FOUND","details":[{"@type":"type.googleapis.com/google.firebase.fcm.v1.FcmError","errorCode":"UNREGISTERED"}]}}'), true);
+
+
 const data = fcmDataForNotification({
   id:'notification-1',
   recipient_uid:'B',
