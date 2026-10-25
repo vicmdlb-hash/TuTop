@@ -142,6 +142,7 @@ async function markSent(item) {
       writes: [{
         update: { name, fields },
         updateMask: { fieldPaths: Object.keys(fields) },
+        currentDocument: fcmTokenCleanupPrecondition(item),
       }],
     }),
   });
