@@ -1,14 +1,18 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
-import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords } from './fcm-token-ownership-lib.mjs';
+import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory } from './fcm-token-ownership-lib.mjs';
 import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const apply = process.argv.includes('--apply');
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
-const limit = Math.max(1, Math.min(500, Number(process.env.TUTOP_POST110_FCM_LIMIT || 300)));
+// A malformed bound must not silently disable query completeness checks.
+const limit = Number(process.env.TUTOP_POST110_FCM_LIMIT ?? 300);
+if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+  throw new Error('FCM_QUERY_LIMIT_INVALID');
+}
 const applyGate = validatePhysicalQaFcmApplyGate({
   apply,
   maintenanceAllow: allow,
@@ -77,7 +81,8 @@ async function request(url, options = {}) {
   if (text) {
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
   }
-  if (!response.ok) throw new Error(`${response.status} ${url}: ${text.slice(0, 800)}`);
+  // Backend errors can include sensitive device identifiers: emit status only.
+  if (!response.ok) throw new Error(`FCM_STAGING_REQUEST_HTTP_${response.status}`);
   return data;
 }
 
@@ -86,7 +91,9 @@ async function query(collectionId) {
     method: 'POST',
     body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], limit } }),
   });
-  return (rows || []).filter((row) => row.document).map((row) => ({
+  // Reject a full/ambiguous single page before selecting a token owner.
+  // Do not report a partial inventory as complete and send to a stale UID.
+  return assertCompleteFcmInventory(rows, limit, collectionId).map((row) => ({
     id: row.document.name.split('/').pop(),
     ...decodeFields(row.document.fields || {}),
   }));
@@ -220,7 +227,7 @@ for (const item of scopedPending) {
       if (isPermanentFcmTokenError(response.status, detail)) {
         await deactivateTokenRecord(target, 'fcm-permanent-token-error').catch(() => false);
       }
-      console.warn(`FCM ${item.id}/${target.id}: ${response.status} ${detail.slice(0, 220)}`);
+      console.warn(`FCM_PHYSICAL_SEND_HTTP_${response.status}; target details redacted`);
     }
   }
 
