@@ -132,5 +132,5 @@ export function isPermanentFcmTokenError(status, body = '') {
   const text = String(body || '');
   if (Number(status) === 404 && /UNREGISTERED|NOT_FOUND|registration token/i.test(text)) return true;
   if (Number(status) === 400 && /UNREGISTERED|INVALID_ARGUMENT[^\n]*(token|registration)/i.test(text)) return true;
-  return /messaging\/registration-token-not-registered/i.test(text);
+  return [400, 404].includes(Number(status)) && /messaging\/registration-token-not-registered/i.test(text);
 }
