@@ -12,6 +12,7 @@ const base = (extras = {}) => ({
   snapshotObservedAtMs: nowMs - 1_000,
   snapshotComplete: true,
   expectedChatCount: 2,
+  revokeGuardianGrant: true,
   chats: [chat('chat-1'), chat('chat-2', 'carol', 'alice')],
   ...extras,
 });
@@ -21,12 +22,15 @@ const refused = (reason, input) => {
 };
 const result = prepareGuardianRevocation(base());
 assert.equal(result.kind, 'PREVIEW_NOT_EXECUTABLE');
-assert.equal(result.writeCount, 3);
-assert.equal(result.writes.length, 3);
+assert.equal(result.writeCount, 4);
+assert.equal(result.writes.length, 4);
 assert.deepEqual(result.writes[0], {
   path: 'age_proofs_v2/alice', changes: { revoked: true },
 });
 assert.deepEqual(result.writes[1], {
+  path: 'guardian_grants_v2/alice', changes: { active: false },
+});
+assert.deepEqual(result.writes[2], {
   path: 'chats/chat-1',
   changes: { guardian_pair_revoked: true, guardian_pair_vetted: false },
 });
@@ -42,7 +46,12 @@ assert.equal(full.writeCount, 4);
 const noChats = prepareGuardianRevocation(base({
   chats: [], expectedChatCount: 0,
 }));
-assert.equal(noChats.writeCount, 1);
+assert.equal(noChats.writeCount, 2);
+assert.deepEqual(noChats.writes.map(w => w.path),
+  ['age_proofs_v2/alice', 'guardian_grants_v2/alice']);
+refused('guardian_grant_revocation_required', base({ revokeGuardianGrant: false }));
+refused('guardian_grant_revocation_required', base({ revokeGuardianGrant: undefined }));
+refused('guardian_grant_revocation_required', base({ revokeGuardianGrant: 'true' }));
 refused('incomplete_pagination', base({ snapshotComplete: false }));
 refused('incomplete_pagination', base({ snapshotComplete: undefined }));
 refused('incomplete_chat_inventory', base({ expectedChatCount: 1 }));
@@ -66,9 +75,15 @@ refused('self_chat', base({
   chats: [chat('chat-1'), chat('chat-2', 'alice', 'alice')],
 }));
 refused('cannot_atomically_revoke_all_chats', base({
-  chats: Array.from({ length: 400 }, (_, i) => chat('chat-' + i)),
-  expectedChatCount: 400,
+  chats: Array.from({ length: 399 }, (_, i) => chat('chat-' + i)),
+  expectedChatCount: 399,
 }));
-refused('invalid_guardian_grant_option', base({ revokeGuardianGrant: 'true' }));
+// Conservative limit is 400 total planned writes (age+grant+chats).
+const bounded = prepareGuardianRevocation(base({
+  chats: Array.from({ length: 398 }, (_, i) => chat('chat-' + i)),
+  expectedChatCount: 398,
+}));
+assert.equal(bounded.writeCount, 400);
+
 refused('invalid_clock', base({ nowMs: Number.NaN }));
 console.log('PASS guardian revocation preflight: complete, bounded, server-only preview; no writes');
