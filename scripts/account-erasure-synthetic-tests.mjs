@@ -69,6 +69,28 @@ const hostile = buildAccountErasurePlan({
 });
 assert.deepEqual(hostile.withdraw_paths, ['listings_v2/l2'], 'planner must reject unsupported destructive withdrawal collections');
 
+// A trusted staging processor must never let a withdrawal's claimed
+// collection disguise a document in another collection or a nested path.
+for (const path of [
+  'users/another-user', 'transactions_v2/t1', 'audit_log/a1',
+  'listings_v2/../another', 'listings_v2/a/b', 'listings_v2/',
+  'listings_v2/with space', 123, null,
+]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending',
+    withdrawDocs: [{ collection: 'listings_v2', path }],
+  }), /ERASURE_WITHDRAW_PATH_INVALID/);
+}
+assert.throws(() => buildAccountErasurePlan({
+  projectId, uid, status: 'pending',
+  withdrawDocs: [{ collection: 'demand_requests', path: 'listings_v2/l1' }],
+}), /ERASURE_WITHDRAW_PATH_INVALID/);
+const validWithdraw = buildAccountErasurePlan({
+  projectId, uid, status: 'pending',
+  withdrawDocs: [{ collection: 'demand_requests', path: 'demand_requests/q2' }],
+});
+assert.deepEqual(validWithdraw.withdraw_paths, ['demand_requests/q2']);
+
 console.log('PASS clean account dry-run plan');
 console.log('PASS marketplace account dedupe/withdraw/retain plan');
 console.log('PASS active marketplace transactions block destructive erasure');
