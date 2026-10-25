@@ -158,3 +158,17 @@ export function assertCompleteFcmInventory(rows, maxDocuments, collectionId) {
   if (docs.length >= maxDocuments) throw new Error('FCM_QUERY_INCOMPLETE_DENIED');
   return docs;
 }
+
+/**
+ * A cleanup must only update the EXACT Firestore document version previously
+ * read during token-owner selection. exists:true alone can revoke a newly
+ * re-registered device record after another account takes ownership.
+ */
+export function fcmTokenCleanupPrecondition(record) {
+  const stamp = record?._document_update_time;
+  if (typeof stamp !== 'string'
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(stamp)
+      || !Number.isFinite(Date.parse(stamp)))
+    throw new Error('FCM_STALE_TOKEN_UPDATE_TIME_REQUIRED');
+  return { updateTime: stamp };
+}
