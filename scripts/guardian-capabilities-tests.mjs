@@ -45,7 +45,26 @@ const adultAction = (extras = {}) => ({
   capability: 'share_personal_info', issuer: 'trusted_server',
   authorized: true, expiresAtMs: nowMs + 60_000, ...extras,
 });
-assert.equal(check('share_personal_info', 'teen_13_17', { adultAction: adultAction() }).allowed, true);
+const teenGuardian = guardian(['share_personal_info']);
+assert.equal(check('share_personal_info', 'teen_13_17', {
+  guardian: teenGuardian, adultAction: adultAction(),
+}).allowed, true);
+denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction() }),
+  'requires_guardian_action');
+for (const invalidGrant of [
+  null,
+  guardian(['share_personal_info'], { active: false }),
+  guardian(['share_personal_info'], { expiresAtMs: nowMs }),
+  guardian(['share_personal_info'], { issuer: 'client' }),
+  guardian(['publish_listing']),
+]) {
+  denied(check('share_personal_info', 'teen_13_17', {
+    guardian: invalidGrant, adultAction: adultAction(),
+  }), 'requires_guardian_action');
+}
+denied(check('share_personal_info', 'teen_13_17', {
+  guardian: teenGuardian, adultAction: adultAction({ actorUid: 'different-adult' }),
+}), 'requires_guardian_action');
 denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ expiresAtMs: nowMs }) }), 'requires_guardian_action');
 denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ authorized: false }) }), 'requires_guardian_action');
 denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ actorUid: 'child' }) }), 'requires_guardian_action');
