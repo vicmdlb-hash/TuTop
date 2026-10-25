@@ -31,9 +31,18 @@ export function buildAccountErasurePlan({ projectId, uid, status, apply = false,
     ...directDeletes.map(path => checkDeletePath(path, true)),
     ...queryDeletePaths.map(path => checkDeletePath(path, false)),
   ])].sort();
+  // A caller may provide collection='listings_v2' with path='users/victim'.
+  // Never allow that metadata mismatch to mutate unrelated Firestore records.
+  const allowedWithdrawals = new Set(['listings_v2', 'demand_requests']);
   const normalizedWithdrawals = withdrawDocs
-    .filter((item) => item && ['listings_v2', 'demand_requests'].includes(item.collection) && item.path)
-    .map((item) => ({ collection: item.collection, path: item.path }))
+    .filter((item) => item && allowedWithdrawals.has(item.collection))
+    .map((item) => {
+      const parts = typeof item.path === 'string' ? item.path.split('/') : [];
+      if (parts.length !== 2 || parts[0] !== item.collection || !segment(parts[1])) {
+        throw new Error('ERASURE_WITHDRAW_PATH_INVALID');
+      }
+      return { collection: item.collection, path: item.path };
+    })
     .sort((a, b) => a.path.localeCompare(b.path));
   const normalizedRetained = retained
     .filter((item) => item && item.collection && Number(item.count) > 0)
