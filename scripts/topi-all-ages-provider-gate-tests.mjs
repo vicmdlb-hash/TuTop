@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { topiRemoteProviderAudienceGate } from '../src/lib/topiAllAgesProviderGate.ts';
+import { redactTopiRemoteText } from '../src/lib/topiPrivacy.ts';
 
 // Current TuTop audience explicitly includes under13, 13–17 and adults.
 // A successful App Check token, staging environment flag or user-declared
@@ -38,4 +39,23 @@ assert.match(support, /su proveedor aún no está aprobado para todas las edades
 assert.match(support, /source: 'unavailable'/);
 assert(!source.includes('topiRemoteProviderAudienceGate().allowed ||'),
   'a client feature flag must not bypass the compliance gate');
+// Current privacy behavior: test it directly rather than running the
+// historical PR84 source-shape contract, whose unrelated Nearby TS aliases
+// have since been superseded. None of these strings is a real credential.
+const syntheticKeys = [
+  'AIza' + 'a'.repeat(35),
+  'sk-' + 'b'.repeat(24),
+  'sk-proj-' + 'c'.repeat(36),
+];
+for (const key of syntheticKeys) {
+  const result = redactTopiRemoteText('Clave copiada: ' + key);
+  assert.equal(result.text?.includes(key), false);
+  assert(result.redactions.includes('token'));
+}
+const email = redactTopiRemoteText('Escribe a vendedor@example.com');
+assert(!email.text?.includes('vendedor@example.com'));
+assert(email.redactions.includes('email'));
+const product = 'Vendo iPhone 13 128GB, batería 88%';
+assert.equal(redactTopiRemoteText(product).text, product);
+console.log('PASS Topi privacy redaction synthetic API keys, email, and product-fact preservation');
 console.log('PASS Topi mixed-age remote Gemini provider gate: no client feature/env/App Check bypass, honest UX; local model is NOT implemented');
