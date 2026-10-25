@@ -87,10 +87,10 @@ for (const invalidTimestamp of [undefined, '', 123, 'not-a-date', '2026-02-31T01
   if (invalidTimestamp === '2026-02-31T01:00:00Z') continue; // Date.parse may normalize invalid calendar dates.
   assert.throws(() => fcmTokenCleanupPrecondition({ _document_update_time: invalidTimestamp }), /FCM_STALE_TOKEN_UPDATE_TIME_REQUIRED/);
 }
-assert.match(sender, /assertCompleteFcmInventory\\(rows, limit, collectionId\\)/);
-assert.match(sender, /currentDocument: fcmTokenCleanupPrecondition\\(target\\)/);
-assert.doesNotMatch(sender, /currentDocument: \\{ exists: true \\}/);
-assert.doesNotMatch(sender, /detail\\.slice\\(0, 220\\)/);
+assert(sender.includes('assertCompleteFcmInventory(rows, limit, collectionId)'), 'FCM sender must reject capped Firestore inventory');
+assert(sender.includes('currentDocument: fcmTokenCleanupPrecondition(target)'), 'FCM cleanup must require updateTime CAS');
+assert(!sender.includes('currentDocument: { exists: true }'), 'unsafe exists-only CAS must not return');
+assert(!sender.includes('detail.slice(0, 220)'), 'provider error body must be redacted');
 
 assert.match(native, /recipient_uid\?: string/);
 assert.match(native, /recipient_uid: String\(data\.recipient_uid \|\| ''\)/);
