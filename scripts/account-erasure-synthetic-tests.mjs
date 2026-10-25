@@ -91,6 +91,27 @@ const validWithdraw = buildAccountErasurePlan({
 });
 assert.deepEqual(validWithdraw.withdraw_paths, ['demand_requests/q2']);
 
+// A malformed blocker or retention count is not evidence of zero residual
+// data. It must stop a destructive execution instead of being filtered out.
+for (const badCount of [-1, 1.5, Infinity, NaN, '2', null]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending',
+    retained: [{ collection: 'transactions_v2', field: 'seller_id', count: badCount }],
+  }), /ERASURE_RETAINED_COUNT_INVALID/);
+}
+for (const badBlocker of [
+  null, {}, { code: 'active_marketplace_transaction', collection: 'transactions_v2' },
+  { code: 'active_marketplace_transaction', collection: 'transactions_v2', id: 123 },
+]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending', blockers: [badBlocker],
+  }), /ERASURE_BLOCKER_INVALID/);
+}
+assert.equal(buildAccountErasurePlan({
+  projectId, uid, status: 'pending',
+  retained: [{ collection: 'chats', field: 'buyer_id', count: 0 }],
+}).retained_count, 0);
+
 console.log('PASS clean account dry-run plan');
 console.log('PASS marketplace account dedupe/withdraw/retain plan');
 console.log('PASS active marketplace transactions block destructive erasure');
