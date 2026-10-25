@@ -36,7 +36,9 @@ export function currentTokenOwnerRecords(records = []) {
       // A present but malformed last-update timestamp cannot fall back to an
       // old creation date: that could resurrect a revoked prior recipient.
       || (row.updated_at !== undefined
-        && asTime(row.updated_at) <= 0)
+        && (typeof row.updated_at !== 'string'
+          || !/^\d{4}-\d{2}-\d{2}T/.test(row.updated_at)
+          || asTime(row.updated_at) <= 0))
     )) continue;
     const ranked = [...list].sort((a, b) => {
       const byTime = recordTime(b) - recordTime(a);
@@ -90,7 +92,9 @@ export function supersededActiveTokenRecords(records = []) {
       // A present but malformed last-update timestamp cannot fall back to an
       // old creation date: that could resurrect a revoked prior recipient.
       || (row.updated_at !== undefined
-        && asTime(row.updated_at) <= 0)
+        && (typeof row.updated_at !== 'string'
+          || !/^\d{4}-\d{2}-\d{2}T/.test(row.updated_at)
+          || asTime(row.updated_at) <= 0))
     )) continue;
     const ranked = [...list].sort((a, b) => {
       const byTime = recordTime(b) - recordTime(a);
