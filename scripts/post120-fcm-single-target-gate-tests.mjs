@@ -90,6 +90,13 @@ assert.deepEqual(currentTokenOwnerRecords([priorRecord, { ...activeRecord, activ
 assert.deepEqual(currentTokenOwnerRecords([priorRecord, { ...activeRecord, active: 'false' }]), []);
 assert.deepEqual(currentTokenOwnerRecords([priorRecord, { ...activeRecord, updated_at: '' }]), []);
 assert.deepEqual(currentTokenOwnerRecords([activeRecord, { ...activeRecord, id: 'conflict', active: false }]), []);
+for (const invalidUpdate of ['not-a-date', '', null, 1234]) {
+  const damaged = { ...activeRecord, updated_at: invalidUpdate, created_at: '2026-10-22T10:00:00Z' };
+  assert.deepEqual(eligibleRecipientTargets([priorRecord, damaged], 'alpha'), [],
+    'malformed newer update must never revive a prior FCM owner');
+  assert.deepEqual(eligibleRecipientTargets([priorRecord, damaged], 'beta'), []);
+}
+
 
 // Default authority always rejects the historical disabled candidate.
 assert.throws(() => loadActivePhysicalQaFcmAuthority(), /FCM_ACTIVE_CANDIDATE_REQUIRED/);
