@@ -53,6 +53,9 @@ assert.equal(applied.mode, 'apply');
 assert.equal(applied.blocked, false);
 
 assert.throws(() => buildAccountErasurePlan({ projectId, uid: 'short', status: 'pending' }), /INVALID_UID/);
+for (const malformed of ['12345678/../admin', '../12345678', 'bad name_123', 'ümlaut123', '12345678\\n', { toString: () => '12345678' }]) {
+  assert.throws(() => buildAccountErasurePlan({ projectId, uid: malformed, status: 'pending' }), /INVALID_UID/);
+}
 assert.throws(() => buildAccountErasurePlan({ projectId, uid, status: 'completed' }), /UNPROCESSABLE_STATUS:completed/);
 assert.throws(() => buildAccountErasurePlan({ projectId, uid, status: 'rejected' }), /UNPROCESSABLE_STATUS:rejected/);
 
