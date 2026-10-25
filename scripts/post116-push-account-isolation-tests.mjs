@@ -89,6 +89,9 @@ for (const invalidTimestamp of [undefined, '', 123, 'not-a-date', '2026-02-31T01
 }
 assert(sender.includes('assertCompleteFcmInventory(rows, limit, collectionId)'), 'FCM sender must reject capped Firestore inventory');
 assert(sender.includes('currentDocument: fcmTokenCleanupPrecondition(target)'), 'FCM cleanup must require updateTime CAS');
+assert(sender.includes('currentDocument: fcmTokenCleanupPrecondition(item)'), 'FCM outbox sent marker must use updateTime CAS');
+const markSentCode = sender.slice(sender.indexOf('async function markSent(item)'), sender.indexOf('async function deactivateTokenRecord('));
+assert(markSentCode.includes('currentDocument: fcmTokenCleanupPrecondition(item)'), 'mark sent cannot overwrite newer outbox state');
 assert(!sender.includes('currentDocument: { exists: true }'), 'unsafe exists-only CAS must not return');
 assert(!sender.includes('detail.slice(0, 220)'), 'provider error body must be redacted');
 
