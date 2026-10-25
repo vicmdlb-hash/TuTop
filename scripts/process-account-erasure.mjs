@@ -8,7 +8,7 @@ const uid = uidArgIndex >= 0 ? String(process.argv[uidArgIndex + 1] || '').trim(
 const apply = process.argv.includes('--apply');
 
 if (projectId !== REQUIRED) throw new Error(`Account erasure sólo puede operar en staging ${REQUIRED}.`);
-if (!uid || uid.length < 8 || uid.length > 128) throw new Error('Usa --uid <firebase_uid> válido.');
+if (!/^[A-Za-z0-9_-]{8,128}$/.test(uid)) throw new Error('ACCOUNT_ERASURE_INVALID_UID_BEFORE_ADMIN_READ');
 if (apply && process.env.TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed') throw new Error('Apply bloqueado: requiere TUTOP_ALLOW_ACCOUNT_ERASURE=staging-reviewed.');
 const processorRunId = String(process.env.TUTOP_ERASURE_RUN_ID || process.env.GITHUB_RUN_ID || '').trim();
 if (apply && !processorRunId) throw new Error('Apply bloqueado: requiere TUTOP_ERASURE_RUN_ID/GITHUB_RUN_ID para atestación.');
