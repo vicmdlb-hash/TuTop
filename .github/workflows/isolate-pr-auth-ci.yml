@@ -59,6 +59,10 @@ jobs:
               node --experimental-strip-types scripts/post116-push-account-isolation-tests.mjs
               node scripts/firebase-cross-client-shared-storage-tests.mjs
               node scripts/native-secure-session-write-queue-tests.mjs
+              # Read-only regressions: validate erasure plans and boundaries.
+              # These run with no credentials or network and cannot delete users.
+              node scripts/account-erasure-synthetic-tests.mjs
+              node scripts/account-erasure-tests.mjs
               ;;
             *)
               echo "Unexpected source branch, fail closed" >&2
