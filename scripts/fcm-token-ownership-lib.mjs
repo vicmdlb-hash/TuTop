@@ -134,3 +134,27 @@ export function isPermanentFcmTokenError(status, body = '') {
   if (Number(status) === 400 && /UNREGISTERED|INVALID_ARGUMENT[^\n]*(token|registration)/i.test(text)) return true;
   return [400, 404].includes(Number(status)) && /messaging\/registration-token-not-registered/i.test(text);
 }
+
+/**
+ * Safe pre-send guard for a bounded Firestore runQuery result. A LIMIT is only
+ * an upper bound; reaching it does not prove the collection is exhausted.
+ * With partial device_tokens history, an older owner could look current.
+ * Refuse ALL sends (even for a single target) until a trustworthy, complete
+ * inventory/paginated snapshot is available. No token content is logged.
+ */
+export function assertCompleteFcmInventory(rows, maxDocuments, collectionId) {
+  if (!['notification_outbox', 'device_tokens'].includes(collectionId)
+      || !Number.isSafeInteger(maxDocuments) || maxDocuments < 1 || maxDocuments > 500
+      || !Array.isArray(rows)
+      || rows.some(row => !row || typeof row !== 'object'
+        || Array.isArray(row) || Object.hasOwn(row, 'error'))) {
+    throw new Error('FCM_QUERY_INVENTORY_INVALID');
+  }
+  const docs = rows.filter(row => row.document);
+  if (docs.some(row => !row.document || typeof row.document.name !== 'string'
+      || !row.document.name.includes('/documents/' + collectionId + '/'))) {
+    throw new Error('FCM_QUERY_INVENTORY_INVALID');
+  }
+  if (docs.length >= maxDocuments) throw new Error('FCM_QUERY_INCOMPLETE_DENIED');
+  return docs;
+}
