@@ -37,6 +37,32 @@ const ambiguous = [
 assert.equal(currentTokenOwnerRecords(ambiguous).length, 0, 'cross-UID tie fails closed');
 assert.equal(supersededActiveTokenRecords(ambiguous).length, 0, 'ambiguous cross-UID ties must never be auto-cleaned');
 
+ 
+// A missing/malformed owner in any record of a token's history must not be
+// silently filtered out. Otherwise a tied legitimate owner could win without
+// proof and earlier active mappings could be accidentally deactivated.
+for (const badOwner of [undefined, null, '', ' ', ' B ', 17, { uid: 'B' }]) {
+  const conflicted = [
+    { id:'a1', owner_uid:'A', token, active:true, updated_at:'2026-09-19T04:00:00Z' },
+    { id:'broken-owner', owner_uid:badOwner, token, active:true, updated_at:'2026-09-19T04:00:00Z' },
+  ];
+  assert.deepEqual(eligibleRecipientTargets(conflicted, 'A'), [],
+    'malformed tied owner must not select a recipient');
+  assert.deepEqual(supersededActiveTokenRecords(conflicted), [],
+    'malformed owner must not enable destructive token cleanup');
+}
+for (const badId of [undefined, '', null, 23]) {
+  const conflicted = [
+    { id:'a1', owner_uid:'A', token, active:true, updated_at:'2026-09-19T03:00:00Z' },
+    { id:badId, owner_uid:'B', token, active:true, updated_at:'2026-09-19T04:00:00Z' },
+  ];
+  assert.deepEqual(eligibleRecipientTargets(conflicted, 'B'), [],
+    'target with unknown record id must not receive');
+  assert.deepEqual(supersededActiveTokenRecords(conflicted), [],
+    'unknown record id must not drive cleanup');
+}
+
+
 const tombstoneCleanup = [
   { id:'a-old', owner_uid:'A', token, active:true, updated_at:'2026-09-19T01:00:00Z' },
   { id:'a-off', owner_uid:'A', token, active:false, updated_at:'2026-09-19T05:00:00Z' },
