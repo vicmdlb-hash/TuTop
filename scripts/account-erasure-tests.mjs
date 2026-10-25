@@ -31,6 +31,8 @@ assert.match(processor, /projectId !== REQUIRED/);
 assert.match(processor, /ACCOUNT_ERASURE_INVALID_UID_BEFORE_ADMIN_READ/);
 assert.match(processor, /\^\[A-Za-z0-9_-\]\{8,128\}\$/);
 assert(processor.indexOf('ACCOUNT_ERASURE_INVALID_UID_BEFORE_ADMIN_READ') < processor.indexOf('const request = await adminGetDocument('), 'invalid UID must be rejected before any admin read');
+assert.match(processor, /ACCOUNT_ERASURE_RUN_ID_INVALID_BEFORE_ADMIN_READ/);
+assert(processor.indexOf('ACCOUNT_ERASURE_RUN_ID_INVALID_BEFORE_ADMIN_READ') < processor.indexOf('const request = await adminGetDocument('), 'invalid run ID must be rejected before any admin read');
 
 assert.match(processor, /TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed'/);
 assert.match(processor, /buildAccountErasurePlan/);
