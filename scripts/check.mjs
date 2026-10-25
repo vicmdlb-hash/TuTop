@@ -84,6 +84,7 @@ const commonSteps = [
   [process.execPath, ['--experimental-strip-types', 'scripts/guardian-capabilities-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/topi-all-ages-provider-gate-tests.mjs']],
   [process.execPath, ['scripts/guardian-revocation-preflight-tests.mjs']],
+  [process.execPath, ['scripts/first-admin-bootstrap-gate-tests.mjs']],
   [process.execPath, ['scripts/account-erasure-atomic-commit-tests.mjs']],
   [process.execPath, ['scripts/auth-batch-delete-proof-tests.mjs']],
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
