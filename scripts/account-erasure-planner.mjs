@@ -1,5 +1,5 @@
 export function buildAccountErasurePlan({ projectId, uid, status, apply = false, directDeletes = [], queryDeletePaths = [], withdrawDocs = [], retained = [], blockers = [] }) {
-  if (!uid || uid.length < 8 || uid.length > 128) throw new Error('INVALID_UID');
+  if (typeof uid !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(uid)) throw new Error('INVALID_UID');
   if (!['pending', 'processing'].includes(status)) throw new Error(`UNPROCESSABLE_STATUS:${status || 'unknown'}`);
 
   const deletePaths = [...new Set([...directDeletes, ...queryDeletePaths].filter(Boolean))].sort();
