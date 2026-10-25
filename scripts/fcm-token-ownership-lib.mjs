@@ -33,6 +33,9 @@ export function currentTokenOwnerRecords(records = []) {
     // current. Refuse selection and auto-cleanup instead of reviving that row.
     if (list.some(row =>
       recordTime(row) <= 0 || typeof row.active !== 'boolean'
+      || typeof row.owner_uid !== 'string' || !row.owner_uid.trim()
+      || row.owner_uid.trim() !== row.owner_uid
+      || typeof row.id !== 'string' || !row.id.trim()
       // A present but malformed last-update timestamp cannot fall back to an
       // old creation date: that could resurrect a revoked prior recipient.
       || (row.updated_at !== undefined
@@ -89,6 +92,9 @@ export function supersededActiveTokenRecords(records = []) {
     // current. Refuse selection and auto-cleanup instead of reviving that row.
     if (list.some(row =>
       recordTime(row) <= 0 || typeof row.active !== 'boolean'
+      || typeof row.owner_uid !== 'string' || !row.owner_uid.trim()
+      || row.owner_uid.trim() !== row.owner_uid
+      || typeof row.id !== 'string' || !row.id.trim()
       // A present but malformed last-update timestamp cannot fall back to an
       // old creation date: that could resurrect a revoked prior recipient.
       || (row.updated_at !== undefined
