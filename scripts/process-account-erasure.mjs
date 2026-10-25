@@ -11,7 +11,7 @@ if (projectId !== REQUIRED) throw new Error(`Account erasure sólo puede operar 
 if (!/^[A-Za-z0-9_-]{8,128}$/.test(uid)) throw new Error('ACCOUNT_ERASURE_INVALID_UID_BEFORE_ADMIN_READ');
 if (apply && process.env.TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed') throw new Error('Apply bloqueado: requiere TUTOP_ALLOW_ACCOUNT_ERASURE=staging-reviewed.');
 const processorRunId = String(process.env.TUTOP_ERASURE_RUN_ID || process.env.GITHUB_RUN_ID || '').trim();
-if (apply && !processorRunId) throw new Error('Apply bloqueado: requiere TUTOP_ERASURE_RUN_ID/GITHUB_RUN_ID para atestación.');
+if (apply && !/^[A-Za-z0-9_-]{1,128}$/.test(processorRunId)) throw new Error('ACCOUNT_ERASURE_RUN_ID_INVALID_BEFORE_ADMIN_READ');
 
 function fieldString(document, field) {
   return String(document?.fields?.[field]?.stringValue || '');
