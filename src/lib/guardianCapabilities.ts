@@ -118,8 +118,14 @@ export function decideCapability(input: {
   if (band === 'teen_13_17') {
     if (capability === 'share_personal_info') {
       const action = input.adultAction;
-      if (!action || action.issuer !== 'trusted_server' || action.subjectUid !== uid
+      const guardian = input.guardian || null;
+      // A valid adult action must be attributable to the child's CURRENT,
+      // active, server-issued guardian grant. A random other adult, or an old
+      // action after consent withdrawal, cannot authorize sharing PII.
+      if (!trustedGuardian(uid, guardian, capability, nowMs)
+        || !action || action.issuer !== 'trusted_server' || action.subjectUid !== uid
         || typeof action.actorUid !== 'string' || action.actorUid.trim().length === 0
+        || action.actorUid !== guardian?.guardianUid
         || action.actorUid === uid
         || action.capability !== 'share_personal_info' || action.authorized !== true
         || !Number.isFinite(action.expiresAtMs) || action.expiresAtMs <= nowMs)
