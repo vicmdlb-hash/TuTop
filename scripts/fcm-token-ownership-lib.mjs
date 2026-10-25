@@ -135,10 +135,24 @@ export function supersededActiveTokenRecords(records = []) {
 }
 
 export function isPermanentFcmTokenError(status, body = '') {
-  const text = String(body || '');
-  if (Number(status) === 404 && /UNREGISTERED|NOT_FOUND|registration token/i.test(text)) return true;
-  if (Number(status) === 400 && /UNREGISTERED|INVALID_ARGUMENT[^\n]*(token|registration)/i.test(text)) return true;
-  return [400, 404].includes(Number(status)) && /messaging\/registration-token-not-registered/i.test(text);
+  // A generic HTTP 404 NOT_FOUND does NOT prove an invalid device token.
+  // Preserve tokens on ambiguous project, endpoint or service errors.
+  const code = Number(status);
+  if (code !== 400 && code !== 404) return false;
+  const text = typeof body === 'string' ? body.trim() : '';
+  if (/messaging\/registration-token-not-registered/i.test(text)) return true;
+  if (code === 404 && text === 'UNREGISTERED') return true;
+  try {
+    const parsed = JSON.parse(text);
+    const error = parsed?.error;
+    if (!error || typeof error !== 'object') return false;
+    const details = Array.isArray(error.details) ? error.details : [];
+    if (details.some(item => item && typeof item === 'object'
+        && item.errorCode === 'UNREGISTERED')) return true;
+    return code === 404 && error.status === 'UNREGISTERED';
+  } catch {
+    return false;
+  }
 }
 
 /**
