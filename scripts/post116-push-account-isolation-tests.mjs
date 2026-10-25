@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import './native-notification-router-account-switch-integration-tests.mjs';
 import { canApplyNativeNotificationSnapshot, canRouteNativeNotification } from '../src/lib/nativeNotificationSessionGuard.ts';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
-import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords } from './fcm-token-ownership-lib.mjs';
+import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory } from './fcm-token-ownership-lib.mjs';
 
 const token = 'fcm-token-shared-abcdefghijklmnopqrstuvwxyz';
 
@@ -61,6 +61,28 @@ const router = fs.readFileSync('src/services/nativeNotificationRouter.ts','utf8'
 const gate = fs.readFileSync('src/components/BackendGate.tsx','utf8');
 const permissions = fs.readFileSync('src/components/PermissionSettings.tsx','utf8');
 const sender = fs.readFileSync('scripts/post116-fcm-owner-safe-sender.mjs','utf8');
+
+// A bounded runQuery cannot prove completeness when it reaches its limit.
+// A stale token owner must not become eligible solely because the newer
+// tombstone is on the next page. All rows use synthetic document paths.
+const row = (id, collection='device_tokens') => ({
+  document: { name: `projects/demo/databases/(default)/documents/${collection}/${id}`, fields: {} },
+  readTime: '2026-10-25T22:00:00Z',
+});
+assert.equal(assertCompleteFcmInventory([row('a')], 2, 'device_tokens').length, 1);
+assert.deepEqual(assertCompleteFcmInventory([{ readTime: '2026-10-25T22:00:00Z' }], 2, 'device_tokens'), []);
+assert.throws(() => assertCompleteFcmInventory([row('old'), row('new')], 2, 'device_tokens'), /FCM_QUERY_INCOMPLETE_DENIED/);
+assert.throws(() => assertCompleteFcmInventory([row('p', 'notification_outbox')], 1, 'notification_outbox'), /FCM_QUERY_INCOMPLETE_DENIED/);
+for (const invalid of [undefined, null, {}, 'invalid', [{ error: { code: 500 } }]]) {
+  assert.throws(() => assertCompleteFcmInventory(invalid, 300, 'device_tokens'), /FCM_QUERY_INVENTORY_INVALID/);
+}
+for (const invalidLimit of [0, -1, 501, NaN, 1.5, '300']) {
+  assert.throws(() => assertCompleteFcmInventory([], invalidLimit, 'device_tokens'), /FCM_QUERY_INVENTORY_INVALID/);
+}
+assert.throws(() => assertCompleteFcmInventory([row('wrong', 'favorites')], 300, 'device_tokens'), /FCM_QUERY_INVENTORY_INVALID/);
+assert.throws(() => assertCompleteFcmInventory([row('a')], 300, 'invalid_collection'), /FCM_QUERY_INVENTORY_INVALID/);
+assert.match(sender, /assertCompleteFcmInventory\\(rows, limit, collectionId\\)/);
+assert.doesNotMatch(sender, /detail\\.slice\\(0, 220\\)/);
 
 assert.match(native, /recipient_uid\?: string/);
 assert.match(native, /recipient_uid: String\(data\.recipient_uid \|\| ''\)/);
