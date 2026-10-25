@@ -1,6 +1,6 @@
 import { assertAuthBatchDeleteResponse, assertAuthAccountAbsent } from './auth-batch-delete-proof.mjs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { collectCursorPages } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages } from './firestore-query-pagination.mjs';
 import { buildAccountErasureFinalCommit } from './account-erasure-atomic-commit.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
@@ -130,22 +130,18 @@ export async function adminListCollectionGroupDocuments(collectionId) {
 }
 
 export async function adminListDocuments(collectionPath, pageSize = 300) {
-  const results = [];
-  let pageToken = '';
-  do {
-    const query = new URLSearchParams({ pageSize: String(Math.max(1, Math.min(1000, Number(pageSize) || 300))) });
+  const size = Math.max(1, Math.min(1000, Number(pageSize) || 300));
+  const base = collectionPath.split('/').map(encodeURIComponent).join('/');
+  const documents = await collectTokenPages(async ({ pageToken }) => {
+    const query = new URLSearchParams({ pageSize: String(size) });
     if (pageToken) query.set('pageToken', pageToken);
-    const raw = await request(`${firestoreBase}/${collectionPath.split('/').map(encodeURIComponent).join('/')}?${query}`);
-    for (const document of raw?.documents || []) {
-      results.push({
-        name: String(document.name || ''),
-        path: String(document.name || '').split('/documents/')[1] || '',
-        fields: document.fields || {},
-      });
-    }
-    pageToken = String(raw?.nextPageToken || '');
-  } while (pageToken);
-  return results;
+    return request(`${firestoreBase}/${base}?${query}`);
+  }, { pageSize: size });
+  return documents.map(document => ({
+    name: document.name,
+    path: document.name.split('/documents/')[1] || '',
+    fields: document.fields || {},
+  }));
 }
 
 export async function adminListAuthUsers(pageSize = 500) {
