@@ -18,7 +18,7 @@ function requireValid(ok, reason) {
 export function prepareGuardianRevocation(input) {
   requireValid(input && typeof input === 'object', 'invalid_input');
   const { subjectUid, chats, expectedChatCount, snapshotComplete,
-    snapshotObservedAtMs, nowMs, revokeGuardianGrant = false } = input;
+    snapshotObservedAtMs, nowMs, revokeGuardianGrant } = input;
   requireValid(goodId(subjectUid), 'invalid_subject');
   requireValid(Number.isSafeInteger(nowMs) && nowMs > 0, 'invalid_clock');
   requireValid(Number.isSafeInteger(snapshotObservedAtMs)
@@ -28,12 +28,16 @@ export function prepareGuardianRevocation(input) {
   requireValid(Array.isArray(chats), 'missing_chats');
   requireValid(Number.isSafeInteger(expectedChatCount)
     && expectedChatCount === chats.length, 'incomplete_chat_inventory');
-  requireValid(revokeGuardianGrant === true || revokeGuardianGrant === false,
-    'invalid_guardian_grant_option');
+  // This planner is specifically for FULL consent/guardian revocation.
+  // A revoked age proof alone must not leave a reusable active grant behind.
+  // The privileged issuer must still authenticate the request and freeze
+  // admission; this boolean is NOT an authorization or completion proof.
+  requireValid(revokeGuardianGrant === true,
+    'guardian_grant_revocation_required');
 
   // Conservative server transaction budget, not a published product limit.
   // Any fanout above this bound needs a different deny-first architecture.
-  const numberOfWrites = chats.length + 1 + Number(revokeGuardianGrant);
+  const numberOfWrites = chats.length + 2;
   requireValid(numberOfWrites <= 400, 'cannot_atomically_revoke_all_chats');
   const seen = new Set();
   for (const chat of chats) {
@@ -48,9 +52,7 @@ export function prepareGuardianRevocation(input) {
   }
   const writes = [
     { path: 'age_proofs_v2/' + subjectUid, changes: { revoked: true } },
-    ...(revokeGuardianGrant
-      ? [{ path: 'guardian_grants_v2/' + subjectUid, changes: { active: false } }]
-      : []),
+    { path: 'guardian_grants_v2/' + subjectUid, changes: { active: false } },
     ...chats.map(chat => ({
       path: 'chats/' + chat.id,
       changes: { guardian_pair_revoked: true, guardian_pair_vetted: false },
