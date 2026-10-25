@@ -44,13 +44,31 @@ export function buildAccountErasurePlan({ projectId, uid, status, apply = false,
       return { collection: item.collection, path: item.path };
     })
     .sort((a, b) => a.path.localeCompare(b.path));
+  // An invalid count must never be silently discarded from the retention
+  // inventory; otherwise the report could falsely claim a clean deletion.
+  if (!Array.isArray(retained) || !Array.isArray(blockers)) {
+    throw new Error('ERASURE_INVENTORY_INVALID');
+  }
   const normalizedRetained = retained
-    .filter((item) => item && item.collection && Number(item.count) > 0)
-    .map((item) => ({ collection: String(item.collection), field: String(item.field || ''), count: Number(item.count) }))
+    .map((item) => {
+      if (!item || typeof item.collection !== 'string' || !item.collection
+        || !Number.isSafeInteger(item.count) || item.count < 0) {
+        throw new Error('ERASURE_RETAINED_COUNT_INVALID');
+      }
+      return { collection: item.collection, field: String(item.field || ''), count: item.count };
+    })
+    .filter((item) => item.count > 0)
     .sort((a, b) => `${a.collection}:${a.field}`.localeCompare(`${b.collection}:${b.field}`));
   const normalizedBlockers = blockers
-    .filter((item) => item && item.code && item.collection && item.id)
-    .map((item) => ({ code: String(item.code), collection: String(item.collection), id: String(item.id), status: String(item.status || 'unknown') }))
+    .map((item) => {
+      if (!item || typeof item.code !== 'string' || !item.code
+        || typeof item.collection !== 'string' || !item.collection
+        || typeof item.id !== 'string' || !item.id) {
+        throw new Error('ERASURE_BLOCKER_INVALID');
+      }
+      return { code: item.code, collection: item.collection, id: item.id,
+        status: String(item.status || 'unknown') };
+    })
     .filter((item, index, items) => items.findIndex((other) => `${other.code}:${other.collection}:${other.id}` === `${item.code}:${item.collection}:${item.id}`) === index)
     .sort((a, b) => `${a.collection}:${a.id}`.localeCompare(`${b.collection}:${b.id}`));
 
