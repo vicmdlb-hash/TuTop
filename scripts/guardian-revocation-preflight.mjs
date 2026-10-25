@@ -37,7 +37,9 @@ export function prepareGuardianRevocation(input) {
 
   // Conservative server transaction budget, not a published product limit.
   // Any fanout above this bound needs a different deny-first architecture.
-  const numberOfWrites = chats.length + 2;
+  // Revoke the independent trusted adult-action proof too: otherwise an
+  // authorization issued before consent withdrawal could remain valid.
+  const numberOfWrites = chats.length + 3;
   requireValid(numberOfWrites <= 400, 'cannot_atomically_revoke_all_chats');
   const seen = new Set();
   for (const chat of chats) {
@@ -53,6 +55,7 @@ export function prepareGuardianRevocation(input) {
   const writes = [
     { path: 'age_proofs_v2/' + subjectUid, changes: { revoked: true } },
     { path: 'guardian_grants_v2/' + subjectUid, changes: { active: false } },
+    { path: 'adult_actions_v2/' + subjectUid, changes: { authorized: false } },
     ...chats.map(chat => ({
       path: 'chats/' + chat.id,
       changes: { guardian_pair_revoked: true, guardian_pair_vetted: false },
