@@ -82,6 +82,7 @@ const commonSteps = [
   [process.execPath, ['scripts/physical-qa-candidate-drift-tests.mjs']],
   [process.execPath, ['scripts/firestore-query-pagination-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/guardian-capabilities-tests.mjs']],
+  [process.execPath, ['scripts/national-product-direction-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/topi-all-ages-provider-gate-tests.mjs']],
   [process.execPath, ['scripts/guardian-revocation-preflight-tests.mjs']],
   [process.execPath, ['scripts/first-admin-bootstrap-gate-tests.mjs']],
