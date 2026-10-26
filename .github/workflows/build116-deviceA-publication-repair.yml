@@ -15,7 +15,6 @@ jobs:
   candidate:
     # Historical candidate retained for audit only. Hard-disabled.
     if: ${{ false }}
-    if: github.ref_name == 'fix/tutop-116-deviceA-publication-repair' && github.event.repository.private == false
     runs-on: ubuntu-24.04
     timeout-minutes: 70
     env:

@@ -15,7 +15,6 @@ jobs:
   validate-and-build:
     # Historical candidate retained for audit only. Hard-disabled.
     if: ${{ false }}
-    if: github.ref_name == 'candidate/tutop-120-deviceA-publication-repair' && github.event.repository.private == false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:

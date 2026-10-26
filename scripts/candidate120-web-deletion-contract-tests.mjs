@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const html=fs.readFileSync('public/delete-account.html','utf8');
-const client=fs.readFileSync('public/delete-account.js','utf8');
-const privacy=fs.readFileSync('public/privacy.html','utf8');
-const prep=fs.readFileSync('scripts/prepare-candidate120-hosting-assets.mjs','utf8');
-const workflow=fs.readFileSync('.github/workflows/candidate120-hosting-prepare.yml','utf8');
-const ignore=fs.readFileSync('.gitignore','utf8');
-const firebase=JSON.parse(fs.readFileSync('firebase.json','utf8'));
+const read = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+
+const html=read('public/delete-account.html');
+const client=read('public/delete-account.js');
+const privacy=read('public/privacy.html');
+const prep=read('scripts/prepare-candidate120-hosting-assets.mjs');
+const workflow=read('.github/workflows/candidate120-hosting-prepare.yml');
+const ignore=read('.gitignore');
+const firebase=JSON.parse(read('firebase.json'));
 
 for(const id of ['login-form','email','password','login-button','account-panel','account-email','confirm-delete','request-delete-button','logout-button','status']) {
   assert.match(html,new RegExp(`id=["']${id}["']`));

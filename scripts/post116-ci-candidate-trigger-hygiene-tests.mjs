@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
+const read = (path) => read(path).replace(/\r\n/g, '\n');
+
 const manualHistoricalCandidates = [
   '.github/workflows/092-hosted-client-build.yml',
   '.github/workflows/092-release-candidate-v2.yml',
@@ -13,7 +15,7 @@ const manualHistoricalCandidates = [
 ];
 
 for (const path of manualHistoricalCandidates) {
-  const workflow = fs.readFileSync(path, 'utf8');
+  const workflow = read(path);
   assert.match(workflow, /\non:\n\s+workflow_dispatch:/, path + ' must remain explicit/manual');
   assert.doesNotMatch(workflow, /\n\s+push:/, path + ' must not restart from branch push/ref correction');
   assert.doesNotMatch(workflow, /\n\s+pull_request:/, path + ' must not create candidate noise from PR updates');
@@ -33,7 +35,7 @@ const retiredCandidates = new Map([
 ]);
 
 for (const [path, job] of retiredCandidates) {
-  const workflow = fs.readFileSync(path, 'utf8');
+  const workflow = read(path);
   assert.match(workflow, /^# RETIRED:/, path + ' must carry an explicit retirement marker');
   assert.match(workflow, /^name: RETIRED — /m, path + ' must display retired status');
   assert.match(workflow, /\non:\n\s+workflow_dispatch:\n\npermissions:/, path + ' must be manual-only');
@@ -44,11 +46,11 @@ for (const [path, job] of retiredCandidates) {
   assert.ok(workflow.includes(hardDisabled), path + ' job must be hard-disabled');
 }
 
-const retired = fs.readFileSync('.github/workflows/092-release-candidate.yml', 'utf8');
+const retired = read('.github/workflows/092-release-candidate.yml');
 assert.match(retired, /workflow_dispatch:/);
 assert.doesNotMatch(retired, /\n\s+push:/);
 
-const budget = fs.readFileSync('scripts/actions-budget-policy-tests.mjs', 'utf8');
+const budget = read('scripts/actions-budget-policy-tests.mjs');
 assert.match(budget, /assertManualOnly\('Android'/);
 assert.match(budget, /assertManualOnly\('staging real'/);
 assert.match(budget, /assertManualOnly\('Quality'/);

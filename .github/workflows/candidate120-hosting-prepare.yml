@@ -15,7 +15,6 @@ jobs:
   prepare:
     # Historical candidate retained for audit only. Hard-disabled.
     if: ${{ false }}
-    if: github.ref_name == 'release/candidate120-web-compliance-preflight'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
