@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CalendarCheck2, CheckCircle2, Clock3, Loader2, MapPin, PackageCheck, RotateCcw, Share2, ShieldCheck } from 'lucide-react';
 import { SAFE_MEETING_POINTS, safeMeetingPointsFor } from '../lib/universityNetwork';
 import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
-import type { MarketplaceTransaction, UniversityIdentity } from '../types';
-
-const IDENTITY_KEY = 'tutop.university-identity.v1';
+import { useAppStore } from '../store/useAppStore';
+import type { MarketplaceTransaction } from '../types';
 
 type TransactionReservationCardProps = {
   chatId: string;
@@ -26,13 +25,6 @@ function remainingLabel(expiresAt?: string, now = Date.now()) {
   return `${hours} h${rest ? ` ${rest} min` : ''} restantes`;
 }
 
-function readIdentity(): UniversityIdentity | null {
-  try {
-    const value = JSON.parse(localStorage.getItem(IDENTITY_KEY) || 'null');
-    return value && typeof value === 'object' ? value as UniversityIdentity : null;
-  } catch { return null; }
-}
-
 function defaultMeetupInput() {
   const date = new Date(Date.now() + 60 * 60_000);
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
@@ -51,21 +43,29 @@ function meetupShareText(transaction: MarketplaceTransaction, pointName: string)
 }
 
 export default function TransactionReservationCard({ chatId, currentUserId, transactionHint, onReleased, onTransactionChange }: TransactionReservationCardProps) {
+  const user = useAppStore((state) => state.user);
   const [transaction, setTransaction] = useState<MarketplaceTransaction | null>(null);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [selectedPointId, setSelectedPointId] = useState('');
   const [meetupAt, setMeetupAt] = useState(defaultMeetupInput);
-  const identity = useMemo(readIdentity, []);
-  const safePoints = useMemo(() => safeMeetingPointsFor(identity?.campus_id, identity?.institution_id).slice(0, 3), [identity?.campus_id, identity?.institution_id]);
+  // Read catalog context from the current authenticated account, never an
+  // unscoped localStorage key that may belong to another user on this device.
+  const currentAccount = Boolean(currentUserId && user.id === currentUserId);
+  const campusId = currentAccount ? (user.campus_id || user.university?.campus_id) : undefined;
+  const institutionId = currentAccount ? (user.institution_id || user.university?.institution_id) : undefined;
+  const safePoints = useMemo(() => currentAccount ? safeMeetingPointsFor(campusId, institutionId).slice(0, 3) : [], [currentAccount, campusId, institutionId]);
   const selectedPoint = useMemo(() => SAFE_MEETING_POINTS.find((point) => point.id === (transaction?.meeting_point_id || selectedPointId)), [transaction?.meeting_point_id, selectedPointId]);
 
   useEffect(() => {
-    if (!nationalSchemaEnabled()) return;
+    setTransaction(null);
+    setSelectedPointId('');
+    setMessage(null);
+    if (!nationalSchemaEnabled() || !currentAccount) return;
     let active = true;
     void nationalBackend.loadTransactionForChat(chatId).then((value) => {
-      if (!active) return;
+      if (!active || !value || value.chat_id !== chatId || (value.buyer_id !== currentUserId && value.seller_id !== currentUserId)) return;
       setTransaction(value);
       if (value?.meeting_point_id) setSelectedPointId(value.meeting_point_id);
       if (value?.meetup_at) {
@@ -75,16 +75,16 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
       }
     }).catch(() => undefined);
     return () => { active = false; };
-  }, [chatId]);
+  }, [chatId, currentUserId, currentAccount]);
 
   useEffect(() => {
-    if (!transactionHint || transactionHint.chat_id !== chatId) return;
+    if (!currentAccount || !transactionHint || transactionHint.chat_id !== chatId || (transactionHint.buyer_id !== currentUserId && transactionHint.seller_id !== currentUserId)) return;
     setTransaction(transactionHint);
-  }, [chatId, transactionHint]);
+  }, [chatId, currentUserId, currentAccount, transactionHint]);
 
   useEffect(() => {
-    onTransactionChange?.(transaction);
-  }, [transaction, onTransactionChange]);
+    onTransactionChange?.(currentAccount && transaction?.chat_id === chatId && (transaction.buyer_id === currentUserId || transaction.seller_id === currentUserId) ? transaction : null);
+  }, [transaction, currentAccount, chatId, currentUserId, onTransactionChange]);
 
   useEffect(() => {
     if (!transaction?.reservation_expires_at || transaction.status !== 'reserved') return;
@@ -99,7 +99,7 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
   const currentUserConfirmed = Boolean(isBuyer ? transaction?.buyer_confirmed_at : transaction?.seller_confirmed_at);
   const otherConfirmed = Boolean(isBuyer ? transaction?.seller_confirmed_at : transaction?.buyer_confirmed_at);
 
-  if (!nationalSchemaEnabled() || !transaction) return null;
+  if (!nationalSchemaEnabled() || !currentAccount || !transaction || transaction.chat_id !== chatId || (!isSeller && !isBuyer)) return null;
 
   const release = async () => {
     if (!expired || !isSeller || busy) return;
