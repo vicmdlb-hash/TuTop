@@ -262,7 +262,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           </>}
           {mode === 'register' && step === 2 && <>
             <button onClick={() => setStep(1)} className="mt-4 inline-flex items-center gap-1 text-[10px] font-bold text-slate-500"><ArrowLeft className="h-3.5 w-3.5" />Atrás</button>
-            <h2 className="mt-4 text-lg font-black">Tu comunidad</h2><p className="mt-1 text-xs leading-5 text-slate-500">En el mercado nacional la universidad será opcional; el registro de esta beta aún exige un campus real.</p>
+            <h2 className="mt-4 text-lg font-black">Tu comunidad</h2><p className="mt-1 text-xs leading-5 text-slate-500">En el mercado nacional la universidad será opcional; el registro de esta beta aún exige un campus real. Universidad y campus nunca se infieren por LADA o ubicación.</p>
              <button type="button" onClick={() => { setNationalApplicant((value) => !value); setError(null); }} className="mt-4 w-full rounded-xl border border-violet-400/30 bg-violet-950/30 p-3 text-left text-xs font-bold text-violet-100">{nationalApplicant ? 'Volver a la beta universitaria' : 'No pertenezco a una universidad'}</button>
              {nationalApplicant && <div role="status" className="mt-3 rounded-xl border border-amber-300/20 bg-amber-950/20 p-4 text-xs leading-5 text-amber-100"><strong>Registro nacional en preparación</strong><p className="mt-1">No necesitas inventar una universidad. Falta la verificación real del celular y activar reglas nacionales seguras. Esta opción no crea cuenta, no envía SMS y no genera cargos.</p></div>}
              {!nationalApplicant && <>
