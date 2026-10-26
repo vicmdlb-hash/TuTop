@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const read = (path) => read(path).replace(/\r\n/g, '\n');
+const read = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 
 const manualHistoricalCandidates = [
   '.github/workflows/092-hosted-client-build.yml',
