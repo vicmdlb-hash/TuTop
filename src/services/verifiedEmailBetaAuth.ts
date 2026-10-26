@@ -264,6 +264,9 @@ export const verifiedEmailBetaAuth = {
     if (password.length < 8) throw new Error('WEAK_PASSWORD');
     if (profile.nombre.trim().length < 2) throw new Error('NAME_REQUIRED');
     if (!profile.institution_id || !profile.campus_id) throw new Error('UNIVERSITY_IDENTITY_REQUIRED');
+    // Validate a complete canonical pair BEFORE creating a Firebase Auth UID.
+    // This is legacy beta enrollment only; national no-campus signup remains gated.
+    nationalAcademicMetadata(profile);
     // Validate/normalize optional phone before creating Firebase Auth so bad
     // metadata cannot leave behind a newly-created identity.
     const normalizedPhone = normalizeOptionalPhone(profile.phone);
