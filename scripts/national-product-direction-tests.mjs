@@ -8,6 +8,7 @@ const publish = fs.readFileSync('src/components/NationalPublishScreen.tsx', 'utf
 const recovery = fs.readFileSync('src/services/v2OnboardingRecovery.ts', 'utf8');
 const accessRules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
 const privacyDraft = fs.readFileSync('public/privacy.html', 'utf8');
+const nationalRulesPreview = fs.readFileSync('scripts/harden-verified-email-beta-rules.mjs', 'utf8');
 const termsDraft = fs.readFileSync('public/terms.html', 'utf8');
 
 assert(privacyDraft.includes('borrador beta'));
@@ -35,6 +36,15 @@ assert.equal(policy.verification.billingUpgradeApproved, false);
 assert.equal(policy.verification.realPhoneVerificationAvailableInSpark, false);
 assert.equal(policy.verification.publicRegistrationWithDualFactor, 'BLOCKED_UNTIL_REAL_PHONE_PROOF');
 assert.equal(policy.verification.authorizationMustBeEnforcedOnServer, true);
+// Future server-side cutover must use Firebase-signed account claims, not a
+// self-declared profile number. This verifies the preparation ONLY, never a
+// functional phone OTP or actual Firestore permission grant.
+assert.match(nationalRulesPreview, /function nationalVerifiedIdentity\(\)/);
+assert.match(nationalRulesPreview, /request\.auth\.token\.sub == request\.auth\.uid/);
+assert.match(nationalRulesPreview, /request\.auth\.token\.email_verified == true/);
+assert.match(nationalRulesPreview, /request\.auth\.token\.phone_number is string/);
+assert.match(nationalRulesPreview, /phone_number\.matches\('.*\[\+\]52|phone_number\.matches\('\^\[\+\]52/);
+assert.doesNotMatch(nationalRulesPreview, /request\.resource\.data\.telefono\s*==\s*request\.auth\.token\.phone_number/);
 assert.equal(policy.audience.under13DirectChatAllowed, false);
 assert.equal(policy.audience.under18PersonalInfoRequiresVerifiedAdultAction, true);
 assert.equal(policy.audience.guardianCanRevokeImmediately, true);
