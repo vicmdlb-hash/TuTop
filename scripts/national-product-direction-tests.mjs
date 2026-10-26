@@ -40,6 +40,18 @@ assert.equal(policy.verification.authorizationMustBeEnforcedOnServer, true);
 // This is defense-in-depth, not a replacement for server-side Firestore Rules.
 assert.match(registration, /verified\.phoneVerified !== true/);
 assert.match(registration, /PhoneVerificationPendingScreen/);
+// Nationwide/non-student path remains an honest, zero-side-effect preview.
+assert.match(registration, /No pertenezco a una universidad/);
+assert.match(registration, /Registro nacional en preparación/);
+assert.match(registration, /Esta opción no crea cuenta, no envía SMS y no genera cargos/);
+assert.match(registration, /\{!nationalApplicant && <>/);
+const signup = registration.slice(registration.indexOf("  const submit = async () => {"), registration.indexOf("  const requestPasswordReset = async () => {"));
+assert(signup.indexOf("if (nationalApplicant) throw new Error('NATIONAL_PHONE_AND_RULES_NOT_READY')") >= 0);
+assert(signup.indexOf("if (nationalApplicant)") < signup.indexOf("verifiedEmailBetaAuth.register("),
+  'no national registration can reach Firebase Auth during Spark-only migration');
+assert.equal((registration.match(/verifiedEmailBetaAuth\.register\(/g) || []).length, 1,
+  'do not create a second signup path that bypasses university-only beta guard');
+
 assert.match(registration, /No se enviarán SMS ni se generarán cargos/);
 // Future server-side cutover must use Firebase-signed account claims, not a
 // self-declared profile number. This verifies the preparation ONLY, never a
