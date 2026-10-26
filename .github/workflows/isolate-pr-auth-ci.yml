@@ -38,11 +38,6 @@ jobs:
         run: npm run typecheck
       - name: Build local web bundle using TypeScript 7 (no network)
         run: npm run build
-      - name: Compatibility-only TypeScript 6 for legacy test transpile API
-        # TypeScript 7 provides a native tsc but no programmatic transpileModule.
-        # The pinned TS6 is installed transiently AFTER TS7 compilation; it does
-        # not modify tracked package-lock/package.json or the production bundle.
-        run: npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund typescript@6.0.2
       - name: Synthetic auth/notification tests only (no external services)
         shell: bash
         run: |
@@ -71,5 +66,5 @@ jobs:
           esac
       - name: Full existing source regression suite (no deploy or Firebase credentials)
         run: npm run check
-      - name: Verify source checks and compatibility install did not change package manifests
+      - name: Verify source checks did not change package manifests
         run: git diff --exit-code -- package.json package-lock.json
