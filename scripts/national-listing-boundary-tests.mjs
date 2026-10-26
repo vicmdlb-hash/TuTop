@@ -17,6 +17,9 @@ const candidate = (patch) => ({ ...national, ...patch });
 assert.equal(listingV2HasNoLegacyDescriptionPacking(national), true,
   'national scope may have no invented university/campus when only modeling schema');
 assert.equal(listingV2HasNoLegacyDescriptionPacking(candidate({
+  delivery_methods: ['pickup'], shipping_available: false,
+})), true, 'national visibility may use explicit in-person pickup without shipping');
+assert.equal(listingV2HasNoLegacyDescriptionPacking(candidate({
   visibility_scope: 'city', city_id: 'TLAX-huamantla',
   delivery_methods: ['pickup'], shipping_available: false,
 })), true);
