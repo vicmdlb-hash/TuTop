@@ -95,7 +95,9 @@ export default function BackendGate({ children }: { children: ReactNode }) {
 
       const verified = await verifiedEmailBetaAuth.refreshVerificationStatus();
       if (!stillCurrent(expectedUid)) return;
-      if (!verified.emailVerified) {
+      // Nation-wide accounts require BOTH Firebase Auth claims on the same UID.
+      // Never hydrate the marketplace after email-only verification.
+      if (!verified.emailVerified || verified.phoneVerified !== true) {
         setAuthenticated(true);
         setVerificationPending(verified);
         setLegacyIdentity(false);
@@ -147,7 +149,9 @@ export default function BackendGate({ children }: { children: ReactNode }) {
   if (!authenticated && !loading) return <AuthScreen onAuthenticated={() => void sync()} />;
   if (loading && !authenticated) return <FullLoader label="Preparando TuTop…" />;
   if (legacyIdentity) return <LegacyIdentityScreen onMigrated={() => void sync()} onSignOut={() => void signOutAll()} />;
-  if (verificationPending) return <EmailVerificationScreen status={verificationPending} onVerified={() => void sync()} onSignOut={() => void signOutAll()} />;
+  if (verificationPending) return verificationPending.emailVerified
+    ? <PhoneVerificationPendingScreen status={verificationPending} onRefresh={() => void sync()} onSignOut={() => void signOutAll()} />
+    : <EmailVerificationScreen status={verificationPending} onVerified={() => void sync()} onSignOut={() => void signOutAll()} />;
   if (authenticated && suspended.active) return <SuspendedScreen reason={suspended.reason} onSignOut={() => void signOutAll()} />;
 
   return <>{error && <div className="fixed inset-x-3 top-[calc(10px+env(safe-area-inset-top))] z-[120] mx-auto max-w-xl rounded-2xl border border-amber-300/20 bg-[#17110b]/95 p-3 text-xs text-amber-100 shadow-2xl backdrop-blur"><div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" /><div className="min-w-0 flex-1"><strong>No pudimos sincronizar TuTop</strong><p className="mt-1 text-amber-100/65">{error}</p></div><button onClick={() => void sync()} className="rounded-lg border border-amber-200/15 px-2 py-1 font-bold">Reintentar</button></div></div>}{children}</>;
@@ -369,6 +373,17 @@ function EmailVerificationScreen({ status, onVerified, onSignOut }: { status: Ve
     finally { setBusy(false); }
   };
   return <div className="grid min-h-screen place-items-center bg-[#070b12] px-6 text-center text-white"><div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0b111c] p-6"><Mail className="mx-auto h-10 w-10 text-violet-300" /><h1 className="mt-4 text-xl font-black">Verifica tu correo</h1><p className="mt-2 text-sm leading-6 text-slate-400">Abre el enlace de verificación de <strong className="text-slate-200">{status.email}</strong>. TuTop volverá a comprobar el estado al regresar. Si el navegador no logra terminar la verificación, copia el enlace completo del correo y pégalo aquí. Publicación, chat, ofertas y reservaciones permanecen bloqueados por Security Rules hasta que Firebase confirme <code>emailVerified</code>.</p>{message && <p className="mt-4 rounded-xl bg-white/5 p-3 text-xs text-slate-300">{message}</p>}<div className="mt-4"><input value={verificationLink} onChange={(event) => setVerificationLink(event.target.value)} className="auth-input text-left text-xs" inputMode="url" autoComplete="off" placeholder="Pega el enlace de verificación si el navegador falló" /><button disabled={busy || !verificationLink.trim()} onClick={() => void applyLink()} className="mt-2 w-full rounded-2xl bg-emerald-500/10 py-2.5 text-xs font-black text-emerald-300 disabled:opacity-40">Verificar con este enlace</button></div><button disabled={busy} onClick={() => void check()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 py-3 text-sm font-black disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Ya verifiqué · comprobar</button><button disabled={busy} onClick={() => void resend()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-white/5 py-3 text-xs font-bold text-slate-300 disabled:opacity-50"><RefreshCw className="h-4 w-4" />Reenviar correo</button><button onClick={onSignOut} className="mt-4 text-xs font-bold text-slate-500">Usar otra cuenta</button></div></div>;
+}
+
+// No SMS, account linking, debug number, or billing is started from this screen.
+// Firebase Auth account lookup is informational; Firestore Rules must still
+// independently enforce trusted claims before ANY nationwide deployment.
+function PhoneVerificationPendingScreen({ status, onRefresh, onSignOut }: {
+  status: VerifiedEmailBetaStatus;
+  onRefresh: () => void;
+  onSignOut: () => void;
+}) {
+  return <div className="grid min-h-screen place-items-center bg-[#070b12] px-6 text-center text-white"><div className="w-full max-w-sm rounded-3xl border border-amber-300/15 bg-[#0b111c] p-6"><ShieldCheck className="mx-auto h-10 w-10 text-amber-300" /><h1 className="mt-4 text-xl font-black">Teléfono confirmado pendiente</h1><p className="mt-2 text-sm leading-6 text-slate-400">El correo <strong className="text-slate-200">{status.email}</strong> ya está confirmado. Para utilizar el mercado nacional también necesitamos que Firebase Auth confirme un número mexicano vinculado a esta misma cuenta. Esta beta gratuita todavía no puede realizar esa verificación real por SMS. No aceptamos números escritos en el perfil ni teléfonos simulados como prueba.</p><p className="mt-3 text-xs text-amber-200/80">Publicaciones, chats y operaciones comerciales permanecen cerrados mientras falta la verificación. No se enviarán SMS ni se generarán cargos.</p><button type="button" onClick={onRefresh} className="mt-5 w-full rounded-2xl bg-violet-600 py-3 text-xs font-black">Volver a comprobar con Firebase</button><button type="button" onClick={onSignOut} className="mt-4 text-xs font-bold text-slate-500">Cerrar sesión</button></div></div>;
 }
 
 function LegacyIdentityScreen({ onMigrated, onSignOut }: { onMigrated: () => void; onSignOut: () => void }) {
