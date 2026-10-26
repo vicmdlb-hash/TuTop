@@ -1,4 +1,5 @@
-import { nationalAcademicMetadata } from '../lib/nationalAcademicMetadata';
+import { nationalAcademicMetadata, validateBetaAcademicCatalog } from '../lib/nationalAcademicMetadata';
+import { CAMPUSES, INSTITUTIONS } from '../lib/universityNetwork';
 import { nationalVerificationIndicators } from '../lib/nationalVerificationIndicators';
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
 import { firebaseFetch, isFirebaseRequestTimeout } from './firebaseHttp';
@@ -267,6 +268,7 @@ export const verifiedEmailBetaAuth = {
     // Validate a complete canonical pair BEFORE creating a Firebase Auth UID.
     // This is legacy beta enrollment only; national no-campus signup remains gated.
     nationalAcademicMetadata(profile);
+    validateBetaAcademicCatalog(profile, INSTITUTIONS, CAMPUSES);
     // Validate/normalize optional phone before creating Firebase Auth so bad
     // metadata cannot leave behind a newly-created identity.
     const normalizedPhone = normalizeOptionalPhone(profile.phone);
