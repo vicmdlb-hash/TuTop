@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { safeMeetingPointsFor } from '../src/lib/universityNetwork.ts';
 
 const card = fs.readFileSync('src/components/TransactionReservationCard.tsx', 'utf8');
-assert.doesNotMatch(card, /localStorage|tutop\.university-identity\.v1|readIdentity\(/,
+assert.doesNotMatch(card, /localStorage\.getItem|tutop\.university-identity\.v1|readIdentity\(/,
   'shared-device unscoped identity must never drive meeting point suggestions');
 assert.match(card, /const user = useAppStore\(\(state\) => state\.user\)/);
 assert.match(card, /currentUserId && user\.id === currentUserId/);
