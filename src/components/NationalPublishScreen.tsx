@@ -179,6 +179,7 @@ export default function NationalPublishScreen() {
   if (!hasValidPrice) publishIssues.push('precio entre $0.01 y $1,000,000');
   if (!hasValidQuantity) publishIssues.push('cantidad entera entre 1 y 99');
   if (!deliveryMethods.length) publishIssues.push('forma de entrega');
+  if (scope === 'national' && !shippingAvailable) publishIssues.push('paquetería o envío para todo México');
   if (prohibitedDraft) publishIssues.push('artículo o servicio no permitido');
   if (missing.length) publishIssues.push(`${missing.length} dato${missing.length === 1 ? '' : 's'} obligatorio${missing.length === 1 ? '' : 's'}`);
   if (videoFile && !videoInfraEnabled) publishIssues.push('video no disponible en esta beta');
@@ -439,6 +440,7 @@ export default function NationalPublishScreen() {
     if (!hasValidQuantity) return setMessage('La cantidad debe ser un número entero entre 1 y 99.');
     if (prohibitedDraft) return setMessage('Ese artículo o servicio no está permitido en TuTop. Revisa el título y la descripción.');
     if (!deliveryMethods.length) return setMessage('Selecciona al menos una forma de entrega.');
+    if (scope === 'national' && !shippingAvailable) return setMessage('Para publicar en Todo México necesitas ofrecer la opción de paquetería o envío. TuTop no hace envíos.');
     if (missing.length) {
       setAdvancedOpen(true);
       return setMessage('Completa los campos obligatorios marcados con * antes de publicar.');
