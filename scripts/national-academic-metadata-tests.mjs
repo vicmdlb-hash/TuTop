@@ -24,6 +24,10 @@ for (const candidate of [
 // The existing registration and Firestore catalog validation remain in effect.
 const register = fs.readFileSync('src/services/verifiedEmailBetaAuth.ts', 'utf8');
 assert.match(register, /UNIVERSITY_IDENTITY_REQUIRED/);
+assert.match(register, /nationalAcademicMetadata\(profile\)/);
+assert.match(register, /\.\.\.academicMetadata/);
+assert.doesNotMatch(register, /institution_id: profile\.institution_id,/);
+assert.doesNotMatch(register, /campus_id: profile\.campus_id,/);
 const policy = JSON.parse(fs.readFileSync('config/tutop-national-product-direction.json', 'utf8'));
 assert.equal(policy.verification.publicRegistrationWithDualFactor, 'BLOCKED_UNTIL_REAL_PHONE_PROOF');
 assert.equal(policy.release.releaseApproved, false);
