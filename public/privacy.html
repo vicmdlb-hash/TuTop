@@ -11,13 +11,19 @@
 </head>
 <body>
   <h1>Privacidad de TuTop — borrador beta</h1>
-  <p class="note"><strong>No es una política legal aprobada ni una declaración de cumplimiento para publicación.</strong> Este texto es un borrador técnico de la rama de integración del PR #123, revisado el 24 de octubre de 2026. Build120 y Build121 son antecedentes históricos, no candidatos actuales. El PR #123 permanece en borrador y sin fusionar; todavía no existe APK exacto firmado y aceptado, ni pruebas físicas R6 aprobadas en los dos dispositivos. El aviso final y Data Safety requieren contrastar el backend real, el artefacto autorizado y la revisión jurídica antes de cualquier publicación.</p>
+  <p class="note"><strong>No es una política legal aprobada ni una declaración de cumplimiento para publicación.</strong> Este texto es un borrador técnico de la rama de integración del PR #123, actualizado con decisiones de producto del 25 de octubre de 2026. Build120 y Build121 son antecedentes históricos, no candidatos actuales. El PR #123 permanece en borrador y sin fusionar; todavía no existe APK exacto firmado y aceptado, ni pruebas físicas R6 aprobadas en los dos dispositivos. El aviso final y Data Safety requieren contrastar el backend real, el artefacto autorizado y la revisión jurídica antes de cualquier publicación.</p>
 
   <h2>Cuenta e identidad</h2>
   <p>TuTop usa Firebase Authentication. La beta técnica contempla correo real y estado de verificación de correo, pero su comportamiento completo en dispositivos físicos continúa sin aceptación. El flujo de recuperación legacy puede partir de un alias telefónico existente y la Clave TuTop para conservar el mismo UID; ese teléfono sigue siendo opcional/no verificado y TuTop no lo presenta como verificado por SMS.</p>
 
   <h2>Datos y contenido usados por la beta</h2>
-  <p>Según la superficie técnica revisada, TuTop puede manejar datos de perfil y universidad/campus; publicaciones y fotografías; chats y mensajes; ofertas, reservas y transacciones; favoritos, búsquedas guardadas, reseñas y reportes; preferencias de notificaciones; tokens de dispositivo para push; solicitudes de eliminación; y evidencia de verificación cuando el usuario usa ese flujo.</p>
+  <p>La audiencia prevista es nacional y admite personas sin universidad/campus; esa migración aún no está implementada integralmente. Los datos universitarios que existan en la versión de origen deben tratarse como campos heredados, no como obligación futura. Según la superficie técnica revisada, TuTop puede manejar datos de perfil, correo verificado, datos universitarios heredados, edad y eventuales comprobantes de tutela cuando estén legalmente implementados; publicaciones y fotografías; chats y mensajes; ofertas, reservas y transacciones; favoritos, búsquedas guardadas, reseñas y reportes; preferencias de notificaciones; tokens de dispositivo para push; solicitudes de eliminación; y evidencia de verificación cuando el usuario usa ese flujo.</p>
+
+  <h2>Menores y supervisión adulta — pendiente de implementación y aprobación</h2>
+  <p>El diseño busca permitir distintos grupos de edad en México, con verificación de tutores, consentimiento delimitado, aviso de seguridad, controles parentales y revocación; no se declara que dichos flujos estén activos ni legalmente aprobados. Un lanzamiento inicial restringido a adultos es una alternativa condicionada a decisiones y pruebas de seguridad. No debe permitirse el intercambio de datos personales de menores ni el chat directo de menores de 13 años sin los controles exigidos.</p>
+
+  <h2>Pagos y promociones</h2>
+  <p>TuTop no procesa pagos por productos negociados entre usuarios. La eventual subasta pagada para destacar anuncios es una función futura no habilitada, pendiente de reglas de facturación, trato a menores y avisos de contenido promocionado. No se promete ni se cobra actualmente tal servicio.</p>
 
   <h2>Ubicación</h2>
   <p>El diseño de Nearby contempla solicitud de ubicación aproximada bajo demanda, sin justificar recopilación precisa ni en segundo plano. La ubicación de una publicación debe requerir consentimiento explícito por publicación; la implementación y los permisos del APK definitivo aún deben verificarse.</p>
@@ -54,6 +60,6 @@
   <h2>Estado de publicación</h2>
   <p>TuTop continúa en beta controlada. Play Store, producción, billing, signing/AAB, Storage/video y merge permanecen bloqueados por los gates actuales.</p>
 
-  <p>Última revisión técnica del borrador de fuente: 24 de octubre de 2026. No constituye aprobación legal ni prueba de despliegue.</p>
+  <p>Última revisión técnica del borrador de fuente: 25 de octubre de 2026. No constituye aprobación legal ni prueba de despliegue.</p>
 </body>
 </html>
