@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const chat = fs.readFileSync('src/components/ChatConversation.tsx','utf8');
+const seller = fs.readFileSync('src/components/SellerPublicProfile.tsx','utf8');
+const reports = fs.readFileSync('scripts/report-rate-atomic-contract-tests.mjs','utf8');
+assert.match(chat, /const canReportUser = Boolean\(peerUid && user\.id && peerUid !== user\.id\)/);
+const userStart = chat.indexOf('  const reportUser = async () => {');
+const chatStart = chat.indexOf('  const reportChat = async () => {');
+assert(userStart >= 0 && chatStart > userStart, 'user and conversation report must remain distinct actions');
+const reportUser = chat.slice(userStart,chatStart);
+assert.match(reportUser, /if \(!canReportUser \|\| reportUserBusy\) return/);
+assert.match(reportUser, /await onlineBackend\.submitReport\('user', peerUid, reason\)/);
+assert.match(reportUser, /reason\.trim\(\)\.length < 3/);
+assert.match(reportUser, /useAppStore\.getState\(\)\.user\.id === reporterUid/);
+assert.match(reportUser, /useAppStore\.getState\(\)\.activeChatId === chatId/);
+assert.match(chat.slice(chatStart), /await onlineBackend\.submitReport\('chat', chatId, reason\)/);
+assert.match(chat, /canReportUser && <button[^\n]*onClick=\{\(\) => void reportUser\(\)\}/);
+assert.match(chat, /aria-label="Reportar usuario"/);
+assert.match(chat, /role="status" aria-live="polite"[^\n]*reportUserMessage/);
+assert.match(seller, /onlineBackend\.submitReport\('user', sellerId, reason\)/);
+assert.match(reports, /submitReport/);
+console.log('PASS chat exposes report-user separately from report-chat with authenticated peer and stale-UID response guard');
