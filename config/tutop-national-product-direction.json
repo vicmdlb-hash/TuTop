@@ -7,9 +7,10 @@
     "national": true,
     "institutionMembershipRequired": false,
     "accountVerificationRequired": true,
-    "verificationMethod": "TO_DEFINE_BEYOND_VERIFIED_EMAIL",
+    "verificationMethod": "VERIFIED_EMAIL_AND_VERIFIED_PHONE_SAME_FIREBASE_UID",
     "sellerPayments": "OFF_PLATFORM_DIRECT",
-    "recommendedMeetupPlacesOptional": true
+    "recommendedMeetupPlacesOptional": true,
+    "verificationEvidence": "FIREBASE_AUTH_ACCOUNT_LOOKUP_AND_SERVER_TOKEN"
   },
   "audience": {
     "mixedAgesDesired": true,
@@ -57,7 +58,8 @@
     "university_bound_moderation"
   ],
   "openDesignGates": [
-    "account_verification_strength",
+    "real_phone_proof_zero_budget",
+    "same_uid_dual_factor_server_rules",
     "neutral_age_gate",
     "under18_identity_guardian_validation",
     "nationwide_firestore_query_and_scope_migration",
@@ -66,5 +68,22 @@
     "privacy_contact",
     "play_developer_account",
     "current_android_signed_candidate"
-  ]
+  ],
+  "verification": {
+    "ownerDecisionDate": "2026-10-25",
+    "requiredFactors": [
+      "firebase_auth_email_verified",
+      "firebase_auth_linked_phone_number"
+    ],
+    "phoneSource": "TRUSTED_FIREBASE_AUTH_SAME_UID",
+    "declaredProfilePhoneIsProof": false,
+    "legacyPhoneAliasIsProof": false,
+    "emailVerificationIsCivilIdentityProof": false,
+    "smsSendingEnabled": false,
+    "billingUpgradeApproved": false,
+    "realPhoneVerificationAvailableInSpark": false,
+    "simulatedPhoneVerificationOnlyInIsolatedTests": true,
+    "publicRegistrationWithDualFactor": "BLOCKED_UNTIL_REAL_PHONE_PROOF",
+    "authorizationMustBeEnforcedOnServer": true
+  }
 }
