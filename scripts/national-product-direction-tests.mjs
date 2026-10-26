@@ -7,7 +7,17 @@ const registration = fs.readFileSync('src/components/BackendGate.tsx', 'utf8');
 const publish = fs.readFileSync('src/components/NationalPublishScreen.tsx', 'utf8');
 const recovery = fs.readFileSync('src/services/v2OnboardingRecovery.ts', 'utf8');
 const accessRules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
+const privacyDraft = fs.readFileSync('public/privacy.html', 'utf8');
+const termsDraft = fs.readFileSync('public/terms.html', 'utf8');
 
+assert(privacyDraft.includes('borrador beta'));
+assert(privacyDraft.includes('La audiencia prevista es nacional'));
+assert(privacyDraft.includes('no está implementada integralmente'));
+assert(privacyDraft.includes('Menores y supervisión adulta'));
+assert(termsDraft.includes('Ámbito nacional y acceso'));
+assert(termsDraft.includes('sin exigencia de pertenecer a una universidad'));
+assert(termsDraft.includes('Visibilidad promocionada — no disponible'));
+assert(termsDraft.includes('Menores y tutores'));
 assert.equal(policy.schemaVersion, 1);
 assert.equal(policy.status, 'OWNER_DECISION_NOT_DEPLOYED');
 assert.equal(policy.market.country, 'MX');
