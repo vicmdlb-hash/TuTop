@@ -36,6 +36,11 @@ assert.equal(policy.verification.billingUpgradeApproved, false);
 assert.equal(policy.verification.realPhoneVerificationAvailableInSpark, false);
 assert.equal(policy.verification.publicRegistrationWithDualFactor, 'BLOCKED_UNTIL_REAL_PHONE_PROOF');
 assert.equal(policy.verification.authorizationMustBeEnforcedOnServer, true);
+// The browser may not hydrate national marketplace views on email-only status.
+// This is defense-in-depth, not a replacement for server-side Firestore Rules.
+assert.match(registration, /verified\.phoneVerified !== true/);
+assert.match(registration, /PhoneVerificationPendingScreen/);
+assert.match(registration, /No se enviarán SMS ni se generarán cargos/);
 // Future server-side cutover must use Firebase-signed account claims, not a
 // self-declared profile number. This verifies the preparation ONLY, never a
 // functional phone OTP or actual Firestore permission grant.
