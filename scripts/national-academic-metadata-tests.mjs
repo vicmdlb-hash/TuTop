@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { nationalAcademicMetadata } from '../src/lib/nationalAcademicMetadata.ts';
+import { nationalAcademicMetadata, validateBetaAcademicCatalog } from '../src/lib/nationalAcademicMetadata.ts';
 
 assert.deepEqual(nationalAcademicMetadata({}), {});
 assert.deepEqual(nationalAcademicMetadata({
@@ -20,6 +20,20 @@ for (const candidate of [
 ]) {
   assert.throws(() => nationalAcademicMetadata(candidate));
 }
+const betaInstitutions = [{id:'uatx',name:'UATx',active:true}, {id:'unam',name:'UNAM',active:true}];
+const betaCampuses = [
+  {id:'riberena',institution_id:'uatx',name:'Ribereña',active:true},
+  {id:'unam-cu',institution_id:'unam',name:'Ciudad Universitaria',active:true},
+  {id:'inactive',institution_id:'uatx',name:'Inactivo',active:false},
+];
+const realPair = {institution_id:'uatx',institution_name:'UATx',campus_id:'riberena',campus_name:'Ribereña'};
+assert.doesNotThrow(() => validateBetaAcademicCatalog(realPair,betaInstitutions,betaCampuses));
+for (const candidate of [
+  {...realPair,campus_id:'not-in-catalog'},
+  {...realPair,campus_id:'unam-cu',campus_name:'Ciudad Universitaria'},
+  {...realPair,campus_id:'inactive',campus_name:'Inactivo'},
+  {...realPair,institution_name:'UNAM'},
+]) assert.throws(() => validateBetaAcademicCatalog(candidate,betaInstitutions,betaCampuses),/ACADEMIC_CATALOG_/);
 // National metadata is PREPARED, not an active public-signup bypass.
 // The existing registration and Firestore catalog validation remain in effect.
 const register = fs.readFileSync('src/services/verifiedEmailBetaAuth.ts', 'utf8');
