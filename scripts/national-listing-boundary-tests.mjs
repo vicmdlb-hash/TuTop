@@ -7,8 +7,8 @@ const national = {
   category_id: 'electronics', title: 'Producto de ejemplo',
   description: 'Ejemplo sintético', attributes: {},
   price_mxn: 200, negotiable: false, quantity: 1,
-  delivery_methods: ['pickup'], meeting_point_ids: [],
-  shipping_available: false, photo_urls: ['data:image/png;base64,YQ=='],
+  delivery_methods: ['shipping'], meeting_point_ids: [],
+  shipping_available: true, photo_urls: ['data:image/png;base64,YQ=='],
   status: 'draft', moderation_status: 'pending',
   visibility_scope: 'national',
   created_at: '2026-10-26T00:00:00Z', updated_at: '2026-10-26T00:00:00Z',
@@ -18,6 +18,7 @@ assert.equal(listingV2HasNoLegacyDescriptionPacking(national), true,
   'national scope may have no invented university/campus when only modeling schema');
 assert.equal(listingV2HasNoLegacyDescriptionPacking(candidate({
   visibility_scope: 'city', city_id: 'TLAX-huamantla',
+  delivery_methods: ['pickup'], shipping_available: false,
 })), true);
 for (const bad of [
   { institution_id: 'uatx' },
@@ -27,6 +28,8 @@ for (const bad of [
   { visibility_scope: 'campus' },
   { visibility_scope: 'institution' },
   { visibility_scope: 'university-zone' },
+  { shipping_available: false },
+  { delivery_methods: ['pickup'], shipping_available: true },
   { delivery_methods: ['campus_meetup'] },
   { meeting_point_ids: ['fake-campus-meeting-point'] },
 ]) {
@@ -35,7 +38,7 @@ for (const bad of [
 }
 assert.equal(listingV2HasNoLegacyDescriptionPacking(candidate({
   institution_id: 'uatx', campus_id: 'uatx-riberena',
-  visibility_scope: 'campus', delivery_methods: ['campus_meetup'],
+  visibility_scope: 'campus', delivery_methods: ['campus_meetup'], shipping_available: false,
 })), true, 'existing campus listing schema must remain compatible');
 
 // Structural preparation is NOT permission to send the national candidate.
