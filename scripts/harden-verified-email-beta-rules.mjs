@@ -58,7 +58,7 @@ const verifiedHelper = `${signedIn}\n    function verifiedIdentity() {\n      re
 // Real phone linking, end-to-end emulator authorization and owner release gate
 // remain required before this helper may grant any marketplace privileges.
 const nationalVerifiedHelper = `    function nationalVerifiedIdentity() {\n      return verifiedIdentity()\n        && ('sub' in request.auth.token)\n        && request.auth.token.sub == request.auth.uid\n        && ('phone_number' in request.auth.token)\n        && request.auth.token.phone_number is string\n        && request.auth.token.phone_number.matches('^[+]52[1-9][0-9]{9}$');\n    }`;
-replaceOnce(signedIn, verifiedHelper + '\\n' + nationalVerifiedHelper, 'verified identity helpers');
+replaceOnce(signedIn, verifiedHelper + '\n' + nationalVerifiedHelper, 'verified identity helpers');
 
 // Private identity: phone-password remains readable for legacy beta users, but
 // new verified-email accounts may omit phone and bind institutional_email to the
