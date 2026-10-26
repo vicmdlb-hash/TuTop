@@ -52,6 +52,8 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
   useEffect(() => {
     let active = true;
     const ownerUid = user.id;
+    // Do not show a prior conversation's report outcome after switching accounts.
+    setReportUserMessage(null);
     setBlocked(false);
     setBlockLoaded(false);
     setBlockMessage(null);
