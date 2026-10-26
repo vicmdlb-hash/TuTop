@@ -71,3 +71,25 @@ test('campus belonging to another institution still fails closed', async () => {
 });
 
 console.log('PASS publication no longer depends on stale users profile; canonical institution/campus integrity remains enforced');
+
+
+test('national scope with no shipping denies even for a valid university seller', async () => {
+  await seedCatalogAndStaleProfile();
+  const invalid = { ...listing(), visibility_scope: 'national', shipping_available: false };
+  await assertFails(publicationBatch(auth(), 'national-without-shipping', invalid).commit());
+});
+
+test('national shipping flag alone cannot bypass absent shipping delivery method', async () => {
+  await seedCatalogAndStaleProfile();
+  const invalid = { ...listing(), visibility_scope: 'national', shipping_available: true };
+  await assertFails(publicationBatch(auth(), 'national-flag-only', invalid).commit());
+});
+
+test('national scope with shipping flag and matching method preserves verified seller publication', async () => {
+  await seedCatalogAndStaleProfile();
+  const valid = {
+    ...listing(), visibility_scope: 'national', shipping_available: true,
+    delivery_methods: ['shipping'],
+  };
+  await assertSucceeds(publicationBatch(auth(), 'national-shipping-valid', valid).commit());
+});
