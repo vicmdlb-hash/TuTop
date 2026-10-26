@@ -36,3 +36,24 @@ export function nationalAcademicMetadata(input: OptionalAcademicSelection): Reco
     campus_name: campusName,
   };
 }
+
+/** Active catalog membership for the EXISTING beta. Not a national signup gate. */
+type BetaInstitution = { id: string; name: string; active: boolean };
+type BetaCampus = { id: string; institution_id: string; name: string; active: boolean };
+
+export function validateBetaAcademicCatalog(
+  input: OptionalAcademicSelection,
+  institutions: readonly BetaInstitution[],
+  campuses: readonly BetaCampus[],
+): void {
+  const values = nationalAcademicMetadata(input);
+  if (!values.institution_id || !values.campus_id) throw new Error('UNIVERSITY_IDENTITY_REQUIRED');
+  const university = institutions.find((entry) => entry.active && entry.id === values.institution_id);
+  const campus = campuses.find((entry) => entry.active && entry.id === values.campus_id);
+  if (!university || !campus || campus.institution_id !== university.id) {
+    throw new Error('ACADEMIC_CATALOG_IDENTITY_INVALID');
+  }
+  if (values.institution_name !== university.name || values.campus_name !== campus.name) {
+    throw new Error('ACADEMIC_CATALOG_NAME_MISMATCH');
+  }
+}
