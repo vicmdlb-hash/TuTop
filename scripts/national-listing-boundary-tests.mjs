@@ -54,14 +54,12 @@ assert(create.indexOf('NATIONAL_RULES_AND_PHONE_PROOF_NOT_READY') < create.index
 const generator = fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs', 'utf8');
 assert(generator.includes('request.resource.data.institution_id is string'));
 assert(generator.includes('request.resource.data.campus_id is string'));
-const nationalShippingContract = "request.resource.data.shipping_available == true";
-assert.equal(generator.split(nationalShippingContract).length - 1, 2,
-  'both create and seller update Rules must prohibit nationwide delivery misrepresentation');
-assert.equal(generator.split("'shipping' in request.resource.data.delivery_methods").length - 1, 2,
-  'both Rules paths must require a real matching shipping option');
+const shippingContract = "request.resource.data.shipping_available == ('shipping' in request.resource.data.delivery_methods)";
+assert.equal(generator.split(shippingContract).length - 1, 2,
+  'both create and seller update Rules must reject inconsistent shipping declarations');
 const screen = fs.readFileSync('src/components/NationalPublishScreen.tsx', 'utf8');
-assert.match(screen, /scope === 'national' && !shippingAvailable/);
-assert.match(screen, /Para publicar en Todo México necesitas ofrecer la opción de paquetería o envío/);
+assert.doesNotMatch(screen, /scope === 'national' && !shippingAvailable/);
+assert.match(screen, /Un anuncio visible en todo México también puede ofrecer entrega presencial/);
 
 const policy = JSON.parse(fs.readFileSync('config/tutop-national-product-direction.json', 'utf8'));
 assert.equal(policy.verification.publicRegistrationWithDualFactor, 'BLOCKED_UNTIL_REAL_PHONE_PROOF');
