@@ -131,8 +131,9 @@ export function legacyProductToListingV2(product: Product, now = new Date().toIS
 }
 
 export function listingV2HasNoLegacyDescriptionPacking(listing: CanonicalListingV2) {
-  const nationalDeliveryReady = listing.visibility_scope !== 'national'
-    || (listing.shipping_available === true && listing.delivery_methods.includes('shipping'));
+  // An explicit shipping flag must agree with offered delivery methods. Nationwide
+  // visibility does NOT require shipping: buyers can arrange supported pickup.
+  const shippingFlagConsistent = listing.shipping_available === listing.delivery_methods.includes('shipping');
   const pairedCampus = Boolean(listing.institution_id && listing.campus_id);
   const noCampus = !listing.institution_id && !listing.campus_id;
   const nationwideNonCampus = noCampus
@@ -143,7 +144,7 @@ export function listingV2HasNoLegacyDescriptionPacking(listing: CanonicalListing
   // and does NOT authorize its submission to current university-bound Rules.
   return Boolean(
     (pairedCampus || nationwideNonCampus)
-    && nationalDeliveryReady
+    && shippingFlagConsistent
     && listing.category_id
     && listing.delivery_methods.length
     && typeof listing.attributes === 'object'
