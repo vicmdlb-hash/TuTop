@@ -17,6 +17,13 @@ for (const claimedConfig of [
   assert.equal(decision.allAgesReleaseApproved, false);
   assert(Object.isFrozen(decision), 'gate must not be mutable at runtime');
 }
+const assistant = fs.readFileSync('src/services/assistantProvider.ts', 'utf8');
+const configured = assistant.slice(assistant.indexOf('async function askConfiguredTopi('), assistant.indexOf('export async function askTopi('));
+const configuredGuard = configured.indexOf('if (!topiRemoteProviderAudienceGate().allowed) return null;');
+const configuredEndpoint = configured.indexOf('const endpoint = topiEndpoint();');
+const configuredFetch = configured.indexOf('await fetch(endpoint,');
+assert(configuredGuard >= 0 && configuredEndpoint > configuredGuard && configuredFetch > configuredEndpoint,
+  'configured HTTPS Topi must fail closed before selecting or calling an endpoint');
 const source = fs.readFileSync('src/services/nativeTopiAI.ts', 'utf8');
 const support = fs.readFileSync('src/services/topiConsumerSupport.ts', 'utf8');
 const start = source.indexOf('export async function generateNativeTopiText(');
