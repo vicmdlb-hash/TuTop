@@ -62,6 +62,11 @@ const tests = [
    const h=harness(); await h.auth.register('a@example.test','password123',{...profile,phone:'246 123 4567'});
    assert.equal(h.calls.find(c=>c.kind==='commit').writes.find(w=>w.update.path==='user_private/u1').update.data.telefono,'+522461234567');
  }],
+ ['incomplete academic pair cannot create an orphan Firebase Auth identity',async()=>{
+   const h=harness();
+   await assert.rejects(h.auth.register('a@example.test','password123',{...profile,campus_name:''}),/ACADEMIC_NAME_INVALID/);
+   assert.equal(h.calls.length,0);
+ }],
  ['invalid optional phone rejected before account creation',async()=>{
    const h=harness(); await assert.rejects(h.auth.register('a@example.test','password123',{...profile,phone:'123'}));
    assert.equal(h.calls.length,0);
