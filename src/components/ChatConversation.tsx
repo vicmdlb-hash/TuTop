@@ -42,6 +42,9 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
   const chat = chats.find((item) => item.id === chatId);
   const peerUid = chat ? (chat.comprador_id === user.id ? chat.vendedor_id : chat.comprador_id) : '';
   const canBlockUser = Boolean(v2 && peerUid && user.id && peerUid !== user.id);
+  const canReportUser = Boolean(peerUid && user.id && peerUid !== user.id);
+  const [reportUserBusy, setReportUserBusy] = useState(false);
+  const [reportUserMessage, setReportUserMessage] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
   const [blockBusy, setBlockBusy] = useState(false);
   const [blockLoaded, setBlockLoaded] = useState(false);
@@ -271,6 +274,31 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
     finally { setImageBusy(false); if (imageInputRef.current) imageInputRef.current.value = ''; }
   };
 
+  // Reporting a user is distinct from reporting a conversation. Reuse the
+  // authenticated report writer, including server-side rate/owner checks.
+  const reportUser = async () => {
+    if (!canReportUser || reportUserBusy) return;
+    const reason = window.prompt('¿Por qué quieres reportar a esta persona?');
+    if (!reason || reason.trim().length < 3) return;
+    const reporterUid = user.id;
+    setReportUserBusy(true);
+    setReportUserMessage(null);
+    try {
+      await onlineBackend.submitReport('user', peerUid, reason);
+      if (useAppStore.getState().user.id === reporterUid
+        && useAppStore.getState().activeChatId === chatId) {
+        setReportUserMessage('Reporte de usuario enviado. TuTop lo revisará.');
+      }
+    } catch {
+      if (useAppStore.getState().user.id === reporterUid
+        && useAppStore.getState().activeChatId === chatId) {
+        setReportUserMessage('No pudimos reportar al usuario. Inténtalo otra vez.');
+      }
+    } finally {
+      setReportUserBusy(false);
+    }
+  };
+
   const reportChat = async () => {
     const reason = window.prompt('¿Qué ocurrió en esta conversación?');
     if (!reason || reason.trim().length < 3) return;
@@ -282,7 +310,8 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
 
   return (
     <div className="chat-screen pt-safe">
-      <header className="chat-header"><button onClick={closeChat} className="icon-button" aria-label="Regresar"><ArrowLeft /></button><img src={product.imagen_url} alt="" className="h-9 w-9 rounded-xl object-cover" /><div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><h1 className="truncate text-[13px] font-black">{chat.nombre_otro_usuario}</h1><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${isBuyer ? 'bg-sky-500/10 text-sky-300' : 'bg-violet-500/10 text-violet-300'}`}>{isBuyer ? 'COMPRA' : 'VENTA'}</span></div><p className="truncate text-[10px] text-muted">{product.titulo} · ${product.precio_mxn.toLocaleString('es-MX')}</p></div>{canBlockUser && <button type="button" disabled={!blockLoaded || blockBusy} onClick={() => void toggleBlock()} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-400/15 px-2 py-2 text-[9px] font-bold text-rose-200 disabled:opacity-40" aria-label={blocked ? 'Desbloquear usuario' : 'Bloquear usuario'}><Ban className="h-3.5 w-3.5" />{blocked ? 'Desbloquear usuario' : 'Bloquear usuario'}</button>}</header>
+      <header className="chat-header"><button onClick={closeChat} className="icon-button" aria-label="Regresar"><ArrowLeft /></button><img src={product.imagen_url} alt="" className="h-9 w-9 rounded-xl object-cover" /><div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><h1 className="truncate text-[13px] font-black">{chat.nombre_otro_usuario}</h1><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${isBuyer ? 'bg-sky-500/10 text-sky-300' : 'bg-violet-500/10 text-violet-300'}`}>{isBuyer ? 'COMPRA' : 'VENTA'}</span></div><p className="truncate text-[10px] text-muted">{product.titulo} · ${product.precio_mxn.toLocaleString('es-MX')}</p></div>{canReportUser && <button type="button" disabled={reportUserBusy} onClick={() => void reportUser()} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-400/15 px-2 py-2 text-[9px] font-bold text-amber-200 disabled:opacity-40" aria-label="Reportar usuario"><Flag className="h-3.5 w-3.5" />Reportar persona</button>}{canBlockUser && <button type="button" disabled={!blockLoaded || blockBusy} onClick={() => void toggleBlock()} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-400/15 px-2 py-2 text-[9px] font-bold text-rose-200 disabled:opacity-40" aria-label={blocked ? 'Desbloquear usuario' : 'Bloquear usuario'}><Ban className="h-3.5 w-3.5" />{blocked ? 'Desbloquear usuario' : 'Bloquear usuario'}</button>}</header>
+      {reportUserMessage && <p role="status" aria-live="polite" className="mx-4 mt-2 rounded-lg bg-amber-500/10 p-2 text-[9px] text-amber-200">{reportUserMessage}</p>}
       {(blocked || blockMessage) && <p role="status" aria-live="polite" className="mx-4 mt-2 rounded-lg bg-rose-500/10 p-2 text-[9px] text-rose-200">{blocked ? 'Usuario bloqueado: el historial sigue disponible, pero no puedes iniciar nuevas comunicaciones.' : blockMessage}</p>}
 
       <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-white/5 bg-[#0d1725] px-3 py-2 text-[10px] text-muted"><MapPin className="h-3.5 w-3.5 text-success" /><span className="min-w-0 flex-1 truncate">{product.punto_encuentro}</span><button onClick={() => void reportChat()} className="inline-flex items-center gap-1 text-slate-500" aria-label="Reportar conversación"><Flag className="h-3.5 w-3.5" />Reportar</button></div>
