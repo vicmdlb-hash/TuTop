@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "source": "owner product decisions confirmed 2026-10-25; canonical evidence in Google Drive TuTop-release-compliance-control",
+  "status": "OWNER_DECISION_NOT_DEPLOYED",
+  "market": {
+    "country": "MX",
+    "national": true,
+    "institutionMembershipRequired": false,
+    "accountVerificationRequired": true,
+    "verificationMethod": "TO_DEFINE_BEYOND_VERIFIED_EMAIL",
+    "sellerPayments": "OFF_PLATFORM_DIRECT",
+    "recommendedMeetupPlacesOptional": true
+  },
+  "audience": {
+    "mixedAgesDesired": true,
+    "under13FeatureRollout": "BLOCKED_UNTIL_COMPLIANT",
+    "adultOnlyFirstReleaseFallbackAllowed": true,
+    "under13DirectChatAllowed": false,
+    "under13ListingRequiresVerifiedGuardian": true,
+    "under18PersonalInfoRequiresVerifiedAdultAction": true,
+    "guardianCanRevokeImmediately": true
+  },
+  "moderation": {
+    "initialModeration": "OWNER_ONLY",
+    "institutionalModeratorsRequired": false,
+    "preApproveAllListings": true,
+    "reportUserListingChatAi": true,
+    "blockAndAppeal": true
+  },
+  "ai": {
+    "generativeRequiredForV1": false,
+    "remoteProviderApproved": false,
+    "offlineRuntimeRequired": false,
+    "voiceFeatureDesired": true,
+    "localModelEvaluationAllowed": true,
+    "localModelLicensesVerified": false,
+    "nonGenerativeFallbackAllowed": true
+  },
+  "promotion": {
+    "paidFeedRankingAuctionDesired": true,
+    "billingEnabled": false,
+    "monetizationDeferred": true,
+    "playBillingComplianceNotApproved": true
+  },
+  "release": {
+    "androidFirst": true,
+    "iosLater": true,
+    "exactHeadSignedApkVerified": false,
+    "physicalDevicesAccepted": 0,
+    "physicalDevicesRequired": 2,
+    "releaseApproved": false,
+    "billingBudgetMXN": 0
+  },
+  "supersedes": [
+    "university_or_campus_mandatory_registration",
+    "institution_only_marketplace",
+    "university_bound_moderation"
+  ],
+  "openDesignGates": [
+    "account_verification_strength",
+    "neutral_age_gate",
+    "under18_identity_guardian_validation",
+    "nationwide_firestore_query_and_scope_migration",
+    "google_play_billing_for_paid_listing_boosts",
+    "family_policy_ugc",
+    "privacy_contact",
+    "play_developer_account",
+    "current_android_signed_candidate"
+  ]
+}
