@@ -1,3 +1,4 @@
+import { nationalAcademicMetadata } from '../lib/nationalAcademicMetadata';
 import { nationalVerificationIndicators } from '../lib/nationalVerificationIndicators';
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
 import { firebaseFetch, isFirebaseRequestTimeout } from './firebaseHttp';
@@ -7,10 +8,10 @@ import { getFirebaseConfig } from './runtimeConfig';
 export interface VerifiedEmailBetaProfile {
   nombre: string;
   facultad: string;
-  institution_id: string;
-  institution_name: string;
-  campus_id: string;
-  campus_name: string;
+  institution_id?: string;
+  institution_name?: string;
+  campus_id?: string;
+  campus_name?: string;
   phone?: string;
 }
 
@@ -218,6 +219,7 @@ async function migrateLegacySessionToEmail(session: CompatibleSession, emailInpu
 async function createMarketplaceAccount(payload: AuthPayload, email: string, profile: VerifiedEmailBetaProfile) {
   const config = getFirebaseConfig();
   const normalizedPhone = normalizeOptionalPhone(profile.phone);
+  const academicMetadata = nationalAcademicMetadata(profile);
   persistCompatibleSession(payload, email, false, normalizedPhone);
   // A fresh client must be authenticated immediately in this same process. On
   // Android the native bridge now reads the session written above from
@@ -233,10 +235,7 @@ async function createMarketplaceAccount(payload: AuthPayload, email: string, pro
     nombre: profile.nombre.trim().slice(0, 80),
     facultad: profile.facultad.trim().slice(0, 120),
     esta_verificado: false,
-    institution_id: profile.institution_id,
-    institution_name: profile.institution_name,
-    campus_id: profile.campus_id,
-    campus_name: profile.campus_name,
+    ...academicMetadata,
     verification_level: 0,
     verification_badge: 'Cuenta TuTop',
     created_at: at,
