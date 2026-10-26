@@ -54,7 +54,112 @@ function replaceExpectedCountInSection(startMarker, endMarker, from, to, expecte
 
 const signedIn = `    function signedIn() { return request.auth != null; }`;
 const verifiedHelper = `${signedIn}\n    function verifiedIdentity() {\n      return signedIn()\n        && request.auth.token.email is string\n        && request.auth.token.email.size() >= 6\n        && request.auth.token.email_verified == true;\n    }`;
-replaceOnce(signedIn, verifiedHelper, 'verified identity helper');
+// FUTURE NATIONAL CUTOVER: This is a trusted Firebase Auth token predicate,
+// NOT a user_private phone field, UI flag, or simulated verification. Keep the
+// national launch gated until a real same-UID phone linking provider exists at
+// MXN 0 and the emulator suite covers every sensitive authorization path.
+const nationalVerifiedHelper = `    function nationalVerifiedIdentity() {
+      return verifiedIdentity()
+        && request.auth.token.sub == request.auth.uid
+        && ('phone_number' in request.auth.token)
+        && request.auth.token.phone_number is string
+        && request.auth.token.phone_number.matches('^[+]52[1-9][0-9]{9}
+
+// Private identity: phone-password remains readable for legacy beta users, but
+// new verified-email accounts may omit phone and bind institutional_email to the
+// Firebase Auth email. Sensitive writes are gated separately below.
+const oldPrivateCreate = `      allow create: if owner(uid)\n        && request.resource.data.keys().hasOnly(['uid','telefono','institutional_email','created_at','updated_at','auth_mode'])\n        && request.resource.data.uid == uid\n        && request.resource.data.telefono is string && request.resource.data.telefono.size() >= 11 && request.resource.data.telefono.size() <= 16\n        && (!('institutional_email' in request.resource.data) || (request.resource.data.institutional_email is string && request.resource.data.institutional_email.size() <= 180))\n        && request.resource.data.auth_mode == 'phone_password_beta'\n        && fresh(request.resource.data.created_at)\n        && (!('updated_at' in request.resource.data) || fresh(request.resource.data.updated_at));`;
+const newPrivateCreate = `      allow create: if owner(uid)\n        && request.resource.data.keys().hasOnly(['uid','telefono','institutional_email','created_at','updated_at','auth_mode'])\n        && request.resource.data.uid == uid\n        && request.resource.data.auth_mode in ['phone_password_beta','email_password_verified_beta']\n        && (\n          (request.resource.data.auth_mode == 'phone_password_beta'\n            && request.resource.data.telefono is string\n            && request.resource.data.telefono.size() >= 11 && request.resource.data.telefono.size() <= 16)\n          ||\n          (request.resource.data.auth_mode == 'email_password_verified_beta'\n            && request.resource.data.institutional_email is string\n            && request.resource.data.institutional_email == request.auth.token.email\n            && request.resource.data.institutional_email.size() >= 6 && request.resource.data.institutional_email.size() <= 180\n            && (!('telefono' in request.resource.data) || (request.resource.data.telefono is string && request.resource.data.telefono.size() >= 11 && request.resource.data.telefono.size() <= 16)))\n        )\n        && (!('institutional_email' in request.resource.data) || (request.resource.data.institutional_email is string && request.resource.data.institutional_email.size() <= 180))\n        && fresh(request.resource.data.created_at)\n        && (!('updated_at' in request.resource.data) || fresh(request.resource.data.updated_at));`;
+replaceOnce(oldPrivateCreate, newPrivateCreate, 'user_private verified-email contract');
+
+const gates = [
+  [
+    `      allow create: if signedIn() && notSuspended()\n        && request.resource.data.keys().hasOnly([\n          'vendedor_id'`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && request.resource.data.keys().hasOnly([\n          'vendedor_id'`,
+    'legacy product create',
+  ],
+  [
+    `      allow update: if signedIn() && notSuspended() && resource.data.vendedor_id == request.auth.uid`,
+    `      allow update: if signedIn() && notSuspended() && verifiedIdentity() && resource.data.vendedor_id == request.auth.uid`,
+    'legacy product update',
+  ],
+  [
+    `      allow create: if signedIn() && notSuspended()\n        && rateLimitConsumed('chat_create')`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && rateLimitConsumed('chat_create')`,
+    'chat create',
+  ],
+  [
+    `      allow update: if participant(chatId) && notSuspended()\n        && request.resource.data.participants == resource.data.participants`,
+    `      allow update: if participant(chatId) && notSuspended() && verifiedIdentity()\n        && request.resource.data.participants == resource.data.participants`,
+    'chat update',
+  ],
+  [
+    `        allow create: if participant(chatId) && notSuspended()\n          && rateLimitConsumed('message_create')`,
+    `        allow create: if participant(chatId) && notSuspended() && verifiedIdentity()\n          && rateLimitConsumed('message_create')`,
+    'message create',
+  ],
+  [
+    `        allow create: if participant(chatId) && owner(uid) && notSuspended()\n          && request.resource.data.keys().hasOnly(['user_id','created_at'])`,
+    `        allow create: if participant(chatId) && owner(uid) && notSuspended() && verifiedIdentity()\n          && request.resource.data.keys().hasOnly(['user_id','created_at'])`,
+    'legacy delivery confirmation',
+  ],
+  [
+    `      allow create: if signedIn() && notSuspended()\n        && rateLimitConsumed('offer_create')`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && rateLimitConsumed('offer_create')`,
+    'offer create',
+  ],
+  [
+    `      allow update: if signedIn() && notSuspended()\n        && resource.data.status == 'pending'`,
+    `      allow update: if signedIn() && notSuspended() && verifiedIdentity()\n        && resource.data.status == 'pending'`,
+    'offer update',
+  ],
+  [
+    `      allow create: if signedIn() && notSuspended()\n        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','accepted_offer_id'`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','accepted_offer_id'`,
+    'transaction create',
+  ],
+];
+
+for (const [from, to, label] of gates) replaceOnce(from, to, label);
+
+// These markers deliberately run after the rate-limit and video hardeners. Scope
+// both replacements to listings_v2 so future legacy/product changes cannot be
+// accidentally authorized or rejected by a global text match.
+replaceOnceInSection(
+  '    match /listings_v2/{listingId} {',
+  '    match /offers/{offerId} {',
+  `      allow create: if signedIn() && notSuspended()\n        && listingRateLimitConsumed()`,
+  `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && listingRateLimitConsumed()`,
+  'canonical listings_v2 verified create',
+);
+replaceOnceInSection(
+  '    match /listings_v2/{listingId} {',
+  '    match /offers/{offerId} {',
+  `      allow update: if signedIn() && notSuspended() && (\n        (\n          request.auth.uid == resource.data.seller_id`,
+  `      allow update: if signedIn() && notSuspended() && (\n        (\n          request.auth.uid == resource.data.seller_id\n          && verifiedIdentity()`,
+  'canonical listings_v2 verified seller update',
+);
+
+// Runtime hardening deliberately creates two participant-driven transaction
+// updates in transactions_v2: the normal lifecycle transition and unilateral
+// cancellation. Both are sensitive marketplace mutations and both must require
+// the same signed email_verified claim. Exactly two is an invariant: drift fails
+// closed instead of silently leaving one path unverified.
+const transactionUpdate = `      allow update: if signedIn() && notSuspended()\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]`;
+replaceExpectedCountInSection(
+  '    match /transactions_v2/{transactionId} {',
+  '    match /demand_requests/{requestId} {',
+  transactionUpdate,
+  `      allow update: if signedIn() && notSuspended() && verifiedIdentity()\n        && request.auth.uid in [resource.data.buyer_id, resource.data.seller_id]`,
+  2,
+  'transactions_v2 verified user updates',
+);
+
+fs.writeFileSync(path, rules);
+console.log('✅ Verified-email beta Rules: sensitive marketplace writes require request.auth.token.email_verified == true.');
+);
+    }`;
+replaceOnce(signedIn, `${verifiedHelper}\\n${nationalVerifiedHelper}`, 'verified identity helpers');
 
 // Private identity: phone-password remains readable for legacy beta users, but
 // new verified-email accounts may omit phone and bind institutional_email to the
