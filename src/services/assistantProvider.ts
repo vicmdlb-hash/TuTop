@@ -3,6 +3,7 @@ import { detectDeliveryIntent, detectListingCondition, detectNegotiableIntent, d
 import type { ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import type { ListingVisibilityScope, Product, ProductCategory, ProductCondition, ProductFormData } from '../types';
 import { redactTopiRemoteText, type TopiPrivacyRedaction } from '../lib/topiPrivacy';
+import { topiRemoteProviderAudienceGate } from '../lib/topiAllAgesProviderGate';
 import { sanitizeTopiStructuredAttributes } from '../lib/topiStructuredAttributes';
 import { nationalFieldsFor } from '../lib/nationalListingFields';
 import { generateNativeTopiText, nativeTopiAIStatus } from './nativeTopiAI';
@@ -265,6 +266,8 @@ function topiEndpoint() {
 }
 
 async function askConfiguredTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult | null> {
+  // A configured HTTPS endpoint is not proof of provider, age, or privacy approval.
+  if (!topiRemoteProviderAudienceGate().allowed) return null;
   const endpoint = topiEndpoint();
   if (!endpoint) return null;
   const privacy = remotePrivacyContext(context);
