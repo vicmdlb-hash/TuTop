@@ -11,7 +11,16 @@ const nationalVerificationIndicators = new Function(
 )();
 // Execute the actual TypeScript national profile normalizer in the isolated harness.
 const academicSource = stripTypeScriptTypes(fs.readFileSync('src/lib/nationalAcademicMetadata.ts', 'utf8')).replace(/^export /gm, '');
-const nationalAcademicMetadata = new Function(academicSource + '; return nationalAcademicMetadata;')();
+const { nationalAcademicMetadata, validateBetaAcademicCatalog } = new Function(academicSource + '; return { nationalAcademicMetadata, validateBetaAcademicCatalog };')();
+const INSTITUTIONS = [
+  { id: 'uatx', name: 'Universidad Autónoma de Tlaxcala', active: true },
+  { id: 'unam', name: 'Universidad Nacional Autónoma de México', active: true },
+];
+const CAMPUSES = [
+  { id: 'uatx-riberena', institution_id: 'uatx', name: 'Campus Ribereña', active: true },
+  { id: 'unam-cu', institution_id: 'unam', name: 'Ciudad Universitaria', active: true },
+  { id: 'closed-campus', institution_id: 'uatx', name: 'Campus cerrado', active: false },
+];
 function harness() {
   let session = null;
   let privateEmail = '';
@@ -53,10 +62,10 @@ function harness() {
   const firebaseFetch = fetch;
   const isFirebaseRequestTimeout = (error) => error?.message === 'FIREBASE_REQUEST_TIMEOUT' || error?.code === 'FIREBASE_REQUEST_TIMEOUT';
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
-  const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','isFirebaseRequestTimeout','nationalVerificationIndicators','nationalAcademicMetadata',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,isFirebaseRequestTimeout,nationalVerificationIndicators,nationalAcademicMetadata);
+  const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','isFirebaseRequestTimeout','nationalVerificationIndicators','nationalAcademicMetadata','validateBetaAcademicCatalog','INSTITUTIONS','CAMPUSES',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,isFirebaseRequestTimeout,nationalVerificationIndicators,nationalAcademicMetadata,validateBetaAcademicCatalog,INSTITUTIONS,CAMPUSES);
   return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set profileWait(v){profileWait=v;}};
 }
-const profile={nombre:'Tester',facultad:'Campus',institution_id:'inst',institution_name:'Institution',campus_id:'camp',campus_name:'Campus'};
+const profile={nombre:'Tester',facultad:'Campus',institution_id:'uatx',institution_name:'Universidad Autónoma de Tlaxcala',campus_id:'uatx-riberena',campus_name:'Campus Ribereña'};
 const tests = [
  ['optional Mexican phone is normalized before profile commit',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',{...profile,phone:'246 123 4567'});
@@ -66,6 +75,19 @@ const tests = [
    const h=harness();
    await assert.rejects(h.auth.register('a@example.test','password123',{...profile,campus_name:''}),/ACADEMIC_NAME_INVALID/);
    assert.equal(h.calls.length,0);
+ }],
+ ['invalid, mismatched, or inactive campus does not create a Firebase Auth UID',async()=>{
+   for(const values of [
+     {campus_id:'missing-campus'},
+     {campus_id:'unam-cu',campus_name:'Ciudad Universitaria'},
+     {campus_id:'closed-campus',campus_name:'Campus cerrado'},
+     {institution_name:'Universidad inventada'},
+     {campus_name:'Campus inventado'},
+   ]) {
+     const h=harness();
+     await assert.rejects(h.auth.register('a@example.test','password123',{...profile,...values}),/ACADEMIC_CATALOG_/);
+     assert.equal(h.calls.length,0);
+   }
  }],
  ['invalid optional phone rejected before account creation',async()=>{
    const h=harness(); await assert.rejects(h.auth.register('a@example.test','password123',{...profile,phone:'123'}));
