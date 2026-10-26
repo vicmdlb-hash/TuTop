@@ -166,6 +166,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [name, setName] = useState('');
   const [institutionId, setInstitutionId] = useState('');
   const [campusId, setCampusId] = useState('');
+  // Local-only national choice, never persisted or sent to Auth.
+  const [nationalApplicant, setNationalApplicant] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +187,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
       setBusy(true);
       setError(null);
       if (mode === 'register') {
+        // No Firebase UID may be created through the campus-free preview.
+        if (nationalApplicant) throw new Error('NATIONAL_PHONE_AND_RULES_NOT_READY');
         if (name.trim().length < 2) throw new Error('Escribe tu nombre.');
         if (!institutionId || !campusId || !institution || !campus) throw new Error('Selecciona universidad y campus.');
         const legacyAdapter = campus.name || institution.short_name || 'Red universitaria';
@@ -238,7 +242,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           <div className="relative">
             <div><div className="wordmark text-4xl" aria-label="TuTop"><span>Tu</span><span>Top</span></div><p className="mt-1 text-[10px] font-bold uppercase tracking-[.18em] text-violet-300/80">Descubre, conecta y encuentra cerca de ti.</p></div>
             <h1 className="mt-7 text-[27px] font-black leading-[1.05] tracking-[-.04em]">Compra, vende y encuentra dentro de tu comunidad.</h1>
-            <p className="mt-3 text-sm leading-6 text-slate-400">Para proteger publicaciones y transacciones, esta beta verifica que tengas acceso a un correo real.</p>
+            <p className="mt-3 text-sm leading-6 text-slate-400">TuTop se prepara para todo México. Para operar necesitamos correo y celular confirmados en la misma cuenta; la verificación real por SMS sigue pendiente.</p>
             <div className="mt-5 flex flex-wrap gap-2 text-[10px] font-semibold text-slate-300"><span className="auth-benefit"><ShieldCheck />Identidad verificable</span><span className="auth-benefit"><Sparkles />10 UCoins de bienvenida</span></div>
           </div>
         </div>
@@ -258,12 +262,16 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           </>}
           {mode === 'register' && step === 2 && <>
             <button onClick={() => setStep(1)} className="mt-4 inline-flex items-center gap-1 text-[10px] font-bold text-slate-500"><ArrowLeft className="h-3.5 w-3.5" />Atrás</button>
-            <h2 className="mt-4 text-lg font-black">¿En qué universidad estás?</h2><p className="mt-1 text-xs leading-5 text-slate-500">Elige institución y campus; nunca se infieren por LADA o ubicación.</p>
+            <h2 className="mt-4 text-lg font-black">Tu comunidad</h2><p className="mt-1 text-xs leading-5 text-slate-500">En el mercado nacional la universidad será opcional; el registro de esta beta aún exige un campus real.</p>
+             <button type="button" onClick={() => { setNationalApplicant((value) => !value); setError(null); }} className="mt-4 w-full rounded-xl border border-violet-400/30 bg-violet-950/30 p-3 text-left text-xs font-bold text-violet-100">{nationalApplicant ? 'Volver a la beta universitaria' : 'No pertenezco a una universidad'}</button>
+             {nationalApplicant && <div role="status" className="mt-3 rounded-xl border border-amber-300/20 bg-amber-950/20 p-4 text-xs leading-5 text-amber-100"><strong>Registro nacional en preparación</strong><p className="mt-1">No necesitas inventar una universidad. Falta la verificación real del celular y activar reglas nacionales seguras. Esta opción no crea cuenta, no envía SMS y no genera cargos.</p></div>}
+             {!nationalApplicant && <>
             <label className="auth-label">Institución</label><div className="relative"><Building2 className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={institutionId} onChange={(event) => chooseInstitution(event.target.value)} className="auth-input pl-10"><option value="">Selecciona institución</option>{INSTITUTIONS.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.short_name} · {item.name}</option>)}</select></div>
             <label className="auth-label">Campus</label><div className="relative"><MapPin className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={campusId} onChange={(event) => setCampusId(event.target.value)} className="auth-input pl-10" disabled={!institutionId}><option value="">Selecciona campus</option>{campusOptions.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
             {error && <p className="mt-3 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>}
             <button disabled={busy || !institutionId || !campusId} onClick={() => void submit()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}Crear mi cuenta TuTop</button>
             <p className="mt-3 text-center text-[9px] leading-5 text-slate-600">Seleccionar universidad no prueba afiliación académica. El correo prueba control de una identidad digital; otros niveles de verificación siguen separados.</p>
+             </>
           </>}
           {mode === 'login' && <>
             <label className="auth-label">Correo electrónico</label><div className="relative"><Mail className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><input value={email} onChange={(event) => setEmail(event.target.value)} className="auth-input pl-10" inputMode="email" autoComplete="email" placeholder="tu@correo.com" /></div>
