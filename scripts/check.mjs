@@ -42,6 +42,7 @@ const commonSteps = [
   [process.execPath, ['scripts/staging-android-read-only-prep-tests.mjs']],
   [process.execPath, ['scripts/staging-web-read-only-prep-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/backend-hydration-identity-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/browser-overlay-account-isolation-tests.mjs']],
   [process.execPath, ['scripts/staging-config-read-context-tests.mjs']],
   [process.execPath, ['scripts/connected-staging-compile-workflow-tests.mjs']],
   [process.execPath, ['scripts/v2-snapshot-cost-audit.mjs']],
