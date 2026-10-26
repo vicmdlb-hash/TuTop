@@ -78,7 +78,8 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
   }, [chatId, currentUserId, currentAccount]);
 
   useEffect(() => {
-    if (!currentAccount || !transactionHint || transactionHint.chat_id !== chatId || (transactionHint.buyer_id !== currentUserId && transactionHint.seller_id !== currentUserId)) return;
+    if (!transactionHint || transactionHint.chat_id !== chatId) return;
+    if (!currentAccount || (transactionHint.buyer_id !== currentUserId && transactionHint.seller_id !== currentUserId)) return;
     setTransaction(transactionHint);
   }, [chatId, currentUserId, currentAccount, transactionHint]);
 
