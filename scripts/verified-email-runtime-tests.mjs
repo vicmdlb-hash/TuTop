@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 const source = fs.readFileSync(process.argv[2] || 'src/services/verifiedEmailBetaAuth.ts', 'utf8').replace(/\r\n/g, '\n');
+// The runtime harness strips TS imports. Inject the real source helper explicitly;
+// omitting it would yield a false failure unrelated to Firebase auth behavior.
+const phoneIndicatorSource = stripTypeScriptTypes(fs.readFileSync('src/lib/nationalVerificationIndicators.ts', 'utf8'))
+  .replace(/^export /gm, '');
+const nationalVerificationIndicators = new Function(
+  phoneIndicatorSource + '; return nationalVerificationIndicators;'
+)();
 function harness() {
   let session = null;
   let privateEmail = '';
@@ -43,7 +50,7 @@ function harness() {
   const firebaseFetch = fetch;
   const isFirebaseRequestTimeout = (error) => error?.message === 'FIREBASE_REQUEST_TIMEOUT' || error?.code === 'FIREBASE_REQUEST_TIMEOUT';
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
-  const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','isFirebaseRequestTimeout',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,isFirebaseRequestTimeout);
+  const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','isFirebaseRequestTimeout','nationalVerificationIndicators',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,isFirebaseRequestTimeout,nationalVerificationIndicators);
   return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set profileWait(v){profileWait=v;}};
 }
 const profile={nombre:'Tester',facultad:'Campus',institution_id:'inst',institution_name:'Institution',campus_id:'camp',campus_name:'Campus'};
