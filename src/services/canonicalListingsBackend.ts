@@ -211,6 +211,11 @@ export function buildCanonicalListingCreateWrite(
 
 export const canonicalListingsBackend = {
   async create(listing: CanonicalListingV2, category: ProductCategory, operationId?: string) {
+    // Schema-only migration: national listings without campus can be modeled,
+    // but never sent to Firebase before signed dual-factor Rules are proven.
+    if (!listing.institution_id || !listing.campus_id) {
+      throw new Error('NATIONAL_RULES_AND_PHONE_PROOF_NOT_READY');
+    }
     const client = getClient();
     const uid = client.currentSession!.uid;
     if (listing.seller_id !== uid) throw new Error('SELLER_MISMATCH');
