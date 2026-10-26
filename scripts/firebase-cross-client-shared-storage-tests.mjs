@@ -1,15 +1,10 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
-import ts from 'typescript';
+import { compileTypescriptFixture } from './typescript-fixture-compiler.mjs';
 
 // This suite loads the REAL REST client, lifecycle and bridge modules in a
 // synthetic web runtime. No Firebase backend, account, token, or network access.
-const read = (file) => fs.readFileSync(file, 'utf8');
-const transpile = (file) => ts.transpileModule(read(file), {
-  fileName: file,
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-}).outputText;
+const transpile = compileTypescriptFixture;
 
 const guardSource = transpile('src/lib/firebaseSharedSessionGuard.ts');
 const lifecycleSource = transpile('src/lib/firebaseSessionLifecycle.ts');

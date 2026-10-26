@@ -1,20 +1,11 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
-import ts from 'typescript';
+import { compileTypescriptFixture } from './typescript-fixture-compiler.mjs';
 
 // Test the actual native router module with all external dependencies stubbed.
 // No Firebase, Capacitor, OS permissions, network calls or user data required.
-const source = fs.readFileSync('src/services/nativeNotificationRouter.ts', 'utf8');
-const compiled = ts.transpileModule(source, {
-  fileName: 'nativeNotificationRouter.ts',
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-}).outputText;
-const guardSource = fs.readFileSync('src/lib/nativeNotificationSessionGuard.ts', 'utf8');
-const guardJs = ts.transpileModule(guardSource, {
-  fileName: 'nativeNotificationSessionGuard.ts',
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-}).outputText;
+const compiled = compileTypescriptFixture('src/services/nativeNotificationRouter.ts');
+const guardJs = compileTypescriptFixture('src/lib/nativeNotificationSessionGuard.ts');
 function evaluate(js, mocks, context = {}) {
   const module = { exports: {} };
   vm.runInNewContext(js, {

@@ -1,12 +1,8 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
-import ts from 'typescript';
+import { compileTypescriptFixture } from './typescript-fixture-compiler.mjs';
 
-const compile = (path) => ts.transpileModule(fs.readFileSync(path, 'utf8'), {
-  fileName: path,
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-}).outputText;
+const compile = compileTypescriptFixture;
 const queueJs = compile('src/lib/nativeSessionWriteQueue.ts');
 const bridgeJs = compile('src/services/nativeSecureSessionBridge.ts');
 

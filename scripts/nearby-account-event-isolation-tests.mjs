@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import ts from 'typescript';
+import { compileTypescriptFixture } from './typescript-fixture-compiler.mjs';
 
 // Run the actual cache/event implementation in a synthetic web runtime.
-const source = fs.readFileSync('src/lib/nearbyMarketplace.ts','utf8');
-const js = ts.transpileModule(source,{fileName:'nearbyMarketplace.ts',
-  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+const js = compileTypescriptFixture('src/lib/nearbyMarketplace.ts');
 const backing = new Map();
 const events = [];
 const listeners = new Map();
@@ -117,11 +115,7 @@ assert.match(publish,/if \(!stillCurrent\(\)\) return;/);
 assert.match(publish,/const removeListingLocation = \(\) => \{\s*locationRequestSerial\.current \+= 1;/);
 assert.match(publish,/useEffect\(\(\) => \(\) => \{ locationRequestSerial\.current \+= 1; \}, \[user\.id\]\)/);
 // Run the real V2 public moderation filter and verify buyer/seller separation.
-const filterSource = fs.readFileSync('src/lib/publicDiscovery.ts', 'utf8');
-const filterJs = ts.transpileModule(filterSource, {
-  fileName: 'publicDiscovery.ts',
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-}).outputText;
+const filterJs = compileTypescriptFixture('src/lib/publicDiscovery.ts');
 const filterModule = { exports: {} };
 vm.runInNewContext(filterJs, { module: filterModule, exports: filterModule.exports }, { timeout: 2500 });
 const publicFilter = filterModule.exports.isPublicDiscoveryProduct;
@@ -170,11 +164,7 @@ assert.match(exploreFreshness,/setNearbyProducts\(\[\]\);[\s\S]*setNearbyRefresh
 assert.match(exploreFreshness,/document\.removeEventListener\('visibilitychange', onForeground\)/);
 // Execute the real mounted Nearby hydrator against a controlled async A -> B -> A race.
 // A UID-only comparison passes incorrectly when the same account signs back in.
-const hydratorTsx = fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx', 'utf8');
-const hydratorJs = ts.transpileModule(hydratorTsx, {
-  fileName: 'V2NearbyListingsHydrator.tsx',
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX },
-}).outputText;
+const hydratorJs = compileTypescriptFixture('src/components/V2NearbyListingsHydrator.tsx');
 const hydrationRequests = [];
 const hydrationSubscriptions = new Set();
 const hydrationListeners = new Map();
