@@ -271,7 +271,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
             {error && <p className="mt-3 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>}
             <button disabled={busy || !institutionId || !campusId} onClick={() => void submit()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}Crear mi cuenta TuTop</button>
             <p className="mt-3 text-center text-[9px] leading-5 text-slate-600">Seleccionar universidad no prueba afiliación académica. El correo prueba control de una identidad digital; otros niveles de verificación siguen separados.</p>
-             </>
+             </>}
           </>}
           {mode === 'login' && <>
             <label className="auth-label">Correo electrónico</label><div className="relative"><Mail className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><input value={email} onChange={(event) => setEmail(event.target.value)} className="auth-input pl-10" inputMode="email" autoComplete="email" placeholder="tu@correo.com" /></div>
