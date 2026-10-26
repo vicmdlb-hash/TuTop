@@ -1,4 +1,5 @@
-name: TuTop build116 Device A publication repair
+# RETIRED: obsolete Build115/116/118/120 candidate. Audit source only; do not execute.
+name: RETIRED — TuTop build116 Device A publication repair
 
 on:
   workflow_dispatch:
@@ -12,6 +13,8 @@ concurrency:
 
 jobs:
   candidate:
+    # Historical candidate retained for audit only. Hard-disabled.
+    if: ${{ false }}
     if: github.ref_name == 'fix/tutop-116-deviceA-publication-repair' && github.event.repository.private == false
     runs-on: ubuntu-24.04
     timeout-minutes: 70

@@ -1,14 +1,8 @@
-name: Candidate120 Hosting prepare — no deploy
+# RETIRED: obsolete Build115/116/118/120 candidate. Audit source only; do not execute.
+name: RETIRED — Candidate120 Hosting prepare — no deploy
 
 on:
-  push:
-    branches: [release/candidate120-web-compliance-preflight]
   workflow_dispatch:
-    inputs:
-      confirm:
-        description: Type PREPARE_CANDIDATE120_HOSTING_NO_DEPLOY
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -19,6 +13,8 @@ concurrency:
 
 jobs:
   prepare:
+    # Historical candidate retained for audit only. Hard-disabled.
+    if: ${{ false }}
     if: github.ref_name == 'release/candidate120-web-compliance-preflight'
     runs-on: ubuntu-24.04
     timeout-minutes: 30

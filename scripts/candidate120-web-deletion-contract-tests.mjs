@@ -33,9 +33,11 @@ assert.doesNotMatch(prep,/service.?account|refreshToken|idToken/i);
 assert(ignore.includes('public/tutop-web-config.json'));
 assert(ignore.includes('.tutop-staging-web-config.json'));
 
-assert.match(workflow,/release\/candidate120-web-compliance-preflight/);
-assert.match(workflow,/554f4ef6d0429b0059738d8cd6e1b6e4890bda91/);
-assert.match(workflow,/PREPARE_CANDIDATE120_HOSTING_NO_DEPLOY/);
+assert.match(workflow,/^# RETIRED:/);
+assert.match(workflow,/^name: RETIRED — /m);
+assert.match(workflow,/\non:\n\s+workflow_dispatch:\n\npermissions:/);
+assert.match(workflow,/^  prepare:\n[\s\S]*?^    if: \$\{\{ false \}\}/m);
+assert.doesNotMatch(workflow,/\n\s+push:|\n\s+pull_request:|\n\s+schedule:/);
 assert.doesNotMatch(workflow,/firebase deploy|--only hosting/);
 
 const csp=(firebase.hosting?.headers||[]).flatMap(item=>item.headers||[]).find(item=>item.key==='Content-Security-Policy')?.value||'';
@@ -46,15 +48,15 @@ const configHeaders=(firebase.hosting?.headers||[]).find(item=>item.source==='/t
 assert(deleteHeaders.some(item=>item.key==='Cache-Control'&&item.value==='no-store'));
 assert(configHeaders.some(item=>item.key==='Cache-Control'&&item.value==='no-store'));
 
-assert.match(privacy,/Build120 \/ PR #107 \/ SHA 554f4ef6d0429b0059738d8cd6e1b6e4890bda91/);
-assert.doesNotMatch(privacy,/Build120 \/ PR #100|e93ca0bb237e7fa438df5801fc627f065d9441e6/);
-assert.match(privacy,/fallos físicos abiertos en autenticación\/verificación, Topi real y activación de notificaciones/);
-assert.match(privacy,/No es una política legal aprobada para publicación/);
+assert.match(privacy,/PR #123/);
+assert.match(privacy,/Build120 y Build121 son antecedentes históricos, no candidatos actuales/);
+assert.match(privacy,/audiencia prevista es nacional/i);
+assert.match(privacy,/No es una política legal aprobada/i);
 assert.match(privacy,/flujo web autenticado/i);
 assert.doesNotMatch(privacy,/[A-Z0-9._%+-]+@gmail\.com/i);
 
 console.log('PASS Build120 web deletion flow authenticates the existing account and can create only a pending owner request');
 console.log('PASS runtime Firebase web config is generated separately and ignored by git');
-console.log('PASS Hosting prepare workflow is exact-Build120 scoped and cannot deploy');
-console.log('PASS privacy provenance is exact PR107/Build120 SHA and stale Build118 identity is rejected');
+console.log('PASS historical Build120 Hosting workflow is hard-disabled and cannot deploy');
+console.log('PASS privacy draft names PR123, nationwide scope and Build120/121 as historical');
 console.log('PASS privacy remains explicitly draft/legal-pending rather than fabricated as approved');
