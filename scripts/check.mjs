@@ -31,6 +31,7 @@ const commonSteps = [
   [process.execPath, ['scripts/canonical-offer-read-cache-tests.mjs']],
   [process.execPath, ['scripts/offer-backend-drift-audit.mjs']],
   [process.execPath, ['scripts/transaction-bridge-fresh-offer-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/transaction-card-account-isolation-tests.mjs']],
   [process.execPath, ['scripts/profile-editor-v2-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-canonical-listing-id-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-canonical-completion-contract-tests.mjs']],
