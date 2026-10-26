@@ -9,7 +9,9 @@ function replaceOnce(from, to, label) {
     console.error(`DETENIDO: ${label} esperaba 1 coincidencia y encontró ${count}.`);
     process.exit(2);
   }
-  rules = rules.replace(from, to);
+  // Treat replacement as literal text: a Rules regex ending in $' must not
+  // trigger JavaScript String.replace's $'-means-original-suffix expansion.
+  rules = rules.replace(from, () => to);
 }
 
 function replaceOnceInSection(startMarker, endMarker, from, to, label) {
