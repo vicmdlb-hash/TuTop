@@ -66,9 +66,12 @@ test('signed Firebase Auth Mexican phone + verified email + same UID grants exis
   await seed();
   await assertSucceeds(publish(client('seller', { phone_number: mxPhone, sub: 'seller' }), 'seller', 'trusted-pair'));
 });
-test('wrong signed subject cannot reuse another UID phone proof', async () => {
+test('a different authenticated UID cannot publish on behalf of seller', async () => {
   await seed();
-  await assertFails(publish(client('seller', { phone_number: mxPhone, sub: 'someone-else' }), 'seller', 'cross-account'));
+  // The Firebase emulator normalizes JWT sub to authenticatedContext's UID.
+  // It cannot synthesize an inconsistent signed sub, and we never claim it can.
+  // Instead prove the cross-account write is rejected with real Rules evaluation.
+  await assertFails(publish(client('intruder', { phone_number: mxPhone }), 'seller', 'cross-account'));
 });
 test('non-Mexican and malformed phone tokens fail closed', async () => {
   for (const phone of ['+12025550199', '2461234567', '+5212461234567', '+520000000000']) {
