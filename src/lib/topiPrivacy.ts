@@ -5,13 +5,15 @@ export type TopiRemoteText = {
   redactions: TopiPrivacyRedaction[];
 };
 
-function normalize(value: unknown, max: number) {
+function normalize(value: unknown) {
   if (typeof value !== 'string') return '';
-  return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
+  // Redact the complete input before enforcing the outbound character limit.
+  // Truncating first could leave a partial email, address or token in the prompt.
+  return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim();
 }
 
 export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText {
-  let text = normalize(value, max);
+  let text = normalize(value);
   if (!text) return { text: undefined, redactions: [] };
 
   const redactions = new Set<TopiPrivacyRedaction>();
@@ -44,5 +46,5 @@ export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText
   replace(/\b(?:calle|avenida|av\.?|blvd\.?|boulevard|calzada|privada|cerrada|prolongaci[oó]n)\s+[^,;\n]{1,90}\d{1,5}[^,;\n]{0,30}/giu, 'address', '[domicilio omitido]');
   replace(/\b(?:direcci[oó]n|domicilio)\s*(?::|=|-|es)?\s*[^,;\n]{3,100}/giu, 'address', '[domicilio omitido]');
 
-  return { text: text || undefined, redactions: [...redactions] };
+  return { text: text.slice(0, Math.max(0, max)) || undefined, redactions: [...redactions] };
 }
