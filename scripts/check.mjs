@@ -95,6 +95,7 @@ const commonSteps = [
   [process.execPath, ['--experimental-strip-types', 'scripts/national-listing-boundary-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/national-verification-evidence-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/topi-address-privacy-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/photo-decode-cleanup-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/topi-all-ages-provider-gate-tests.mjs']],
   [process.execPath, ['scripts/guardian-revocation-preflight-tests.mjs']],
   [process.execPath, ['scripts/first-admin-bootstrap-gate-tests.mjs']],
