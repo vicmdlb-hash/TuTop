@@ -45,6 +45,10 @@ export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText
   // This is deliberately conservative and is not a substitute for provider privacy approval.
   replace(/\b(?:calle|avenida|av\.?|blvd\.?|boulevard|calzada|privada|cerrada|prolongaci[oó]n)\s+[^,;\n]{1,90}\d{1,5}[^,;\n]{0,30}/giu, 'address', '[domicilio omitido]');
   replace(/\b(?:direcci[oó]n|domicilio)\s*(?::|=|-|es)?\s*[^,;\n]{3,100}/giu, 'address', '[domicilio omitido]');
+  // Some street/house numbers are introduced as a "zona" or "colonia", not "calle".
+  // Do not mask coarse travel distances or named neighborhoods like "20 de Noviembre".
+  replace(/\b(?:zona|colonia)\s+(?:[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,4})\s+#?\d{1,6}\b(?!\s*(?:min(?:utos?)?|km|metros?|m|\/))/giu,
+    'address', '[domicilio omitido]');
 
   return { text: text.slice(0, Math.max(0, max)) || undefined, redactions: [...redactions] };
 }
