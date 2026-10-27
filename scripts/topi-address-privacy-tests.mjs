@@ -20,4 +20,22 @@ const email = redactTopiRemoteText('contacto vendedor@example.com');
 assert(!email.text?.includes('vendedor@example.com'));
 assert(email.redactions.includes('email'));
 
+
+const clippingBoundaryCases = [
+  ['X'.repeat(72) + ' cliente@example.com', 'email', 'cliente@'],
+  ['X'.repeat(72) + ' 2461234567', 'phone', '246123'],
+  ['X'.repeat(72) + ' avenida Reforma 123', 'address', 'avenida'],
+  ['X'.repeat(72) + ' sk-proj-abcdefghijklmnop12345', 'token', 'sk-proj'],
+];
+for (const [input, label, exposed] of clippingBoundaryCases) {
+  const output = redactTopiRemoteText(input, 80);
+  assert(output.redactions.includes(label),
+    `remote redactor must detect ${label} even when its span crosses the outbound limit`);
+  assert(!output.text?.includes(exposed),
+    `remote redactor must not expose a partial ${label} before clipping`);
+  assert((output.text?.length || 0) <= 80, 'remote text must respect its outbound cap');
+}
+assert.equal(redactTopiRemoteText('Vendo laptop con 256 GB', 80).text, 'Vendo laptop con 256 GB',
+  'safe product text remains unchanged');
+
 console.log('PASS Topi remote text address redaction (source-only; no provider or device acceptance)');
