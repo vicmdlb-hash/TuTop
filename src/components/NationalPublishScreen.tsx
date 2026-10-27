@@ -3,7 +3,7 @@ import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Images, Loader2, MapPin, 
 import { compressImageForFirestore } from '../lib/imageCompression';
 import { categorySafetyRequirements } from '../lib/marketplaceGovernance';
 import { getCachedApproxLocation, locationAttributes, nearbyLocationPermission, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
-import { nationalFieldsFor, normalizeNationalAttributes } from '../lib/nationalListingFields';
+import { missingRequiredNationalFields, nationalFieldsFor, normalizeNationalAttributes } from '../lib/nationalListingFields';
 import type { CanonicalListingV2, ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import { smartPriceFromTuTop } from '../lib/smartPricing';
 import { startTopiDictation } from '../lib/topiVoice';
@@ -164,7 +164,7 @@ export default function NationalPublishScreen() {
   const safePoints = useMemo(() => safeMeetingPointsFor(campusId, institutionId), [campusId, institutionId]);
   const normalizedAttributes = useMemo(() => normalizeNationalAttributes(fields, attributes), [fields, attributes]);
   const required = useMemo(() => categorySafetyRequirements(category || undefined).required, [category]);
-  const missing = required.filter((key) => normalizedAttributes[key] === undefined || normalizedAttributes[key] === null || normalizedAttributes[key] === '');
+  const missing = missingRequiredNationalFields(fields, normalizedAttributes, required);
   const missingLabels = missing.map((key) => fields.find((field) => field.key === key)?.label || key);
   const parsedPrice = Number(price);
   const parsedQuantity = Number(quantity);
