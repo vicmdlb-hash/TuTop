@@ -13,11 +13,11 @@ const paths = [
 ];
 for (const path of paths) {
   const code = fs.readFileSync(path, 'utf8');
-  assert.match(code, /NOTIFICATION_PROJECTOR_HTTP_\\$\\{response\\.status\\}/,
+  assert(code.includes('NOTIFICATION_PROJECTOR_HTTP_' + '${response.status}'),
     path + ': sanitized HTTP status expected');
-  assert.doesNotMatch(code, /\\$\\{text\\.slice\\(0,\\s*800\\)\\}/,
+  assert(!code.includes('${text.slice(0,800)}') && !code.includes('${text.slice(0, 800)}'),
     path + ': response body must never be included in thrown error');
-  assert.doesNotMatch(code, /\\$\\{response\\.status\\} \\$\\{url\\}/,
+  assert(!code.includes('${response.status} ${url}'),
     path + ': raw Firestore URL must not be included in thrown error');
 }
 console.log('PASS: six notification projector HTTP errors suppress URLs and response bodies');
