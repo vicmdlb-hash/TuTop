@@ -70,6 +70,9 @@ assert.match(assistant, /"attributes":object\?/);
 assert.match(assistant, /Nunca inventes alérgenos/);
 assert.match(publish, /\{ \.\.\.suggestion\.attributes, \.\.\.current \}/, 'manual user values must win over AI suggestions');
 assert.match(publish, /setAdvancedOpen\(true\)/);
+assert.match(publish, /const missingLabels = missing\.map/);
+assert.match(publish, /campos obligatorios: \$\{missingLabels\.join\(', '\)\}/);
+assert.match(publish, /Completa estos campos obligatorios:/);
 
 
 // AI suggestions without matching seller evidence must never become listing facts.
