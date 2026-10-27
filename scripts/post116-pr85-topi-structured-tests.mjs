@@ -148,4 +148,24 @@ const preserveCoarseOrigin = sanitizeTopiStructuredAttributes({
 assert.equal(preserveCoarseOrigin?.origin_zone, 'zona centro',
   'legitimate coarse transport zones must remain usable');
 
+
+const deniedMilk = sanitizeTopiStructuredAttributes({
+  allergens: 'leche',
+}, 'Postres', 'Galletas sin leche, contienen huevo.');
+assert.equal(deniedMilk, undefined,
+  'AI must not promote an allergen the seller explicitly denies');
+
+const mixedContradictoryAllergens = sanitizeTopiStructuredAttributes({
+  allergens: 'huevo y leche',
+}, 'Postres', 'Galletas con huevo pero sin leche.');
+assert.equal(mixedContradictoryAllergens, undefined,
+  'contradiction in one proposed allergen rejects the whole suggested field');
+
+const blanketNoAllergens = sanitizeTopiStructuredAttributes({
+  allergens: 'huevo',
+}, 'Postres', 'Galletas de huevo; no contienen alergenos.');
+assert.equal(blanketNoAllergens, undefined,
+  'explicit blanket denial cannot turn an ingredient into an AI-declared allergen');
+
+
 console.log('PASS PR85 Topi structured compose: allowlisted fields + explicit evidence + privacy-preserving manual-value precedence');
