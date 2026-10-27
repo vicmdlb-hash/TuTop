@@ -94,7 +94,8 @@ export default function ProductDetail() {
     ? product.moderation_status === 'pending' ? 'En revisión · aún no visible para otros'
       : product.moderation_status === 'rejected' ? 'Rechazada'
         : product.moderation_status === 'review' ? 'Revisión necesaria'
-          : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado
+          : product.moderation_status === 'flagged' ? 'Marcada para revisión · no visible para otros'
+            : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado
     : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado;
   const photos = product.imagenes_url?.length ? product.imagenes_url : [product.imagen_url];
   const activePhoto = photos[Math.min(photoIndex, photos.length - 1)] || product.imagen_url;

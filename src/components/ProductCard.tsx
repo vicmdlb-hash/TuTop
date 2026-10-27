@@ -35,7 +35,8 @@ export default function ProductCard({ product }: { product: Product }) {
     ? product.moderation_status === 'pending' ? 'En revisión'
       : product.moderation_status === 'rejected' ? 'Rechazada'
         : product.moderation_status === 'review' ? 'Revisión necesaria'
-          : null
+          : product.moderation_status === 'flagged' ? 'Marcada para revisión'
+            : null
     : null;
   const parsed = parseListingDescription(product.descripcion);
   const negotiable = product.precio_negociable === true || parsed.details['Precio negociable']?.toLowerCase() === 'sí';

@@ -40,4 +40,11 @@ assert(detail.includes('canViewerOpenListing(candidate, user.id, nationalSchemaE
   'detail must hide revoked/unapproved listing before rendering effects');
 assert(detail.includes('canViewerOpenListing(item, user.id, nationalSchemaEnabled())'),
   'related listings must not leak unapproved products');
-console.log('PASS V2 buyer listing boundary: discovery, direct IDs, contact, bid and related listings');
+const card = fs.readFileSync('src/components/ProductCard.tsx', 'utf8');
+assert(card.includes("product.moderation_status === 'flagged' ? 'Marcada para revisión'"),
+  'flagged listing must not appear as an unqualified public offer to its seller');
+assert(detail.includes("product.moderation_status === 'flagged' ? 'Marcada para revisión"),
+  'seller detail must expose flagged moderation state');
+assert(feed.includes('myNeedsAttentionProducts.length'),
+  'seller overview must count rejected/flagged listings separately');
+console.log('PASS V2 buyer listing boundary and seller moderation states: approved/pending/rejected/flagged');
