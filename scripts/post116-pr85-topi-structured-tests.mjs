@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { sanitizeTopiStructuredAttributes } from '../src/lib/topiStructuredAttributes.ts';
+import { missingRequiredNationalFields, nationalFieldsFor, normalizeNationalAttributes } from '../src/lib/nationalListingFields.ts';
 
 const comida = sanitizeTopiStructuredAttributes({
   ingredients: 'chocolate, leche, huevo',
@@ -99,5 +100,24 @@ const noWarranty = sanitizeTopiStructuredAttributes({ warranty: false }, 'Electr
 assert.equal(noWarranty?.warranty, false, 'explicit no-warranty statement must remain false');
 const hasWarranty = sanitizeTopiStructuredAttributes({ warranty: true }, 'Electrónica', 'Laptop con garantía vigente.');
 assert.equal(hasWarranty?.warranty, true, 'affirmative warranty needs direct evidence');
+
+
+const rentalFields = nationalFieldsFor('Cuartos & Renta');
+const rentalDraft = normalizeNationalAttributes(rentalFields, {
+  monthly_price: 'not-a-number',
+  deposit: '-250',
+  included_services: 'agua',
+  approximate_zone: 'centro',
+  campus_distance: '10 min',
+  room_type: 'individual',
+});
+const rentalRequired = ['monthly_price', 'deposit', 'included_services', 'approximate_zone', 'campus_distance', 'room_type'];
+assert.deepEqual(missingRequiredNationalFields(rentalFields, rentalDraft, rentalRequired), ['monthly_price', 'deposit'],
+  'invalid numbers cannot bypass required category field readiness');
+const validRent = normalizeNationalAttributes(rentalFields, {
+  monthly_price: '2800', deposit: '2800', included_services: 'agua', approximate_zone: 'centro', campus_distance: '10 min', room_type: 'individual',
+});
+assert.deepEqual(missingRequiredNationalFields(rentalFields, validRent, rentalRequired), [],
+  'valid explicit rental values keep the publish gate usable');
 
 console.log('PASS PR85 Topi structured compose: allowlisted fields + explicit evidence + privacy-preserving manual-value precedence');
