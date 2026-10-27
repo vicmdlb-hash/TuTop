@@ -10,6 +10,14 @@ const accessRules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
 const privacyDraft = fs.readFileSync('public/privacy.html', 'utf8');
 const nationalRulesPreview = fs.readFileSync('scripts/harden-verified-email-beta-rules.mjs', 'utf8');
 const termsDraft = fs.readFileSync('public/terms.html', 'utf8');
+const topiAssistant = fs.readFileSync('src/services/assistantProvider.ts', 'utf8');
+
+// Optional campus membership must be reflected in future AI assistance, not
+// only in product configuration. This does NOT enable remote AI or registration.
+assert.match(topiAssistant, /marketplace nacional en México/);
+assert.match(topiAssistant, /La pertenencia a universidad o campus es opcional/);
+assert.match(topiAssistant, /un campus es opcional/);
+assert.doesNotMatch(topiAssistant, /marketplace universitario en México|entre estudiantes en México/);
 
 assert(privacyDraft.includes('borrador beta'));
 assert(privacyDraft.includes('La audiencia prevista es nacional'));
