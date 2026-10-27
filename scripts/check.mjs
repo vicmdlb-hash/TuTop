@@ -65,6 +65,7 @@ const commonSteps = [
   [process.execPath, ['scripts/offer-expiry-contract-tests.mjs']],
   [process.execPath, ['scripts/demand-budget-contract-tests.mjs']],
   [process.execPath, ['scripts/inbox-pending-filter-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/public-discovery-moderation-gate-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/chat-message-idempotency-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/offer-idempotency-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/transaction-retry-idempotency-tests.mjs']],
