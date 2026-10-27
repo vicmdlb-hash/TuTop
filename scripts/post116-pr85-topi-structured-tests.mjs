@@ -120,4 +120,32 @@ const validRent = normalizeNationalAttributes(rentalFields, {
 assert.deepEqual(missingRequiredNationalFields(rentalFields, validRent, rentalRequired), [],
   'valid explicit rental values keep the publish gate usable');
 
+
+const noDisguisedAddress = sanitizeTopiStructuredAttributes({
+  approximate_zone: 'zona Reforma 123',
+  room_type: 'individual',
+}, 'Cuartos & Renta', 'Cuarto individual en zona Reforma 123.');
+assert.equal(noDisguisedAddress?.approximate_zone, undefined,
+  'approximate zone must not disclose an unprefixed numbered street address');
+
+const numberedNeighborhood = sanitizeTopiStructuredAttributes({
+  approximate_zone: 'zona 20 de Noviembre',
+}, 'Cuartos & Renta', 'Cuarto por zona 20 de Noviembre.');
+assert.equal(numberedNeighborhood?.approximate_zone, 'zona 20 de Noviembre',
+  'numbered neighborhood names must remain available without house numbers');
+
+const rejectExactTransportOrigin = sanitizeTopiStructuredAttributes({
+  origin_zone: 'Reforma 5',
+  destination_zone: 'campus principal',
+}, 'Transporte', 'Salgo de Reforma 5 rumbo al campus principal.');
+assert.equal(rejectExactTransportOrigin?.origin_zone, undefined,
+  'AI must not convert transport street addresses into approximate zones');
+assert.equal(rejectExactTransportOrigin?.destination_zone, 'campus principal');
+
+const preserveCoarseOrigin = sanitizeTopiStructuredAttributes({
+  origin_zone: 'zona centro',
+}, 'Transporte', 'Salgo de zona centro.');
+assert.equal(preserveCoarseOrigin?.origin_zone, 'zona centro',
+  'legitimate coarse transport zones must remain usable');
+
 console.log('PASS PR85 Topi structured compose: allowlisted fields + explicit evidence + privacy-preserving manual-value precedence');
