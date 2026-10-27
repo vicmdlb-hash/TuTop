@@ -88,7 +88,8 @@ export function sanitizeTopiStructuredAttributes(
     }
 
     const text = safeText(value, 300);
-    if (!text || containsContactOrSecret(text) || !groundedInSellerPrompt(text, prompt)) continue;
+    // Allergens have their own stricter semantic evidence gate below (e.g. "none known").
+    if (!text || containsContactOrSecret(text) || (field.key !== 'allergens' && !groundedInSellerPrompt(text, prompt))) continue;
 
     if (field.key === 'allergens') {
       if (!explicitAllergenEvidence(prompt) || !supportedAllergenValue(text, prompt)) continue;
