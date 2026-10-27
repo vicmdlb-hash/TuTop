@@ -41,8 +41,8 @@ export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText
   // Explicit street addresses entered in free text are not safe for remote AI.
   // Redact the whole street span (not only the first digit in '5 de Mayo 123').
   // This is deliberately conservative and is not a substitute for provider privacy approval.
-  replace(/\\b(?:calle|avenida|av\\.?|blvd\\.?|boulevard|calzada|privada|cerrada|prolongaci[oó]n)\\s+[^,;\\n]{1,90}\\d{1,5}[^,;\\n]{0,30}/giu, 'address', '[domicilio omitido]');
-  replace(/\\b(?:direcci[oó]n|domicilio)\\s*(?::|=|-|es)?\\s*[^,;\\n]{3,100}/giu, 'address', '[domicilio omitido]');
+  replace(/\b(?:calle|avenida|av\.?|blvd\.?|boulevard|calzada|privada|cerrada|prolongaci[oó]n)\s+[^,;\n]{1,90}\d{1,5}[^,;\n]{0,30}/giu, 'address', '[domicilio omitido]');
+  replace(/\b(?:direcci[oó]n|domicilio)\s*(?::|=|-|es)?\s*[^,;\n]{3,100}/giu, 'address', '[domicilio omitido]');
 
   return { text: text || undefined, redactions: [...redactions] };
 }
