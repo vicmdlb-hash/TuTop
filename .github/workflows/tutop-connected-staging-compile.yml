@@ -183,7 +183,7 @@ jobs:
           if missing or prohibited:
               raise SystemExit(f'APK_PERMISSION_FAIL missing={missing} forbidden={prohibited}')
           manifest = inspect('xmltree')
-          fcm_events = len(re.findall(r'com\\.google\\.firebase\\.MESSAGING_EVENT', manifest))
+          fcm_events = len(re.findall(r'com\.google\.firebase\.MESSAGING_EVENT', manifest))
           if fcm_events != 1:
               raise SystemExit(f'APK_FCM_SERVICE_FAIL count={fcm_events}')
           print(f'APK_MANIFEST_PERMISSION_PASS: {len(required)} required, {len(forbidden)} forbidden absent')
