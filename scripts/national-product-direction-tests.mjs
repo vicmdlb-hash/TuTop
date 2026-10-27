@@ -18,6 +18,15 @@ assert.match(topiAssistant, /marketplace nacional en México/);
 assert.match(topiAssistant, /La pertenencia a universidad o campus es opcional/);
 assert.match(topiAssistant, /un campus es opcional/);
 assert.doesNotMatch(topiAssistant, /marketplace universitario en México|entre estudiantes en México/);
+const topiHelp = fs.readFileSync('src/services/topiConsumerSupport.ts', 'utf8');
+const supportTree = fs.readFileSync('src/lib/supportDecisionTree.ts', 'utf8');
+assert.match(topiHelp, /expansión nacional sin campus todavía NO está habilitada/);
+assert.match(topiHelp, /Nunca invites a inventar institución/);
+assert.match(supportTree, /registro nacional sin campus aún no permite crear cuenta/);
+assert.match(supportTree, /beta universitaria actual también puede exigir universidad\/campus válidos/);
+assert.match(supportTree, /acceso nacional sin campus aún está en preparación/);
+assert.doesNotMatch(supportTree, /Tu identidad universitaria controla campus, cercanía y alcance/);
+
 
 assert(privacyDraft.includes('borrador beta'));
 assert(privacyDraft.includes('La audiencia prevista es nacional'));
