@@ -119,6 +119,10 @@ jobs:
           test -s "$apk"
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$apk" | grep -q "package: name='mx.tutop.app'"
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify "$apk"
+          # Google/Android's read-only packaging preflight for 16 KiB pages.
+          # ZIP alignment alone does not prove native ELF segment alignment or physical QA.
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$apk" | tail -n 3
+          printf 'SOURCE_SHA=%s\\n' "$GITHUB_SHA"
           sha256sum "$apk" | cut -c1-64
           echo "PASS code and Android Firebase connected compile, NO publish, NO staging mutation, NO physical R6"
       - name: Always remove temporary Firebase client configs
