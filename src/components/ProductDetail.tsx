@@ -6,6 +6,8 @@ import { ACCOUNT_LOCAL_KEYS, readAccountLocalList, writeAccountLocalList } from 
 import { parseListingDescription } from '../lib/listingDetails';
 import { normalizeCategory } from '../lib/productAssistant';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
+import { canViewerOpenListing } from '../lib/publicDiscovery';
+import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { firebaseMediaStorage, mediaStorageEnabled } from '../services/firebaseMediaStorage';
 import { onlineBackend } from '../services/onlineBackend';
 import { useAppStore } from '../store/useAppStore';
@@ -32,11 +34,15 @@ export default function ProductDetail() {
   const [videoObjectUrl, setVideoObjectUrl] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   useEffect(() => { setPhotoIndex(0); setSellerProfileOpen(false); }, [selectedProductId]);
-  const product = selectedProductId ? products.find((item) => item.id === selectedProductId) : undefined;
+  const candidate = selectedProductId ? products.find((item) => item.id === selectedProductId) : undefined;
+  const product = candidate && canViewerOpenListing(candidate, user.id, nationalSchemaEnabled())
+    ? candidate : undefined;
   const videoUri = product ? (product as Product & { video_urls?: string[] }).video_urls?.[0] : undefined;
   const similar = useMemo(
     () => product
-      ? products.filter((item) => item.id !== product.id && item.estado === 'Activo' && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4)
+      ? products.filter((item) => item.id !== product.id && item.estado === 'Activo'
+        && canViewerOpenListing(item, user.id, nationalSchemaEnabled())
+        && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4)
       : [],
     [products, product],
   );

@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { sellerLevelFor } from '../lib/productAssistant';
 import { onlineBackend, type OnlineSnapshot } from '../services/onlineBackend';
 import { feedbackMessage } from '../lib/feedback';
+import { canViewerOpenListing } from '../lib/publicDiscovery';
+import { nationalSchemaEnabled } from '../services/nationalBackend';
 import type { AppNotification, AppTab, Chat, Product, Review, User, WalletTransaction } from '../types';
 
 interface AppState {
@@ -113,7 +115,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSyncError: (syncError) => set({ syncError }),
   setUser: (user) => set({ user }),
   setActiveTab: (activeTab) => set({ activeTab }),
-  openProduct: (selectedProductId) => set({ selectedProductId }),
+  openProduct: (selectedProductId) => set((state) => {
+    const product = state.products.find((item) => item.id === selectedProductId);
+    return { selectedProductId: product && canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())
+      ? selectedProductId : null };
+  }),
   closeProduct: () => set({ selectedProductId: null }),
   setCurrentFacultad: (currentFacultad) => set({ currentFacultad }),
 
@@ -160,7 +166,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   contactProduct: (productId) => {
     const state = get();
     const product = state.products.find((item) => item.id === productId);
-    if (!product || product.vendedor_id === state.user.id) return null;
+    if (!product || product.vendedor_id === state.user.id
+      || !canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())) return null;
     const existing = state.chats.find((chat) => chat.producto_id === productId && chat.comprador_id === state.user.id && chat.vendedor_id === product.vendedor_id);
     if (product.availability_status === 'reserved' && !existing) return null;
     const chatId = existing?.id || `chat-${state.user.id}-${product.id}`;
@@ -269,7 +276,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   bidProduct: async (productId, amount) => {
     const state = get();
     const product = state.products.find((item) => item.id === productId);
-    if (!product) return false;
+    if (!product || !canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())) return false;
     try {
       await onlineBackend.bidProduct(product, amount);
       get().hydrateOnline(await onlineBackend.loadSnapshot());

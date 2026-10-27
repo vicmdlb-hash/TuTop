@@ -1,14 +1,20 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { isPublicDiscoveryProduct } from '../src/lib/publicDiscovery.ts';
+import { isPublicDiscoveryProduct, canViewerOpenListing } from '../src/lib/publicDiscovery.ts';
 
 // Runtime contract: in nationwide V2 discovery only approved listings may be
 // discoverable by a buyer, including unknown/missing moderation states.
 const statuses = ['approved', 'pending', 'review', 'rejected', 'flagged', 'suspended', '', undefined, null];
 for (const status of statuses) {
-  const product = { id: 'synthetic-listing', moderation_status: status };
+  const product = { id: 'synthetic-listing', vendedor_id: 'seller-a', moderation_status: status };
   assert.equal(isPublicDiscoveryProduct(product, true), status === 'approved',
     'V2 public discovery must fail closed for ' + String(status));
+  assert.equal(canViewerOpenListing(product, 'buyer-b', true), status === 'approved',
+    'V2 buyer must never open unapproved listing by direct ID');
+  assert.equal(canViewerOpenListing(product, 'seller-a', true), true,
+    'V2 seller must retain access to own unapproved listing');
+  assert.equal(canViewerOpenListing(product, '', true), status === 'approved',
+    'empty/anonymous viewer UID must not establish ownership');
 }
 // Historical V1 remains unchanged; gating V1 requires a product decision.
 assert.equal(isPublicDiscoveryProduct({ moderation_status: 'pending' }, false), true);
@@ -24,4 +30,14 @@ for (const [name, source] of [['Feed', feed], ['Explore', explore]]) {
 }
 assert(feed.includes("product.moderation_status === 'pending' || product.moderation_status === 'review'"),
   'pending products remain seller-only and must not be represented as published');
-console.log('PASS V2 buyer discovery: pending/review/rejected/flagged/unknown hidden in Feed and Explore');
+const store = fs.readFileSync('src/store/useAppStore.ts', 'utf8');
+const detail = fs.readFileSync('src/components/ProductDetail.tsx', 'utf8');
+assert(store.includes('canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())'),
+  'openProduct/contactProduct/bidProduct must guard direct-ID access in V2');
+assert((store.match(/canViewerOpenListing\(product, state\.user\.id, nationalSchemaEnabled\(\)\)/g) || []).length >= 3,
+  'three buyer entrypoints must be guarded');
+assert(detail.includes('canViewerOpenListing(candidate, user.id, nationalSchemaEnabled())'),
+  'detail must hide revoked/unapproved listing before rendering effects');
+assert(detail.includes('canViewerOpenListing(item, user.id, nationalSchemaEnabled())'),
+  'related listings must not leak unapproved products');
+console.log('PASS V2 buyer listing boundary: discovery, direct IDs, contact, bid and related listings');
