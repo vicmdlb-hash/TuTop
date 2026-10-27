@@ -80,6 +80,35 @@ storage.setItem(`${DURABLE_PUBLISH_DRAFT_PREFIX}${uidA}`, JSON.stringify({
 }));
 assert.equal(readDurablePublishDraft(uidA, storage, now), null, 'owner mismatch must fail closed');
 
+// Arbitrary attribute keys must not preserve tokens or account information.
+const injectedAttributes = mockStorage();
+assert.equal(writeDurablePublishDraft(uidA, {
+  category: 'Electrónica',
+  title: 'Teléfono usado',
+  attributes: {
+    brand: 'Motorola',
+    model: 'Moto G',
+    storage_gb: 128,
+    authToken: 'SYNTHETIC_TOKEN_NOT_REAL',
+    private_key: 'SYNTHETIC_SECRET_NOT_REAL',
+    phone: 'SYNTHETIC_PHONE_NOT_REAL',
+    exactLocation: 'SYNTHETIC_ADDRESS_NOT_REAL',
+    __proto_key: 'SYNTHETIC_PROTO_NOT_REAL',
+  },
+}, injectedAttributes, now), true);
+const injectedRaw = injectedAttributes.data.get(`${DURABLE_PUBLISH_DRAFT_PREFIX}${uidA}`);
+for (const secret of ['SYNTHETIC_TOKEN_NOT_REAL', 'SYNTHETIC_SECRET_NOT_REAL', 'SYNTHETIC_PHONE_NOT_REAL',
+  'SYNTHETIC_ADDRESS_NOT_REAL', 'SYNTHETIC_PROTO_NOT_REAL']) {
+  assert(!injectedRaw.includes(secret), 'durable attributes must never persist arbitrary account data');
+}
+assert.deepEqual(readDurablePublishDraft(uidA, injectedAttributes, now)?.attributes,
+  { brand: 'Motorola', model: 'Moto G', storage_gb: 128 },
+  'known category fields must survive without arbitrary key persistence');
+const unknownAttrCategory = mockStorage();
+writeDurablePublishDraft(uidA, { title: 'Sin categoría', attributes: { authToken: 'NOT_ALLOWED' } }, unknownAttrCategory, now);
+assert.equal(readDurablePublishDraft(uidA, unknownAttrCategory, now)?.attributes, undefined,
+  'without category no attribute is safe to persist');
+
 const invalidOperation = mockStorage();
 writeDurablePublishDraft(uidA, { operationId: 'bad op id', title: 'X' }, invalidOperation, now);
 assert.equal(readDurablePublishDraft(uidA, invalidOperation, now)?.operationId, undefined);
