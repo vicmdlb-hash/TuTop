@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { redactTopiRemoteText } from '../src/lib/topiPrivacy.ts';
 
 // Remote Topi receives user-entered text, not only structured public listing fields.
@@ -66,5 +67,30 @@ for (const [input, secret] of labeledCredentials) {
 const productUnchanged = 'Vendo router con clave WiFi impresa en la caja y 4 puertos';
 assert.equal(redactTopiRemoteText(productUnchanged).text, productUnchanged,
   'ordinary product description should not be mistaken for a disclosed credential');
+
+// Topi Help previously truncated typed text before using this redactor.
+// Every span crossing its 900-character outbound limit must be fully detected.
+const helpService = fs.readFileSync('src/services/topiConsumerSupport.ts', 'utf8');
+const helpNormalizer = helpService.slice(
+  helpService.indexOf('function safeQuestion('), helpService.indexOf('function resolveRoute('),
+);
+assert(helpNormalizer.includes('function safeQuestion('), 'support question normalizer must exist');
+assert.doesNotMatch(helpNormalizer, /\.slice\(0,\s*900\)/,
+  'Topi Help must not clip its question before PII redaction');
+assert.match(helpService, /redactTopiRemoteText\(clean,\s*900\)/,
+  'remote support text must still enforce the 900-character cap after redaction');
+const helpBoundaryCases = [
+  ['X'.repeat(892) + ' correo@example.com', 'email', 'correo@'],
+  ['X'.repeat(892) + ' 2461234567', 'phone', '246123'],
+  ['X'.repeat(892) + ' OTP: 481593', 'otp', '481593'],
+  ['X'.repeat(892) + ' sk-proj-abcdefghijklmnop12345', 'token', 'sk-proj'],
+  ['X'.repeat(892) + ' calle Reforma 123', 'address', 'Reforma'],
+];
+for (const [input, redaction, fragment] of helpBoundaryCases) {
+  const sanitized = redactTopiRemoteText(input, 900);
+  assert(sanitized.redactions.includes(redaction), `missing Topi Help ${redaction} boundary redaction`);
+  assert(!sanitized.text?.includes(fragment), `partial ${redaction} leaked into Topi Help prompt`);
+  assert((sanitized.text?.length || 0) <= 900, 'Topi Help must retain its outbound size limit');
+}
 
 console.log('PASS Topi remote text address redaction (source-only; no provider or device acceptance)');
