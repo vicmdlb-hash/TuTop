@@ -51,4 +51,20 @@ for (const coarse of ['Cuarto en zona centro a 10 min del campus', 'Cuarto en zo
   assert.equal(result.text, coarse, 'do not mask valid neighborhood, distance or availability facts');
 }
 
+
+const labeledCredentials = [
+  ['Mi contraseña: ClaveSegura9347, vendo bicicleta', 'ClaveSegura9347'],
+  ['Mi password=AbcX9300!; busco una laptop', 'AbcX9300!'],
+  ['Mi PIN: 8877, necesito comprar algo', '8877'],
+  ['Clave de acceso: correct horse battery staple; no publicar', 'horse battery staple'],
+];
+for (const [input, secret] of labeledCredentials) {
+  const output = redactTopiRemoteText(input);
+  assert(!output.text?.includes(secret), 'labeled credential must not be sent to remote AI');
+  assert(output.redactions.includes('credential'), 'labeled credential must produce redaction evidence');
+}
+const productUnchanged = 'Vendo router con clave WiFi impresa en la caja y 4 puertos';
+assert.equal(redactTopiRemoteText(productUnchanged).text, productUnchanged,
+  'ordinary product description should not be mistaken for a disclosed credential');
+
 console.log('PASS Topi remote text address redaction (source-only; no provider or device acceptance)');
