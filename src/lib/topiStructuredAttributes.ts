@@ -39,7 +39,13 @@ function containsContactOrSecret(text: string) {
 
 function looksExactAddress(text: string) {
   const clean = normalized(text);
-  return /\b(?:calle|avenida|av\.?|boulevard|blvd|carretera|privada|numero|num\.?|#)\b[^\n]{0,60}\b\d{1,6}\b/i.test(clean);
+  if (/\b(?:calle|avenida|av\.?|boulevard|blvd|carretera|privada|numero|num\.?|#)\b[^\n]{0,60}\b\d{1,6}\b/i.test(clean)) return true;
+  // A street name and house number can appear without "calle" (e.g. "zona Reforma 123").
+  // Keep coarse distance labels like "zona centro, a 10 min" and numbered neighborhoods.
+  const withoutDistances = clean
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:min(?:utos?)?|km|metros?|m)\b/g, ' ')
+    .replace(/\b\d{1,2}:\d{2}\b/g, ' ');
+  return /\b(?!(?:zona|colonia|barrio|sector|a|de|del|el|la)\b)[a-z][a-z.-]*(?:\s+[a-z][a-z.-]*){0,5}\s+#?\d{1,6}\b/.test(withoutDistances);
 }
 
 function explicitZoneEvidence(prompt: string) {
@@ -95,9 +101,8 @@ export function sanitizeTopiStructuredAttributes(
       if (!explicitAllergenEvidence(prompt) || !supportedAllergenValue(text, prompt)) continue;
     }
 
-    if (field.key === 'approximate_zone') {
-      if (!explicitZoneEvidence(prompt) || looksExactAddress(text)) continue;
-    }
+    if (['approximate_zone', 'origin_zone', 'destination_zone'].includes(field.key) && looksExactAddress(text)) continue;
+    if (field.key === 'approximate_zone' && !explicitZoneEvidence(prompt)) continue;
 
     output[field.key] = text;
   }
