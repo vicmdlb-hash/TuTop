@@ -122,7 +122,36 @@ jobs:
           # Google/Android's read-only packaging preflight for 16 KiB pages.
           # ZIP alignment alone does not prove native ELF segment alignment or physical QA.
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$apk" | tail -n 3
-          printf 'SOURCE_SHA=%s\\n' "$GITHUB_SHA"
+          # Verify native ELF PT_LOAD alignment separately from APK ZIP alignment.
+          python3 - "$apk" <<'PY'
+          import pathlib
+          import subprocess
+          import sys
+          import tempfile
+          import zipfile
+
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              libs = [n for n in archive.namelist()
+                      if n.startswith('lib/') and n.endswith('.so')]
+              for name in libs:
+                  with tempfile.TemporaryDirectory() as folder:
+                      lib = pathlib.Path(folder) / 'library.so'
+                      lib.write_bytes(archive.read(name))
+                      result = subprocess.run(['readelf', '-lW', str(lib)],
+                                              check=True, capture_output=True, text=True)
+                      loads = [line.split() for line in result.stdout.splitlines()
+                               if line.strip().startswith('LOAD ')]
+                      if not loads:
+                          raise SystemExit(f'ELF_LOAD_MISSING: {name}')
+                      aligns = [int(columns[-1], 16) for columns in loads]
+                      if any(alignment < 16384 for alignment in aligns):
+                          raise SystemExit(f'ELF_16K_ALIGNMENT_FAIL: {name}; alignments={aligns}')
+              if libs:
+                  print(f'ELF_16K_ALIGNMENT_PASS: {len(libs)} shared libraries')
+              else:
+                  print('ELF_LIBRARIES_ABSENT: no PT_LOAD libraries to audit')
+          PY
+          printf 'SOURCE_SHA=%s\n' "$GITHUB_SHA"
           sha256sum "$apk" | cut -c1-64
           echo "PASS code and Android Firebase connected compile, NO publish, NO staging mutation, NO physical R6"
       - name: Always remove temporary Firebase client configs
