@@ -2,7 +2,7 @@ import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, Timestamp, writeBatch } from 'firebase/firestore';
 
 // Rules are generated exactly once by the CI step before the emulator starts.
 // Test files must never rewrite the shared generated file because node --test runs files concurrently.
@@ -199,6 +199,40 @@ test('listing pendiente es privado hasta aprobación y moderación respeta insti
   await assertFails(getDoc(doc(buapMod, 'listings_v2/l1')));
   await assertSucceeds(updateDoc(doc(uatxMod, 'listings_v2/l1'), { moderation_status: 'approved', updated_at: now() }));
   await assertSucceeds(getDoc(doc(stranger, 'listings_v2/l1')));
+});
+
+test('consulta buyer sólo recupera anuncios activos aprobados; query sin filtro denegada', async () => {
+  await seedBase();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'listings_v2/query-approved'), {
+      ...canonicalListing(), moderation_status: 'approved',
+    });
+    await setDoc(doc(db, 'listings_v2/query-pending'), canonicalListing());
+  });
+
+  const viewer = verifiedContext(env, 'viewer').firestore();
+  const seller = verifiedContext(env, 'uatx-user').firestore();
+  const listings = collection(viewer, 'listings_v2');
+
+  // Rules are not filters: a broad buyer query cannot retrieve pending listings.
+  await assertFails(getDocs(listings));
+  await assertFails(getDocs(query(listings, where('moderation_status', '==', 'pending'))));
+
+  const approved = await assertSucceeds(getDocs(query(
+    listings,
+    where('moderation_status', '==', 'approved'),
+    where('status', '==', 'active'),
+  )));
+  assert.equal(approved.docs.length, 1, 'buyer query should return exactly one approved listing');
+  assert.equal(approved.docs[0].id, 'query-approved');
+
+  // A seller may access their own pending listings without broad public reads.
+  const mine = await assertSucceeds(getDocs(query(
+    collection(seller, 'listings_v2'),
+    where('seller_id', '==', 'uatx-user'),
+  )));
+  assert.equal(mine.docs.length, 2);
 });
 
 test('edición sensible del vendedor después de aprobación vuelve obligatoriamente a pending', async () => {
