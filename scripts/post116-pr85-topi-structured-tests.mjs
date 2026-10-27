@@ -71,4 +71,30 @@ assert.match(assistant, /Nunca inventes alérgenos/);
 assert.match(publish, /\{ \.\.\.suggestion\.attributes, \.\.\.current \}/, 'manual user values must win over AI suggestions');
 assert.match(publish, /setAdvancedOpen\(true\)/);
 
+
+// AI suggestions without matching seller evidence must never become listing facts.
+const hallucinatedRent = sanitizeTopiStructuredAttributes({
+  monthly_price: 4800,
+  deposit: 6000,
+  included_services: 'wifi y estacionamiento',
+  room_type: 'compartida',
+}, 'Cuartos & Renta', 'Rento cuarto individual por 2800 al mes, depósito 2800, incluye agua.');
+assert.equal(hallucinatedRent, undefined, 'do not invent rent, deposit, services or room type');
+
+const hallucinatedDevice = sanitizeTopiStructuredAttributes({
+  brand: 'Apple',
+  model: 'iPhone 15',
+  battery_health: 90,
+}, 'Electrónica', 'Vendo Samsung Galaxy A54, batería al 85 por ciento.');
+assert.equal(hallucinatedDevice, undefined, 'Topi cannot invent device facts');
+
+const warrantyUnknown = sanitizeTopiStructuredAttributes({ warranty: true }, 'Electrónica', 'Vendo laptop en buen estado.');
+assert.equal(warrantyUnknown, undefined, 'unspecified warranty must remain unknown');
+const warrantyDenied = sanitizeTopiStructuredAttributes({ warranty: true }, 'Electrónica', 'Laptop sin garantía.');
+assert.equal(warrantyDenied, undefined, 'denied warranty cannot be promoted to true');
+const noWarranty = sanitizeTopiStructuredAttributes({ warranty: false }, 'Electrónica', 'Laptop sin garantía.');
+assert.equal(noWarranty?.warranty, false, 'explicit no-warranty statement must remain false');
+const hasWarranty = sanitizeTopiStructuredAttributes({ warranty: true }, 'Electrónica', 'Laptop con garantía vigente.');
+assert.equal(hasWarranty?.warranty, true, 'affirmative warranty needs direct evidence');
+
 console.log('PASS PR85 Topi structured compose: allowlisted fields + explicit evidence + privacy-preserving manual-value precedence');
