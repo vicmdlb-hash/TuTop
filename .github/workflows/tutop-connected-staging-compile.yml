@@ -98,6 +98,12 @@ jobs:
           git diff --exit-code -- package.json package-lock.json
       - name: Generate Firebase-connected Android native project
         run: npm run android:bootstrap
+      - name: Validate scoped FCM merger rule before Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '<service android:name="com.google.firebase.messaging.FirebaseMessagingService" tools:node="remove" tools:ignore="MissingClass" />' android/app/src/main/AndroidManifest.xml
+          echo "FCM merger lint marker is narrowly scoped; merged APK will be audited after Gradle"
       - name: Prove staging package and native Firebase linkage
         shell: bash
         run: |
