@@ -187,7 +187,7 @@ jobs:
           lines = manifest.splitlines()
           handlers = []
           for index, line in enumerate(lines):
-              if not re.match(r'^\\s*E: service(?:\\s|$)', line):
+              if not re.match(r'^\s*E: service(?:\s|$)', line):
                   continue
               depth = len(line) - len(line.lstrip())
               children = []
@@ -201,7 +201,7 @@ jobs:
                   continue
               service_attr = next((child for child in children
                                    if 'A: android:name' in child), '')
-              class_name = re.search(r'=\\s*"([^"]+)"', service_attr)
+              class_name = re.search(r'=\s*"([^"]+)"', service_attr)
               handlers.append(class_name.group(1) if class_name else 'unidentified-service')
           print('APK_FCM_MERGED_SERVICE_DIAGNOSTIC: action_occurrences='
                 + str(fcm_events) + ' service_count=' + str(len(handlers))
