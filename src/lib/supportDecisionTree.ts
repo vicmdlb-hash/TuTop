@@ -81,8 +81,8 @@ export const SUPPORT_TREE: Record<SupportRouteId, SupportNode> = {
   'account-profile': {
     id: 'account-profile',
     title: 'Perfil o universidad',
-    prompt: 'Tu identidad universitaria controla campus, cercanía y alcance.',
-    answer: 'En Perfil revisa institución, campus y, cuando aplique, facultad/carrera. Si cambias de campus, vuelve a revisar “Cerca de ti” y tus publicaciones antes de continuar.',
+    prompt: 'La beta actual exige datos universitarios; el registro nacional sin campus sigue en preparación.',
+    answer: 'Si ya usas la beta universitaria, revisa institución, campus y, cuando aplique, facultad/carrera. Si no perteneces a una universidad, no inventes una institución: el registro nacional sin campus aún no permite crear cuenta. Revisa “Cerca de ti” tras cualquier cambio de perfil.',
   },
   'account-recovery': {
     id: 'account-recovery',
@@ -116,7 +116,7 @@ export const SUPPORT_TREE: Record<SupportRouteId, SupportNode> = {
     id: 'publish-blocked',
     title: 'No me deja publicar',
     prompt: 'La publicación se bloquea si faltan datos necesarios o el artículo no cumple las reglas.',
-    answer: 'Revisa título, categoría, precio mayor a $0, universidad/campus, forma de entrega y cualquier dato obligatorio de la categoría. Los artículos prohibidos no se publican. Topi no debe inventar datos faltantes para saltarse el bloqueo.',
+    answer: 'Revisa título, categoría, precio mayor a $0, forma de entrega y campos obligatorios. La beta universitaria actual también puede exigir universidad/campus válidos; el registro nacional sin campus todavía está bloqueado. No inventes una universidad para continuar ni publiques artículos prohibidos.',
   },
   trade: {
     id: 'trade',
@@ -204,7 +204,7 @@ export const SUPPORT_TREE: Record<SupportRouteId, SupportNode> = {
     id: 'permissions-location',
     title: 'Ubicación',
     prompt: 'TuTop usa ubicación aproximada para “Cerca de ti”.',
-    answer: 'Activa ubicación cuando quieras usar cercanía. La app trabaja con precisión aproximada y guarda coordenadas reducidas para descubrimiento; no necesita ubicación en segundo plano ni tu domicilio exacto. Si la rechazas, TuTop puede seguir usando campus/ciudad.',
+    answer: 'Activa ubicación sólo si deseas usar cercanía. La app trabaja con precisión aproximada y no necesita ubicación en segundo plano ni tu domicilio exacto. Si la rechazas, la beta universitaria puede apoyarse en campus/ciudad; el acceso nacional sin campus aún está en preparación.',
   },
   'permissions-camera': {
     id: 'permissions-camera',
