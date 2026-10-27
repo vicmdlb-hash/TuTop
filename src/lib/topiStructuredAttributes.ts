@@ -66,7 +66,7 @@ function supportedAllergenValue(value: string, prompt: string) {
   const tokens = v.split(/[^a-z0-9ñ]+/i).filter((token) => token.length >= 3 && !stop.has(token));
   // A proposed allergen must not contradict an explicit seller denial.
   // Negated ingredients are not positive evidence merely because their names occur.
-  const blanketDenial = /\b(?:sin alergen(?:o|os)?|no (?:contiene|tiene) alergen(?:o|os)?)\b/.test(p);
+  const blanketDenial = /\b(?:sin alergen(?:o|os)?|no (?:contienen?|tienen?|llevan?) alergen(?:o|os)?)\b/.test(p);
   const denied = tokens.some((token) =>
     new RegExp(`\\b(?:sin(?: trazas de)?|no (?:contienen?|tienen?|llevan?)|libre de)\\s+${token}\\b`).test(p));
   return tokens.length > 0 && !blanketDenial && !denied && tokens.every((token) => p.includes(token));
