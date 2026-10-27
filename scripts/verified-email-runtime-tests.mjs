@@ -99,6 +99,38 @@ const tests = [
    assert.equal(h.calls.some(c=>c.kind.includes('accounts:delete')),false);
    h.sendError=null; await h.auth.resendVerificationEmail();
  }],
+ ['password reset hides nonexistent accounts and does not create an identity',async()=>{
+   const h=harness();
+   assert.equal(await h.auth.requestPasswordReset('TEST@Example.test'),true);
+   const requests=h.calls.filter(c=>String(c.kind).includes('accounts:sendOobCode'));
+   assert.equal(requests.length,1);
+   assert.deepEqual(requests[0].body,{requestType:'PASSWORD_RESET',email:'test@example.test'});
+   assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:signUp')),false);
+   assert.equal(h.session,null);
+   h.sendError='EMAIL_NOT_FOUND';
+   assert.equal(await h.auth.requestPasswordReset('unknown@example.test'),true,
+     'nonexistent emails must receive the same success-shaped response');
+ }],
+ ['password reset rejects invalid addresses and propagates transport errors',async()=>{
+   const h=harness();
+   await assert.rejects(h.auth.requestPasswordReset('invalid-email'),/EMAIL_INVALID/);
+   assert.equal(h.calls.length,0,'no Firebase request may be sent for an invalid email');
+   h.sendError='NETWORK_FAILED';
+   await assert.rejects(h.auth.requestPasswordReset('a@example.test'),/NETWORK_FAILED/);
+   assert.equal(h.session,null);
+ }],
+ ['verification resend failure preserves pending session without claiming delivery',async()=>{
+   const h=harness(); await h.auth.register('a@example.test','password123',profile);
+   h.sendError='NETWORK_FAILED';
+   await assert.rejects(h.auth.resendVerificationEmail(),/NETWORK_FAILED/);
+   assert.equal(h.session.uid,'u1','a failed verification mail must not delete the account');
+   const audit=h.calls.findLast(c=>c.kind==='setDocument' && c.path==='auth_status/u1');
+   assert.equal(audit?.data.last_client_code,'VERIFICATION_EMAIL_SEND_FAILED');
+   h.sendError=null;
+   assert.equal(await h.auth.resendVerificationEmail(),true);
+   const retried=h.calls.findLast(c=>c.kind==='setDocument' && c.path==='auth_status/u1');
+   assert.equal(retried?.data.last_client_code,'VERIFICATION_EMAIL_SENT');
+ }],
  ['definite denied profile commit still rolls back Auth',async()=>{
    const h=harness(); h.commitError='PERMISSION_DENIED'; await assert.rejects(h.auth.register('a@example.test','password123',profile),/PERMISSION_DENIED/);
    assert.equal(h.session,null); assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,1);
