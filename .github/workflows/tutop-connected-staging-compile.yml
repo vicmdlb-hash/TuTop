@@ -225,8 +225,24 @@ jobs:
           print(f'APK_MANIFEST_PERMISSION_PASS: {len(required)} required, {len(forbidden)} forbidden absent')
           print('APK_FCM_SERVICE_PASS: exactly one MESSAGING_EVENT in merged manifest')
           PY
+          # Log a reproducible, non-distributable provenance record.
+          # The APK bytes remain ephemeral; only identifiers/hashes are recorded.
+          package_identity="$("$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$apk" | grep -m1 '^package:')"
+          signer_digest="$("$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | grep -m1 'Signer #1 certificate SHA-256 digest:')"
+          apk_sha256="$(sha256sum "$apk" | cut -d ' ' -f1)"
           printf 'SOURCE_SHA=%s\n' "$GITHUB_SHA"
-          sha256sum "$apk" | cut -c1-64
+          printf 'APK_SHA256=%s\n' "$apk_sha256"
+          printf '%s\n' "$package_identity" "$signer_digest"
+          {
+            echo '### TuTop Android staging — CI evidence only'
+            echo "- Source SHA: \`$GITHUB_SHA\`"
+            echo "- APK SHA-256 (ephemeral debug): \`$apk_sha256\`"
+            echo "- Package and version: \`$package_identity\`"
+            echo "- Signing certificate: \`$signer_digest\`"
+            echo "- Merged FCM: one Capacitor MessagingService"
+            echo "- Native ELF alignment: all present shared libraries >=16 KiB"
+            echo "- Scope: NO upload, NO deploy, NO release, NO physical R6"
+          } >> "$GITHUB_STEP_SUMMARY"
           echo "PASS code and Android Firebase connected compile, NO publish, NO staging mutation, NO physical R6"
       - name: Always remove temporary Firebase client configs
         if: always()
