@@ -16,6 +16,21 @@ function safeText(value: unknown, max = 300) {
   return text || undefined;
 }
 
+// Suggested structured facts must be traceable to words or numbers supplied
+// by the seller. Unknown fields remain for manual entry, never AI autofill.
+function groundedInSellerPrompt(value: string | number, prompt: string) {
+  const sellerTerms = new Set(normalized(prompt).split(/[^a-z0-9]+/).filter(Boolean));
+  const proposedTerms = normalized(String(value)).split(/[^a-z0-9]+/).filter((term) => term.length > 1);
+  return proposedTerms.length > 0 && proposedTerms.every((term) => sellerTerms.has(term));
+}
+
+function supportedWarranty(value: boolean, prompt: string) {
+  const text = normalized(prompt);
+  const denied = /\b(?:sin garantia|no (?:tiene|incluye|cuenta con) garantia|garantia vencida)\b/.test(text);
+  const affirmed = /\b(?:con garantia|tiene garantia|incluye garantia|garantia vigente)\b/.test(text);
+  return value ? affirmed && !denied : denied && !affirmed;
+}
+
 function containsContactOrSecret(text: string) {
   return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)
     || /(?<!\d)(?:\d[\s().-]?){9}\d(?!\d)/.test(text)
@@ -62,18 +77,18 @@ export function sanitizeTopiStructuredAttributes(
     const value = source[field.key];
 
     if (field.kind === 'boolean') {
-      if (typeof value === 'boolean') output[field.key] = value;
+      if (typeof value === 'boolean' && field.key === 'warranty' && supportedWarranty(value, prompt)) output[field.key] = value;
       continue;
     }
 
     if (field.kind === 'number') {
       const number = Number(value);
-      if (Number.isFinite(number) && number >= 0 && number <= 1_000_000) output[field.key] = Math.round(number * 100) / 100;
+      if (Number.isFinite(number) && number >= 0 && number <= 1_000_000 && groundedInSellerPrompt(number, prompt)) output[field.key] = Math.round(number * 100) / 100;
       continue;
     }
 
     const text = safeText(value, 300);
-    if (!text || containsContactOrSecret(text)) continue;
+    if (!text || containsContactOrSecret(text) || !groundedInSellerPrompt(text, prompt)) continue;
 
     if (field.key === 'allergens') {
       if (!explicitAllergenEvidence(prompt) || !supportedAllergenValue(text, prompt)) continue;
