@@ -118,7 +118,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     career_id: data.career_id,
     visibility_scope: data.visibility_scope,
     listing_kind: 'offer',
-    moderation_status: data.moderation_status === 'flagged' ? 'flagged' : data.moderation_status === 'review' ? 'review' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
+    moderation_status: data.moderation_status === 'flagged' ? 'flagged' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
     availability_status: data.availability_status === 'reserved' ? 'reserved' : 'available',
     punto_encuentro: 'Coordinar por Chat' as MeetingPoint,
     metodos_entrega: data.delivery_methods.map(legacyDelivery),
