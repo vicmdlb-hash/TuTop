@@ -1,4 +1,4 @@
-export type TopiPrivacyRedaction = 'email' | 'phone' | 'otp' | 'token' | 'address';
+export type TopiPrivacyRedaction = 'email' | 'phone' | 'otp' | 'token' | 'credential' | 'address';
 
 export type TopiRemoteText = {
   text?: string;
@@ -39,6 +39,11 @@ export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText
   // narrow to avoid masking ordinary product descriptions.
   replace(/\bAIza[0-9A-Za-z_-]{35}\b/g, 'token', '[token omitido]');
   replace(/\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\b/g, 'token', '[token omitido]');
+
+  // Explicit password, access-key and PIN labels must not leak into future
+  // remote prompts, including multiword secrets. Keep the provider disabled.
+  replace(/\b(?:contrase(?:ñ|n)a|password|passcode|pin(?:\s+de\s+acceso)?|clave(?:\s+(?:de\s+acceso|secreta))?)\s*[:=-]\s*[^,;]{4,140}/giu,
+    'credential', '[credencial omitida]');
 
   // Explicit street addresses entered in free text are not safe for remote AI.
   // Redact the whole street span (not only the first digit in '5 de Mayo 123').
