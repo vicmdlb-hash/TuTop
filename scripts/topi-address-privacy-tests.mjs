@@ -38,4 +38,17 @@ for (const [input, label, exposed] of clippingBoundaryCases) {
 assert.equal(redactTopiRemoteText('Vendo laptop con 256 GB', 80).text, 'Vendo laptop con 256 GB',
   'safe product text remains unchanged');
 
+
+const disguisedAddress = redactTopiRemoteText('Entregar en zona Reforma 123, por favor');
+assert(!disguisedAddress.text?.includes('Reforma 123'),
+  'an unprefixed house number disguised as an approximate zone must be omitted');
+assert(disguisedAddress.redactions.includes('address'));
+const disguisedColonyAddress = redactTopiRemoteText('Paso por colonia Los Pinos 24');
+assert(!disguisedColonyAddress.text?.includes('Los Pinos 24'));
+assert(disguisedColonyAddress.redactions.includes('address'));
+for (const coarse of ['Cuarto en zona centro a 10 min del campus', 'Cuarto en zona 20 de Noviembre', 'Zona centro 24/7']) {
+  const result = redactTopiRemoteText(coarse);
+  assert.equal(result.text, coarse, 'do not mask valid neighborhood, distance or availability facts');
+}
+
 console.log('PASS Topi remote text address redaction (source-only; no provider or device acceptance)');
