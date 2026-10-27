@@ -104,7 +104,7 @@ export const SUPPORT_TREE: Record<SupportRouteId, SupportNode> = {
     id: 'publish-ai',
     title: 'Topi no entendió el producto',
     prompt: 'Topi funciona mejor con una frase concreta.',
-    answer: 'Escribe producto + estado + precio si lo sabes + dónde prefieres entregar. Ejemplo: “Vendo calculadora Casio usada, $350, entrego en mi campus”. Topi propone; tú siempre revisas antes de publicar. Si la IA remota no está disponible, TuTop usa su asistente local.',
+    answer: 'Escribe producto + estado + precio si lo sabes + dónde prefieres entregar. Ejemplo: “Vendo calculadora Casio usada, $350, entrego en mi campus”. Topi propone; tú siempre revisas antes de publicar. Si la IA generativa no está disponible, algunas versiones ofrecen ayuda guiada local; la beta de pruebas debe informar indisponibilidad sin fingir una respuesta de IA real.',
   },
   'publish-photos': {
     id: 'publish-photos',
