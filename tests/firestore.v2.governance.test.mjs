@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
