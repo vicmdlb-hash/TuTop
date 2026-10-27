@@ -47,4 +47,9 @@ assert(detail.includes("product.moderation_status === 'flagged' ? 'Marcada para 
   'seller detail must expose flagged moderation state');
 assert(feed.includes('myNeedsAttentionProducts.length'),
   'seller overview must count rejected/flagged listings separately');
+const canonical = fs.readFileSync('src/services/canonicalListingsBackend.ts', 'utf8');
+const models = fs.readFileSync('src/types/index.ts', 'utf8');
+assert(models.includes("'rejected' | 'flagged'"), 'Product moderation union must support flagged');
+assert(canonical.includes("data.moderation_status === 'flagged' ? 'flagged'"),
+  'canonical adapter must preserve flagged status for seller presentation');
 console.log('PASS V2 buyer listing boundary and seller moderation states: approved/pending/rejected/flagged');
