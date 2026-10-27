@@ -184,8 +184,30 @@ jobs:
               raise SystemExit(f'APK_PERMISSION_FAIL missing={missing} forbidden={prohibited}')
           manifest = inspect('xmltree')
           fcm_events = len(re.findall(r'com\.google\.firebase\.MESSAGING_EVENT', manifest))
-          if fcm_events != 1:
-              raise SystemExit(f'APK_FCM_SERVICE_FAIL count={fcm_events}')
+          lines = manifest.splitlines()
+          handlers = []
+          for index, line in enumerate(lines):
+              if not re.match(r'^\\s*E: service(?:\\s|$)', line):
+                  continue
+              depth = len(line) - len(line.lstrip())
+              children = []
+              for child in lines[index + 1:]:
+                  if not child.strip():
+                      continue
+                  if len(child) - len(child.lstrip()) <= depth:
+                      break
+                  children.append(child)
+              if not any('com.google.firebase.MESSAGING_EVENT' in child for child in children):
+                  continue
+              service_attr = next((child for child in children
+                                   if 'A: android:name' in child), '')
+              class_name = re.search(r'=\\s*"([^"]+)"', service_attr)
+              handlers.append(class_name.group(1) if class_name else 'unidentified-service')
+          print('APK_FCM_MERGED_SERVICE_DIAGNOSTIC: action_occurrences='
+                + str(fcm_events) + ' service_count=' + str(len(handlers))
+                + ' classes=' + ','.join(handlers))
+          if len(handlers) != 1 or fcm_events != 1:
+              raise SystemExit('APK_FCM_SERVICE_NOT_UNIQUE')
           print(f'APK_MANIFEST_PERMISSION_PASS: {len(required)} required, {len(forbidden)} forbidden absent')
           print('APK_FCM_SERVICE_PASS: exactly one MESSAGING_EVENT in merged manifest')
           PY
