@@ -11,7 +11,9 @@ export type SupportAnswer = {
 };
 
 function safeQuestion(value: string) {
-  return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim().slice(0, 900);
+  // Preserve complete spans for PII detection: redaction enforces the 900-char remote cap.
+  // Clipping here could expose the prefix of an email, token or street address.
+  return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function resolveRoute(question: string, routeHint: SupportRouteId) {
