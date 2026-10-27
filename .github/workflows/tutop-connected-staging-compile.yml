@@ -189,8 +189,13 @@ jobs:
           if missing or prohibited:
               raise SystemExit(f'APK_PERMISSION_FAIL missing={missing} forbidden={prohibited}')
           manifest = inspect('xmltree')
-          fcm_events = len(re.findall(r'com\.google\.firebase\.MESSAGING_EVENT', manifest))
+          # aapt xmltree shows both value and (Raw: value) on one attribute line.
+          # Count android:name attribute nodes, not duplicated textual occurrences.
           lines = manifest.splitlines()
+          fcm_events = sum(
+              1 for line in lines
+              if 'A: android:name' in line and 'com.google.firebase.MESSAGING_EVENT' in line
+          )
           handlers = []
           for index, line in enumerate(lines):
               if not re.match(r'^\s*E: service(?:\s|$)', line):
