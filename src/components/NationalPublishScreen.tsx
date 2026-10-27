@@ -165,6 +165,7 @@ export default function NationalPublishScreen() {
   const normalizedAttributes = useMemo(() => normalizeNationalAttributes(fields, attributes), [fields, attributes]);
   const required = useMemo(() => categorySafetyRequirements(category || undefined).required, [category]);
   const missing = required.filter((key) => normalizedAttributes[key] === undefined || normalizedAttributes[key] === null || normalizedAttributes[key] === '');
+  const missingLabels = missing.map((key) => fields.find((field) => field.key === key)?.label || key);
   const parsedPrice = Number(price);
   const parsedQuantity = Number(quantity);
   const hasValidPrice = price.trim() !== '' && Number.isFinite(parsedPrice) && parsedPrice >= 0.01 && parsedPrice <= 1_000_000;
@@ -180,7 +181,7 @@ export default function NationalPublishScreen() {
   if (!hasValidQuantity) publishIssues.push('cantidad entera entre 1 y 99');
   if (!deliveryMethods.length) publishIssues.push('forma de entrega');
   if (prohibitedDraft) publishIssues.push('artículo o servicio no permitido');
-  if (missing.length) publishIssues.push(`${missing.length} dato${missing.length === 1 ? '' : 's'} obligatorio${missing.length === 1 ? '' : 's'}`);
+  if (missing.length) publishIssues.push(`campos obligatorios: ${missingLabels.join(', ')}`);
   if (videoFile && !videoInfraEnabled) publishIssues.push('video no disponible en esta beta');
   const readyToPublish = publishIssues.length === 0;
 
@@ -441,7 +442,7 @@ export default function NationalPublishScreen() {
     if (!deliveryMethods.length) return setMessage('Selecciona al menos una forma de entrega.');
     if (missing.length) {
       setAdvancedOpen(true);
-      return setMessage('Completa los campos obligatorios marcados con * antes de publicar.');
+      return setMessage(`Completa estos campos obligatorios: ${missingLabels.join(', ')}.`);
     }
     if (videoFile && !videoInfraEnabled) return setMessage('Los videos todavía no están disponibles en esta beta. Puedes publicar el anuncio con fotos.');
 
