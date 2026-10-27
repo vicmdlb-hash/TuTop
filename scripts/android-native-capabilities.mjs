@@ -88,7 +88,7 @@ if (!manifest.includes('android:usesCleartextTraffic="false"')) stop('cleartext 
 
 // Merge only the Capacitor Firebase service; suppress the redundant base receiver.
 const defaultMessagingService = 'com.google.firebase.messaging.FirebaseMessagingService';
-const removeDefaultService = '<service android:name="' + defaultMessagingService + '" tools:node="remove" />';
+const removeDefaultService = '<service android:name="' + defaultMessagingService + '" tools:node="remove" tools:ignore="MissingClass" />';
 if (!manifest.includes(removeDefaultService)) {
   const start = manifest.indexOf('<application');
   const end = start >= 0 ? manifest.indexOf('>', start) : -1;
