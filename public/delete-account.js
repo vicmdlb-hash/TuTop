@@ -221,7 +221,11 @@ requestButton.addEventListener('click', async () => {
   try {
     const existing = await readDeletionRequest();
     const document = existing || await createDeletionRequest();
-    setStatus(statusMessage(decodeStatus(document)), 'success');
+    const status = decodeStatus(document);
+    // A recorded request is successful, but unknown/unverified completion is not.
+    const tone = status === 'completion-unverified' ? 'error'
+      : status === 'pending' || status === 'completed' ? 'success' : 'neutral';
+    setStatus(statusMessage(status), tone);
   } catch {
     setStatus('No pudimos registrar la solicitud desde este flujo. No se ha eliminado tu cuenta ni se ha marcado como completada.', 'error');
   } finally {
