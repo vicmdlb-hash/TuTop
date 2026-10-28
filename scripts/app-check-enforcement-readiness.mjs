@@ -15,6 +15,8 @@ const FORBIDDEN_DEVICE_KEYS = new Set([
 ]);
 function sensitiveEvidenceKey(key) {
   const normalized = String(key).replace(/[^a-z0-9]/gi, '').toLowerCase();
+  // Metadata flag reports whether evidence contains a token; it is not a credential.
+  if (normalized === 'containsrawtoken') return false;
   return normalized === 'token' || normalized.endsWith('token') || FORBIDDEN_DEVICE_KEYS.has(normalized);
 }
 
