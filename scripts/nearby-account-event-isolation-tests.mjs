@@ -39,11 +39,13 @@ const loc=lib.toApproxLocation(19.314,-98.251);
 assert(loc);
 backing.set(key,JSON.stringify(loc)); // legacy unscoped cache cannot cross to anyone
 assert.equal(lib.getCachedApproxLocation(A),null);
+assert.equal(backing.has(key),false,'legacy unscoped location must be physically purged');
 assert.equal(lib.getCachedApproxLocation(B),null);
 lib.saveApproxLocation(loc,A);
 assert.equal(JSON.parse(backing.get(key)).owner_uid,A);
 assert.equal(events.at(-1).detail.owner_uid,A,'event must be identity scoped');
 assert.equal(lib.getCachedApproxLocation(B),null,'B cannot use cached A location');
+assert.equal(backing.has(key),true,'a different UID must not erase A-owned location');
 assert.equal(lib.getCachedApproxLocation(A).latitude,19.31);
 
 let acceptedForB=0;
@@ -111,6 +113,14 @@ const previousEventCount=events.length;
 lib.saveApproxLocation({ ...loc, latitude: Number.NaN },A);
 assert.equal(backing.has(key),false,'invalid coordinates must never persist');
 assert.equal(events.length,previousEventCount,'invalid coordinates must never emit an event');
+
+// A cache must not retain expired location data merely because it is unreadable.
+backing.set(key,JSON.stringify({ ...loc, owner_uid:A, captured_at:new Date(Date.now() - 7 * 60 * 60_000).toISOString() }));
+assert.equal(lib.getCachedApproxLocation(A),null,'expired owner cache must not restore');
+assert.equal(backing.has(key),false,'expired location must be purged from localStorage');
+backing.set(key,'{invalid-json');
+assert.equal(lib.getCachedApproxLocation(A),null,'malformed cache must be rejected');
+assert.equal(backing.has(key),false,'malformed cache must not remain on a shared device');
 
 // Full consumer contracts prevent cross-account UI dispatch and stale async hydration.
 for(const path of ['src/components/ProductCard.tsx','src/components/ExploreScreen.tsx']){
