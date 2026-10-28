@@ -40,6 +40,13 @@ assert.match(client, /acceptNotFound: true/);
 assert.match(client, /const existing = await readDeletionRequest\(\)\.catch\(\(\) => null\)/);
 assert.doesNotMatch(client, /await fetch\(/);
 assert.match(client, /Consulta su estado antes de volver a intentar/);
+// A temporary status-read failure must not tear down a valid Firebase Auth
+// session or falsely tell the owner that credentials were rejected.
+const loginHandler = client.slice(client.indexOf("loginForm.addEventListener('submit'"), client.indexOf("confirmInput.addEventListener"));
+assert.match(loginHandler, /try \{\s*await refreshRequestStatus\(\);\s*\} catch \{/);
+assert.match(loginHandler, /La sesión se inició, pero no pudimos consultar el estado de eliminación/);
+assert.match(loginHandler, /\} catch \{\s*clearSession\(\);/);
+
 
 const successfulRequest = await deletionJsonRequest('/test', {}, {
   fetchImpl: async () => new Response('{"status":"pending"}', { status: 200 }),
