@@ -24,15 +24,25 @@ function receiptId(uid: string, notificationId: string) {
 }
 
 export const pushBackend = {
-  async registerDeviceToken(token: string, platform: PushPlatform, appVersion: string) {
+  async registerDeviceToken(
+    token: string, platform: PushPlatform, appVersion: string,
+    isOriginalSession?: () => boolean,
+  ) {
     const client = getClient();
     const uid = client.currentSession!.uid;
+    const assertOwner = () => {
+      if (client.currentSession?.uid !== uid || (isOriginalSession && !isOriginalSession()))
+        throw new Error('PUSH_OWNER_SESSION_CHANGED');
+    };
+    assertOwner();
     const cleanToken = token.trim();
     if (cleanToken.length < 20 || cleanToken.length > 4096) throw new Error('INVALID_PUSH_TOKEN');
     const tokenHash = await sha256(cleanToken);
+    assertOwner();
     const id = `${uid}-${platform}-${tokenHash.slice(0, 20)}`;
     const now = new Date().toISOString();
     const existing = await client.getDocument(`device_tokens/${id}`);
+    assertOwner();
     const payload = {
       owner_uid: uid,
       token: cleanToken,
