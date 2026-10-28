@@ -175,6 +175,20 @@ assert.match(explore,/setLocationBusy\(false\);/);
 assert.match(explore,/setNearbyBusy\(false\);/);
 const publish=fs.readFileSync('src/components/NationalPublishScreen.tsx','utf8');
 assert.match(publish,/ownerUid: requestUid, isOwnerActive: stillCurrent/);
+// Permission or a cached coordinate is not per-listing consent. Require an
+// explicit opt-in at the listing-write call site and sanitize the final payload.
+assert.match(publish,/const location = locationOptIn \? approxLocation : null;/);
+assert.match(publish,/attributes: \{ \.\.\.normalizedAttributes, \.\.\.locationAttributes\(location\) \}/);
+const fineLocation = { ...loc, latitude: 19.314159265, longitude: -98.251234567 };
+const optedOutPayload = lib.locationAttributes(null);
+assert.equal(Object.keys(optedOutPayload).length, 0, 'no consent must attach zero location attributes');
+const optedInPayload = lib.locationAttributes(fineLocation);
+assert.equal(optedInPayload.approx_latitude, 19.31, 'listing payload must not attach precise latitude');
+assert.equal(optedInPayload.approx_longitude, -98.25, 'listing payload must not attach precise longitude');
+assert.equal(optedInPayload.geo_cell, lib.geoCellForLocation(fineLocation));
+assert.equal(Object.keys(lib.locationAttributes({ ...loc, latitude: Infinity })).length, 0,
+  'malformed location cannot be serialized into a listing');
+
 assert.match(publish,/locationRequestSerial\.current === requestSerial/);
 assert.match(publish,/useAppStore\.getState\(\)\.user\.id === requestUid/);
 assert.match(publish,/if \(!stillCurrent\(\)\) return;/);
