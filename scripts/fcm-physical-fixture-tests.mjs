@@ -96,6 +96,25 @@ const rawAppCheckSecret = structuredClone(valid);
 rawAppCheckSecret.APP_CHECK_TOKEN = 'synthetic-not-real';
 assert.equal(validateFcmPhysicalFixture(rawAppCheckSecret, candidate, now).pass, false);
 
+// An adversarial fixture must reject aliases that differ only by separators,
+// casing or a common header prefix, including when nested in an event.
+for (const alias of [
+  'refresh-token', 'device_token', 'X-Api-Key', 'auth_token', 'bearer-token',
+  'client-secret', 'private_key', 'Phone_Number', 'EMAIL', 'set-cookie',
+]) {
+  const exposedAlias = structuredClone(valid);
+  exposedAlias.scenarios[0].events[0][alias] = 'synthetic-not-a-real-credential';
+  assert.equal(validateFcmPhysicalFixture(exposedAlias, candidate, now).pass, false, alias);
+}
+const nestedSensitiveHeader = structuredClone(valid);
+nestedSensitiveHeader.scenarios[1].events[0].metadata = {
+  headers: { 'X-Api-Key': 'synthetic-not-a-real-credential' },
+};
+assert.equal(validateFcmPhysicalFixture(nestedSensitiveHeader, candidate, now).pass, false);
+const safeMetadata = structuredClone(valid);
+safeMetadata.scenarios[0].events[0].metadata = { device_slot: 'A', event_count: 2 };
+assert.equal(validateFcmPhysicalFixture(safeMetadata, candidate, now).pass, true);
+
 console.log('PASS multiple distinct simultaneous pushes can validate without false duplicate detection');
 console.log('PASS duplicate/replayed correlations, duplicate taps, reboot replay and target mismatch fail closed');
 console.log('PASS event/window timing, prior app-state consistency, sensitive token names, unknown kinds, invalid payload and stale APK fail closed');

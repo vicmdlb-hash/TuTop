@@ -4,7 +4,16 @@ import { pathToFileURL } from 'node:url';
 
 const REQUIRED = new Set(['foreground', 'background', 'cold_start', 'deep_link']);
 const ALLOWED_EVENT_KINDS = new Set(['app_foreground', 'app_background', 'app_boot', 'push_received', 'push_action', 'route_opened', 'push_invalid_payload']);
-const FORBIDDEN_KEYS = new Set(['token', 'fcm_token', 'fcmToken', 'appCheckToken', 'app_check_token', 'accessToken', 'access_token', 'authorization', 'authorizationHeader', 'apiKey', 'api_key', 'notification_id', 'raw_notification_id', 'phone', 'idToken', 'refreshToken'].map(key => key.toLowerCase()));
+// Normalize separators/case so a physical QA trace cannot hide a secret in
+// alternative field spellings. Scan field names only; never print values.
+const normalizeEvidenceKey = key => String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
+const FORBIDDEN_KEYS = new Set([
+  'token', 'fcm_token', 'fcmToken', 'fcm-registration-token', 'deviceToken', 'firebaseToken',
+  'appCheckToken', 'accessToken', 'idToken', 'refreshToken', 'authToken', 'bearerToken',
+  'authorization', 'authorizationHeader', 'apiKey', 'x-api-key', 'clientSecret',
+  'privateKey', 'password', 'cookie', 'setCookie', 'notification_id',
+  'raw_notification_id', 'phone', 'phoneNumber', 'email', 'otp',
+].map(normalizeEvidenceKey));
 const SAFE_CORRELATION = /^[a-z0-9_-]{6,80}$/i;
 const MAX_SESSION_MS = 6 * 60 * 60_000;
 const MAX_EVIDENCE_AGE_MS = 24 * 60 * 60_000;
@@ -14,7 +23,7 @@ function scan(value, errors, pathParts = []) {
   if (Array.isArray(value)) return value.forEach((item, index) => scan(item, errors, [...pathParts, String(index)]));
   if (!value || typeof value !== 'object') return;
   for (const [key, child] of Object.entries(value)) {
-    if (FORBIDDEN_KEYS.has(key.toLowerCase())) errors.push(`campo sensible prohibido: ${[...pathParts, key].join('.')}`);
+    if (FORBIDDEN_KEYS.has(normalizeEvidenceKey(key))) errors.push(`campo sensible prohibido: ${[...pathParts, key].join('.')}`);
     scan(child, errors, [...pathParts, key]);
   }
 }
