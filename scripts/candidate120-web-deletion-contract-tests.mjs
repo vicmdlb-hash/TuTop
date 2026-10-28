@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { trustedWebDeletionStatus } from '../public/deletion-completion-proof.js';
+import { deletionJsonRequest, DELETION_REQUEST_TIMEOUT_MS } from '../public/deletion-request-timeout.js';
 
 const read = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 
@@ -29,6 +30,63 @@ assert.match(client,/currentDocument: \{ exists: false \}/);
 assert.doesNotMatch(client,/localStorage|sessionStorage/);
 assert.doesNotMatch(client,/accounts:delete|batchDelete|deleteDocument/);
 assert.doesNotMatch(client,/refreshToken/);
+
+// The public account-deletion workflow must never hang forever on Firebase.
+// A timed-out commit has an unknown outcome; the UI re-reads before any retry.
+assert.equal(DELETION_REQUEST_TIMEOUT_MS, 15000);
+assert.match(client, /deletionJsonRequest\(CONFIG_URL/);
+assert.match(client, /deletionJsonRequest\(requestDocumentUrl\(\)/);
+assert.match(client, /acceptNotFound: true/);
+assert.match(client, /const existing = await readDeletionRequest\(\)\.catch\(\(\) => null\)/);
+assert.doesNotMatch(client, /await fetch\(/);
+assert.match(client, /Consulta su estado antes de volver a intentar/);
+
+const successfulRequest = await deletionJsonRequest('/test', {}, {
+  fetchImpl: async () => new Response('{"status":"pending"}', { status: 200 }),
+});
+assert.equal(successfulRequest.data.status, 'pending');
+const absentRequest = await deletionJsonRequest('/test', {}, {
+  acceptNotFound: true,
+  fetchImpl: async () => new Response('', { status: 404 }),
+});
+assert.deepEqual(absentRequest, { status: 404, data: null });
+await assert.rejects(
+  deletionJsonRequest('/test', {}, {
+    fetchImpl: async () => new Response('{"error":{"status":"PERMISSION_DENIED"}}', { status: 403 }),
+  }),
+  (error) => error.message === 'REMOTE_REQUEST_FAILED' && error.status === 403 &&
+    error.remoteStatus === 'PERMISSION_DENIED',
+);
+let commitAttempts = 0;
+await assert.rejects(
+  deletionJsonRequest('/commit', { method: 'POST' }, {
+    timeoutMs: 12,
+    fetchImpl: (_url, { signal }) => {
+      commitAttempts += 1;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+      });
+    },
+  }),
+  { name: 'AbortError' },
+);
+assert.equal(commitAttempts, 1, 'ambiguous commit must not be automatically retried');
+
+// Abort must also cover a response body that never resolves.
+await assert.rejects(
+  deletionJsonRequest('/body', {}, {
+    timeoutMs: 12,
+    fetchImpl: async (_url, { signal }) => ({
+      status: 200,
+      ok: true,
+      text: () => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+      }),
+    }),
+  }),
+  { name: 'AbortError' },
+);
+
 
 assert.match(prep,/tutop-beta-vicmdlb-1356585881/);
 assert.match(prep,/public\/tutop-web-config\.json/);
