@@ -50,7 +50,15 @@ export function getCachedApproxLocation(ownerUid: string, maxAgeMs = 6 * 60 * 60
     // Legacy/unscoped cache entries are intentionally rejected instead of being
     // attached to whichever account logs in next on the same device.
     if (!parsed.owner_uid || parsed.owner_uid !== ownerUid) return null;
-    if (!validCoordinate(Number(parsed.latitude), Number(parsed.longitude))) return null;
+    // Never restore precise or nonnumeric legacy coordinates from device storage.
+    // A matching UID alone does not establish the cache's privacy granularity.
+    if (typeof parsed.latitude !== 'number' || typeof parsed.longitude !== 'number'
+      || !validCoordinate(parsed.latitude, parsed.longitude)
+      || parsed.latitude !== coarseCoordinate(parsed.latitude)
+      || parsed.longitude !== coarseCoordinate(parsed.longitude)) {
+      localStorage.removeItem(LOCATION_KEY);
+      return null;
+    }
     const age = Date.now() - Date.parse(String(parsed.captured_at || ''));
     if (!Number.isFinite(age) || age < 0 || age > maxAgeMs) return null;
     return {
@@ -63,8 +71,15 @@ export function getCachedApproxLocation(ownerUid: string, maxAgeMs = 6 * 60 * 60
 }
 
 export function saveApproxLocation(location: ApproxLocation, ownerUid: string) {
-  if (!ownerUid) return;
-  const persisted: PersistedApproxLocation = { ...location, owner_uid: ownerUid };
+  if (!ownerUid || !validCoordinate(location.latitude, location.longitude)) return;
+  // Defend the storage/event boundary even when a caller did not pass through
+  // toApproxLocation: never persist or broadcast raw device GPS precision.
+  const persisted: PersistedApproxLocation = {
+    ...location,
+    latitude: coarseCoordinate(location.latitude),
+    longitude: coarseCoordinate(location.longitude),
+    owner_uid: ownerUid,
+  };
   try { localStorage.setItem(LOCATION_KEY, JSON.stringify(persisted)); } catch { /* optional cache */ }
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ScopedApproxLocationEvent>(NEARBY_LOCATION_EVENT, { detail: persisted }));
 }
