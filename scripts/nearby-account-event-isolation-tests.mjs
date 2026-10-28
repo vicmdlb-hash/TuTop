@@ -92,6 +92,26 @@ assert.equal(lib.getCachedApproxLocation(B)?.longitude,-98.26,'A cleanup cannot 
 lib.clearApproxLocation(B);
 assert.equal(lib.getCachedApproxLocation(B),null);
 
+// A direct caller or legacy device cache must not leak full GPS precision.
+const precise = { ...loc, latitude: 19.314159265, longitude: -98.251234567 };
+lib.saveApproxLocation(precise,A);
+const sanitized = JSON.parse(backing.get(key));
+assert.equal(sanitized.latitude,19.31,'persistent latitude must be coarse');
+assert.equal(sanitized.longitude,-98.25,'persistent longitude must be coarse');
+assert.equal(events.at(-1).detail.latitude,19.31,'location events must be coarse');
+assert.equal(events.at(-1).detail.longitude,-98.25,'location events must not disclose GPS precision');
+assert.equal(lib.getCachedApproxLocation(A)?.latitude,19.31);
+backing.set(key,JSON.stringify({ ...precise, owner_uid:A }));
+assert.equal(lib.getCachedApproxLocation(A),null,'matching UID must not restore a precise legacy cache');
+assert.equal(backing.has(key),false,'unsafe precise cache must be purged');
+backing.set(key,JSON.stringify({ ...loc, owner_uid:A, latitude:'19.31' }));
+assert.equal(lib.getCachedApproxLocation(A),null,'cached coordinates must be numeric');
+assert.equal(backing.has(key),false,'malformed cached coordinate must be removed');
+const previousEventCount=events.length;
+lib.saveApproxLocation({ ...loc, latitude: Number.NaN },A);
+assert.equal(backing.has(key),false,'invalid coordinates must never persist');
+assert.equal(events.length,previousEventCount,'invalid coordinates must never emit an event');
+
 // Full consumer contracts prevent cross-account UI dispatch and stale async hydration.
 for(const path of ['src/components/ProductCard.tsx','src/components/ExploreScreen.tsx']){
  const src=fs.readFileSync(path,'utf8');
