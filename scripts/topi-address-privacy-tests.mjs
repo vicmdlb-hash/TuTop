@@ -21,6 +21,20 @@ const email = redactTopiRemoteText('contacto vendedor@example.com');
 assert(!email.text?.includes('vendedor@example.com'));
 assert(email.redactions.includes('email'));
 
+// Natural-language disclosures must be redacted like colon/equal disclosures.
+const naturalCodeAndTokenCases = [
+  ['Mi OTP es 481593; ayuda', '481593', 'otp'],
+  ['Mi código de verificación es 918274, no puedo entrar', '918274', 'otp'],
+  ['Mi token es 12345678abcdefghi; necesito ayuda', '12345678abcdefghi', 'token'],
+];
+for (const [input, secret, kind] of naturalCodeAndTokenCases) {
+  const result = redactTopiRemoteText(input);
+  assert(!result.text?.includes(secret), `${kind} in natural-language disclosure must not reach remote AI`);
+  assert(result.redactions.includes(kind), `missing ${kind} redaction evidence`);
+}
+assert.equal(redactTopiRemoteText('Vendo token de arcade, precio 200').text,
+  'Vendo token de arcade, precio 200', 'ordinary product text must remain');
+
 
 const clippingBoundaryCases = [
   ['X'.repeat(72) + ' cliente@example.com', 'email', 'cliente@'],
@@ -89,6 +103,8 @@ const helpBoundaryCases = [
   ['X'.repeat(892) + ' sk-proj-abcdefghijklmnop12345', 'token', 'sk-proj'],
   ['X'.repeat(892) + ' calle Reforma 123', 'address', 'Reforma'],
   ['X'.repeat(892) + ' mi contraseña es ClaveSegura9347', 'credential', 'ClaveSegura'],
+  ['X'.repeat(892) + ' mi OTP es 481593', 'otp', '481593'],
+  ['X'.repeat(892) + ' mi token es 12345678abcdefghi', 'token', '12345678abcdefghi'],
 ];
 for (const [input, redaction, fragment] of helpBoundaryCases) {
   const sanitized = redactTopiRemoteText(input, 900);
