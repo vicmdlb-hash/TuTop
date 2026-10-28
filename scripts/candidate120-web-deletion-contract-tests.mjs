@@ -62,6 +62,8 @@ assert.doesNotMatch(privacy,/[A-Z0-9._%+-]+@gmail\.com/i);
 // can read a string status; the trusted runner adds independent evidence.
 assert.match(client, /trustedWebDeletionStatus\(document\)/);
 assert.match(client, /status === 'completion-unverified'/);
+assert.match(client, /status === 'completion-unverified' \? 'error'/);
+assert.doesNotMatch(client, /setStatus\(statusMessage\(decodeStatus\(document\)\), 'success'\)/);
 const now = Date.parse('2026-10-27T23:00:00.000Z');
 const fields = {
   status: { stringValue: 'completed' },
