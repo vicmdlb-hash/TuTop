@@ -1,3 +1,5 @@
+import { trustedWebDeletionStatus } from './deletion-completion-proof.js';
+
 const CONFIG_URL = '/tutop-web-config.json';
 const AUTH_BASE = 'https://identitytoolkit.googleapis.com/v1';
 const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1';
@@ -119,8 +121,7 @@ function requestDocumentUrl() {
 }
 
 function decodeStatus(document) {
-  const value = document?.fields?.status?.stringValue;
-  return typeof value === 'string' && value ? value : 'unknown';
+  return trustedWebDeletionStatus(document);
 }
 
 async function readDeletionRequest() {
@@ -174,7 +175,8 @@ async function createDeletionRequest() {
 function statusMessage(status) {
   if (status === 'pending') return 'Solicitud registrada. Estado: pendiente. Solicitar no significa que la cuenta ya esté eliminada.';
   if (status === 'processing') return 'Tu solicitud está en procesamiento. La eliminación todavía no se declara completada.';
-  if (status === 'completed') return 'El sistema registra la eliminación como completada por el proceso confiable de TuTop.';
+  if (status === 'completed') return 'El registro contiene evidencia de finalización del proceso confiable. Esto no sustituye la comprobación independiente de Firebase Authentication.';
+  if (status === 'completion-unverified') return 'El registro indica completada, pero faltan evidencias verificables del procesamiento. La eliminación no puede darse por confirmada desde este recurso.';
   if (status === 'rejected') return 'La solicitud aparece como rechazada. No se ha declarado una eliminación completada.';
   return 'Existe una solicitud, pero su estado no puede mostrarse de forma confiable. No se ha declarado una eliminación completada.';
 }
