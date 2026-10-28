@@ -189,7 +189,13 @@ loginForm.addEventListener('submit', async (event) => {
     accountEmail.textContent = state.session.email;
     loginForm.hidden = true;
     accountPanel.hidden = false;
-    await refreshRequestStatus();
+    try {
+      await refreshRequestStatus();
+    } catch {
+      // A Firestore outage after successful Auth is not a sign-in failure.
+      // Keep the authenticated session available for a fresh status read.
+      setStatus('La sesión se inició, pero no pudimos consultar el estado de eliminación. Vuelve a consultar antes de intentar registrar una solicitud.', 'error');
+    }
   } catch {
     clearSession();
     setStatus('No pudimos autenticar esta cuenta. Revisa tus datos o inténtalo de nuevo más tarde.', 'error');
