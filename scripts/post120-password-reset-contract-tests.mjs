@@ -60,7 +60,7 @@ vm.runInNewContext(actionSource,{
   document:{getElementById:id=>nodes.get(id)},
   location:{search:'?mode=resetPassword&oobCode=syntheticRecoveryCode123&continueUrl=%2F',
     origin:'https://tutop.example'},
-  URL,URLSearchParams,Response,fetch:fetchImpl,console,
+  URL,URLSearchParams,Response,AbortController,setTimeout,clearTimeout,fetch:fetchImpl,console,
 },{timeout:2000});
 await Promise.race([ready,new Promise((_resolve,reject)=>
   setTimeout(()=>reject(new Error('reset form failed to initialize')),1000))]);
