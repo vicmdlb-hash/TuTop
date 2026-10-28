@@ -93,6 +93,20 @@ const perDeviceStale = structuredClone(valid);
 perDeviceStale.devices[1].verified_at = '2026-08-20T00:00:00.000Z';
 assert.equal(validateAppCheckPhysicalEvidence(perDeviceStale, now, candidate).ready, false);
 
+// Regression: raw credentials must not evade redaction checks by using
+// camelCase, snake_case, or nested keys (including device telemetry).
+for (const key of [
+  'appCheckToken', 'app_check_token', 'App_Check_Token', 'fcmToken',
+  'access_token', 'authorization', 'apiKey', 'private_key',
+  'password', 'refresh_token', 'deviceToken',
+]) {
+  const sensitive = structuredClone(valid);
+  sensitive.devices[0].diagnostic = { nested: [{ [key]: 'sensitive-value' }] };
+  const result = validateAppCheckPhysicalEvidence(sensitive, now, candidate);
+  assert.equal(result.ready, false, `raw ${key} should block App Check readiness`);
+  assert(result.errors.includes('raw_token_must_not_be_stored'));
+}
+
 const rawNestedToken = structuredClone(valid);
 rawNestedToken.devices[0].app_check_token = 'must-never-be-stored';
 assert(validateAppCheckPhysicalEvidence(rawNestedToken, now, candidate).errors.includes('raw_token_must_not_be_stored'));

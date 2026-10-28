@@ -7,7 +7,16 @@ const CANDIDATE_MANIFEST_PATH = path.resolve('docs/PHYSICAL_QA_CANDIDATE_0.9.jso
 const SHA256 = /^[a-f0-9]{64}$/i;
 const GIT_SHA = /^[a-f0-9]{40}$/i;
 const ARTIFACT_DIGEST = /^sha256:[a-f0-9]{64}$/i;
-const FORBIDDEN_DEVICE_KEYS = new Set(['token', 'app_check_token', 'raw_token', 'idToken', 'refreshToken']);
+// Match semantically sensitive keys across camelCase, snake_case and casing.
+// Observation flags such as app_check_token_observed are not raw credentials.
+const FORBIDDEN_DEVICE_KEYS = new Set([
+  'apikey', 'authorization', 'authorizationheader', 'clientsecret',
+  'credentials', 'credential', 'password', 'privatekey',
+]);
+function sensitiveEvidenceKey(key) {
+  const normalized = String(key).replace(/[^a-z0-9]/gi, '').toLowerCase();
+  return normalized === 'token' || normalized.endsWith('token') || FORBIDDEN_DEVICE_KEYS.has(normalized);
+}
 
 function loadCandidateManifest() {
   if (!fs.existsSync(CANDIDATE_MANIFEST_PATH)) throw new Error('APP_CHECK_CANDIDATE_MANIFEST_MISSING');
@@ -24,7 +33,7 @@ function placeholder(value) {
 function hasForbiddenKey(value) {
   if (Array.isArray(value)) return value.some(hasForbiddenKey);
   if (!value || typeof value !== 'object') return false;
-  return Object.entries(value).some(([key, child]) => FORBIDDEN_DEVICE_KEYS.has(key) || hasForbiddenKey(child));
+  return Object.entries(value).some(([key, child]) => sensitiveEvidenceKey(key) || hasForbiddenKey(child));
 }
 
 function freshTimestamp(value, now) {
