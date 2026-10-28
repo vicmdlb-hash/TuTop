@@ -35,7 +35,13 @@ function placeholder(value) {
 function hasForbiddenKey(value) {
   if (Array.isArray(value)) return value.some(hasForbiddenKey);
   if (!value || typeof value !== 'object') return false;
-  return Object.entries(value).some(([key, child]) => sensitiveEvidenceKey(key) || hasForbiddenKey(child));
+  return Object.entries(value).some(([key, child]) => {
+    // Every nested raw-token declaration is security-sensitive, not only the
+    // top-level flag. Require literal false rather than a truthy string or null.
+    const normalized = String(key).replace(/[^a-z0-9]/gi, '').toLowerCase();
+    if (normalized === 'containsrawtoken') return child !== false;
+    return sensitiveEvidenceKey(key) || hasForbiddenKey(child);
+  });
 }
 
 function freshTimestamp(value, now) {

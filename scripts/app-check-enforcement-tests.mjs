@@ -107,6 +107,22 @@ for (const key of [
   assert(result.errors.includes('raw_token_must_not_be_stored'));
 }
 
+// Prevent nested or alternate-cased raw-token flags from silently bypassing
+// QA evidence sanitization (the top-level false flag remains permitted).
+for (const field of ['contains_raw_token', 'containsRawToken', 'Contains_Raw_Token']) {
+  for (const value of [true, 'false', null, 1]) {
+    const leaked = structuredClone(valid);
+    leaked.devices[0].diagnostic = { telemetry: [{ [field]: value }] };
+    const result = validateAppCheckPhysicalEvidence(leaked, now, candidate);
+    assert.equal(result.ready, false, `nested ${field}=${String(value)} must fail closed`);
+    assert(result.errors.includes('raw_token_must_not_be_stored'));
+  }
+  const clean = structuredClone(valid);
+  clean.devices[0].diagnostic = { telemetry: [{ [field]: false }] };
+  assert.equal(validateAppCheckPhysicalEvidence(clean, now, candidate).ready, true,
+    `nested ${field}=false should remain valid`);
+}
+
 const rawNestedToken = structuredClone(valid);
 rawNestedToken.devices[0].app_check_token = 'must-never-be-stored';
 assert(validateAppCheckPhysicalEvidence(rawNestedToken, now, candidate).errors.includes('raw_token_must_not_be_stored'));
