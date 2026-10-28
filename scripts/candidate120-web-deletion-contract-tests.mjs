@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import { trustedWebDeletionStatus } from '../public/deletion-completion-proof.js';
 
 const read = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 
@@ -56,6 +57,47 @@ assert.match(privacy,/audiencia prevista es nacional/i);
 assert.match(privacy,/No es una política legal aprobada/i);
 assert.match(privacy,/flujo web autenticado/i);
 assert.doesNotMatch(privacy,/[A-Z0-9._%+-]+@gmail\.com/i);
+
+// A public web page must not show deletion complete merely because a caller
+// can read a string status; the trusted runner adds independent evidence.
+assert.match(client, /trustedWebDeletionStatus\(document\)/);
+assert.match(client, /status === 'completion-unverified'/);
+const now = Date.parse('2026-10-27T23:00:00.000Z');
+const fields = {
+  status: { stringValue: 'completed' },
+  requested_at: { timestampValue: '2026-10-26T10:00:00Z' },
+  completed_at: { timestampValue: '2026-10-27T22:00:00Z' },
+  auth_deleted: { booleanValue: true },
+  processor_run_id: { stringValue: 'trusted-run-123' },
+  erasure_policy_version: { stringValue: 'staging-account-erasure-v1' },
+  residual_manifest_version: { stringValue: 'staging-erasure-residual-v2' },
+  deleted_count: { integerValue: '6' },
+  withdrawn_count: { integerValue: '2' },
+  retained_count: { integerValue: '0' },
+};
+assert.equal(trustedWebDeletionStatus({ fields }, now), 'completed');
+for (const absent of ['auth_deleted', 'processor_run_id', 'erasure_policy_version',
+  'residual_manifest_version', 'completed_at', 'requested_at',
+  'deleted_count', 'withdrawn_count', 'retained_count']) {
+  const reduced = { ...fields };
+  delete reduced[absent];
+  assert.equal(trustedWebDeletionStatus({ fields: reduced }, now), 'completion-unverified',
+    `completed without ${absent} must not be trusted`);
+}
+assert.equal(trustedWebDeletionStatus({ fields: { ...fields, auth_deleted: { booleanValue: false } } }, now),
+  'completion-unverified');
+assert.equal(trustedWebDeletionStatus({ fields: { ...fields, deleted_count: { integerValue: '-1' } } }, now),
+  'completion-unverified');
+assert.equal(trustedWebDeletionStatus({ fields: { ...fields, retained_count: { integerValue: '9007199254740993' } } }, now),
+  'completion-unverified');
+assert.equal(trustedWebDeletionStatus({ fields: { ...fields, completed_at: { timestampValue: '2026-10-25T22:00:00Z' } } }, now),
+  'completion-unverified');
+assert.equal(trustedWebDeletionStatus({ fields: { ...fields, completed_at: { timestampValue: '2026-10-30T22:00:00Z' } } }, now),
+  'completion-unverified');
+for (const status of ['pending', 'processing', 'rejected']) {
+  assert.equal(trustedWebDeletionStatus({ fields: { status: { stringValue: status } } }, now), status);
+}
+assert.equal(trustedWebDeletionStatus(null, now), 'unknown');
 
 console.log('PASS Build120 web deletion flow authenticates the existing account and can create only a pending owner request');
 console.log('PASS runtime Firebase web config is generated separately and ignored by git');
