@@ -8,6 +8,7 @@ const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1';
 const state = {
   config: null,
   session: null,
+  busy: false,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -28,9 +29,11 @@ function setStatus(message, tone = 'neutral') {
 }
 
 function setBusy(busy) {
-  loginButton.disabled = busy;
-  requestButton.disabled = busy || !state.session || !confirmInput.checked;
-  logoutButton.disabled = busy || !state.session;
+  state.busy = Boolean(busy);
+  loginButton.disabled = state.busy;
+  requestButton.disabled = state.busy || !state.session || !confirmInput.checked;
+  logoutButton.disabled = state.busy || !state.session;
+  confirmInput.disabled = state.busy;
 }
 
 function clearSession() {
@@ -180,6 +183,7 @@ async function refreshRequestStatus() {
 
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (state.busy) return;
   setBusy(true);
   setStatus('Validando tu cuenta TuTop…');
   try {
@@ -204,10 +208,10 @@ loginForm.addEventListener('submit', async (event) => {
   }
 });
 
-confirmInput.addEventListener('change', () => setBusy(false));
+confirmInput.addEventListener('change', () => setBusy(state.busy));
 
 requestButton.addEventListener('click', async () => {
-  if (!state.session || !confirmInput.checked) return;
+  if (state.busy || !state.session || !confirmInput.checked) return;
   setBusy(true);
   setStatus('Registrando tu solicitud…');
   try {
