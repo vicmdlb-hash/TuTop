@@ -38,6 +38,8 @@ function setBusy(busy) {
 
 function clearSession() {
   state.session = null;
+  // Do not leave the previous owner's email visible on a shared device.
+  emailInput.value = '';
   passwordInput.value = '';
   accountEmail.textContent = '';
   accountPanel.hidden = true;
