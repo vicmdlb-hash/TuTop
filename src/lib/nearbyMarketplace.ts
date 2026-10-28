@@ -191,11 +191,17 @@ export function nearbyGeoCells(location: Pick<ApproxLocation, 'latitude' | 'long
 }
 
 export function locationAttributes(location: ApproxLocation | null) {
-  if (!location) return {};
-  const geoCell = geoCellForLocation(location);
+  if (!location || !validCoordinate(location.latitude, location.longitude)) return {};
+  // Final listing-write boundary: no caller may persist more than coarse
+  // location, even if it bypasses the UI or cache normalizer.
+  const coarse = {
+    latitude: coarseCoordinate(location.latitude),
+    longitude: coarseCoordinate(location.longitude),
+  };
+  const geoCell = geoCellForLocation(coarse);
   return {
-    approx_latitude: location.latitude,
-    approx_longitude: location.longitude,
+    approx_latitude: coarse.latitude,
+    approx_longitude: coarse.longitude,
     ...(geoCell ? { geo_cell: geoCell } : {}),
   };
 }
