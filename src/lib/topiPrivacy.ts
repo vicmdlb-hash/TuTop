@@ -42,7 +42,7 @@ export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText
 
   // Explicit password, access-key and PIN labels must not leak into future
   // remote prompts, including multiword secrets. Keep the provider disabled.
-  replace(/\b(?:contrase(?:ñ|n)a|password|passcode|pin(?:\s+de\s+acceso)?|clave(?:\s+(?:de\s+acceso|secreta))?)\s*[:=-]\s*[^,;]{4,140}/giu,
+  replace(/\b(?:contrase(?:ñ|n)a|password|passcode|pin(?:\s+de\s+acceso)?|clave(?:\s+(?:de\s+acceso|secreta))?)\s*(?::|=|-|\bes\b)\s*[^,;]{4,140}/giu,
     'credential', '[credencial omitida]');
 
   // Explicit street addresses entered in free text are not safe for remote AI.
