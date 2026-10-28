@@ -122,6 +122,42 @@ backing.set(key,'{invalid-json');
 assert.equal(lib.getCachedApproxLocation(A),null,'malformed cache must be rejected');
 assert.equal(backing.has(key),false,'malformed cache must not remain on a shared device');
 
+// Only the declared approximate-location fields may reach local storage or
+// cross-component events, even from a JS caller with extra runtime fields.
+const privateLocation = {
+  ...loc,
+  latitude: 19.314159265,
+  longitude: -98.251234567,
+  owner_uid: B,
+  exact_address: 'synthetic private address',
+  authToken: 'SYNTHETIC_NEVER_STORE',
+};
+lib.saveApproxLocation(privateLocation,A);
+const storedPrivate = JSON.parse(backing.get(key));
+assert.deepEqual(Object.keys(storedPrivate).sort(),
+  ['captured_at','latitude','longitude','owner_uid','source'].sort(),
+  'location persistence must allowlist fields only');
+assert.equal(storedPrivate.owner_uid,A,'caller must not overwrite cache ownership');
+assert.equal(storedPrivate.exact_address,undefined);
+assert.equal(storedPrivate.authToken,undefined);
+assert.equal(events.at(-1).detail.authToken,undefined,'event must not expose arbitrary token');
+assert.equal(events.at(-1).detail.exact_address,undefined,'event must not expose precise address');
+assert.equal(events.at(-1).detail.owner_uid,A);
+backing.set(key,JSON.stringify({ ...loc, owner_uid:A, exact_address:'legacy private detail' }));
+assert.equal(lib.getCachedApproxLocation(A),null,'legacy cache extra keys must fail closed');
+assert.equal(backing.has(key),false,'legacy cache extra keys must be purged');
+const beforeStaleEvents=events.length;
+lib.saveApproxLocation({ ...loc, captured_at:new Date(Date.now() - 7 * 60 * 60_000).toISOString() },A);
+assert.equal(backing.has(key),false,'stale direct saves must not recreate cache');
+lib.saveApproxLocation({ ...loc, captured_at:new Date(Date.now() + 60_000).toISOString() },A);
+assert.equal(backing.has(key),false,'future direct saves must not create cache');
+lib.saveApproxLocation({ ...loc, captured_at:'not-a-time' },A);
+assert.equal(backing.has(key),false,'invalid timestamp must not create cache');
+assert.equal(events.length,beforeStaleEvents,'invalid or stale direct saves must not broadcast events');
+lib.saveApproxLocation({ ...loc, source:'unapproved' },A);
+assert.equal(JSON.parse(backing.get(key)).source,'device','unknown source should not survive');
+lib.clearApproxLocation(A);
+
 // Full consumer contracts prevent cross-account UI dispatch and stale async hydration.
 for(const path of ['src/components/ProductCard.tsx','src/components/ExploreScreen.tsx']){
  const src=fs.readFileSync(path,'utf8');
