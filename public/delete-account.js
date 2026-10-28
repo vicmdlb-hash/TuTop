@@ -1,4 +1,5 @@
 import { trustedWebDeletionStatus } from './deletion-completion-proof.js';
+import { deletionJsonRequest } from './deletion-request-timeout.js';
 
 const CONFIG_URL = '/tutop-web-config.json';
 const AUTH_BASE = 'https://identitytoolkit.googleapis.com/v1';
@@ -42,28 +43,12 @@ function clearSession() {
   setBusy(false);
 }
 
-async function readJson(response) {
-  const text = await response.text();
-  let data = {};
-  if (text) {
-    try { data = JSON.parse(text); } catch { data = {}; }
-  }
-  if (!response.ok) {
-    const error = new Error('REMOTE_REQUEST_FAILED');
-    error.status = response.status;
-    error.remoteStatus = data?.error?.status || '';
-    throw error;
-  }
-  return data;
-}
-
 async function loadConfig() {
-  const response = await fetch(CONFIG_URL, {
+  const { data: config } = await deletionJsonRequest(CONFIG_URL, {
     method: 'GET',
     cache: 'no-store',
     credentials: 'same-origin',
   });
-  const config = await readJson(response);
   if (!config?.apiKey || !config?.projectId || !config?.appId) throw new Error('WEB_CONFIG_INCOMPLETE');
   state.config = {
     apiKey: String(config.apiKey),
@@ -76,12 +61,12 @@ async function loadConfig() {
 
 async function authRequest(endpoint, body) {
   if (!state.config?.apiKey) throw new Error('WEB_CONFIG_NOT_READY');
-  const response = await fetch(`${AUTH_BASE}/${endpoint}?key=${encodeURIComponent(state.config.apiKey)}`, {
+  const { data } = await deletionJsonRequest(`${AUTH_BASE}/${endpoint}?key=${encodeURIComponent(state.config.apiKey)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  return readJson(response);
+  return data;
 }
 
 async function signIn(email, password) {
@@ -125,13 +110,12 @@ function decodeStatus(document) {
 }
 
 async function readDeletionRequest() {
-  const response = await fetch(requestDocumentUrl(), {
+  const { status, data } = await deletionJsonRequest(requestDocumentUrl(), {
     method: 'GET',
     headers: authHeaders(),
     cache: 'no-store',
-  });
-  if (response.status === 404) return null;
-  return readJson(response);
+  }, { acceptNotFound: true });
+  return status === 404 ? null : data;
 }
 
 async function createDeletionRequest() {
@@ -140,7 +124,8 @@ async function createDeletionRequest() {
   if (!projectId || !uid) throw new Error('REQUEST_CONTEXT_MISSING');
 
   const name = `projects/${projectId}/databases/(default)/documents/account_deletion_requests/${uid}`;
-  const response = await fetch(
+  try {
+    await deletionJsonRequest(
     `${FIRESTORE_BASE}/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:commit`,
     {
       method: 'POST',
@@ -162,12 +147,13 @@ async function createDeletionRequest() {
         }],
       }),
     },
-  );
-
-  if (!response.ok) {
-    const racedExisting = await readDeletionRequest().catch(() => null);
-    if (racedExisting) return racedExisting;
-    await readJson(response);
+    );
+  } catch (error) {
+    // A timeout may mean the server committed the request. Read first; never
+    // replay a non-idempotent write automatically or declare it unregistered.
+    const existing = await readDeletionRequest().catch(() => null);
+    if (existing) return existing;
+    throw error;
   }
   return readDeletionRequest();
 }
@@ -227,7 +213,7 @@ requestButton.addEventListener('click', async () => {
       : status === 'pending' || status === 'completed' ? 'success' : 'neutral';
     setStatus(statusMessage(status), tone);
   } catch {
-    setStatus('No pudimos registrar la solicitud desde este flujo. No se ha eliminado tu cuenta ni se ha marcado como completada.', 'error');
+    setStatus('No pudimos confirmar si se registró la solicitud. Consulta su estado antes de volver a intentar. Esta pantalla no marca eliminaciones como completadas.', 'error');
   } finally {
     setBusy(false);
   }
