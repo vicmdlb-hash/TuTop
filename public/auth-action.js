@@ -14,6 +14,9 @@ function setStatus(message, tone = '') {
 }
 
 function friendlyAuthError(code, mode = '') {
+  if (/FIREBASE_REQUEST_TIMEOUT/.test(code)) return mode === 'resetPassword'
+    ? 'La conexión agotó su tiempo. No pudimos confirmar si Firebase cambió tu clave. Comprueba el acceso con la nueva clave antes de solicitar otro enlace.'
+    : 'La conexión agotó su tiempo. No pudimos confirmar la acción; revisa el estado de tu cuenta antes de solicitar otro enlace.';
   if (/EXPIRED_OOB_CODE/i.test(code)) return 'Este enlace ya venció. Vuelve a TuTop y solicita un correo nuevo.';
   if (/INVALID_OOB_CODE/i.test(code)) return 'Este enlace ya fue usado, venció o no es válido. Vuelve a TuTop y solicita uno nuevo.';
   if (/WEAK_PASSWORD|PASSWORD_DOES_NOT_MEET_REQUIREMENTS/i.test(code)) return 'La nueva Clave TuTop no cumple los requisitos. Usa al menos 8 caracteres.';
@@ -29,6 +32,22 @@ async function readJson(response) {
   try { data = text ? JSON.parse(text) : {}; } catch { data = {}; }
   if (!response.ok) throw new Error(String(data?.error?.message || data?.error?.status || `HTTP_${response.status}`));
   return data;
+}
+
+// A stalled Firebase request must not leave email verification or recovery
+// frozen forever. Never automatically replay one-time out-of-band actions.
+async function boundedJsonRequest(url, options = {}, timeoutMs = 15_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return await readJson(response);
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('FIREBASE_REQUEST_TIMEOUT');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function safeReturnTarget(continueUrl) {
@@ -47,7 +66,7 @@ function enableReturn(continueUrl) {
 }
 
 async function identityPost(endpoint, apiKey, body) {
-  const response = await fetch(
+  return boundedJsonRequest(
     `https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${encodeURIComponent(apiKey)}`,
     {
       method: 'POST',
@@ -55,7 +74,6 @@ async function identityPost(endpoint, apiKey, body) {
       body: JSON.stringify(body),
     },
   );
-  return readJson(response);
 }
 
 async function handleVerifyEmail(apiKey, oobCode, continueUrl) {
@@ -137,8 +155,7 @@ async function main() {
   }
 
   try {
-    const configResponse = await fetch('/tutop-web-config.json', { cache: 'no-store' });
-    const config = await readJson(configResponse);
+    const config = await boundedJsonRequest('/tutop-web-config.json', { cache: 'no-store' });
     if (config.projectId !== EXPECTED_PROJECT || !config.apiKey) throw new Error('TUTOP_AUTH_ACTION_CONFIG_MISMATCH');
 
     if (mode === 'verifyEmail') await handleVerifyEmail(config.apiKey, oobCode, continueUrl);
