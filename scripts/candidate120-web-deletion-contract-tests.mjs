@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import { trustedWebDeletionStatus } from '../public/deletion-completion-proof.js';
 import { deletionJsonRequest, DELETION_REQUEST_TIMEOUT_MS } from '../public/deletion-request-timeout.js';
 
@@ -46,6 +47,37 @@ const loginHandler = client.slice(client.indexOf("loginForm.addEventListener('su
 assert.match(loginHandler, /try \{\s*await refreshRequestStatus\(\);\s*\} catch \{/);
 assert.match(loginHandler, /La sesión se inició, pero no pudimos consultar el estado de eliminación/);
 assert.match(loginHandler, /\} catch \{\s*clearSession\(\);/);
+
+// A pending request must never be re-enabled by changing confirmation.
+const busyHandler = client.slice(client.indexOf('function setBusy('), client.indexOf('function clearSession('));
+assert.match(busyHandler, /state\.busy = Boolean\(busy\)/);
+assert.match(client, /confirmInput\.addEventListener\('change', \(\) => setBusy\(state\.busy\)\)/);
+assert.match(client, /if \(state\.busy \|\| !state\.session \|\| !confirmInput\.checked\) return/);
+assert.match(loginHandler, /if \(state\.busy\) return/);
+const busyContext = {
+  state: { busy: false, session: { uid: 'synthetic-uid' } },
+  loginButton: { disabled: false },
+  logoutButton: { disabled: false },
+  requestButton: { disabled: false },
+  confirmInput: { checked: true, disabled: false },
+};
+vm.runInNewContext(busyHandler + '\nsetBusy(true);', busyContext);
+assert.equal(busyContext.state.busy, true);
+for (const button of ['loginButton', 'logoutButton', 'requestButton', 'confirmInput']) {
+  assert.equal(busyContext[button].disabled, true, `${button} must stay disabled while pending`);
+}
+busyContext.confirmInput.checked = false;
+vm.runInNewContext('setBusy(state.busy);', busyContext);
+assert.equal(busyContext.requestButton.disabled, true, 'checkbox changes cannot unlock pending writes');
+assert.equal(busyContext.logoutButton.disabled, true, 'checkbox changes cannot unlock logout');
+vm.runInNewContext('setBusy(false);', busyContext);
+assert.equal(busyContext.state.busy, false);
+assert.equal(busyContext.logoutButton.disabled, false);
+assert.equal(busyContext.requestButton.disabled, true, 'unchecked confirmation cannot submit after release');
+busyContext.confirmInput.checked = true;
+vm.runInNewContext('setBusy(state.busy);', busyContext);
+assert.equal(busyContext.requestButton.disabled, false, 'confirmed idle request is available');
+
 
 
 const successfulRequest = await deletionJsonRequest('/test', {}, {
