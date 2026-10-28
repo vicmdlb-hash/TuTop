@@ -58,6 +58,9 @@ const labeledCredentials = [
   ['Mi password=AbcX9300!; busco una laptop', 'AbcX9300!'],
   ['Mi PIN: 8877, necesito comprar algo', '8877'],
   ['Clave de acceso: correct horse battery staple; no publicar', 'horse battery staple'],
+  ['Mi contraseña es ClaveSegura9347, vendo bicicleta', 'ClaveSegura9347'],
+  ['Mi PIN de acceso es 8877, necesito comprar algo', '8877'],
+  ['Mi clave secreta es correct horse battery staple; no publicar', 'horse battery staple'],
 ];
 for (const [input, secret] of labeledCredentials) {
   const output = redactTopiRemoteText(input);
@@ -85,6 +88,7 @@ const helpBoundaryCases = [
   ['X'.repeat(892) + ' OTP: 481593', 'otp', '481593'],
   ['X'.repeat(892) + ' sk-proj-abcdefghijklmnop12345', 'token', 'sk-proj'],
   ['X'.repeat(892) + ' calle Reforma 123', 'address', 'Reforma'],
+  ['X'.repeat(892) + ' mi contraseña es ClaveSegura9347', 'credential', 'ClaveSegura'],
 ];
 for (const [input, redaction, fragment] of helpBoundaryCases) {
   const sanitized = redactTopiRemoteText(input, 900);
