@@ -45,7 +45,7 @@ const fetchImpl=async (url,init={})=>{
   if(url==='/tutop-web-config.json') return new Response(JSON.stringify({
     projectId:'tutop-beta-vicmdlb-1356585881',apiKey:'synthetic-api-key',
   }),{status:200});
-  assert.match(String(url),/identitytoolkit\\.googleapis\\.com/);
+  assert(String(url).includes('identitytoolkit.googleapis.com'));
   const payload=JSON.parse(init.body||'{}');
   posted.push(payload);
   if (!payload.newPassword) return new Response(JSON.stringify({
