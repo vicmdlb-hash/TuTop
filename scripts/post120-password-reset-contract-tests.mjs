@@ -92,3 +92,29 @@ assert.equal(nodes.get('return-link').hidden,false);
 await submitHandler({preventDefault(){}});
 assert.equal(posted.filter(row=>row.newPassword).length,2,'completed reset cannot submit again');
 console.log('PASS public reset retries mismatched/failed attempts, and successful reset is terminal');
+
+// Execute the actual bounded Firebase helper at a short synthetic timeout.
+// An ambiguous OOB write must abort once and must not auto-replay the POST.
+const helperSource=actionSource.slice(actionSource.indexOf('async function readJson('),
+  actionSource.indexOf('function safeReturnTarget('));
+assert.match(helperSource,/AbortController/);
+assert.match(helperSource,/return await readJson\(response\)/);
+let timedOutPosts=0;
+const timeoutContext={
+  AbortController,setTimeout,clearTimeout,Response,console,
+  fetch:(_url,{signal})=>{
+    timedOutPosts++;
+    return new Promise((_resolve,reject)=>{
+      signal.addEventListener('abort',()=>reject(Object.assign(new Error('aborted'),{name:'AbortError'})),{once:true});
+    });
+  },
+};
+vm.runInNewContext(helperSource+
+  "\nglobalThis.syntheticTimeoutResult = boundedJsonRequest('/synthetic-auth', {method:'POST'}, 12);",
+  timeoutContext,{timeout:2000});
+await assert.rejects(timeoutContext.syntheticTimeoutResult,{message:'FIREBASE_REQUEST_TIMEOUT'});
+assert.equal(timedOutPosts,1,'bounded out-of-band writes cannot be replayed automatically');
+assert.match(actionSource,/boundedJsonRequest\('\/tutop-web-config\.json'/);
+assert.match(actionSource,/return boundedJsonRequest\(/);
+console.log('PASS public Firebase recovery/config requests are bounded with no automatic OOB retry');
+
