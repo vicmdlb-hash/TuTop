@@ -32,8 +32,8 @@ export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText
   replace(/(?<!\d)(?:\d[\s().-]?){9}\d(?!\d)/g, 'phone', '[teléfono omitido]');
   replace(/\b(?:tel(?:e|é)fono|celular|m[oó]vil|whatsapp|contacto)\s*[:=-]?\s*\d{10,14}\b/gi, 'phone', '[teléfono omitido]');
 
-  replace(/\b(?:otp|c[oó]digo(?:\s+de)?\s+verificaci[oó]n|verification\s+code)\s*[:=-]?\s*[A-Z0-9._-]{4,32}\b/gi, 'otp', '[código omitido]');
-  replace(/\b(?:bearer|token|access[_ -]?token|id[_ -]?token|refresh[_ -]?token)\s*[:=-]?\s*[A-Z0-9._~+\/-]{8,}\b/gi, 'token', '[token omitido]');
+  replace(/\b(?:otp|c[oó]digo(?:\s+de)?\s+verificaci[oó]n|verification\s+code)\s*(?:(?:[:=-]|\bes\b)\s*)?[A-Z0-9._-]{4,32}\b/gi, 'otp', '[código omitido]');
+  replace(/\b(?:bearer|token|access[_ -]?token|id[_ -]?token|refresh[_ -]?token)\s*(?:(?:[:=-]|\bes\b)\s*)?[A-Z0-9._~+\/-]{8,}\b/gi, 'token', '[token omitido]');
   // Unlabelled API keys are also sensitive; a user may paste a config file
   // into Topi without writing "token:". These patterns are intentionally
   // narrow to avoid masking ordinary product descriptions.
