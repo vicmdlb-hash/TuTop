@@ -348,3 +348,92 @@ hydrationCleanup();
 assert.equal(hydrationSubscriptions.size, 0, 'cleanup must remove the owner subscription');
 
 console.log('PASS real Nearby cache/events isolate A/B and stale A async callbacks; no device or Firebase usage');
+
+
+// Execute the actual base V2 hydrator (not just a source regex) with simulated
+// account changes and network responses. There are no real users or requests.
+{
+  const baseJs = compileTypescriptFixture('src/components/V2ListingsHydrator.tsx');
+  const harness = () => {
+    const subscriptions = new Set();
+    const pending = [];
+    const emitted = [];
+    const state = { user: { id: 'qa-account-A', campus_id: 'qa-campus' }, products: [] };
+    const store = (select) => select(state);
+    store.getState = () => state;
+    store.setState = (changes) => {
+      Object.assign(state, changes);
+      for (const listener of subscriptions) listener(state);
+    };
+    store.subscribe = (listener) => {
+      subscriptions.add(listener);
+      return () => subscriptions.delete(listener);
+    };
+    const events = new Map();
+    const addListener = (type, callback) => events.set(type, callback);
+    const removeListener = (type) => events.delete(type);
+    const windowMock = {
+      addEventListener: addListener,
+      removeEventListener: removeListener,
+      dispatchEvent: (event) => { emitted.push(event.type); },
+    };
+    const documentMock = {
+      visibilityState: 'visible',
+      addEventListener: addListener,
+      removeEventListener: removeListener,
+    };
+    let cleanup = () => {};
+    const moduleMock = { exports: {} };
+    vm.runInNewContext(baseJs, {
+      module: moduleMock, exports: moduleMock.exports,
+      require: (name) => {
+        if (name === 'react') return { useEffect: (fn) => { cleanup = fn(); } };
+        if (name === '../services/canonicalListingsBackend') return {
+          canonicalListingsBackend: { loadMarketplaceProducts: () => new Promise(resolve => pending.push(resolve)) },
+        };
+        if (name === '../services/nationalBackend') return { nationalSchemaEnabled: () => true };
+        if (name === '../store/useAppStore') return { useAppStore: store };
+        throw new Error('Unexpected fixture dependency: ' + name);
+      },
+      window: windowMock, document: documentMock,
+      navigator: { onLine: true }, Event: class { constructor(type) { this.type = type; } },
+      Date, Promise, console,
+    }, { timeout: 2500 });
+    moduleMock.exports.default();
+    return { state, store, pending, emitted, close: () => cleanup(), subscriptions };
+  };
+  const settle = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
+  };
+  // A reply after A->B must not replace B's products even before React cleanup.
+  const changed = harness();
+  assert.equal(changed.pending.length, 1);
+  changed.store.setState({ user: { id: 'qa-account-B' }, products: [{ id: 'B-current' }] });
+  changed.pending[0]([{ id: 'A-stale' }]);
+  await settle();
+  assert.equal(changed.state.products.map(p => p.id).join(','), 'B-current');
+  assert.equal(changed.emitted.length, 0);
+  changed.close();
+  assert.equal(changed.subscriptions.size, 0);
+
+  // Returning to UID A does not reactivate its old in-flight response.
+  const rotated = harness();
+  rotated.store.setState({ user: { id: 'qa-account-B' } });
+  rotated.store.setState({ user: { id: 'qa-account-A' }, products: [{ id: 'A-fresh' }] });
+  rotated.pending[0]([{ id: 'A-obsolete-epoch' }]);
+  await settle();
+  assert.equal(rotated.state.products.map(p => p.id).join(','), 'A-fresh');
+  assert.equal(rotated.emitted.length, 0);
+  rotated.close();
+
+  // The same owner/epoch must still receive fresh products and hydration event.
+  const current = harness();
+  current.pending[0]([{ id: 'A-approved' }]);
+  await settle();
+  assert.equal(current.state.products.map(p => p.id).join(','), 'A-approved');
+  assert.deepEqual(current.emitted, ['tutop:v2-listings-base-hydrated']);
+  current.close();
+  console.log('PASS V2 base hydrate rejects late A->B and A->B->A responses, retains current-owner success');
+}
