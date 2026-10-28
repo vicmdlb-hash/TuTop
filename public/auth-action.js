@@ -86,8 +86,13 @@ async function handleResetPassword(apiKey, oobCode, continueUrl) {
   setStatus(`Enlace válido para ${checked.email}. Escribe una nueva Clave TuTop.`);
   resetForm.hidden = false;
 
+  // Keep the listener across validation/remote failures. Do not consume a
+  // valid one-time recovery link merely because two typed passwords differ.
+  let resetBusy = false;
+  let resetCompleted = false;
   resetForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (resetBusy || resetCompleted) return;
     const password = String(newPassword.value || '');
     const confirmation = String(confirmPassword.value || '');
     if (password.length < 8) {
@@ -99,10 +104,12 @@ async function handleResetPassword(apiKey, oobCode, continueUrl) {
       return;
     }
 
+    resetBusy = true;
     resetButton.disabled = true;
     try {
       const changed = await identityPost('accounts:resetPassword', apiKey, { oobCode, newPassword: password });
       if (changed?.requestType && changed.requestType !== 'PASSWORD_RESET') throw new Error('PASSWORD_RESET_TYPE_MISMATCH');
+      resetCompleted = true;
       newPassword.value = '';
       confirmPassword.value = '';
       resetForm.hidden = true;
@@ -111,9 +118,10 @@ async function handleResetPassword(apiKey, oobCode, continueUrl) {
     } catch (error) {
       setStatus(friendlyAuthError(error instanceof Error ? error.message : String(error), 'resetPassword'), 'error');
     } finally {
-      resetButton.disabled = false;
+      resetBusy = false;
+      resetButton.disabled = resetCompleted;
     }
-  }, { once: true });
+  });
 }
 
 async function main() {
