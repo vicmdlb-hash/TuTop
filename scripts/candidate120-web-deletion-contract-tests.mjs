@@ -78,6 +78,30 @@ busyContext.confirmInput.checked = true;
 vm.runInNewContext('setBusy(state.busy);', busyContext);
 assert.equal(busyContext.requestButton.disabled, false, 'confirmed idle request is available');
 
+// Shared-device logout removes both token/session and the prior email value.
+const clearSessionHandler = client.slice(client.indexOf('function clearSession('), client.indexOf('async function loadConfig('));
+const sharedDeviceContext = {
+  state: { busy: false, session: { uid: 'account-A', idToken: 'synthetic-token' } },
+  emailInput: { value: 'synthetic@example.test' },
+  passwordInput: { value: 'synthetic-password' },
+  accountEmail: { textContent: 'synthetic@example.test' },
+  accountPanel: { hidden: false },
+  loginForm: { hidden: true },
+  confirmInput: { checked: true, disabled: false },
+  loginButton: { disabled: false },
+  logoutButton: { disabled: false },
+  requestButton: { disabled: false },
+};
+vm.runInNewContext(busyHandler + '\n' + clearSessionHandler + '\nclearSession();', sharedDeviceContext);
+assert.equal(sharedDeviceContext.state.session, null, 'logout removes current session');
+assert.equal(sharedDeviceContext.emailInput.value, '', 'logout removes last account email from shared form');
+assert.equal(sharedDeviceContext.passwordInput.value, '', 'logout clears password');
+assert.equal(sharedDeviceContext.accountEmail.textContent, '', 'logout clears account panel email');
+assert.equal(sharedDeviceContext.accountPanel.hidden, true);
+assert.equal(sharedDeviceContext.loginForm.hidden, false);
+assert.equal(sharedDeviceContext.requestButton.disabled, true, 'logout never leaves deletion enabled');
+
+
 
 
 const successfulRequest = await deletionJsonRequest('/test', {}, {
