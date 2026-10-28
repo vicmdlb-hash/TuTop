@@ -19,6 +19,7 @@ const commonSteps = [
   [process.execPath, ['scripts/actions-budget-policy-tests.mjs']],
   [process.execPath, ['scripts/post116-ci-candidate-trigger-hygiene-tests.mjs']],
   [process.execPath, ['scripts/candidate120-web-deletion-contract-tests.mjs']],
+  [process.execPath, ['scripts/post120-password-reset-contract-tests.mjs']],
   [process.execPath, ['scripts/local-topi-favorites-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/post116-pr85-topi-structured-tests.mjs']],
   [process.execPath, ['scripts/firestore-cost-geography-tests.mjs']],
