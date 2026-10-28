@@ -49,7 +49,12 @@ export function getCachedApproxLocation(ownerUid: string, maxAgeMs = 6 * 60 * 60
     const parsed = JSON.parse(raw) as Partial<PersistedApproxLocation>;
     // Legacy/unscoped cache entries are intentionally rejected instead of being
     // attached to whichever account logs in next on the same device.
-    if (!parsed.owner_uid || parsed.owner_uid !== ownerUid) return null;
+    if (!parsed.owner_uid) {
+      // A legacy cache with no owner can contain another user's location.
+      localStorage.removeItem(LOCATION_KEY);
+      return null;
+    }
+    if (parsed.owner_uid !== ownerUid) return null;
     // Never restore precise or nonnumeric legacy coordinates from device storage.
     // A matching UID alone does not establish the cache's privacy granularity.
     if (typeof parsed.latitude !== 'number' || typeof parsed.longitude !== 'number'
@@ -60,14 +65,20 @@ export function getCachedApproxLocation(ownerUid: string, maxAgeMs = 6 * 60 * 60
       return null;
     }
     const age = Date.now() - Date.parse(String(parsed.captured_at || ''));
-    if (!Number.isFinite(age) || age < 0 || age > maxAgeMs) return null;
+    if (!Number.isFinite(age) || age < 0 || age > maxAgeMs) {
+      localStorage.removeItem(LOCATION_KEY);
+      return null;
+    }
     return {
       latitude: Number(parsed.latitude),
       longitude: Number(parsed.longitude),
       captured_at: String(parsed.captured_at),
       source: 'cache',
     };
-  } catch { return null; }
+  } catch {
+    try { localStorage.removeItem(LOCATION_KEY); } catch { /* optional cache */ }
+    return null;
+  }
 }
 
 export function saveApproxLocation(location: ApproxLocation, ownerUid: string) {
