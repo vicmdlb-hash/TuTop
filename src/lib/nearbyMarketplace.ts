@@ -55,6 +55,13 @@ export function getCachedApproxLocation(ownerUid: string, maxAgeMs = 6 * 60 * 60
       return null;
     }
     if (parsed.owner_uid !== ownerUid) return null;
+    // A matching UID does not authorize extra location, contact, or credential
+    // fields left in the old global cache. Purge rather than silently retain.
+    const allowedKeys = ['latitude', 'longitude', 'captured_at', 'source', 'owner_uid'];
+    if (Object.keys(parsed).some((key) => !allowedKeys.includes(key))) {
+      localStorage.removeItem(LOCATION_KEY);
+      return null;
+    }
     // Never restore precise or nonnumeric legacy coordinates from device storage.
     // A matching UID alone does not establish the cache's privacy granularity.
     if (typeof parsed.latitude !== 'number' || typeof parsed.longitude !== 'number'
@@ -85,10 +92,14 @@ export function saveApproxLocation(location: ApproxLocation, ownerUid: string) {
   if (!ownerUid || !validCoordinate(location.latitude, location.longitude)) return;
   // Defend the storage/event boundary even when a caller did not pass through
   // toApproxLocation: never persist or broadcast raw device GPS precision.
+  const capturedAt = Date.parse(location.captured_at);
+  if (!Number.isFinite(capturedAt) || capturedAt > Date.now()
+    || Date.now() - capturedAt > 6 * 60 * 60_000) return;
   const persisted: PersistedApproxLocation = {
-    ...location,
     latitude: coarseCoordinate(location.latitude),
     longitude: coarseCoordinate(location.longitude),
+    captured_at: location.captured_at,
+    source: ['device', 'cache', 'campus'].includes(location.source) ? location.source : 'device',
     owner_uid: ownerUid,
   };
   try { localStorage.setItem(LOCATION_KEY, JSON.stringify(persisted)); } catch { /* optional cache */ }
