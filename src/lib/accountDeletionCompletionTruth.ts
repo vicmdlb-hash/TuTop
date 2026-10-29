@@ -28,6 +28,10 @@ export function hasTrustedAccountDeletionCompletion(
   if (!isoTime.test(completedAt) || !isoTime.test(requestedAt)) return false;
   const completionMs = Date.parse(completedAt), requestMs = Date.parse(requestedAt);
   if (!Number.isFinite(completionMs) || !Number.isFinite(requestMs)) return false;
+  // Date.parse silently rolls 2026-02-31 into March. A normalized calendar
+  // cannot be trusted as the processor's original completion timestamp.
+  if (new Date(completionMs).toISOString().slice(0, 19) !== completedAt.slice(0, 19)
+    || new Date(requestMs).toISOString().slice(0, 19) !== requestedAt.slice(0, 19)) return false;
   if (completionMs < requestMs || completionMs > Date.now() + 5 * 60_000) return false;
   if (typeof request.processor_run_id !== 'string' || !request.processor_run_id.trim()) return false;
   if (typeof request.erasure_policy_version !== 'string' || !request.erasure_policy_version.trim()) return false;
