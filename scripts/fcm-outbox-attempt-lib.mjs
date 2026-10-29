@@ -1,4 +1,4 @@
-import { fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
+import { eligibleRecipientTargets, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 
 // Firestore cannot atomically commit an external HTTP FCM send. Claim first;
 // uncertain outcomes stay dispatching until reviewed, never auto-replayed.
@@ -47,4 +47,37 @@ export function canSendAfterStaleOwnerCleanup(required, verified) {
       || !Number.isSafeInteger(verified) || verified < 0
       || verified > required) throw new Error('FCM_STALE_OWNER_CLEANUP_COUNT_INVALID');
   return required === verified;
+}
+
+/**
+ * Secondary, post-cleanup, pre-send gate. The caller must obtain freshRecords
+ * from a new COMPLETE Firestore query after deactivating superseded owners.
+ * Fail closed on changed recipient, record version, ambiguous ownership,
+ * cross-account token reuse or incomplete/duplicated results.
+ * This minimizes, but CANNOT eliminate, the external HTTP/Firestore race:
+ * real FCM delivery still requires controlled two-device testing.
+ */
+export function isFreshFcmTargetStillEligible(selected, freshRecords, recipientUid) {
+  if (!selected || !Array.isArray(freshRecords)
+      || typeof recipientUid !== 'string' || !recipientUid.trim()
+      || selected.owner_uid !== recipientUid || selected.active !== true
+      || typeof selected.id !== 'string' || !selected.id.trim()
+      || typeof selected.token !== 'string' || !selected.token.trim()) return false;
+  try { fcmTokenCleanupPrecondition(selected); } catch { return false; }
+
+  const ids = new Set();
+  for (const record of freshRecords) {
+    if (!record || typeof record.id !== 'string' || !record.id.trim()
+        || ids.has(record.id)) return false;
+    ids.add(record.id);
+    // Any competing ACTIVE account for this token means delivery is unsafe,
+    // even if older timestamps would otherwise select the requested UID.
+    if (record.token === selected.token
+        && record.active === true && record.owner_uid !== recipientUid) return false;
+  }
+  const current = eligibleRecipientTargets(freshRecords, recipientUid)
+    .filter((record) => record.token === selected.token);
+  return current.length === 1 && current[0].id === selected.id
+    && current[0]._document_update_time === selected._document_update_time
+    && current[0].active === true && current[0].owner_uid === recipientUid;
 }
