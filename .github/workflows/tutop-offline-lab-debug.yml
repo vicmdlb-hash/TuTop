@@ -23,7 +23,8 @@ jobs:
       VITE_TUTOP_SCHEMA_V2: 'false'
       VITE_TUTOP_ENVIRONMENT: offline-lab
       VITE_TUTOP_TOPI_REMOTE_ENABLED: 'false'
-      TUTOP_BETA_VERSION: 0.9.2-lab-source-only
+      TUTOP_BETA_VERSION: 0.9.2-beta.0
+      TUTOP_OFFLINE_LAB_ONLY: 'true'
     steps:
       - name: Checkout exact branch without retained credentials
         uses: actions/checkout@v7
@@ -35,9 +36,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 'aa83a878efc3220dfeeead3e5adb6c62a55bd8e5'
+          test "$(git rev-parse HEAD^)" = 'e3a9789163b852be3b08a2aea6e683dbd08c0885'
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/tutop-offline-lab-debug.yml'
           test "$VITE_TUTOP_SCHEMA_V2" = false
+          test "$TUTOP_OFFLINE_LAB_ONLY" = true
           test "$VITE_TUTOP_ENVIRONMENT" = offline-lab
 
       - name: Setup Node 22
@@ -99,6 +101,12 @@ jobs:
       - name: Generate isolated LAB Android project
         run: npm run android:bootstrap
 
+      - name: Pin lab beta version without backend services
+        run: |
+          node scripts/configure-android-beta-version.mjs
+          grep -q 'versionCode 90200' android/app/build.gradle
+          grep -q 'versionName "0.9.2-beta.0"' android/app/build.gradle
+
       - name: Block Firebase staging config and production package ID
         shell: bash
         run: |
@@ -125,6 +133,7 @@ jobs:
           "$aapt" dump badging "$apk" | tee /tmp/tutop-lab-badging.txt
           grep -q "package: name='mx.tutop.app.lab'" /tmp/tutop-lab-badging.txt
           "$apksigner" verify --verbose "$apk"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$apk" | tail -n 3
           test ! -f android/app/google-services.json
           mkdir -p offline-lab-output
           cp "$apk" offline-lab-output/TuTop_OFFLINE_LAB_DEBUG.apk
@@ -132,7 +141,7 @@ jobs:
           {
             echo "repository=vicmdlb-hash/TuTop"
             echo "purpose=offline_emulator_shell_only_not_production_or_physical_R6"
-            echo "source_application_commit=a18e7828c588a91d7f90a311b4e1e4aa465da5a2"
+            echo "source_application_commit=e3a9789163b852be3b08a2aea6e683dbd08c0885"
             echo "workflow_commit=${GITHUB_SHA}"
             echo "package_id=mx.tutop.app.lab"
             echo "firebase_config=none"
