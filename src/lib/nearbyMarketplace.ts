@@ -185,7 +185,7 @@ export function geoCellForLocation(location: Pick<ApproxLocation, 'latitude' | '
  */
 export function validNearbyGeoCell(value: unknown): value is string {
   if (typeof value !== 'string') return false;
-  const match = /^g1:(0|[1-9]\\d*):(0|[1-9]\\d*)$/.exec(value);
+  const match = /^g1:(0|[1-9]\d*):(0|[1-9]\d*)$/.exec(value);
   if (!match) return false;
   const latitudeRow = Number(match[1]);
   const longitudeColumn = Number(match[2]);
