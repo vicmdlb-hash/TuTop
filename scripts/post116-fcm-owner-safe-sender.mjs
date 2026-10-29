@@ -3,7 +3,7 @@ import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
 import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
-import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion } from './fcm-outbox-attempt-lib.mjs';
+import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup } from './fcm-outbox-attempt-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -168,7 +168,7 @@ async function deactivateTokenRecord(target, reason, { preserveOwnershipTime = f
     invalidation_reason: String(reason || 'fcm-permanent-error').slice(0, 80),
     ...(preserveOwnershipTime ? {} : { updated_at: at }),
   });
-  await request(`${base}:commit`, {
+  const committed = await request(`${base}:commit`, {
     method: 'POST',
     body: JSON.stringify({
       writes: [{
@@ -178,6 +178,9 @@ async function deactivateTokenRecord(target, reason, { preserveOwnershipTime = f
       }],
     }),
   });
+  if (!Array.isArray(committed?.writeResults) || committed.writeResults.length !== 1)
+    throw new Error('FCM_STALE_OWNER_CLEANUP_COMMIT_UNVERIFIED');
+  fcmTokenCleanupPrecondition({ _document_update_time: committed.writeResults[0]?.updateTime });
   return true;
 }
 
@@ -219,9 +222,19 @@ for (const item of scopedPending) {
   let deliveredForItem = 0;
   for (const target of targets) {
     const staleForTarget = supersededActiveTokens.filter((record) => record.token === target.token);
+    let verifiedCleanups = 0;
     for (const stale of staleForTarget) {
       const cleaned = await deactivateTokenRecord(stale, 'superseded-token-owner', { preserveOwnershipTime: true }).catch(() => false);
-      if (cleaned) supersededOwnershipDeactivated += 1;
+      if (cleaned) {
+        verifiedCleanups += 1;
+        supersededOwnershipDeactivated += 1;
+      }
+    }
+    // The outbox was already claimed by CAS. Do not send or automatically
+    // replay after an ambiguous cleanup of any superseded token mapping.
+    if (!canSendAfterStaleOwnerCleanup(staleForTarget.length, verifiedCleanups)) {
+      console.warn('FCM_PHYSICAL_STALE_OWNER_CLEANUP_UNVERIFIED; send quarantined');
+      continue;
     }
 
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`, {
