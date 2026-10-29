@@ -15,6 +15,10 @@ const FORBIDDEN_KEYS = new Set([
   'raw_notification_id', 'phone', 'phoneNumber', 'email', 'otp',
 ].map(normalizeEvidenceKey));
 const SAFE_CORRELATION = /^[a-z0-9_-]{6,80}$/i;
+// A logical navigation target is a category, not a raw URL, user ID,
+// chat ID, contact detail or notification payload. Reject arbitrary values
+// before physical evidence is stored or shared.
+const SAFE_LOGICAL_TARGETS = new Set(['chat', 'listing', 'transaction', 'saved_search', 'inbox']);
 const MAX_SESSION_MS = 6 * 60 * 60_000;
 const MAX_EVIDENCE_AGE_MS = 24 * 60 * 60_000;
 const CLOCK_SKEW_MS = 5 * 60_000;
@@ -53,7 +57,9 @@ export function validateFcmPhysicalFixture(fixture, candidate, now = Date.now())
     if (fixture?.candidate?.[field] !== candidate?.[field]) errors.push(`candidate.${field} no coincide con APK vigente`);
   }
   if (!['A','B'].includes(fixture?.device_slot)) errors.push('device_slot debe ser A o B');
-  if (placeholder(fixture?.evidence_session_id)) errors.push('evidence_session_id real requerido');
+  if (placeholder(fixture?.evidence_session_id)
+      || !SAFE_CORRELATION.test(String(fixture?.evidence_session_id || '')))
+    errors.push('evidence_session_id opaco y seguro requerido');
   const sessionDurationMs = validateWindow(fixture, now, errors);
   scan(fixture, errors);
   const scenarios = Array.isArray(fixture?.scenarios) ? fixture.scenarios : [];
@@ -70,6 +76,8 @@ export function validateFcmPhysicalFixture(fixture, candidate, now = Date.now())
     let previous = -Infinity;
     for (const event of events) {
       if (!ALLOWED_EVENT_KINDS.has(event?.kind)) errors.push(`${name}: kind desconocido ${String(event?.kind)}`);
+      if (event && Object.hasOwn(event, 'target') && !SAFE_LOGICAL_TARGETS.has(event.target))
+        errors.push(`${name}: destino lógico no permitido`);
       if (!Number.isFinite(event?.at_ms)) errors.push(`${name}: at_ms inválido`);
       else {
         if (event.at_ms < 0) errors.push(`${name}: at_ms no puede ser negativo`);

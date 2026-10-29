@@ -115,6 +115,36 @@ const safeMetadata = structuredClone(valid);
 safeMetadata.scenarios[0].events[0].metadata = { device_slot: 'A', event_count: 2 };
 assert.equal(validateFcmPhysicalFixture(safeMetadata, candidate, now).pass, true);
 
+// Evidence must contain only logical destination categories and opaque
+// session IDs. No raw contact data, URLs or resource IDs are permitted.
+for (const target of [
+  'user@example.com', '+525512345678', 'https://example.com/chat',
+  'chat/private-id', 'chat:private-id', 'chat some-person', 'private-id',
+]) {
+  const invalidSensitiveTarget = structuredClone(valid);
+  invalidSensitiveTarget.scenarios[3].events
+    .filter((event) => Object.hasOwn(event, 'target'))
+    .forEach((event) => { event.target = target; });
+  const result = validateFcmPhysicalFixture(invalidSensitiveTarget, candidate, now);
+  assert.equal(result.pass, false, 'nonlogical target must be rejected');
+  assert(result.errors.some((e) => e.includes('destino lógico no permitido')));
+}
+for (const target of ['transaction', 'saved_search', 'inbox']) {
+  const safeLogicalTarget = structuredClone(valid);
+  safeLogicalTarget.scenarios[3].events
+    .filter((event) => Object.hasOwn(event, 'target'))
+    .forEach((event) => { event.target = target; });
+  assert.equal(validateFcmPhysicalFixture(safeLogicalTarget, candidate, now).pass, true, target);
+}
+for (const sessionId of ['user@example.com', 'https://example.com/id', 'A', 'a space', 'PENDIENTE']) {
+  const unsafeSession = structuredClone(valid);
+  unsafeSession.evidence_session_id = sessionId;
+  assert.equal(validateFcmPhysicalFixture(unsafeSession, candidate, now).pass, false, sessionId);
+}
+const safeOpaqueSession = structuredClone(valid);
+safeOpaqueSession.evidence_session_id = 'qa-device-b-opaque-82931';
+assert.equal(validateFcmPhysicalFixture(safeOpaqueSession, candidate, now).pass, true);
+
 console.log('PASS multiple distinct simultaneous pushes can validate without false duplicate detection');
 console.log('PASS duplicate/replayed correlations, duplicate taps, reboot replay and target mismatch fail closed');
 console.log('PASS event/window timing, prior app-state consistency, sensitive token names, unknown kinds, invalid payload and stale APK fail closed');
