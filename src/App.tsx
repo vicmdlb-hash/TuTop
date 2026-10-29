@@ -90,7 +90,7 @@ function MobileApp() {
 
   const content: Record<AppTab, ReactNode> = {
     feed: <Feed />,
-    bot: v2 ? <NationalPublishScreen key={user.id} /> : <Chatbot />,
+    bot: v2 ? <NationalPublishScreen key={user.id} /> : <Chatbot key={user.id} />,
     wallet: <WalletView />,
     inbox: <Inbox />,
     profile: <>
