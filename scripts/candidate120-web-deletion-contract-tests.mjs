@@ -199,6 +199,22 @@ const fields = {
   retained_count: { integerValue: '0' },
 };
 assert.equal(trustedWebDeletionStatus({ fields }, now), 'completed');
+const malformedCalendarComplete = {
+  ...fields,
+  requested_at: { timestampValue: '2026-02-01T00:00:00Z' },
+  completed_at: { timestampValue: '2026-02-31T01:00:00Z' },
+};
+assert.equal(trustedWebDeletionStatus({ fields: malformedCalendarComplete }, now),
+  'completion-unverified', 'calendar-normalized impossible completion must be denied');
+assert.equal(trustedWebDeletionStatus({ fields: {
+  ...fields, requested_at: { timestampValue: '2026-02-31T00:00:00Z' },
+} }, now), 'completion-unverified', 'calendar-normalized impossible request must be denied');
+assert.equal(trustedWebDeletionStatus({ fields: {
+  ...fields,
+  requested_at: { timestampValue: '2024-02-29T00:00:00Z' },
+  completed_at: { timestampValue: '2024-02-29T01:00:00Z' },
+} }, now), 'completed', 'valid leap-day proof remains accepted');
+
 for (const absent of ['auth_deleted', 'processor_run_id', 'erasure_policy_version',
   'residual_manifest_version', 'completed_at', 'requested_at',
   'deleted_count', 'withdrawn_count', 'retained_count']) {
