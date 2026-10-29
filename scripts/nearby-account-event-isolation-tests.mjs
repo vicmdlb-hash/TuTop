@@ -33,6 +33,19 @@ vm.runInNewContext(js,{
   Date,Math,JSON,Number,String,Promise,Set,console,URLSearchParams,
 },{timeout:2500});
 const lib = module.exports;
+const validCell = lib.validNearbyGeoCell;
+for(const id of ['g1:0:0','g1:179:359','g1:90:0','g1:0:359']) {
+  assert.equal(validCell(id),true,'valid bounded geography must remain discoverable');
+}
+for(const id of ['g1:180:0','g1:0:360','g1:999:999','g1:-1:0','g1:01:0',
+  'g1:0:01','g2:90:180','g1:0:0/other','g1:999999999999999999:0',
+  '',null,0,{},'g1:0:359.5']) {
+  assert.equal(validCell(id),false,'invalid geo fanout must be rejected without reads');
+}
+const geoBackend = fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8');
+assert(geoBackend.includes('input.geoCells.filter(validNearbyGeoCell)'),
+  'Firestore nearby query layer must reuse exact canonical cell bounds');
+
 
 const viewer = {latitude:0,longitude:0,captured_at:new Date().toISOString(),source:'device'};
 for (const bad of [
