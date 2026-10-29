@@ -180,6 +180,19 @@ export function geoCellForLocation(location: Pick<ApproxLocation, 'latitude' | '
   return `g1:${latIndex}:${lonIndex}`;
 }
 
+/** Canonical g1 grid is 180 latitude rows by 360 longitude columns.
+ * Validate before a Firestore fanout: invalid cells must not cost reads.
+ */
+export function validNearbyGeoCell(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = /^g1:(0|[1-9]\\d*):(0|[1-9]\\d*)$/.exec(value);
+  if (!match) return false;
+  const latitudeRow = Number(match[1]);
+  const longitudeColumn = Number(match[2]);
+  return Number.isSafeInteger(latitudeRow) && latitudeRow < 180
+    && Number.isSafeInteger(longitudeColumn) && longitudeColumn < 360;
+}
+
 export function nearbyGeoCells(location: Pick<ApproxLocation, 'latitude' | 'longitude'>) {
   const center = geoCellForLocation(location);
   if (!center) return [];
