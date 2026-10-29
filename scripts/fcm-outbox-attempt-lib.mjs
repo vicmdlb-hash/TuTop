@@ -36,3 +36,15 @@ export function planFcmOutboxCompletion(claimed, now) {
     precondition: fcmTokenCleanupPrecondition(claimed),
   };
 }
+
+/**
+ * Require every superseded active token mapping to be verifiably deactivated
+ * before any external FCM send. On an uncertain cleanup, leave the previously
+ * claimed outbox record in dispatching for manual reconciliation; never retry.
+ */
+export function canSendAfterStaleOwnerCleanup(required, verified) {
+  if (!Number.isSafeInteger(required) || required < 0
+      || !Number.isSafeInteger(verified) || verified < 0
+      || verified > required) throw new Error('FCM_STALE_OWNER_CLEANUP_COUNT_INVALID');
+  return required === verified;
+}
