@@ -33,6 +33,30 @@ vm.runInNewContext(js,{
   Date,Math,JSON,Number,String,Promise,Set,console,URLSearchParams,
 },{timeout:2500});
 const lib = module.exports;
+const cell = (latitude, longitude) => lib.geoCellForLocation({ latitude, longitude });
+const neighborhood = (latitude, longitude) => lib.nearbyGeoCells({ latitude, longitude });
+assert.equal(cell(90,180), 'g1:179:0', 'north pole and +180 belong to the final legal latitude band');
+assert.equal(cell(-90,-180), 'g1:0:0', 'south pole and -180 belong to first band');
+assert.equal(cell(0,180), cell(0,-180), 'antimeridian coordinates must canonicalize');
+assert.equal(cell(91,0),null,'impossible latitude must not generate a cell');
+assert.equal(cell(0,-181),null,'impossible longitude must not generate a cell');
+const eastern = neighborhood(0,179.75);
+const western = neighborhood(0,-179.75);
+assert.equal(eastern.length,9);
+assert.equal(western.length,9);
+assert(eastern.includes('g1:90:0'), 'east-of-180 search must include west-of-180 cell');
+assert(western.includes('g1:90:359'), 'west-of-180 search must include east-of-180 cell');
+assert.equal(neighborhood(90,180).length,6, 'pole search must not query nonexistent latitude rows');
+for (const coords of [[90,180],[-90,-180],[0,179.75],[0,-179.75],[19.3,-98.2]]) {
+  const all=neighborhood(coords[0],coords[1]);
+  assert(all.length <= 9);
+  assert.equal(new Set(all).size,all.length);
+  for(const id of all){
+    const [,lat,lon]=id.split(':').map(Number);
+    assert(lat>=0&&lat<180&&lon>=0&&lon<360, 'every queried cell must be within legal grid bounds');
+  }
+}
+
 const A='synthetic-user-A', B='synthetic-user-B';
 const key='tutop.approx-location.v1';
 const loc=lib.toApproxLocation(19.314,-98.251);
