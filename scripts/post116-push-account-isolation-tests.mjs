@@ -131,9 +131,15 @@ for (const invalidTimestamp of [undefined, '', 123, 'not-a-date', '2026-02-31T01
 }
 assert(sender.includes('assertCompleteFcmInventory(rows, limit, collectionId)'), 'FCM sender must reject capped Firestore inventory');
 assert(sender.includes('currentDocument: fcmTokenCleanupPrecondition(target)'), 'FCM cleanup must require updateTime CAS');
-assert(sender.includes('currentDocument: fcmTokenCleanupPrecondition(item)'), 'FCM outbox sent marker must use updateTime CAS');
-const markSentCode = sender.slice(sender.indexOf('async function markSent(item)'), sender.indexOf('async function deactivateTokenRecord('));
-assert(markSentCode.includes('currentDocument: fcmTokenCleanupPrecondition(item)'), 'mark sent cannot overwrite newer outbox state');
+assert(sender.includes('const claimed = await claimPending(item);'), 'FCM must CAS-claim the pending outbox before external send');
+assert(sender.includes('currentDocument: planned.precondition'), 'FCM outbox claim/completion require updateTime CAS');
+const claimCode = sender.slice(sender.indexOf('async function claimPending(item)'), sender.indexOf('async function markSent(claimed)'));
+const markSentCode = sender.slice(sender.indexOf('async function markSent(claimed)'), sender.indexOf('async function deactivateTokenRecord('));
+assert(claimCode.includes('planFcmOutboxClaim(item, new Date().toISOString())'), 'claim must verify pending state');
+assert(claimCode.includes('attachCommittedFcmClaim(item, planned, committed)'), 'send must require Firestore claim commit receipt');
+assert(markSentCode.includes('planFcmOutboxCompletion(claimed, new Date().toISOString())'), 'mark sent must use claimed version');
+assert(markSentCode.includes('currentDocument: planned.precondition'), 'mark sent cannot overwrite newer outbox state');
+assert(sender.indexOf('const claimed = await claimPending(item);') < sender.indexOf('messages:send'), 'claim must precede FCM send');
 assert(!sender.includes('currentDocument: { exists: true }'), 'unsafe exists-only CAS must not return');
 assert(!sender.includes('detail.slice(0, 220)'), 'provider error body must be redacted');
 
