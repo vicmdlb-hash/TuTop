@@ -2,6 +2,7 @@ import { categorySafetyRequirements, classifyMarketplaceItem } from '../lib/mark
 import { listingV2HasNoLegacyDescriptionPacking, validCanonicalVideoUri, type CanonicalListingV2, type ListingDeliveryMethod } from '../lib/listingSchemaV2.ts';
 import { CAMPUSES, FACULTIES, INSTITUTIONS } from '../lib/universityNetwork.ts';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant.ts';
+import { validNearbyGeoCell } from '../lib/nearbyMarketplace.ts';
 import type { DeliveryMethod, MeetingPoint, Product, ProductCategory, ProductStatus } from '../types/index.ts';
 import { FirebaseRestClient, type FirestoreDocument, type QueryFilter } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
@@ -274,7 +275,7 @@ export const canonicalListingsBackend = {
   },
 
   async loadNearbyProducts(input: { geoCells: string[]; limitPerCell?: number; force?: boolean }) {
-    const cells = [...new Set(input.geoCells.filter((cell) => /^g1:\d+:\d+$/.test(cell)))].slice(0, 9).sort();
+    const cells = [...new Set(input.geoCells.filter(validNearbyGeoCell))].slice(0, 9).sort();
     if (!cells.length) return [] as Product[];
     const limit = Math.max(4, Math.min(15, input.limitPerCell || 10));
     const client = getClient();
