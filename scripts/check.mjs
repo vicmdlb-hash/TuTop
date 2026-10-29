@@ -85,6 +85,7 @@ const commonSteps = [
   [process.execPath, ['scripts/fcm-physical-fixture-tests.mjs']],
   [process.execPath, ['scripts/post120-fcm-physical-gate-contract-tests.mjs']],
   [process.execPath, ['scripts/post120-fcm-single-target-gate-tests.mjs']],
+  [process.execPath, ['scripts/fcm-outbox-attempt-tests.mjs']],
   [process.execPath, ['scripts/notification-projector-remote-error-redaction-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/post116-push-account-isolation-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/native-push-session-epoch-tests.mjs']],

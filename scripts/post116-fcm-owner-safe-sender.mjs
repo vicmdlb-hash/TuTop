@@ -3,6 +3,7 @@ import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
 import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
+import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion } from './fcm-outbox-attempt-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -127,24 +128,33 @@ async function blockedDirectOutbox(item) {
   return shouldSuppressBlockedDirectNotification(item, blockChatCache.get(chatId), hasUserBlockEdge);
 }
 
-async function markSent(item) {
-  const at = new Date().toISOString();
-  const name = `projects/${projectId}/databases/(default)/documents/notification_outbox/${item.id}`;
-  const fields = encodeFields({
-    status: 'sent',
-    attempts: Number(item.attempts || 0) + 1,
-    sent_at: at,
-    updated_at: at,
-  });
-  await request(`${base}:commit`, {
+async function claimPending(item) {
+  const planned = planFcmOutboxClaim(item, new Date().toISOString());
+  const name = 'projects/' + projectId + '/databases/(default)/documents/notification_outbox/' + item.id;
+  const fields = encodeFields(planned.fields);
+  const committed = await request(base + ':commit', {
     method: 'POST',
-    body: JSON.stringify({
-      writes: [{
-        update: { name, fields },
-        updateMask: { fieldPaths: Object.keys(fields) },
-        currentDocument: fcmTokenCleanupPrecondition(item),
-      }],
-    }),
+    body: JSON.stringify({ writes: [{
+      update: { name, fields },
+      updateMask: { fieldPaths: Object.keys(fields) },
+      currentDocument: planned.precondition,
+    }] }),
+  });
+  // A missing commit receipt must not be interpreted as permission to send.
+  return attachCommittedFcmClaim(item, planned, committed);
+}
+
+async function markSent(claimed) {
+  const planned = planFcmOutboxCompletion(claimed, new Date().toISOString());
+  const name = 'projects/' + projectId + '/databases/(default)/documents/notification_outbox/' + claimed.id;
+  const fields = encodeFields(planned.fields);
+  await request(base + ':commit', {
+    method: 'POST',
+    body: JSON.stringify({ writes: [{
+      update: { name, fields },
+      updateMask: { fieldPaths: Object.keys(fields) },
+      currentDocument: planned.precondition,
+    }] }),
   });
 }
 
@@ -203,6 +213,9 @@ for (const item of scopedPending) {
     continue;
   }
 
+  // Exact single-target physical send is gated above. A committed CAS claim
+  // prevents retries after an ambiguous external HTTP outcome.
+  const claimed = await claimPending(item);
   let deliveredForItem = 0;
   for (const target of targets) {
     const staleForTarget = supersededActiveTokens.filter((record) => record.token === target.token);
@@ -234,7 +247,7 @@ for (const item of scopedPending) {
     }
   }
 
-  if (deliveredForItem > 0) await markSent(item);
+  if (deliveredForItem > 0) await markSent(claimed);
 }
 
 console.log(JSON.stringify({
