@@ -33,6 +33,20 @@ vm.runInNewContext(js,{
   Date,Math,JSON,Number,String,Promise,Set,console,URLSearchParams,
 },{timeout:2500});
 const lib = module.exports;
+
+const viewer = {latitude:0,longitude:0,captured_at:new Date().toISOString(),source:'device'};
+for (const bad of [
+  {approx_latitude:null,approx_longitude:0},
+  {approx_latitude:0,approx_longitude:undefined},
+  {approx_latitude:'0',approx_longitude:0},
+  {approx_latitude:'',approx_longitude:0},
+  {approx_latitude:NaN,approx_longitude:0},
+]) {
+  assert.equal(lib.productDistanceKm(viewer,{attributes:bad}),null,
+    'missing or nonnumeric listing coordinates must never become implicit 0');
+}
+assert.equal(lib.productDistanceKm(viewer,{attributes:{approx_latitude:0,approx_longitude:0}}),0,
+  'real numeric zero coordinates remain valid');
 const cell = (latitude, longitude) => lib.geoCellForLocation({ latitude, longitude });
 const neighborhood = (latitude, longitude) => lib.nearbyGeoCells({ latitude, longitude });
 assert.equal(cell(90,180), 'g1:179:0', 'north pole and +180 belong to the final legal latitude band');
