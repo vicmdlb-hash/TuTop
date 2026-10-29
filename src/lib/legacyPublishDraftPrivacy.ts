@@ -1,4 +1,5 @@
 import type { ProductFormData } from '../types';
+import { adaptiveFieldsFor } from './listingDetails';
 
 export const LEGACY_PUBLISH_DRAFT_UNSCOPED_KEY = 'tutop.publish.draft.v4';
 export const LEGACY_PUBLISH_DRAFT_PREFIX = 'tutop.publish.draft.v5.uid.';
@@ -54,11 +55,12 @@ function sanitizeDraft(input: unknown): Partial<ProductFormData> {
   return draft as Partial<ProductFormData>;
 }
 
-function sanitizeAdaptive(input: unknown): Record<string, string> {
+function sanitizeAdaptive(input: unknown, category: ProductFormData['categoria']): Record<string, string> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
   const result: Record<string, string> = {};
+  const allowed = new Set(adaptiveFieldsFor(category).map(field => field.key));
   for (const [field, value] of Object.entries(input).slice(0, 12)) {
-    if (/^[a-z][a-z0-9_]{0,39}$/.test(field) && typeof value === 'string') {
+    if (allowed.has(field) && typeof value === 'string') {
       result[field] = value.replace(/\u0000/g, '').slice(0, 100);
     }
   }
@@ -83,7 +85,8 @@ export function readLegacyPublishDraft(
       target.removeItem(scopedKey);
       return null;
     }
-    return { draft: sanitizeDraft(parsed.draft), adaptive: sanitizeAdaptive(parsed.adaptive) };
+    const draft = sanitizeDraft(parsed.draft);
+    return { draft, adaptive: sanitizeAdaptive(parsed.adaptive, draft.categoria) };
   } catch {
     try { target.removeItem(scopedKey); } catch { /* optional local store */ }
     return null;
@@ -103,7 +106,7 @@ export function writeLegacyPublishDraft(
     const record = JSON.stringify({
       schema_version: 1, owner_uid: uid,
       expires_at: now + LEGACY_PUBLISH_DRAFT_TTL_MS,
-      draft: sanitizeDraft(draft), adaptive: sanitizeAdaptive(adaptive),
+      draft: sanitizeDraft(draft), adaptive: sanitizeAdaptive(adaptive, draft.categoria),
     });
     if (new TextEncoder().encode(record).length > 24 * 1024) return false;
     target.setItem(scopedKey, record);
