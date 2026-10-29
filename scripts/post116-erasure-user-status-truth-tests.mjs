@@ -24,6 +24,26 @@ const proven = {
   auth_deleted: true,
 };
 assert.equal(hasTrustedAccountDeletionCompletion(proven), true, 'complete proof bundle must pass');
+assert.equal(hasTrustedAccountDeletionCompletion({
+  ...proven, requested_at: '2026-09-19T00:00:00.000000001Z',
+  completed_at: '2026-09-19T01:00:00.123456789Z',
+}), true, 'full 9-digit RFC3339 Firestore timestamps must remain supported');
+assert.equal(hasTrustedAccountDeletionCompletion({
+  ...proven, requested_at: '2026-09-19T00:00:00Z',
+  completed_at: '2026-09-19T01:00:00.1234567890Z',
+}), false, 'more than 9 fractional digits must be rejected');
+assert.equal(hasTrustedAccountDeletionCompletion({
+  ...proven, requested_at: '2026-09-19T01:00:00.000000009Z',
+  completed_at: '2026-09-19T01:00:00.000000008Z',
+}), false, 'completion cannot precede request by one nanosecond');
+assert.equal(hasTrustedAccountDeletionCompletion({
+  ...proven, requested_at: '2026-09-19T01:00:00Z',
+  completed_at: '2026-09-19T01:00:00.000000001Z',
+}), true, 'a true one-nanosecond later completion is acceptable');
+assert.equal(hasTrustedAccountDeletionCompletion({
+  ...proven, requested_at: '2026-02-31T00:00:00.123456789Z',
+}), false, 'high-precision impossible calendar date must remain rejected');
+
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, processor_run_id: '' }), false);
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, auth_deleted: false }), false);
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, deleted_count: -1 }), false);
