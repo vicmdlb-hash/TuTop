@@ -216,9 +216,12 @@ export function locationAttributes(location: ApproxLocation | null) {
 }
 
 function productCoordinates(product: Pick<Product, 'attributes'>) {
-  const latitude = Number(product.attributes?.approx_latitude);
-  const longitude = Number(product.attributes?.approx_longitude);
-  return validCoordinate(latitude, longitude) ? { latitude, longitude } : null;
+  const latitude = product.attributes?.approx_latitude;
+  const longitude = product.attributes?.approx_longitude;
+  // Number(null) and Number('') become 0; missing/untrusted listing data
+  // must not masquerade as a position on the equator or prime meridian.
+  return typeof latitude === 'number' && typeof longitude === 'number'
+    && validCoordinate(latitude, longitude) ? { latitude, longitude } : null;
 }
 
 export function haversineDistanceKm(a: Pick<ApproxLocation, 'latitude' | 'longitude'>, b: { latitude: number; longitude: number }) {
