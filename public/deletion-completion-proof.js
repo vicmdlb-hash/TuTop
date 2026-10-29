@@ -9,6 +9,14 @@ function safeCount(value) {
   return Number.isSafeInteger(Number(raw));
 }
 
+
+function canonicalUtcSortKey(iso) {
+  // Both fields have already passed strict UTC syntax and calendar checks.
+  // Convert optional RFC3339 fractional seconds to fixed nanosecond precision.
+  // Date.parse alone truncates sub-millisecond ordering.
+  return iso.slice(0, 19) + '.' + (iso.length > 20 ? iso.slice(20, -1).padEnd(9, '0') : '000000000');
+}
+
 export function trustedWebDeletionStatus(document, now = Date.now()) {
   const fields = document?.fields;
   const status = fields?.status?.stringValue;
@@ -38,5 +46,6 @@ export function trustedWebDeletionStatus(document, now = Date.now()) {
     || new Date(completedMs).toISOString().slice(0, 19) !== completedAt.slice(0, 19)) {
     return 'completion-unverified';
   }
+  if (canonicalUtcSortKey(completedAt) < canonicalUtcSortKey(requestedAt)) return 'completion-unverified';
   return 'completed';
 }
