@@ -25,6 +25,7 @@ const commonSteps = [
   [process.execPath, ['scripts/firestore-cost-geography-tests.mjs']],
   [process.execPath, ['scripts/seller-profile-cache-tests.mjs']],
   [process.execPath, ['scripts/nearby-account-event-isolation-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/legacy-publish-draft-account-isolation-tests.mjs']],
   [process.execPath, ['scripts/report-rate-atomic-contract-tests.mjs']],
   [process.execPath, ['scripts/chat-user-report-entrypoint-tests.mjs']],
   [process.execPath, ['scripts/user-block-contract-tests.mjs']],
