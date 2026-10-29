@@ -32,5 +32,11 @@ export function trustedWebDeletionStatus(document, now = Date.now()) {
     || completedMs < requestedMs || completedMs > now + 5 * 60_000) {
     return 'completion-unverified';
   }
+  // Date.parse normalizes impossible days (e.g. February 31). Never infer
+  // a completed erasure from a calendar-normalized processor timestamp.
+  if (new Date(requestedMs).toISOString().slice(0, 19) !== requestedAt.slice(0, 19)
+    || new Date(completedMs).toISOString().slice(0, 19) !== completedAt.slice(0, 19)) {
+    return 'completion-unverified';
+  }
   return 'completed';
 }
