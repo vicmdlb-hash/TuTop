@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {
   LEGACY_PUBLISH_DRAFT_PREFIX, LEGACY_PUBLISH_DRAFT_UNSCOPED_KEY,
   LEGACY_PUBLISH_DRAFT_TTL_MS, readLegacyPublishDraft,
-  writeLegacyPublishDraft, clearLegacyPublishDraft,
+  writeLegacyPublishDraft, clearLegacyPublishDraft, discardLegacyUnscopedDraft,
 } from '../src/lib/legacyPublishDraftPrivacy.ts';
 
 function fakeStorage() {
@@ -76,4 +76,11 @@ assert.match(screen, /clearLegacyPublishDraft\(user\.id\)/);
 assert.match(screen, /const \[images, setImages\] = useState<string\[\]>\(\[\]\)/);
 assert.doesNotMatch(screen, /localStorage\.(?:getItem|setItem)/);
 assert.match(app, /<Chatbot key=\{user\.id\} \/>/);
+const startup = fakeStorage();
+startup.setItem(LEGACY_PUBLISH_DRAFT_UNSCOPED_KEY, 'data:image/jpeg;base64,OLD_PRIVATE_PHOTO');
+discardLegacyUnscopedDraft(startup);
+assert.equal(startup.map.has(LEGACY_PUBLISH_DRAFT_UNSCOPED_KEY), false,
+  'startup cleanup removes unowned media even when V2 publisher is used');
+assert.match(app, /discardLegacyUnscopedDraft\(\)/,
+  'normal app startup must purge the global v4 key without entering legacy publishing');
 console.log('PASS legacy publisher UID partition, unscoped v4 purge, no photo/token persistence, TTL, owner proof and UI remount');
