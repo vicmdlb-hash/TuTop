@@ -28,6 +28,12 @@ assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, processor_run_id: 
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, auth_deleted: false }), false);
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, deleted_count: -1 }), false);
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, retained_count: 1.5 }), false);
+assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, deleted_count: Number.MAX_SAFE_INTEGER + 1 }), false,
+  'rounded 64-bit Firestore counts must not be accepted as verified evidence');
+assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, withdrawn_count: Number.POSITIVE_INFINITY }), false);
+assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, retained_count: Number.MAX_SAFE_INTEGER }), true,
+  'largest safely representable integer stays valid');
+
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, completed_at: 'not-a-date' }), false);
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, requested_at: undefined }), false,
   'completed is not trustworthy without an original request timestamp');
