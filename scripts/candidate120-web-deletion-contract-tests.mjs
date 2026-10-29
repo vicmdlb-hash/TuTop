@@ -199,6 +199,21 @@ const fields = {
   retained_count: { integerValue: '0' },
 };
 assert.equal(trustedWebDeletionStatus({ fields }, now), 'completed');
+assert.equal(trustedWebDeletionStatus({ fields: {
+  ...fields,
+  requested_at: { timestampValue: '2026-10-26T10:00:00.000000001Z' },
+  completed_at: { timestampValue: '2026-10-27T22:00:00.123456789Z' },
+} }, now), 'completed', 'nanosecond-precision Firestore evidence remains eligible');
+assert.equal(trustedWebDeletionStatus({ fields: {
+  ...fields,
+  requested_at: { timestampValue: '2026-10-27T22:00:00.000000009Z' },
+  completed_at: { timestampValue: '2026-10-27T22:00:00.000000008Z' },
+} }, now), 'completion-unverified', 'nanosecond-order inversion must fail closed');
+assert.equal(trustedWebDeletionStatus({ fields: {
+  ...fields,
+  requested_at: { timestampValue: '2026-02-31T00:00:00.123456789Z' },
+} }, now), 'completion-unverified', 'high-precision impossible day must not pass');
+
 const malformedCalendarComplete = {
   ...fields,
   requested_at: { timestampValue: '2026-02-01T00:00:00Z' },
