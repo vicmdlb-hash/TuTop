@@ -9,6 +9,8 @@ const candidate = {
   physical_release_candidate: true,
   candidate_status: 'active_exact_head',
   replacement_required: false,
+  // Only a synthetic signed candidate may pass the independent FCM fixture gate.
+  apk_cert_sha256: 'c'.repeat(64),
   build_commit_sha: exactSha,
   gate_commit_sha: exactSha,
   staging_smoke_commit_sha: exactSha,
@@ -41,7 +43,7 @@ const allPass = Object.fromEntries([
 function fcmFixture(slot, session, startedAt, completedAt) {
   return {
     schema: 'tutop.fcm-physical-fixture.v1',
-    candidate: { artifact_id: candidate.artifact_id, build_run_id: candidate.build_run_id, build_tree_sha: candidate.build_tree_sha, apk_sha256: candidate.apk_sha256 },
+    candidate: { artifact_id: candidate.artifact_id, build_run_id: candidate.build_run_id, build_commit_sha: candidate.build_commit_sha, build_tree_sha: candidate.build_tree_sha, apk_sha256: candidate.apk_sha256, apk_cert_sha256: candidate.apk_cert_sha256 },
     device_slot: slot,
     evidence_session_id: session,
     evidence_started_at: startedAt,
@@ -126,6 +128,14 @@ function bundle(slot, model, viewport, session, offset = 0) {
 const a = bundle('A', 'Model-A', '412x915', 'session-device-a');
 const b = bundle('B', 'Model-B', '360x800', 'session-device-b', -1_000);
 assert.equal(validateTwoDeviceEvidence([a, b], now, candidate).pass, true);
+const unsignedFixture = structuredClone(a);
+delete unsignedFixture.fcm_fixture_report.candidate.apk_cert_sha256;
+assert.equal(validateTwoDeviceEvidence([unsignedFixture, b], now, candidate).pass, false,
+  'FCM two-device evidence must include the exact signing certificate');
+const wrongSourceFixture = structuredClone(a);
+wrongSourceFixture.fcm_fixture_report.candidate.build_commit_sha = 'f'.repeat(40);
+assert.equal(validateTwoDeviceEvidence([wrongSourceFixture, b], now, candidate).pass, false,
+  'FCM two-device evidence must match the exact build commit');
 for (const mandatory of ["second_account_email_verification","topi_real_ai","notification_permission_activation","notification_token_registered","fcm_two_device_receive","fcm_two_device_tap_deep_link","account_switch_fcm_isolation"]) {
   const omitted = structuredClone(a);
   delete omitted.required_cases[mandatory];
