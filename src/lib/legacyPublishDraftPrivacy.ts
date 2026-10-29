@@ -35,6 +35,11 @@ function dropUnscoped(storage: StorageLike) {
   catch { /* best-effort local privacy cleanup */ }
 }
 
+export function discardLegacyUnscopedDraft(storage?: StorageLike) {
+  const target = storageOrNull(storage);
+  if (target) dropUnscoped(target);
+}
+
 function sanitizeDraft(input: unknown): Partial<ProductFormData> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
   const draft: Record<string, unknown> = {};
