@@ -255,6 +255,15 @@ jobs:
             echo "- Scope: NO upload, NO deploy, NO release, NO physical R6"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "PASS code and Android Firebase connected compile, NO publish, NO staging mutation, NO physical R6"
+      - name: Read back off-Play App Check policy for physical QA, no Firebase writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The APK was compiled only in this ephemeral runner and is not distributed.
+          # GET-only audit exposes settings and counts, never certificates or tokens.
+          node scripts/audit-staging-offplay-app-check.mjs
+          echo "PASS current app signing policy preflight; no APK upload or release"
+
       - name: Always remove temporary Firebase client configs
         if: always()
         shell: bash
