@@ -12,7 +12,7 @@ export type AccountDeletionCompletionEvidenceLike = {
 };
 
 function nonNegativeInteger(value: unknown) {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 export function hasTrustedAccountDeletionCompletion(
