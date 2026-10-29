@@ -40,6 +40,7 @@ import './services/nationalIdentityHydrationBridge';
 import './services/notificationReceiptStoreBridge';
 import './services/physicalQaTelemetry';
 import { handleTutopPopState } from './services/navigationHistoryBridge';
+import { discardLegacyUnscopedDraft } from './lib/legacyPublishDraftPrivacy';
 import './services/nativeNotificationRouter';
 import { nationalSchemaEnabled } from './services/nationalBackend';
 import { initializeNativeFirebaseSecurity } from './services/nativeFirebaseSecurity';
@@ -71,6 +72,12 @@ function MobileApp() {
   const unread = chats.reduce((sum, chat) => sum + (chat.sin_leer || 0), 0);
   const v2 = nationalSchemaEnabled();
   const showFeedUtilities = activeTab === 'feed' && surface === null && !activeChatId && !selectedProductId;
+
+  useEffect(() => {
+    // The old v4 key has no owner and could retain another account's photo.
+    // Discard it on normal launch even if only the V2 publishing UI is used.
+    discardLegacyUnscopedDraft();
+  }, []);
 
   useEffect(() => {
     if (!v2) return;
