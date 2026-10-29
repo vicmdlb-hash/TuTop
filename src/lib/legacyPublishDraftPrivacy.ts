@@ -1,5 +1,5 @@
 import type { ProductFormData } from '../types';
-import { adaptiveFieldsFor } from './listingDetails';
+import { adaptiveFieldsFor } from './listingDetails.ts';
 
 export const LEGACY_PUBLISH_DRAFT_UNSCOPED_KEY = 'tutop.publish.draft.v4';
 export const LEGACY_PUBLISH_DRAFT_PREFIX = 'tutop.publish.draft.v5.uid.';
