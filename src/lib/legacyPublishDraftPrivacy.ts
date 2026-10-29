@@ -60,7 +60,7 @@ function sanitizeDraft(input: unknown): Partial<ProductFormData> {
   return draft as Partial<ProductFormData>;
 }
 
-function sanitizeAdaptive(input: unknown, category: ProductFormData['categoria']): Record<string, string> {
+function sanitizeAdaptive(input: unknown, category?: ProductFormData['categoria']): Record<string, string> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
   const result: Record<string, string> = {};
   const allowed = new Set(adaptiveFieldsFor(category).map(field => field.key));
