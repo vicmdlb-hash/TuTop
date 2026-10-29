@@ -15,6 +15,14 @@ function nonNegativeInteger(value: unknown) {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
+
+function canonicalUtcSortKey(iso: string) {
+  // Both fields have already passed strict UTC syntax and calendar checks.
+  // Convert optional RFC3339 fractional seconds to fixed nanosecond precision.
+  // Date.parse alone truncates sub-millisecond ordering.
+  return iso.slice(0, 19) + '.' + (iso.length > 20 ? iso.slice(20, -1).padEnd(9, '0') : '000000000');
+}
+
 export function hasTrustedAccountDeletionCompletion(
   request: AccountDeletionCompletionEvidenceLike | null | undefined,
 ) {
@@ -24,7 +32,7 @@ export function hasTrustedAccountDeletionCompletion(
   // A completed status is only a client-visible evidence summary, not an
   // independent Auth deletion proof. Reject impossible chronology and incomplete
   // timestamps before displaying the request as finished.
-  const isoTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+  const isoTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
   if (!isoTime.test(completedAt) || !isoTime.test(requestedAt)) return false;
   const completionMs = Date.parse(completedAt), requestMs = Date.parse(requestedAt);
   if (!Number.isFinite(completionMs) || !Number.isFinite(requestMs)) return false;
@@ -33,6 +41,7 @@ export function hasTrustedAccountDeletionCompletion(
   if (new Date(completionMs).toISOString().slice(0, 19) !== completedAt.slice(0, 19)
     || new Date(requestMs).toISOString().slice(0, 19) !== requestedAt.slice(0, 19)) return false;
   if (completionMs < requestMs || completionMs > Date.now() + 5 * 60_000) return false;
+  if (canonicalUtcSortKey(completedAt) < canonicalUtcSortKey(requestedAt)) return false;
   if (typeof request.processor_run_id !== 'string' || !request.processor_run_id.trim()) return false;
   if (typeof request.erasure_policy_version !== 'string' || !request.erasure_policy_version.trim()) return false;
   if (typeof request.residual_manifest_version !== 'string' || !request.residual_manifest_version.trim()) return false;
