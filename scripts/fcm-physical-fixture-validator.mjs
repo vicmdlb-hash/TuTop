@@ -53,7 +53,25 @@ function validateWindow(fixture, now, errors) {
 export function validateFcmPhysicalFixture(fixture, candidate, now = Date.now()) {
   const errors = [];
   if (fixture?.schema !== 'tutop.fcm-physical-fixture.v1') errors.push('schema inválido');
-  for (const field of ['artifact_id','build_run_id','build_tree_sha','apk_sha256']) {
+  // Never accept evidence for retired Build120 or a draft/foreign candidate.
+  // This is only a structural guard: real APK custody and two-device proof
+  // remain separate gates.
+  if (candidate?.schema !== 'tutop.physical-qa-candidate.v1'
+      || candidate?.environment !== 'staging'
+      || candidate?.application_id !== 'mx.tutop.app'
+      || candidate?.staging_project !== 'tutop-beta-vicmdlb-1356585881'
+      || candidate?.physical_release_candidate !== true
+      || candidate?.candidate_status !== 'active_exact_head'
+      || candidate?.replacement_required !== false)
+    errors.push('candidato físico no activo');
+  if (!Number.isSafeInteger(candidate?.artifact_id) || candidate.artifact_id <= 0
+      || !Number.isSafeInteger(candidate?.build_run_id) || candidate.build_run_id <= 0
+      || !/^[0-9a-f]{40}$/.test(String(candidate?.build_commit_sha || ''))
+      || !/^[0-9a-f]{40}$/.test(String(candidate?.build_tree_sha || ''))
+      || !/^[0-9a-f]{64}$/.test(String(candidate?.apk_sha256 || ''))
+      || !/^[0-9a-f]{64}$/.test(String(candidate?.apk_cert_sha256 || '')))
+    errors.push('identidad de binario/firma incompleta');
+  for (const field of ['artifact_id','build_run_id','build_commit_sha','build_tree_sha','apk_sha256','apk_cert_sha256']) {
     if (fixture?.candidate?.[field] !== candidate?.[field]) errors.push(`candidate.${field} no coincide con APK vigente`);
   }
   if (!['A','B'].includes(fixture?.device_slot)) errors.push('device_slot debe ser A o B');

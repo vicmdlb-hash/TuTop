@@ -1,8 +1,20 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { validateFcmPhysicalFixture } from './fcm-physical-fixture-validator.mjs';
-const candidate = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
-const binding = { artifact_id: candidate.artifact_id, build_run_id: candidate.build_run_id, build_tree_sha: candidate.build_tree_sha, apk_sha256: candidate.apk_sha256 };
+// The real Build120 manifest must stay obsolete. Test valid evidence only
+// with an injected, clearly synthetic active candidate (never persisted).
+const historicalCandidate = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
+const candidate = {
+  ...historicalCandidate,
+  candidate_status: 'active_exact_head',
+  physical_release_candidate: true,
+  replacement_required: false,
+  apk_cert_sha256: 'c'.repeat(64),
+};
+const binding = Object.fromEntries([
+  'artifact_id', 'build_run_id', 'build_commit_sha',
+  'build_tree_sha', 'apk_sha256', 'apk_cert_sha256',
+].map(field => [field, candidate[field]]));
 const now = Date.parse('2026-09-07T04:30:00.000Z');
 const startedAt = '2026-09-07T04:29:00.000Z';
 const completedAt = '2026-09-07T04:29:50.000Z';
@@ -29,6 +41,27 @@ const valid = {
   ],
 };
 assert.equal(validateFcmPhysicalFixture(valid, candidate, now).pass, true);
+const retiredCandidate = validateFcmPhysicalFixture(valid, historicalCandidate, now);
+assert.equal(retiredCandidate.pass, false, 'retired Build120 may not validate FCM physical evidence');
+assert(retiredCandidate.errors.includes('candidato físico no activo'));
+for (const update of [
+  { physical_release_candidate: false },
+  { candidate_status: 'draft' },
+  { replacement_required: true },
+  { environment: 'production' },
+  { application_id: 'other.app' },
+  { staging_project: 'other-project' },
+  { apk_cert_sha256: undefined },
+]) {
+  const rejectedCandidate = { ...candidate, ...update };
+  assert.equal(validateFcmPhysicalFixture(valid, rejectedCandidate, now).pass, false);
+}
+for (const field of ['build_commit_sha', 'apk_cert_sha256']) {
+  const mismatchedEvidence = structuredClone(valid);
+  mismatchedEvidence.candidate[field] = field === 'build_commit_sha' ? 'f'.repeat(40) : 'f'.repeat(64);
+  assert.equal(validateFcmPhysicalFixture(mismatchedEvidence, candidate, now).pass, false, field);
+}
+
 const duplicate = structuredClone(valid); duplicate.scenarios[1].events.splice(3, 0, { at_ms: 11_500, kind: 'push_received', correlation: 'bg-a001', target: 'listing' });
 assert.equal(validateFcmPhysicalFixture(duplicate, candidate, now).pass, false);
 const reversed = structuredClone(valid); reversed.scenarios[2].events = [
