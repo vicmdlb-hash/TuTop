@@ -36,6 +36,19 @@ assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, completed_at: '202
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, completed_at: '2099-01-01T00:00:00.000Z' }), false,
   'future-dated erasure should fail closed');
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, requested_at: 'not-a-date' }), false);
+assert.equal(hasTrustedAccountDeletionCompletion({
+  ...proven, requested_at: '2026-02-01T00:00:00.000Z',
+  completed_at: '2026-02-31T01:00:00.000Z',
+}), false, 'calendar-normalized impossible completion must never count as evidence');
+assert.equal(hasTrustedAccountDeletionCompletion({
+  ...proven, requested_at: '2026-02-31T00:00:00.000Z',
+  completed_at: '2026-09-19T01:00:00.000Z',
+}), false, 'calendar-normalized impossible request must never be accepted');
+assert.equal(hasTrustedAccountDeletionCompletion({
+  ...proven, requested_at: '2024-02-29T00:00:00.000Z',
+  completed_at: '2024-02-29T01:00:00.000Z',
+}), true, 'real leap-day completion remains valid');
+
 assert.equal(hasTrustedAccountDeletionCompletion({ ...proven, completed_at: '2026-09-19' }), false,
   'completion must use a full ISO timestamp');
 assert.equal(hasTrustedAccountDeletionCompletion({
