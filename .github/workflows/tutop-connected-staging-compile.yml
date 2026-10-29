@@ -104,6 +104,13 @@ jobs:
           git diff --exit-code -- package.json package-lock.json
       - name: Generate Firebase-connected Android native project
         run: npm run android:bootstrap
+      - name: Pin staging Android beta version before compiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/configure-android-beta-version.mjs
+          grep -q 'versionCode 90200' android/app/build.gradle
+          grep -q 'versionName "0.9.2-beta.0"' android/app/build.gradle
       - name: Validate scoped FCM merger rule before Gradle
         shell: bash
         run: |
@@ -129,7 +136,7 @@ jobs:
           set -euo pipefail
           apk=android/app/build/outputs/apk/debug/app-debug.apk
           test -s "$apk"
-          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$apk" | grep -q "package: name='mx.tutop.app'"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$apk" | grep -q "package: name='mx.tutop.app' versionCode='90200' versionName='0.9.2-beta.0'"
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify "$apk"
           # Google/Android's read-only packaging preflight for 16 KiB pages.
           # ZIP alignment alone does not prove native ELF segment alignment or physical QA.
@@ -240,6 +247,10 @@ jobs:
           # The APK bytes remain ephemeral; only identifiers/hashes are recorded.
           package_identity="$("$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$apk" | grep -m1 '^package:')"
           signer_digest="$("$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | grep -m1 'Signer #1 certificate SHA-256 digest:')"
+          cert_sha256="${signer_digest##*: }"
+          [[ "$cert_sha256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo 'STOP_INVALID_SIGNER_DIGEST'; exit 2; }
+          # Only the fingerprint is transferred to a later GET-only audit, never a keystore.
+          printf 'TUTOP_EXPECTED_ANDROID_CERT_SHA256=%s\n' "$cert_sha256" >> "$GITHUB_ENV"
           apk_sha256="$(sha256sum "$apk" | cut -d ' ' -f1)"
           printf 'SOURCE_SHA=%s\n' "$GITHUB_SHA"
           printf 'APK_SHA256=%s\n' "$apk_sha256"
