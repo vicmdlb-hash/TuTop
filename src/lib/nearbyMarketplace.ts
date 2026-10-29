@@ -172,8 +172,11 @@ export async function requestApproxLocation(options: { timeoutMs?: number; maxim
 
 export function geoCellForLocation(location: Pick<ApproxLocation, 'latitude' | 'longitude'>) {
   if (!validCoordinate(location.latitude, location.longitude)) return null;
-  const latIndex = Math.floor((location.latitude + 90) / GEO_CELL_DEGREES);
-  const lonIndex = Math.floor((location.longitude + 180) / GEO_CELL_DEGREES);
+  // Coordinates at +90 and +180 are valid, but must not generate cells
+  // outside the 180 x 360 grid. -180 and +180 are the same meridian.
+  const latIndex = Math.min(179, Math.floor((location.latitude + 90) / GEO_CELL_DEGREES));
+  const normalizedLongitude = location.longitude === 180 ? -180 : location.longitude;
+  const lonIndex = Math.floor((normalizedLongitude + 180) / GEO_CELL_DEGREES);
   return `g1:${latIndex}:${lonIndex}`;
 }
 
@@ -185,7 +188,13 @@ export function nearbyGeoCells(location: Pick<ApproxLocation, 'latitude' | 'long
   const lon = Number(rawLon);
   const cells: string[] = [];
   for (let latOffset = -1; latOffset <= 1; latOffset += 1) {
-    for (let lonOffset = -1; lonOffset <= 1; lonOffset += 1) cells.push(`g1:${lat + latOffset}:${lon + lonOffset}`);
+    const row = lat + latOffset;
+    if (row < 0 || row >= 180) continue;
+    for (let lonOffset = -1; lonOffset <= 1; lonOffset += 1) {
+      // Geographic east and west join at the antimeridian.
+      const column = (lon + lonOffset + 360) % 360;
+      cells.push(`g1:${row}:${column}`);
+    }
   }
   return cells;
 }
