@@ -20,6 +20,21 @@ for(const [storeUid,sessionUid,snapshotUid] of [
 const appStore = fs.readFileSync('src/store/useAppStore.ts','utf8');
 assert(appStore.includes("import { isLiveAccountSnapshot } from '../lib/backendHydrationIdentity';"));
 assert(appStore.includes('if (!isLiveAccountSnapshot(state.user.id, onlineBackend.session?.uid, snapshot.user.id)) return state;'));
+// Every optimistic rollback has an originating account; late A failures
+// cannot mutate the B view for a shared listing/chat on one device.
+for (const [start,end] of [
+  ['  updateProduct: (id, updates) => {','  removeProduct:'],
+  ['  sendMessage: (chatId, text) => {','  sendImageMessage:'],
+  ['  sendImageMessage: (chatId, imageUrl) => {','  markChatRead:'],
+  ['  markChatRead: (chatId) => {','  confirmDelivery:'],
+]) {
+  const section = appStore.split(start)[1]?.split(end)[0];
+  assert(section, `missing mutation ${start}`);
+  assert(section.includes('const actorUid = '), `missing actor snapshot ${start}`);
+  assert(section.includes('if (get().user.id !== actorUid) return;'), `unguarded late error ${start}`);
+  assert(section.indexOf('if (get().user.id !== actorUid) return;') < section.indexOf('reportSyncError(set, error);'),
+    `late error must not render into another account ${start}`);
+}
 const source=fs.readFileSync('src/components/BackendGate.tsx','utf8');
 assert.match(source,/const expectedEpoch = authEpoch\.current/);
 assert.match(source,/const snapshot = await onlineBackend\.loadSnapshot\(\);[\s\S]*if \(!stillCurrent\(snapshot\.user\.id\)\) return;[\s\S]*hydrateOnline\(snapshot\)/);
