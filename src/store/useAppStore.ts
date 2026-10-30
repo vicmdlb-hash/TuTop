@@ -53,6 +53,7 @@ interface AppState {
 
 const NEUTRAL_COMMUNITY_LABEL = 'Comunidad universitaria';
 const favoriteMutationVersion = new Map<string, number>();
+const productMutationVersion = new Map<string, number>();
 const chatReadMutationVersion = new Map<string, number>();
 
 function favoriteState(favorites: string[], productId: string, favorited: boolean) {
@@ -138,24 +139,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   publishProduct: async (product, bidAmount = 0) => {
+    const actorUid = get().user.id;
     try {
       await onlineBackend.createProduct(product);
       if (bidAmount > 0) await onlineBackend.bidProduct(product, bidAmount);
       const snapshot = await onlineBackend.loadSnapshot();
       get().hydrateOnline(snapshot);
-      return true;
+      return get().user.id === actorUid;
     } catch (error) {
-      reportSyncError(set, error);
+      if (get().user.id === actorUid) reportSyncError(set, error);
       return false;
     }
   },
 
   updateProduct: (id, updates) => {
     const actorUid = get().user.id;
+    const mutationKey = `${actorUid}:${id}`;
+    const version = (productMutationVersion.get(mutationKey) || 0) + 1;
+    productMutationVersion.set(mutationKey, version);
     const before = get().products.find((product) => product.id === id);
     set((state) => ({ products: state.products.map((product) => product.id === id ? { ...product, ...updates } : product) }));
     void onlineBackend.updateProduct(id, updates).catch((error) => {
       if (get().user.id !== actorUid) return;
+      // A stale failed edit must never undo a later edit to this account's listing.
+      if (productMutationVersion.get(mutationKey) !== version) return;
       if (before) set((state) => ({ products: state.products.map((product) => product.id === id ? before : product) }));
       reportSyncError(set, error);
     });
@@ -319,14 +326,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   bidProduct: async (productId, amount) => {
     const state = get();
+    const actorUid = state.user.id;
     const product = state.products.find((item) => item.id === productId);
-    if (!product || !canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())) return false;
+    if (!actorUid || !product || !canViewerOpenListing(product, actorUid, nationalSchemaEnabled())) return false;
     try {
       await onlineBackend.bidProduct(product, amount);
       get().hydrateOnline(await onlineBackend.loadSnapshot());
-      return true;
+      return get().user.id === actorUid;
     } catch (error) {
-      reportSyncError(set, error);
+      if (get().user.id === actorUid) reportSyncError(set, error);
       return false;
     }
   },
