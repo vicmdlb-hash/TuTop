@@ -31,20 +31,23 @@ export default function ProductDetail() {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [topiOpen, setTopiOpen] = useState(false);
   const [sellerProfileOpen, setSellerProfileOpen] = useState(false);
-  const [videoObjectUrl, setVideoObjectUrl] = useState<string | null>(null);
+  const [videoBlob, setVideoBlob] = useState<{ ownerUid: string; sourceUri: string; url: string } | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   useEffect(() => { setPhotoIndex(0); setSellerProfileOpen(false); }, [selectedProductId]);
   const candidate = selectedProductId ? products.find((item) => item.id === selectedProductId) : undefined;
   const product = candidate && canViewerOpenListing(candidate, user.id, nationalSchemaEnabled())
     ? candidate : undefined;
   const videoUri = product ? (product as Product & { video_urls?: string[] }).video_urls?.[0] : undefined;
+  // A's already-loaded blob must not render for B, even before effect cleanup.
+  const videoObjectUrl = videoBlob?.ownerUid === user.id && videoBlob?.sourceUri === videoUri
+    ? videoBlob.url : null;
   const similar = useMemo(
     () => product
       ? products.filter((item) => item.id !== product.id && item.estado === 'Activo'
         && canViewerOpenListing(item, user.id, nationalSchemaEnabled())
         && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4)
       : [],
-    [products, product],
+    [products, product, user.id],
   );
 
   useEffect(() => {
@@ -61,7 +64,7 @@ export default function ProductDetail() {
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
-    setVideoObjectUrl(null);
+    setVideoBlob(null);
     setVideoError(null);
     if (!videoUri) return () => undefined;
     if (!mediaStorageEnabled()) {
@@ -72,7 +75,7 @@ export default function ProductDetail() {
       .then((url) => {
         if (cancelled) { URL.revokeObjectURL(url); return; }
         objectUrl = url;
-        setVideoObjectUrl(url);
+        setVideoBlob({ ownerUid: user.id, sourceUri: videoUri, url });
       })
       .catch((error) => {
         if (!cancelled) setVideoError(error instanceof Error ? error.message : 'No pudimos cargar el video.');
@@ -81,7 +84,7 @@ export default function ProductDetail() {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [videoUri]);
+  }, [videoUri, user.id]);
 
   if (!product) return null;
 
