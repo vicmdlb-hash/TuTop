@@ -46,6 +46,13 @@ for(const [start,end] of [
   assert(section.includes('mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id)'));
   assert(!section.includes('item.id === chatId ? chat : item'), 'whole-chat rollback can lose later messages');
 }
+// An old failed mark-read must not replace the chat object or newer messages.
+const markRead=appStore.split('  markChatRead: (chatId) => {')[1]?.split('  confirmDelivery:')[0];
+assert(markRead);
+assert(markRead.includes('const mutationKey = `${actorUid}:${chatId}`;'));
+assert(markRead.includes('chatReadMutationVersion.get(mutationKey) !== version'));
+assert(markRead.includes('{ ...chat, sin_leer: before.sin_leer }'));
+assert(!markRead.includes('chat.id === chatId ? before : chat'), 'whole-chat read rollback discards new messages');
 const source=fs.readFileSync('src/components/BackendGate.tsx','utf8');
 assert.match(source,/const expectedEpoch = authEpoch\.current/);
 assert.match(source,/const snapshot = await onlineBackend\.loadSnapshot\(\);[\s\S]*if \(!stillCurrent\(snapshot\.user\.id\)\) return;[\s\S]*hydrateOnline\(snapshot\)/);
