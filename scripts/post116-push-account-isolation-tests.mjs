@@ -14,7 +14,7 @@ assert.equal(isCurrentPushSession(witness,{...witness},{uid:'A',refreshToken:'sy
 assert.equal(isCurrentPushSession(witness,{uid:'A',refreshToken:'synthetic-token-A2'},witness),false);
 for(const missing of [null,{}, {uid:'A'}, {uid:'A',refreshToken:''}])
   assert.equal(isCurrentPushSession(witness,missing,witness),false);
-const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8');
+const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replace(/\r\n/g,'\n');
 const notificationRead=backendSource.slice(backendSource.indexOf('async loadTrustedNotifications('),backendSource.indexOf('async markNotificationRead('));
 assert(notificationRead.includes('assertOwner(); // Reject A'));
 assert(notificationRead.indexOf('assertOwner(); // Reject A') > notificationRead.indexOf('await Promise.all(['));
