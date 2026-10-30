@@ -8,6 +8,13 @@ assert.match(app, /import '\.\/services\/v2StoreChatMutationBridge'/);
 assert.match(bridge, /sendMessage:/);
 assert.match(bridge, /sendImageMessage:/);
 assert.match(bridge, /chatHistoryBackend\.invalidate\(chatId\)/);
+// Connected V2 bridge replaces the base Zustand methods: both callbacks
+// must remain owner-bound after A -> B logout and shared-device reuse.
+assert.equal((bridge.match(/const actorUid = state\\.user\\.id;/g) || []).length, 2);
+assert.equal((bridge.match(/if \\(useAppStore\\.getState\\(\\)\\.user\\.id !== actorUid\\) return;/g) || []).length, 4);
+assert.equal((bridge.match(/chat\\.comprador_id !== actorUid && chat\\.vendedor_id !== actorUid/g) || []).length, 2);
+assert.match(bridge, /if \\(!chat \\|\\| !actorUid/);
+
 assert.doesNotMatch(bridge, /loadSnapshot\(/);
 assert.doesNotMatch(bridge, /hydrateOnline\(/);
 assert.match(bridge, /msg-local/);
