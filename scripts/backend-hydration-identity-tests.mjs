@@ -67,6 +67,20 @@ assert(review?.includes('const actorUid = state.user.id;'));
 assert(review.includes('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid'));
 assert(review.includes('if (get().user.id !== actorUid) return;'));
 assert(review.includes('current.reviews.filter((item) => item.id !== review.id)'));
+// Creating a product/chat in A cannot display its async error or rollback B.
+for(const [start,end] of [
+  ['  addProduct: (product) => {','  publishProduct:'],
+  ['  addChat: (chat) => {','  updateChat:'],
+  ['  contactProduct: (productId) => {','  openChat:'],
+]) {
+  const section=appStore.split(start)[1]?.split(end)[0];
+  assert(section?.includes('const actorUid = '), `actor missing ${start}`);
+  assert(section.includes('if (get().user.id !== actorUid) return;'), `late A callback is unsafe: ${start}`);
+}
+const addChat=appStore.split('  addChat: (chat) => {')[1]?.split('  updateChat:')[0];
+assert(addChat.includes('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid'));
+const contact=appStore.split('  contactProduct: (productId) => {')[1]?.split('  openChat:')[0];
+assert(contact.includes('if (!actorUid || !product || product.vendedor_id === actorUid'));
 const source=fs.readFileSync('src/components/BackendGate.tsx','utf8');
 assert.match(source,/const expectedEpoch = authEpoch\.current/);
 assert.match(source,/const snapshot = await onlineBackend\.loadSnapshot\(\);[\s\S]*if \(!stillCurrent\(snapshot\.user\.id\)\) return;[\s\S]*hydrateOnline\(snapshot\)/);
