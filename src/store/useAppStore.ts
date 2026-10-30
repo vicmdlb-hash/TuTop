@@ -148,9 +148,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateProduct: (id, updates) => {
+    const actorUid = get().user.id;
     const before = get().products.find((product) => product.id === id);
     set((state) => ({ products: state.products.map((product) => product.id === id ? { ...product, ...updates } : product) }));
     void onlineBackend.updateProduct(id, updates).catch((error) => {
+      if (get().user.id !== actorUid) return;
       if (before) set((state) => ({ products: state.products.map((product) => product.id === id ? before : product) }));
       reportSyncError(set, error);
     });
@@ -204,6 +206,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeChat: () => set({ activeChatId: null }),
 
   sendMessage: (chatId, text) => {
+    const actorUid = get().user.id;
     const clean = text.trim();
     if (!clean) return;
     const state = get();
@@ -216,6 +219,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const snapshot = await onlineBackend.loadSnapshot();
       get().hydrateOnline(snapshot);
     }).catch((error) => {
+      if (get().user.id !== actorUid) return;
       set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? chat : item) }));
       reportSyncError(set, error);
     });
@@ -223,6 +227,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   sendImageMessage: (chatId, imageUrl) => {
     const state = get();
+    const actorUid = state.user.id;
     const chat = state.chats.find((item) => item.id === chatId);
     if (!chat || !imageUrl.startsWith('data:image/')) return;
     const emisor = chat.comprador_id === state.user.id ? 'comprador' : 'vendedor';
@@ -232,16 +237,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     void onlineBackend.sendMessage(chatId, '', imageUrl).then(async () => {
       get().hydrateOnline(await onlineBackend.loadSnapshot());
     }).catch((error) => {
+      if (get().user.id !== actorUid) return;
       set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? chat : item) }));
       reportSyncError(set, error);
     });
   },
 
   markChatRead: (chatId) => {
+    const actorUid = get().user.id;
     const before = get().chats.find((chat) => chat.id === chatId);
     if (!before || (before.sin_leer || 0) === 0) return;
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, sin_leer: 0 } : chat) }));
     void onlineBackend.markChatRead(chatId).catch((error) => {
+      if (get().user.id !== actorUid) return;
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? before : chat) }));
       reportSyncError(set, error);
     });
