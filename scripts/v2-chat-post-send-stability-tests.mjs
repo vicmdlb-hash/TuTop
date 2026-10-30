@@ -10,10 +10,10 @@ assert.match(bridge, /sendImageMessage:/);
 assert.match(bridge, /chatHistoryBackend\.invalidate\(chatId\)/);
 // Connected V2 bridge replaces the base Zustand methods: both callbacks
 // must remain owner-bound after A -> B logout and shared-device reuse.
-assert.equal((bridge.match(/const actorUid = state\\.user\\.id;/g) || []).length, 2);
-assert.equal((bridge.match(/if \\(useAppStore\\.getState\\(\\)\\.user\\.id !== actorUid\\) return;/g) || []).length, 4);
-assert.equal((bridge.match(/chat\\.comprador_id !== actorUid && chat\\.vendedor_id !== actorUid/g) || []).length, 2);
-assert.match(bridge, /if \\(!chat \\|\\| !actorUid/);
+assert.equal(bridge.split('const actorUid = state.user.id;').length - 1, 2);
+assert.equal(bridge.split('if (useAppStore.getState().user.id !== actorUid) return;').length - 1, 4);
+assert.equal(bridge.split('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid').length - 1, 2);
+assert(bridge.includes('if (!chat || !actorUid'));
 
 assert.doesNotMatch(bridge, /loadSnapshot\(/);
 assert.doesNotMatch(bridge, /hydrateOnline\(/);
