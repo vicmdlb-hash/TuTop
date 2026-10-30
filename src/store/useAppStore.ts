@@ -3,6 +3,7 @@ import { sellerLevelFor } from '../lib/productAssistant';
 import { onlineBackend, type OnlineSnapshot } from '../services/onlineBackend';
 import { feedbackMessage } from '../lib/feedback';
 import { canViewerOpenListing } from '../lib/publicDiscovery';
+import { isLiveAccountSnapshot } from '../lib/backendHydrationIdentity';
 import { nationalSchemaEnabled } from '../services/nationalBackend';
 import type { AppNotification, AppTab, Chat, Product, Review, User, WalletTransaction } from '../types';
 
@@ -99,6 +100,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   ...blankState(),
 
   hydrateOnline: (snapshot) => set((state) => {
+    // Mutations may resolve after logout or A→B even if BackendGate is guarded.
+    if (!isLiveAccountSnapshot(state.user.id, onlineBackend.session?.uid, snapshot.user.id)) return state;
     const readNotifications = new Set(state.notifications.filter((item) => item.read).map((item) => item.id));
     return {
       ...snapshot,
