@@ -292,14 +292,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleFavorite: (productId) => {
     const state = get();
+    const actorUid = state.user.id;
+    const mutationKey = `${actorUid}:${productId}`;
     const wasFavorite = state.favorites.includes(productId);
     const shouldFavorite = !wasFavorite;
-    const version = (favoriteMutationVersion.get(productId) || 0) + 1;
-    favoriteMutationVersion.set(productId, version);
+    const version = (favoriteMutationVersion.get(mutationKey) || 0) + 1;
+    favoriteMutationVersion.set(mutationKey, version);
     set({ favorites: favoriteState(state.favorites, productId, shouldFavorite) });
 
     void onlineBackend.toggleFavorite(productId, shouldFavorite).catch((error) => {
-      if (favoriteMutationVersion.get(productId) === version) {
+      // An expired request from A must not roll back B's favorites or show B A's error.
+      if (get().user.id !== actorUid) return;
+      if (favoriteMutationVersion.get(mutationKey) === version) {
         set((current) => ({ favorites: favoriteState(current.favorites, productId, wasFavorite) }));
       }
       reportSyncError(set, error);
