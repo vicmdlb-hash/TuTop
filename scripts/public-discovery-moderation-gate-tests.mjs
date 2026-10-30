@@ -36,10 +36,10 @@ assert(detail.includes('canViewerOpenListing(candidate, user.id, nationalSchemaE
 assert(detail.includes('canViewerOpenListing(item, user.id, nationalSchemaEnabled())'));
 // The listing itself can remain approved and referentially unchanged across
 // A→B, so useMemo must explicitly include UID in its identity dependencies.
-assert.match(detail, /\\[products,\\s*product,\\s*user\\.id\\]/);
-assert.match(detail, /videoBlob\\?\\.ownerUid === user\\.id && videoBlob\\?\\.sourceUri === videoUri/);
-assert.match(detail, /\\[videoUri,\\s*user\\.id\\]/);
-assert.match(detail, /if \\(cancelled\\) \\{ URL\\.revokeObjectURL\\(url\\); return; \\}/);
+assert(detail.includes('[products, product, user.id]'));
+assert(detail.includes('videoBlob?.ownerUid === user.id && videoBlob?.sourceUri === videoUri'));
+assert(detail.includes('[videoUri, user.id]'));
+assert(detail.includes('if (cancelled) { URL.revokeObjectURL(url); return; }'));
 const relatedListings = [
   {id:'public',vendedor_id:'seller-a',moderation_status:'approved',estado:'Activo',categoria:'Books'},
   {id:'private',vendedor_id:'seller-a',moderation_status:'pending',estado:'Activo',categoria:'Books'},
