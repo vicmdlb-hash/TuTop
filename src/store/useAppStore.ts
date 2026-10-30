@@ -261,7 +261,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     chatReadMutationVersion.set(mutationKey, version);
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, sin_leer: 0 } : chat) }));
     void onlineBackend.markChatRead(chatId).catch((error) => {
-      if (get().user.id !== actorUid || chatReadMutationVersion.get(mutationKey) !== version) return;
+      if (get().user.id !== actorUid) return;
+      if (chatReadMutationVersion.get(mutationKey) !== version) return;
       // Recover the unread counter only. Do not replace messages or a newer nonzero count.
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId && (chat.sin_leer || 0) === 0
         ? { ...chat, sin_leer: before.sin_leer } : chat) }));
