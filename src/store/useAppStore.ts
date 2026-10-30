@@ -272,27 +272,36 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   confirmDelivery: (chatId) => {
     const state = get();
+    const actorUid = state.user.id;
     const chat = state.chats.find((item) => item.id === chatId);
-    if (!chat || chat.entrega_confirmada) return;
+    if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)
+      || chat.entrega_confirmada) return;
     const isBuyer = chat.comprador_id === state.user.id;
     const confirmations = { comprador: Boolean(chat.confirmaciones_entrega?.comprador), vendedor: Boolean(chat.confirmaciones_entrega?.vendedor) };
     if (isBuyer) confirmations.comprador = true; else confirmations.vendedor = true;
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, confirmaciones_entrega: confirmations, entrega_confirmada: confirmations.comprador && confirmations.vendedor, entrega_estado: confirmations.comprador && confirmations.vendedor ? 'completada' : 'esperando_confirmacion' } : item) }));
     void onlineBackend.confirmDelivery(chatId).then(async () => get().hydrateOnline(await onlineBackend.loadSnapshot())).catch((error) => {
-      set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? chat : item) }));
+      if (get().user.id !== actorUid) return;
+      // Revert only our unchanged optimistic confirmation; never erase later chat messages.
+      set((current) => ({ chats: current.chats.map((item) => item.id === chatId && item.confirmaciones_entrega === confirmations
+        ? { ...item, confirmaciones_entrega: chat.confirmaciones_entrega, entrega_confirmada: chat.entrega_confirmada, entrega_estado: chat.entrega_estado }
+        : item) }));
       reportSyncError(set, error);
     });
   },
 
   submitReview: (chatId, calificacion, comentario) => {
     const state = get();
+    const actorUid = state.user.id;
     const chat = state.chats.find((item) => item.id === chatId);
-    if (!chat || !chat.entrega_confirmada) return false;
+    if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)
+      || !chat.entrega_confirmada) return false;
     if (state.reviews.some((review) => review.chat_id === chatId && review.evaluador_id === state.user.id)) return false;
     const evaluadoId = chat.comprador_id === state.user.id ? chat.vendedor_id : chat.comprador_id;
     const review: Review = { id: `${chatId}_${state.user.id}`, chat_id: chatId, evaluador_id: state.user.id, evaluado_id: evaluadoId, calificacion, comentario: comentario?.trim().slice(0, 500), fecha: new Date().toISOString() };
     set((current) => ({ reviews: [review, ...current.reviews] }));
     void onlineBackend.submitReview(chat, calificacion, comentario).then(async () => get().hydrateOnline(await onlineBackend.loadSnapshot())).catch((error) => {
+      if (get().user.id !== actorUid) return;
       set((current) => ({ reviews: current.reviews.filter((item) => item.id !== review.id) }));
       reportSyncError(set, error);
     });
