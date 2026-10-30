@@ -35,6 +35,17 @@ for (const [start,end] of [
   assert(section.indexOf('if (get().user.id !== actorUid) return;') < section.indexOf('reportSyncError(set, error);'),
     `late error must not render into another account ${start}`);
 }
+// The legacy/base store is used outside the V2 connected bridge.
+// A failed old send must remove only its message, not restore the prior chat object.
+for(const [start,end] of [
+  ['  sendMessage: (chatId, text) => {','  sendImageMessage:'],
+  ['  sendImageMessage: (chatId, imageUrl) => {','  markChatRead:'],
+]) {
+  const section=appStore.split(start)[1]?.split(end)[0];
+  assert(section?.includes('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid'));
+  assert(section.includes('mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id)'));
+  assert(!section.includes('item.id === chatId ? chat : item'), 'whole-chat rollback can lose later messages');
+}
 const source=fs.readFileSync('src/components/BackendGate.tsx','utf8');
 assert.match(source,/const expectedEpoch = authEpoch\.current/);
 assert.match(source,/const snapshot = await onlineBackend\.loadSnapshot\(\);[\s\S]*if \(!stillCurrent\(snapshot\.user\.id\)\) return;[\s\S]*hydrateOnline\(snapshot\)/);
