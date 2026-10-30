@@ -30,7 +30,7 @@ const nav = {
 const win = { location: { href: 'https://example.test/app' } };
 const telemetry = [];
 const source = fs.readFileSync('src/services/navigationHistoryBridge.ts', 'utf8')
-  .replace(/^import .*;\n/gm, '');
+  .replace(/^import .*;\r?\n/gm, '');
 const js = stripTypeScriptTypes(source).replace(/^export /gm, '');
 const bridge = new Function('useAppStore','qaEvent','history','window',
   js + '; return { handleTutopPopState };'

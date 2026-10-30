@@ -10,8 +10,8 @@ for(const [identity,generation,epoch,pending] of [
   [{uid:'synthetic-A',refreshToken:'rotated'},3,7,false],
 ]) assert.equal(matchesNativePushSession(A,identity,generation,epoch,pending),false);
 assert.equal(matchesNativePushSession(null,same,3,7,false),false);
-const native=fs.readFileSync('src/services/nativeFirebaseSecurity.ts','utf8');
-const backend=fs.readFileSync('src/services/pushBackend.ts','utf8');
+const native=fs.readFileSync('src/services/nativeFirebaseSecurity.ts','utf8').replace(/\r\n/g, '\n');
+const backend=fs.readFileSync('src/services/pushBackend.ts','utf8').replace(/\r\n/g, '\n');
 const callback=native.slice(native.indexOf("await messaging.addListener('tokenReceived'"),native.indexOf("await messaging.addListener('notificationReceived'"));
 assert(callback.includes('const witness = currentPushSessionWitness();'));
 assert(callback.includes('syncGrantedPushTokenHealth(witness)'));
@@ -20,7 +20,10 @@ const sync=native.slice(native.indexOf('async function syncGrantedPushTokenHealt
 assert(sync.includes('await messaging.getToken()'));
 assert(sync.includes('if (!isCurrentPushSession(witness)) return denied;'));
 assert(sync.includes('await registerToken(token, witness);'));
-assert(native.includes('pushRegistrationEpoch += 1;\n  initialization = null;'));
+assert(
+  /pushRegistrationEpoch \+= 1;\r?\n\s*initialization = null;/.test(native),
+  'sign-out preparation must revoke the push epoch before clearing initialization',
+);
 const register=backend.slice(backend.indexOf('async registerDeviceToken('),backend.indexOf('async unregisterDeviceToken('));
 assert(register.includes('const assertOwner = () => {'));
 assert(register.includes('const tokenHash = await sha256(cleanToken);\n    assertOwner();'));
