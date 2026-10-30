@@ -31,7 +31,16 @@ assert(feed.includes("product.moderation_status === 'pending' || product.moderat
 const store=fs.readFileSync('src/store/useAppStore.ts','utf8');
 const detail=fs.readFileSync('src/components/ProductDetail.tsx','utf8');
 assert(store.includes('canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())'));
-assert((store.match(/canViewerOpenListing\(product, state\.user\.id, nationalSchemaEnabled\(\)/g)||[]).length>=3);
+// One guard now uses a captured UID for an async bid. All three places must
+// still filter the product through public-moderation lifecycle validation.
+const stateVisibilityGuards=(store.match(/canViewerOpenListing\(product, state\.user\.id, nationalSchemaEnabled\(\)/g)||[]).length;
+const actorVisibilityGuards=(store.match(/canViewerOpenListing\(product, actorUid, nationalSchemaEnabled\(\)/g)||[]).length;
+assert(stateVisibilityGuards>=2);
+assert(actorVisibilityGuards>=1);
+assert(stateVisibilityGuards+actorVisibilityGuards>=3);
+const bidBlock=store.split('  bidProduct: async (productId, amount) => {')[1]?.split('  toggleFavorite:')[0];
+assert(bidBlock?.includes('const actorUid = state.user.id;'));
+assert(bidBlock.includes('canViewerOpenListing(product, actorUid, nationalSchemaEnabled())'));
 assert(detail.includes('canViewerOpenListing(candidate, user.id, nationalSchemaEnabled())'));
 assert(detail.includes('canViewerOpenListing(item, user.id, nationalSchemaEnabled())'));
 // The listing itself can remain approved and referentially unchanged across
