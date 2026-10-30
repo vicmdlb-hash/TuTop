@@ -81,6 +81,24 @@ const addChat=appStore.split('  addChat: (chat) => {')[1]?.split('  updateChat:'
 assert(addChat.includes('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid'));
 const contact=appStore.split('  contactProduct: (productId) => {')[1]?.split('  openChat:')[0];
 assert(contact.includes('if (!actorUid || !product || product.vendedor_id === actorUid'));
+// Failed product mutations must never roll back a newer edit on the same listing.
+const productEdit=appStore.split('  updateProduct: (id, updates) => {')[1]?.split('  removeProduct:')[0];
+assert(appStore.includes('const productMutationVersion = new Map<string, number>();'));
+assert(productEdit?.includes('const mutationKey = `${actorUid}:${id}`;'));
+assert(productEdit.includes('productMutationVersion.set(mutationKey, version)'));
+assert(productEdit.includes('if (get().user.id !== actorUid) return;'));
+assert(productEdit.includes('if (productMutationVersion.get(mutationKey) !== version) return;'));
+assert(productEdit.indexOf('productMutationVersion.get(mutationKey) !== version') < productEdit.indexOf('if (before) set('));
+// Late publish/bid responses may settle, but must not show A's error on B.
+for(const [start,end] of [
+  ['  publishProduct: async (product, bidAmount = 0) => {','  updateProduct:'],
+  ['  bidProduct: async (productId, amount) => {','  toggleFavorite:'],
+]) {
+  const section=appStore.split(start)[1]?.split(end)[0];
+  assert(section?.includes('const actorUid = '), `missing actor ${start}`);
+  assert(section.includes('if (get().user.id === actorUid) reportSyncError(set, error);'), `late error after session switch ${start}`);
+  assert(section.includes('return get().user.id === actorUid;'), `late success after session switch ${start}`);
+}
 const source=fs.readFileSync('src/components/BackendGate.tsx','utf8');
 assert.match(source,/const expectedEpoch = authEpoch\.current/);
 assert.match(source,/const snapshot = await onlineBackend\.loadSnapshot\(\);[\s\S]*if \(!stillCurrent\(snapshot\.user\.id\)\) return;[\s\S]*hydrateOnline\(snapshot\)/);
