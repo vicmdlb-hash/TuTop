@@ -53,6 +53,20 @@ assert(markRead.includes('const mutationKey = `${actorUid}:${chatId}`;'));
 assert(markRead.includes('chatReadMutationVersion.get(mutationKey) !== version'));
 assert(markRead.includes('{ ...chat, sin_leer: before.sin_leer }'));
 assert(!markRead.includes('chat.id === chatId ? before : chat'), 'whole-chat read rollback discards new messages');
+// Confirmation failures must not resurrect an older chat object or another account.
+const confirm=appStore.split('  confirmDelivery: (chatId) => {')[1]?.split('  submitReview:')[0];
+assert(confirm?.includes('const actorUid = state.user.id;'));
+assert(confirm.includes('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid'));
+assert(confirm.includes('if (get().user.id !== actorUid) return;'));
+assert(confirm.includes('item.confirmaciones_entrega === confirmations'));
+assert(confirm.includes('entrega_confirmada: chat.entrega_confirmada'));
+assert(!confirm.includes('item.id === chatId ? chat : item'), 'failed confirmation must preserve later chat messages');
+// Reviews must be participant-only and stale A errors must never affect B.
+const review=appStore.split('  submitReview: (chatId, calificacion, comentario) => {')[1]?.split('  bidProduct:')[0];
+assert(review?.includes('const actorUid = state.user.id;'));
+assert(review.includes('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid'));
+assert(review.includes('if (get().user.id !== actorUid) return;'));
+assert(review.includes('current.reviews.filter((item) => item.id !== review.id)'));
 const source=fs.readFileSync('src/components/BackendGate.tsx','utf8');
 assert.match(source,/const expectedEpoch = authEpoch\.current/);
 assert.match(source,/const snapshot = await onlineBackend\.loadSnapshot\(\);[\s\S]*if \(!stillCurrent\(snapshot\.user\.id\)\) return;[\s\S]*hydrateOnline\(snapshot\)/);
