@@ -53,6 +53,7 @@ interface AppState {
 
 const NEUTRAL_COMMUNITY_LABEL = 'Comunidad universitaria';
 const favoriteMutationVersion = new Map<string, number>();
+const chatReadMutationVersion = new Map<string, number>();
 
 function favoriteState(favorites: string[], productId: string, favorited: boolean) {
   const exists = favorites.includes(productId);
@@ -253,11 +254,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   markChatRead: (chatId) => {
     const actorUid = get().user.id;
     const before = get().chats.find((chat) => chat.id === chatId);
-    if (!before || (before.sin_leer || 0) === 0) return;
+    if (!before || !actorUid || (before.comprador_id !== actorUid && before.vendedor_id !== actorUid)
+      || (before.sin_leer || 0) === 0) return;
+    const mutationKey = `${actorUid}:${chatId}`;
+    const version = (chatReadMutationVersion.get(mutationKey) || 0) + 1;
+    chatReadMutationVersion.set(mutationKey, version);
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, sin_leer: 0 } : chat) }));
     void onlineBackend.markChatRead(chatId).catch((error) => {
-      if (get().user.id !== actorUid) return;
-      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? before : chat) }));
+      if (get().user.id !== actorUid || chatReadMutationVersion.get(mutationKey) !== version) return;
+      // Recover the unread counter only. Do not replace messages or a newer nonzero count.
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId && (chat.sin_leer || 0) === 0
+        ? { ...chat, sin_leer: before.sin_leer } : chat) }));
       reportSyncError(set, error);
     });
   },
