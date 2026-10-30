@@ -211,7 +211,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!clean) return;
     const state = get();
     const chat = state.chats.find((item) => item.id === chatId);
-    if (!chat) return;
+    if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)) return;
     const emisor = chat.comprador_id === state.user.id ? 'comprador' : 'vendedor';
     const message = { id: localId('msg-local'), sender_id: state.user.id, emisor, texto: clean.slice(0, 1500), hora: new Date().toISOString(), leido: true } as const;
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, mensajes: [...item.mensajes, message], sin_leer: 0 } : item) }));
@@ -220,7 +220,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().hydrateOnline(snapshot);
     }).catch((error) => {
       if (get().user.id !== actorUid) return;
-      set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? chat : item) }));
+      // Preserve newer messages; roll back only the failed optimistic message.
+      set((current) => ({ chats: current.chats.map((item) => item.id === chatId
+        ? { ...item, mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id) }
+        : item) }));
       reportSyncError(set, error);
     });
   },
@@ -229,7 +232,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const state = get();
     const actorUid = state.user.id;
     const chat = state.chats.find((item) => item.id === chatId);
-    if (!chat || !imageUrl.startsWith('data:image/')) return;
+    if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)
+      || !imageUrl.startsWith('data:image/')) return;
     const emisor = chat.comprador_id === state.user.id ? 'comprador' : 'vendedor';
     const message = { id: localId('msg-local'), sender_id: state.user.id, emisor, texto: '', image_url: imageUrl, hora: new Date().toISOString(), leido: true } as const;
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, mensajes: [...item.mensajes, message], sin_leer: 0 } : item) }));
@@ -238,7 +242,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().hydrateOnline(await onlineBackend.loadSnapshot());
     }).catch((error) => {
       if (get().user.id !== actorUid) return;
-      set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? chat : item) }));
+      // Preserve newer messages; roll back only the failed optimistic message.
+      set((current) => ({ chats: current.chats.map((item) => item.id === chatId
+        ? { ...item, mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id) }
+        : item) }));
       reportSyncError(set, error);
     });
   },
