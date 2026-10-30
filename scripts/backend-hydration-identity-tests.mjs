@@ -18,7 +18,7 @@ for(const [storeUid,sessionUid,snapshotUid] of [
 ]) assert.equal(isLiveAccountSnapshot(storeUid,sessionUid,snapshotUid),false,
   'stale or unauthenticated snapshot must not overwrite another account');
 const appStore = fs.readFileSync('src/store/useAppStore.ts','utf8');
-assert.match(appStore,/import \\{ isLiveAccountSnapshot \\} from '\\.\\.\\/lib\\/backendHydrationIdentity'/);
+assert(appStore.includes("import { isLiveAccountSnapshot } from '../lib/backendHydrationIdentity';"));
 assert(appStore.includes('if (!isLiveAccountSnapshot(state.user.id, onlineBackend.session?.uid, snapshot.user.id)) return state;'));
 const source=fs.readFileSync('src/components/BackendGate.tsx','utf8');
 assert.match(source,/const expectedEpoch = authEpoch\.current/);
