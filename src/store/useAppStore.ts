@@ -142,8 +142,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const actorUid = get().user.id;
     try {
       await onlineBackend.createProduct(product);
+      if (get().user.id !== actorUid) return false;
       if (bidAmount > 0) await onlineBackend.bidProduct(product, bidAmount);
+      if (get().user.id !== actorUid) return false;
       const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return false;
       get().hydrateOnline(snapshot);
       return get().user.id === actorUid;
     } catch (error) {
@@ -233,7 +236,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const message = { id: localId('msg-local'), sender_id: state.user.id, emisor, texto: clean.slice(0, 1500), hora: new Date().toISOString(), leido: true } as const;
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, mensajes: [...item.mensajes, message], sin_leer: 0 } : item) }));
     void onlineBackend.sendMessage(chatId, clean).then(async () => {
+      if (get().user.id !== actorUid) return;
       const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return;
       get().hydrateOnline(snapshot);
     }).catch((error) => {
       if (get().user.id !== actorUid) return;
@@ -256,7 +261,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, mensajes: [...item.mensajes, message], sin_leer: 0 } : item) }));
     feedbackMessage();
     void onlineBackend.sendMessage(chatId, '', imageUrl).then(async () => {
-      get().hydrateOnline(await onlineBackend.loadSnapshot());
+      if (get().user.id !== actorUid) return;
+      const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return;
+      get().hydrateOnline(snapshot);
     }).catch((error) => {
       if (get().user.id !== actorUid) return;
       // Preserve newer messages; roll back only the failed optimistic message.
@@ -296,7 +304,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const confirmations = { comprador: Boolean(chat.confirmaciones_entrega?.comprador), vendedor: Boolean(chat.confirmaciones_entrega?.vendedor) };
     if (isBuyer) confirmations.comprador = true; else confirmations.vendedor = true;
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, confirmaciones_entrega: confirmations, entrega_confirmada: confirmations.comprador && confirmations.vendedor, entrega_estado: confirmations.comprador && confirmations.vendedor ? 'completada' : 'esperando_confirmacion' } : item) }));
-    void onlineBackend.confirmDelivery(chatId).then(async () => get().hydrateOnline(await onlineBackend.loadSnapshot())).catch((error) => {
+    void onlineBackend.confirmDelivery(chatId).then(async () => {
+      if (get().user.id !== actorUid) return;
+      const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return;
+      get().hydrateOnline(snapshot);
+    }).catch((error) => {
       if (get().user.id !== actorUid) return;
       // Revert only our unchanged optimistic confirmation; never erase later chat messages.
       set((current) => ({ chats: current.chats.map((item) => item.id === chatId && item.confirmaciones_entrega === confirmations
@@ -316,7 +329,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const evaluadoId = chat.comprador_id === state.user.id ? chat.vendedor_id : chat.comprador_id;
     const review: Review = { id: `${chatId}_${state.user.id}`, chat_id: chatId, evaluador_id: state.user.id, evaluado_id: evaluadoId, calificacion, comentario: comentario?.trim().slice(0, 500), fecha: new Date().toISOString() };
     set((current) => ({ reviews: [review, ...current.reviews] }));
-    void onlineBackend.submitReview(chat, calificacion, comentario).then(async () => get().hydrateOnline(await onlineBackend.loadSnapshot())).catch((error) => {
+    void onlineBackend.submitReview(chat, calificacion, comentario).then(async () => {
+      if (get().user.id !== actorUid) return;
+      const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return;
+      get().hydrateOnline(snapshot);
+    }).catch((error) => {
       if (get().user.id !== actorUid) return;
       set((current) => ({ reviews: current.reviews.filter((item) => item.id !== review.id) }));
       reportSyncError(set, error);
@@ -331,7 +349,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!actorUid || !product || !canViewerOpenListing(product, actorUid, nationalSchemaEnabled())) return false;
     try {
       await onlineBackend.bidProduct(product, amount);
-      get().hydrateOnline(await onlineBackend.loadSnapshot());
+      if (get().user.id !== actorUid) return false;
+      const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return false;
+      get().hydrateOnline(snapshot);
       return get().user.id === actorUid;
     } catch (error) {
       if (get().user.id === actorUid) reportSyncError(set, error);
