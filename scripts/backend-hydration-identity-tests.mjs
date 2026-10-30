@@ -99,6 +99,25 @@ for(const [start,end] of [
   assert(section.includes('if (get().user.id === actorUid) reportSyncError(set, error);'), `late error after session switch ${start}`);
   assert(section.includes('return get().user.id === actorUid;'), `late success after session switch ${start}`);
 }
+// A's successful callback may resolve after B signs in. Prevent the callback
+// from loading (and then applying) B's snapshot, even if hydrateOnline itself
+// checks that the returned snapshot belongs to the current session.
+for(const [start,end] of [
+  ['  publishProduct: async (product, bidAmount = 0) => {','  updateProduct:'],
+  ['  sendMessage: (chatId, text) => {','  sendImageMessage:'],
+  ['  sendImageMessage: (chatId, imageUrl) => {','  markChatRead:'],
+  ['  confirmDelivery: (chatId) => {','  submitReview:'],
+  ['  submitReview: (chatId, calificacion, comentario) => {','  bidProduct:'],
+  ['  bidProduct: async (productId, amount) => {','  toggleFavorite:'],
+]) {
+  const section=appStore.split(start)[1]?.split(end)[0];
+  assert(section, `missing async reload ${start}`);
+  const reload=section.indexOf('const snapshot = await onlineBackend.loadSnapshot();');
+  const hydrate=section.indexOf('get().hydrateOnline(snapshot);',reload);
+  assert(reload>=0 && hydrate>reload, `missing guarded reload ${start}`);
+  assert(section.lastIndexOf('if (get().user.id !== actorUid)',reload)>=0, `old account can reload B ${start}`);
+  assert(section.slice(reload,hydrate).includes('if (get().user.id !== actorUid) return'), `old account can hydrate B ${start}`);
+}
 const source=fs.readFileSync('src/components/BackendGate.tsx','utf8');
 assert.match(source,/const expectedEpoch = authEpoch\.current/);
 assert.match(source,/const snapshot = await onlineBackend\.loadSnapshot\(\);[\s\S]*if \(!stillCurrent\(snapshot\.user\.id\)\) return;[\s\S]*hydrateOnline\(snapshot\)/);
