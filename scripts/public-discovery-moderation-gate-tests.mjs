@@ -34,6 +34,21 @@ assert(store.includes('canViewerOpenListing(product, state.user.id, nationalSche
 assert((store.match(/canViewerOpenListing\(product, state\.user\.id, nationalSchemaEnabled\(\)/g)||[]).length>=3);
 assert(detail.includes('canViewerOpenListing(candidate, user.id, nationalSchemaEnabled())'));
 assert(detail.includes('canViewerOpenListing(item, user.id, nationalSchemaEnabled())'));
+// The listing itself can remain approved and referentially unchanged across
+// A→B, so useMemo must explicitly include UID in its identity dependencies.
+assert.match(detail, /\\[products,\\s*product,\\s*user\\.id\\]/);
+assert.match(detail, /videoBlob\\?\\.ownerUid === user\\.id && videoBlob\\?\\.sourceUri === videoUri/);
+assert.match(detail, /\\[videoUri,\\s*user\\.id\\]/);
+assert.match(detail, /if \\(cancelled\\) \\{ URL\\.revokeObjectURL\\(url\\); return; \\}/);
+const relatedListings = [
+  {id:'public',vendedor_id:'seller-a',moderation_status:'approved',estado:'Activo',categoria:'Books'},
+  {id:'private',vendedor_id:'seller-a',moderation_status:'pending',estado:'Activo',categoria:'Books'},
+];
+const visibleSimilarFor = uid => relatedListings
+  .filter(item => canViewerOpenListing(item,uid,true))
+  .map(item => item.id);
+assert.deepEqual(visibleSimilarFor('seller-a'),['public','private']);
+assert.deepEqual(visibleSimilarFor('buyer-b'),['public']);
 const card=fs.readFileSync('src/components/ProductCard.tsx','utf8');
 assert(card.includes("product.moderation_status === 'flagged' ? 'Marcada para revisión'"));
 assert(detail.includes("product.moderation_status === 'flagged' ? 'Marcada para revisión"));
