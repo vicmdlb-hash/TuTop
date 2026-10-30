@@ -128,8 +128,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCurrentFacultad: (currentFacultad) => set({ currentFacultad }),
 
   addProduct: (product) => {
+    const actorUid = get().user.id;
     set((state) => ({ products: [product, ...state.products] }));
     void onlineBackend.createProduct(product).catch((error) => {
+      if (get().user.id !== actorUid) return;
       set((state) => ({ products: state.products.filter((item) => item.id !== product.id) }));
       reportSyncError(set, error);
     });
@@ -164,15 +166,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addChat: (chat) => {
+    const actorUid = get().user.id;
+    if (!actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)) return;
     set((state) => ({ chats: [chat, ...state.chats] }));
-    void onlineBackend.createChat(chat).catch((error) => reportSyncError(set, error));
+    void onlineBackend.createChat(chat).catch((error) => {
+      if (get().user.id !== actorUid) return;
+      reportSyncError(set, error);
+    });
   },
   updateChat: (id, updates) => set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, ...updates } : chat) })),
 
   contactProduct: (productId) => {
     const state = get();
+    const actorUid = state.user.id;
     const product = state.products.find((item) => item.id === productId);
-    if (!product || product.vendedor_id === state.user.id
+    if (!actorUid || !product || product.vendedor_id === actorUid
       || !canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())) return null;
     const existing = state.chats.find((chat) => chat.producto_id === productId && chat.comprador_id === state.user.id && chat.vendedor_id === product.vendedor_id);
     if (product.availability_status === 'reserved' && !existing) return null;
@@ -192,6 +200,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       set((current) => ({ chats: [chat, ...current.chats] }));
       void onlineBackend.createChat(chat).catch((error) => {
+        if (get().user.id !== actorUid) return;
         set((current) => ({
           chats: current.chats.filter((item) => item.id !== chatId),
           activeChatId: current.activeChatId === chatId ? null : current.activeChatId,
