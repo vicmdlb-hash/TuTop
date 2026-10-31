@@ -1,3 +1,6 @@
+import { nationalAcademicMetadata, validateBetaAcademicCatalog } from '../lib/nationalAcademicMetadata';
+import { CAMPUSES, INSTITUTIONS } from '../lib/universityNetwork';
+import { nationalVerificationIndicators } from '../lib/nationalVerificationIndicators';
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
 import { firebaseFetch, isFirebaseRequestTimeout } from './firebaseHttp';
 import { FirebaseRestClient, normalizeMexicoPhone, phoneAliasEmail } from './firebaseRest';
@@ -6,10 +9,10 @@ import { getFirebaseConfig } from './runtimeConfig';
 export interface VerifiedEmailBetaProfile {
   nombre: string;
   facultad: string;
-  institution_id: string;
-  institution_name: string;
-  campus_id: string;
-  campus_name: string;
+  institution_id?: string;
+  institution_name?: string;
+  campus_id?: string;
+  campus_name?: string;
   phone?: string;
 }
 
@@ -17,6 +20,8 @@ export interface VerifiedEmailBetaStatus {
   uid: string;
   email: string;
   emailVerified: boolean;
+  /** Read-only Firebase Auth lookup indicator; NEVER server authorization proof. */
+  phoneVerified?: boolean;
   verificationEmailSent?: boolean;
 }
 
@@ -215,6 +220,7 @@ async function migrateLegacySessionToEmail(session: CompatibleSession, emailInpu
 async function createMarketplaceAccount(payload: AuthPayload, email: string, profile: VerifiedEmailBetaProfile) {
   const config = getFirebaseConfig();
   const normalizedPhone = normalizeOptionalPhone(profile.phone);
+  const academicMetadata = nationalAcademicMetadata(profile);
   persistCompatibleSession(payload, email, false, normalizedPhone);
   // A fresh client must be authenticated immediately in this same process. On
   // Android the native bridge now reads the session written above from
@@ -230,10 +236,7 @@ async function createMarketplaceAccount(payload: AuthPayload, email: string, pro
     nombre: profile.nombre.trim().slice(0, 80),
     facultad: profile.facultad.trim().slice(0, 120),
     esta_verificado: false,
-    institution_id: profile.institution_id,
-    institution_name: profile.institution_name,
-    campus_id: profile.campus_id,
-    campus_name: profile.campus_name,
+    ...academicMetadata,
     verification_level: 0,
     verification_badge: 'Cuenta TuTop',
     created_at: at,
@@ -262,6 +265,10 @@ export const verifiedEmailBetaAuth = {
     if (password.length < 8) throw new Error('WEAK_PASSWORD');
     if (profile.nombre.trim().length < 2) throw new Error('NAME_REQUIRED');
     if (!profile.institution_id || !profile.campus_id) throw new Error('UNIVERSITY_IDENTITY_REQUIRED');
+    // Validate a complete canonical pair BEFORE creating a Firebase Auth UID.
+    // This is legacy beta enrollment only; national no-campus signup remains gated.
+    nationalAcademicMetadata(profile);
+    validateBetaAcademicCatalog(profile, INSTITUTIONS, CAMPUSES);
     // Validate/normalize optional phone before creating Firebase Auth so bad
     // metadata cannot leave behind a newly-created identity.
     const normalizedPhone = normalizeOptionalPhone(profile.phone);
@@ -403,7 +410,11 @@ export const verifiedEmailBetaAuth = {
     });
     const user = lookup?.users?.[0];
     if (!user?.localId || !user?.email) throw new Error('USER_NOT_FOUND');
-    const verified = user.emailVerified === true;
+    // Accounts:lookup is a Firebase Auth response for the active ID token,
+    // NOT a profile phone or phone-alias string supplied by the client.
+    const evidence = nationalVerificationIndicators(user, stored.uid);
+    if (user.localId !== stored.uid) throw new Error('AUTH_UID_MISMATCH');
+    const verified = evidence.emailVerified;
     if (verified) stored = await forceRefreshStoredSession(generation);
     assertSessionUnchanged(generation, stored.uid, stored.refreshToken);
     const normalizedUserEmail = String(user.email).toLowerCase();
@@ -417,15 +428,26 @@ export const verifiedEmailBetaAuth = {
       authMode: 'email_password_verified_beta',
     };
     persistCanonicalSession(next);
-    return { uid: user.localId, email: normalizedUserEmail, emailVerified: verified };
+    return { uid: user.localId, email: normalizedUserEmail, emailVerified: verified, phoneVerified: evidence.phoneVerified };
   },
 
   readLocalStatus(): VerifiedEmailBetaStatus | null {
     const stored = readCompatibleSession();
     if (!stored?.uid || !stored?.email) return null;
-    return { uid: stored.uid, email: stored.email, emailVerified: stored.emailVerified === true };
+    // No local phone flag is trusted between fresh Firebase Auth lookups.
+    return { uid: stored.uid, email: stored.email, emailVerified: stored.emailVerified === true, phoneVerified: false };
   },
 
+  // Read-only, process-local generation: changes on login/logout, but not on
+  // ordinary token refresh. Async UI callbacks can reject an obsolete session
+  // even when the user signs out and signs back into the same account.
+  sessionGeneration() { return authGeneration; },
+  // Read the one project-scoped canonical session regardless of login method.
+  // Returns an in-memory identity witness; do not log, persist or send the token.
+  readSessionIdentity() {
+    const session = readCompatibleSession();
+    return session ? { uid: session.uid, refreshToken: session.refreshToken } : null;
+  },
   signOut() {
     clearCanonicalSession();
   },

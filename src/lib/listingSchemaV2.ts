@@ -6,8 +6,9 @@ export type ListingDeliveryMethod = 'campus_meetup' | 'pickup' | 'local_delivery
 export type CanonicalListingV2 = {
   schema_version: 2;
   seller_id: string;
-  institution_id: string;
-  campus_id: string;
+  // Optional for future nationwide listings; live writes remain blocked until Rules cutover.
+  institution_id?: string;
+  campus_id?: string;
   city_id?: string;
   faculty_id?: string;
   career_id?: string;
@@ -130,9 +131,20 @@ export function legacyProductToListingV2(product: Product, now = new Date().toIS
 }
 
 export function listingV2HasNoLegacyDescriptionPacking(listing: CanonicalListingV2) {
+  // An explicit shipping flag must agree with offered delivery methods. Nationwide
+  // visibility does NOT require shipping: buyers can arrange supported pickup.
+  const shippingFlagConsistent = listing.shipping_available === listing.delivery_methods.includes('shipping');
+  const pairedCampus = Boolean(listing.institution_id && listing.campus_id);
+  const noCampus = !listing.institution_id && !listing.campus_id;
+  const nationwideNonCampus = noCampus
+    && (listing.visibility_scope === 'national' || (listing.visibility_scope === 'city' && !!listing.city_id))
+    && !listing.delivery_methods.includes('campus_meetup')
+    && listing.meeting_point_ids.length === 0;
+  // A schema candidate may omit school IDs; this is NOT Firebase Auth proof
+  // and does NOT authorize its submission to current university-bound Rules.
   return Boolean(
-    listing.institution_id
-    && listing.campus_id
+    (pairedCampus || nationwideNonCampus)
+    && shippingFlagConsistent
     && listing.category_id
     && listing.delivery_methods.length
     && typeof listing.attributes === 'object'

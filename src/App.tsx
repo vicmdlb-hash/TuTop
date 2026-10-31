@@ -40,6 +40,7 @@ import './services/nationalIdentityHydrationBridge';
 import './services/notificationReceiptStoreBridge';
 import './services/physicalQaTelemetry';
 import { handleTutopPopState } from './services/navigationHistoryBridge';
+import { discardLegacyUnscopedDraft } from './lib/legacyPublishDraftPrivacy';
 import './services/nativeNotificationRouter';
 import { nationalSchemaEnabled } from './services/nationalBackend';
 import { initializeNativeFirebaseSecurity } from './services/nativeFirebaseSecurity';
@@ -73,6 +74,12 @@ function MobileApp() {
   const showFeedUtilities = activeTab === 'feed' && surface === null && !activeChatId && !selectedProductId;
 
   useEffect(() => {
+    // The old v4 key has no owner and could retain another account's photo.
+    // Discard it on normal launch even if only the V2 publishing UI is used.
+    discardLegacyUnscopedDraft();
+  }, []);
+
+  useEffect(() => {
     if (!v2) return;
     void initializeNativeFirebaseSecurity();
   }, [v2]);
@@ -90,7 +97,7 @@ function MobileApp() {
 
   const content: Record<AppTab, ReactNode> = {
     feed: <Feed />,
-    bot: v2 ? <NationalPublishScreen key={user.id} /> : <Chatbot />,
+    bot: v2 ? <NationalPublishScreen key={user.id} /> : <Chatbot key={user.id} />,
     wallet: <WalletView />,
     inbox: <Inbox />,
     profile: <>

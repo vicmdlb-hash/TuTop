@@ -1,4 +1,5 @@
 import { FirebaseSessionLifecycle } from '../lib/firebaseSessionLifecycle';
+import { sameFirebaseSession } from '../lib/firebaseSharedSessionGuard';
 import { FirebaseRestClient, type AuthSession } from './firebaseRest';
 
 const states = new WeakMap<FirebaseRestClient, FirebaseSessionLifecycle<AuthSession>>();
@@ -17,13 +18,29 @@ function stateFor(client: FirebaseRestClient) {
   return state;
 }
 
-function restoreAuthoritative(client: FirebaseRestClient, session: AuthSession | null) {
-  // Deliberate internal boundary: FirebaseRestClient owns persistence privately, but a
-  // stale async refresh/auth replacement must be able to restore the winning session.
-  // Keep this cast isolated here rather than weakening FirebaseRestClient's public API.
+function ownsCanonicalSession(client: FirebaseRestClient) {
   const internal = client as any;
-  if (typeof internal.persistSession === 'function') internal.persistSession(session);
-  else if (!session) originalSignOut.call(client);
+  // Native secure-session bridge patches readStoredSession to read the volatile
+  // project-scoped session; web reads the same canonical localStorage key.
+  if (typeof internal.readStoredSession !== 'function') return false;
+  try { return sameFirebaseSession(internal.readStoredSession(), client.currentSession); }
+  catch { return false; }
+}
+
+function restoreAuthoritative(client: FirebaseRestClient, session: AuthSession | null) {
+  // A stale instance may not restore/clear the shared session of a newer
+  // login, even if FirebaseSessionLifecycle rejected its token response.
+  if (!ownsCanonicalSession(client)) return false;
+  const internal = client as any;
+  if (typeof internal.persistSession === 'function') {
+    internal.persistSession(session);
+    return true;
+  }
+  if (!session) {
+    originalSignOut.call(client);
+    return true;
+  }
+  return false;
 }
 
 function authSessionChangedError() {
@@ -34,8 +51,12 @@ if (!proto.__tutopSessionHardeningInstalled) {
   Object.defineProperty(proto, '__tutopSessionHardeningInstalled', { value: true, configurable: false, enumerable: false });
 
   proto.signOut = function hardenedSignOut(this: FirebaseRestClient) {
+    const owned = ownsCanonicalSession(this);
     stateFor(this).signOut();
-    return originalSignOut.call(this);
+    if (owned) return originalSignOut.call(this);
+    // Clear the obsolete instance's in-memory identity only. Do not delete
+    // a newer shared session written by another FirebaseRestClient.
+    (this as any).session = null;
   };
 
   proto.registerWithPhonePassword = async function hardenedRegister(this: FirebaseRestClient, phone: string, password: string) {
@@ -78,7 +99,7 @@ if (!proto.__tutopSessionHardeningInstalled) {
         return { token, session: this.currentSession };
       },
       restore: (session) => restoreAuthoritative(this, session),
-      clear: () => originalSignOut.call(this),
+      clear: () => { restoreAuthoritative(this, null); },
     });
   };
 }

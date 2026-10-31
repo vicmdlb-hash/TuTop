@@ -15,6 +15,8 @@ assert.match(tree, /classifySupportQuery/);
 assert.match(tree, /supportTreeFacts/);
 assert.match(tree, /No compartas contraseñas, códigos ni capturas con datos sensibles/);
 assert.match(tree, /TuTop no opera una paquetería propia/);
+assert.match(tree, /la beta de pruebas debe informar indisponibilidad sin fingir una respuesta de IA real/);
+assert.doesNotMatch(tree, /Si la IA remota no está disponible, TuTop usa su asistente local/);
 assert.match(tree, /No son dinero, criptomoneda ni saldo retirable/);
 assert.match(tree, /ubicación aproximada/i);
 assert.match(tree, /no necesita ubicación en segundo plano/i);

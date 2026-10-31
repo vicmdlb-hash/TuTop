@@ -4,8 +4,21 @@ import { pathToFileURL } from 'node:url';
 
 const REQUIRED = new Set(['foreground', 'background', 'cold_start', 'deep_link']);
 const ALLOWED_EVENT_KINDS = new Set(['app_foreground', 'app_background', 'app_boot', 'push_received', 'push_action', 'route_opened', 'push_invalid_payload']);
-const FORBIDDEN_KEYS = new Set(['token', 'fcm_token', 'notification_id', 'raw_notification_id', 'phone', 'idToken', 'refreshToken']);
+// Normalize separators/case so a physical QA trace cannot hide a secret in
+// alternative field spellings. Scan field names only; never print values.
+const normalizeEvidenceKey = key => String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
+const FORBIDDEN_KEYS = new Set([
+  'token', 'fcm_token', 'fcmToken', 'fcm-registration-token', 'deviceToken', 'firebaseToken',
+  'appCheckToken', 'accessToken', 'idToken', 'refreshToken', 'authToken', 'bearerToken',
+  'authorization', 'authorizationHeader', 'apiKey', 'x-api-key', 'clientSecret',
+  'privateKey', 'password', 'cookie', 'setCookie', 'notification_id',
+  'raw_notification_id', 'phone', 'phoneNumber', 'email', 'otp',
+].map(normalizeEvidenceKey));
 const SAFE_CORRELATION = /^[a-z0-9_-]{6,80}$/i;
+// A logical navigation target is a category, not a raw URL, user ID,
+// chat ID, contact detail or notification payload. Reject arbitrary values
+// before physical evidence is stored or shared.
+const SAFE_LOGICAL_TARGETS = new Set(['chat', 'listing', 'transaction', 'saved_search', 'inbox']);
 const MAX_SESSION_MS = 6 * 60 * 60_000;
 const MAX_EVIDENCE_AGE_MS = 24 * 60 * 60_000;
 const CLOCK_SKEW_MS = 5 * 60_000;
@@ -14,7 +27,7 @@ function scan(value, errors, pathParts = []) {
   if (Array.isArray(value)) return value.forEach((item, index) => scan(item, errors, [...pathParts, String(index)]));
   if (!value || typeof value !== 'object') return;
   for (const [key, child] of Object.entries(value)) {
-    if (FORBIDDEN_KEYS.has(key)) errors.push(`campo sensible prohibido: ${[...pathParts, key].join('.')}`);
+    if (FORBIDDEN_KEYS.has(normalizeEvidenceKey(key))) errors.push(`campo sensible prohibido: ${[...pathParts, key].join('.')}`);
     scan(child, errors, [...pathParts, key]);
   }
 }
@@ -40,11 +53,31 @@ function validateWindow(fixture, now, errors) {
 export function validateFcmPhysicalFixture(fixture, candidate, now = Date.now()) {
   const errors = [];
   if (fixture?.schema !== 'tutop.fcm-physical-fixture.v1') errors.push('schema inválido');
-  for (const field of ['artifact_id','build_run_id','build_tree_sha','apk_sha256']) {
+  // Never accept evidence for retired Build120 or a draft/foreign candidate.
+  // This is only a structural guard: real APK custody and two-device proof
+  // remain separate gates.
+  if (candidate?.schema !== 'tutop.physical-qa-candidate.v1'
+      || candidate?.environment !== 'staging'
+      || candidate?.application_id !== 'mx.tutop.app'
+      || candidate?.staging_project !== 'tutop-beta-vicmdlb-1356585881'
+      || candidate?.physical_release_candidate !== true
+      || candidate?.candidate_status !== 'active_exact_head'
+      || candidate?.replacement_required !== false)
+    errors.push('candidato físico no activo');
+  if (!Number.isSafeInteger(candidate?.artifact_id) || candidate.artifact_id <= 0
+      || !Number.isSafeInteger(candidate?.build_run_id) || candidate.build_run_id <= 0
+      || !/^[0-9a-f]{40}$/.test(String(candidate?.build_commit_sha || ''))
+      || !/^[0-9a-f]{40}$/.test(String(candidate?.build_tree_sha || ''))
+      || !/^[0-9a-f]{64}$/.test(String(candidate?.apk_sha256 || ''))
+      || !/^[0-9a-f]{64}$/.test(String(candidate?.apk_cert_sha256 || '')))
+    errors.push('identidad de binario/firma incompleta');
+  for (const field of ['artifact_id','build_run_id','build_commit_sha','build_tree_sha','apk_sha256','apk_cert_sha256']) {
     if (fixture?.candidate?.[field] !== candidate?.[field]) errors.push(`candidate.${field} no coincide con APK vigente`);
   }
   if (!['A','B'].includes(fixture?.device_slot)) errors.push('device_slot debe ser A o B');
-  if (placeholder(fixture?.evidence_session_id)) errors.push('evidence_session_id real requerido');
+  if (placeholder(fixture?.evidence_session_id)
+      || !SAFE_CORRELATION.test(String(fixture?.evidence_session_id || '')))
+    errors.push('evidence_session_id opaco y seguro requerido');
   const sessionDurationMs = validateWindow(fixture, now, errors);
   scan(fixture, errors);
   const scenarios = Array.isArray(fixture?.scenarios) ? fixture.scenarios : [];
@@ -61,6 +94,8 @@ export function validateFcmPhysicalFixture(fixture, candidate, now = Date.now())
     let previous = -Infinity;
     for (const event of events) {
       if (!ALLOWED_EVENT_KINDS.has(event?.kind)) errors.push(`${name}: kind desconocido ${String(event?.kind)}`);
+      if (event && Object.hasOwn(event, 'target') && !SAFE_LOGICAL_TARGETS.has(event.target))
+        errors.push(`${name}: destino lógico no permitido`);
       if (!Number.isFinite(event?.at_ms)) errors.push(`${name}: at_ms inválido`);
       else {
         if (event.at_ms < 0) errors.push(`${name}: at_ms no puede ser negativo`);
@@ -99,8 +134,22 @@ export function validateFcmPhysicalFixture(fixture, candidate, now = Date.now())
       }
       if (!String(action.target || '').trim()) errors.push(`${name}: acción sin destino lógico`);
     }
-    if (name === 'foreground' && !events.some((event) => event.kind === 'app_foreground')) errors.push('foreground: falta app_foreground');
-    if (name === 'background' && !events.some((event) => event.kind === 'app_background')) errors.push('background: falta app_background');
+    if (name === 'foreground' || name === 'background') {
+      const requiredState = name === 'foreground' ? 'app_foreground' : 'app_background';
+      const transitions = events.filter((event) => ['app_foreground', 'app_background', 'app_boot'].includes(event.kind));
+      if (!transitions.some((event) => event.kind === requiredState)) errors.push(`${name}: falta ${requiredState}`);
+      // State must have been observed BEFORE each receipt, not merely
+      // asserted later in the same session. A later opposite transition
+      // invalidates a stale foreground/background state.
+      for (const receive of received) {
+        const priorStates = transitions.filter((event) => Number.isFinite(event.at_ms)
+          && Number.isFinite(receive.at_ms) && event.at_ms <= receive.at_ms);
+        const lastState = priorStates[priorStates.length - 1];
+        if (lastState?.kind !== requiredState) {
+          errors.push(`${name}: push_received sin estado ${requiredState} previo y vigente`);
+        }
+      }
+    }
     if (name === 'cold_start') {
       const boots = events.filter((event) => event.kind === 'app_boot');
       if (boots.length !== 1) errors.push(`cold_start: se requiere exactamente un app_boot, observados ${boots.length}`);

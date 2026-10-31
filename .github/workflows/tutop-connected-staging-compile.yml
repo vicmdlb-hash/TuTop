@@ -1,0 +1,282 @@
+name: TuTop connected Firebase V2 compile check (NO deploy)
+on:
+  push:
+    branches:
+      - integration/tutop-121-122-fcm-owner-ci-20261022
+    paths:
+      - .github/workflows/tutop-connected-staging-compile.yml
+permissions:
+  contents: read
+concurrency:
+  group: tutop-connected-staging-read-only
+  cancel-in-progress: false
+jobs:
+  connected-android-compile:
+    if: github.repository == 'vicmdlb-hash/TuTop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      TUTOP_FIREBASE_PROJECT_ID: tutop-beta-vicmdlb-1356585881
+      TUTOP_ALLOW_STAGING_CONFIG_READ: read-only-v2
+      TUTOP_ANDROID_PACKAGE_NAME: mx.tutop.app
+      VITE_TUTOP_SCHEMA_V2: 'true'
+      VITE_TUTOP_ENVIRONMENT: staging
+      VITE_TUTOP_TOPI_REMOTE_ENABLED: 'false'
+      VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED: 'false'
+      VITE_TUTOP_MEDIA_STORAGE_ENABLED: 'false'
+      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
+    steps:
+      - name: Checkout source without persisted credentials
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Verify isolated source and no mutation permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "integration/tutop-121-122-fcm-owner-ci-20261022"
+          test "${TUTOP_ALLOW_STAGING_CONFIG_READ}" = read-only-v2
+          test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tutop-connected-staging-compile.yml"
+          test -n "${FIREBASE_TOKEN:-}" || { echo 'BLOCKED: Firebase read-only config credentials not connected'; exit 42; }
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Android SDK 36
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Install source dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate FCM ownership and workflow read-only contract before credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/connected-staging-compile-workflow-tests.mjs
+          node --experimental-strip-types scripts/native-push-session-epoch-tests.mjs
+      - name: Fetch existing Firebase Web and Android V2 configs READ ONLY
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/prepare-staging-v2-auth.mjs
+          node scripts/prepare-staging-android-app.mjs
+      - name: Export masked Firebase client bundle environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const v=JSON.parse(fs.readFileSync('.tutop-staging-web-config.json','utf8'));
+          const id='tutop-beta-vicmdlb-1356585881';
+          if(v.projectId!==id||!v.apiKey||!v.appId) throw Error('STAGING_WEB_CONFIG_INVALID');
+          for(const secret of [v.apiKey,v.appId]) process.stdout.write('::add-mask::'+secret+'\n');
+          const rows=[
+            ['VITE_FIREBASE_API_KEY',v.apiKey],['VITE_FIREBASE_APP_ID',v.appId],
+            ['VITE_FIREBASE_AUTH_DOMAIN',v.authDomain],['VITE_FIREBASE_PROJECT_ID',v.projectId],
+            ['VITE_FIREBASE_STORAGE_BUCKET',v.storageBucket],['VITE_TUTOP_APP_VERSION','0.9.2-beta.0'],
+          ];
+          fs.appendFileSync(process.env.GITHUB_ENV,rows.map(([k,val])=>k+'='+val).join('\n')+'\n');
+          NODE
+      - name: Build connected Firebase app web code
+        run: npm run build
+      - name: Install pinned ephemeral Capacitor and sharp
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false --no-audit --no-fund --include=optional \
+            @capacitor/core@8.5.1 @capacitor/android@8.5.1 \
+            @capacitor/geolocation@8.2.2 @capacitor/camera@8.2.4 \
+            @capacitor/filesystem@8.1.0 @capacitor-firebase/messaging@8.5.1 \
+            @capacitor-firebase/app-check@8.5.0 firebase@12.18.0 \
+            @capacitor/cli@8.5.1 @capacitor/assets@3.0.5 sharp@0.34.5
+          node -e "const s=require('sharp');if (!s.versions?.sharp) process.exit(3)"
+          git diff --exit-code -- package.json package-lock.json
+      - name: Generate Firebase-connected Android native project
+        run: npm run android:bootstrap
+      - name: Pin staging Android beta version before compiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/configure-android-beta-version.mjs
+          grep -q 'versionCode 90200' android/app/build.gradle
+          grep -q 'versionName "0.9.2-beta.0"' android/app/build.gradle
+      - name: Validate scoped FCM merger rule before Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq '<service android:name="com.google.firebase.messaging.FirebaseMessagingService" tools:node="remove" tools:ignore="MissingClass" />' android/app/src/main/AndroidManifest.xml
+          echo "FCM merger lint marker is narrowly scoped; merged APK will be audited after Gradle"
+      - name: Prove staging package and native Firebase linkage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s android/app/google-services.json
+          grep -q 'tutop-beta-vicmdlb-1356585881' android/app/google-services.json
+          ! grep -q 'tutop-3a4f7' android/app/google-services.json
+          node scripts/verify-android-native-plugin-bundle.mjs
+      - name: Compile connected Android debug APK without publishing
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --max-workers=2 :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+      - name: Verify connected APK identity without publishing bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$apk" | grep -q "package: name='mx.tutop.app' versionCode='90200' versionName='0.9.2-beta.0'"
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify "$apk"
+          # Google/Android's read-only packaging preflight for 16 KiB pages.
+          # ZIP alignment alone does not prove native ELF segment alignment or physical QA.
+          "$ANDROID_SDK_ROOT/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$apk" | tail -n 3
+          # Verify native ELF PT_LOAD alignment separately from APK ZIP alignment.
+          python3 - "$apk" <<'PY'
+          import pathlib
+          import subprocess
+          import sys
+          import tempfile
+          import zipfile
+
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              libs = [n for n in archive.namelist()
+                      if n.startswith('lib/') and n.endswith('.so')]
+              for name in libs:
+                  with tempfile.TemporaryDirectory() as folder:
+                      lib = pathlib.Path(folder) / 'library.so'
+                      lib.write_bytes(archive.read(name))
+                      result = subprocess.run(['readelf', '-lW', str(lib)],
+                                              check=True, capture_output=True, text=True)
+                      loads = [line.split() for line in result.stdout.splitlines()
+                               if line.strip().startswith('LOAD ')]
+                      if not loads:
+                          raise SystemExit(f'ELF_LOAD_MISSING: {name}')
+                      aligns = [int(columns[-1], 16) for columns in loads]
+                      if any(alignment < 16384 for alignment in aligns):
+                          raise SystemExit(f'ELF_16K_ALIGNMENT_FAIL: {name}; alignments={aligns}')
+              if libs:
+                  print(f'ELF_16K_ALIGNMENT_PASS: {len(libs)} shared libraries')
+              else:
+                  print('ELF_LIBRARIES_ABSENT: no PT_LOAD libraries to audit')
+          PY
+          # Inspect the final merged APK manifest, not only source AndroidManifest.xml.
+          # No install, Firebase write, notification registration or permission grant occurs.
+          python3 - "$apk" "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" <<'PY'
+          import re
+          import subprocess
+          import sys
+
+          apk, aapt = sys.argv[1:3]
+          def inspect(*args):
+              return subprocess.run([aapt, 'dump', *args, apk] if args[0] != 'xmltree'
+                                    else [aapt, 'dump', 'xmltree', apk, 'AndroidManifest.xml'],
+                                    capture_output=True, text=True, check=True).stdout
+
+          permissions = inspect('permissions')
+          declared = set(re.findall(r"uses-permission(?:-sdk-23)?: name='([^']+)'", permissions))
+          required = {
+              'android.permission.ACCESS_COARSE_LOCATION',
+              'android.permission.POST_NOTIFICATIONS',
+              'android.permission.RECORD_AUDIO',
+          }
+          forbidden = {
+              'android.permission.ACCESS_FINE_LOCATION',
+              'android.permission.ACCESS_BACKGROUND_LOCATION',
+              'android.permission.CAMERA',
+              'android.permission.READ_EXTERNAL_STORAGE',
+              'android.permission.WRITE_EXTERNAL_STORAGE',
+              # Children/unknown-age release must not silently inherit ad identifiers.
+              'com.google.android.gms.permission.AD_ID',
+              'android.permission.ACCESS_ADSERVICES_AD_ID',
+              'android.permission.ACCESS_ADSERVICES_ATTRIBUTION',
+              'android.permission.ACCESS_ADSERVICES_TOPICS',
+          }
+          missing = sorted(required - declared)
+          prohibited = sorted(forbidden & declared)
+          if missing or prohibited:
+              raise SystemExit(f'APK_PERMISSION_FAIL missing={missing} forbidden={prohibited}')
+          manifest = inspect('xmltree')
+          # aapt xmltree shows both value and (Raw: value) on one attribute line.
+          # Count android:name attribute nodes, not duplicated textual occurrences.
+          lines = manifest.splitlines()
+          fcm_events = sum(
+              1 for line in lines
+              if 'A: android:name' in line and 'com.google.firebase.MESSAGING_EVENT' in line
+          )
+          handlers = []
+          for index, line in enumerate(lines):
+              if not re.match(r'^\s*E: service(?:\s|$)', line):
+                  continue
+              depth = len(line) - len(line.lstrip())
+              children = []
+              for child in lines[index + 1:]:
+                  if not child.strip():
+                      continue
+                  if len(child) - len(child.lstrip()) <= depth:
+                      break
+                  children.append(child)
+              if not any('com.google.firebase.MESSAGING_EVENT' in child for child in children):
+                  continue
+              service_attr = next((child for child in children
+                                   if 'A: android:name' in child), '')
+              class_name = re.search(r'=\s*"([^"]+)"', service_attr)
+              handlers.append(class_name.group(1) if class_name else 'unidentified-service')
+          print('APK_FCM_MERGED_SERVICE_DIAGNOSTIC: action_occurrences='
+                + str(fcm_events) + ' service_count=' + str(len(handlers))
+                + ' classes=' + ','.join(handlers))
+          # Only the Capacitor handler is authoritative for native callback delivery.
+          if handlers != ['io.capawesome.capacitorjs.plugins.firebase.messaging.MessagingService']:
+              raise SystemExit('APK_FCM_CAPACITOR_HANDLER_REQUIRED')
+          if len(handlers) != 1 or fcm_events != 1:
+              raise SystemExit('APK_FCM_SERVICE_NOT_UNIQUE')
+          print(f'APK_MANIFEST_PERMISSION_PASS: {len(required)} required, {len(forbidden)} forbidden absent')
+          print('APK_FCM_SERVICE_PASS: exactly one MESSAGING_EVENT in merged manifest')
+          PY
+          # Log a reproducible, non-distributable provenance record.
+          # The APK bytes remain ephemeral; only identifiers/hashes are recorded.
+          package_identity="$("$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$apk" | grep -m1 '^package:')"
+          signer_digest="$("$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | grep -m1 'Signer #1 certificate SHA-256 digest:')"
+          cert_sha256="${signer_digest##*: }"
+          [[ "$cert_sha256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo 'STOP_INVALID_SIGNER_DIGEST'; exit 2; }
+          # Only the fingerprint is transferred to a later GET-only audit, never a keystore.
+          printf 'TUTOP_EXPECTED_ANDROID_CERT_SHA256=%s\n' "$cert_sha256" >> "$GITHUB_ENV"
+          apk_sha256="$(sha256sum "$apk" | cut -d ' ' -f1)"
+          printf 'SOURCE_SHA=%s\n' "$GITHUB_SHA"
+          printf 'APK_SHA256=%s\n' "$apk_sha256"
+          printf '%s\n' "$package_identity" "$signer_digest"
+          {
+            echo '### TuTop Android staging — CI evidence only'
+            echo "- Source SHA: \`$GITHUB_SHA\`"
+            echo "- APK SHA-256 (ephemeral debug): \`$apk_sha256\`"
+            echo "- Package and version: \`$package_identity\`"
+            echo "- Signing certificate: \`$signer_digest\`"
+            echo "- Merged FCM: one Capacitor MessagingService"
+            echo "- Native ELF alignment: all present shared libraries >=16 KiB"
+            echo "- Scope: NO upload, NO deploy, NO release, NO physical R6"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "PASS code and Android Firebase connected compile, NO publish, NO staging mutation, NO physical R6"
+      - name: Read back off-Play App Check policy for physical QA, no Firebase writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The APK was compiled only in this ephemeral runner and is not distributed.
+          # GET-only audit exposes settings and counts, never certificates or tokens.
+          node scripts/audit-staging-offplay-app-check.mjs
+          echo "PASS current app signing policy preflight; no APK upload or release"
+
+      - name: Always remove temporary Firebase client configs
+        if: always()
+        shell: bash
+        run: |
+          rm -f .tutop-staging-web-config.json .tutop-staging-google-services.json android/app/google-services.json

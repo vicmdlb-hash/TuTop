@@ -2,6 +2,7 @@ import { categorySafetyRequirements, classifyMarketplaceItem } from '../lib/mark
 import { listingV2HasNoLegacyDescriptionPacking, validCanonicalVideoUri, type CanonicalListingV2, type ListingDeliveryMethod } from '../lib/listingSchemaV2.ts';
 import { CAMPUSES, FACULTIES, INSTITUTIONS } from '../lib/universityNetwork.ts';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant.ts';
+import { validNearbyGeoCell } from '../lib/nearbyMarketplace.ts';
 import type { DeliveryMethod, MeetingPoint, Product, ProductCategory, ProductStatus } from '../types/index.ts';
 import { FirebaseRestClient, type FirestoreDocument, type QueryFilter } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
@@ -118,7 +119,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     career_id: data.career_id,
     visibility_scope: data.visibility_scope,
     listing_kind: 'offer',
-    moderation_status: data.moderation_status === 'flagged' ? 'review' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
+    moderation_status: data.moderation_status === 'flagged' ? 'flagged' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
     availability_status: data.availability_status === 'reserved' ? 'reserved' : 'available',
     punto_encuentro: 'Coordinar por Chat' as MeetingPoint,
     metodos_entrega: data.delivery_methods.map(legacyDelivery),
@@ -211,6 +212,11 @@ export function buildCanonicalListingCreateWrite(
 
 export const canonicalListingsBackend = {
   async create(listing: CanonicalListingV2, category: ProductCategory, operationId?: string) {
+    // Schema-only migration: national listings without campus can be modeled,
+    // but never sent to Firebase before signed dual-factor Rules are proven.
+    if (!listing.institution_id || !listing.campus_id) {
+      throw new Error('NATIONAL_RULES_AND_PHONE_PROOF_NOT_READY');
+    }
     const client = getClient();
     const uid = client.currentSession!.uid;
     if (listing.seller_id !== uid) throw new Error('SELLER_MISMATCH');
@@ -269,7 +275,7 @@ export const canonicalListingsBackend = {
   },
 
   async loadNearbyProducts(input: { geoCells: string[]; limitPerCell?: number; force?: boolean }) {
-    const cells = [...new Set(input.geoCells.filter((cell) => /^g1:\d+:\d+$/.test(cell)))].slice(0, 9).sort();
+    const cells = [...new Set(input.geoCells.filter(validNearbyGeoCell))].slice(0, 9).sort();
     if (!cells.length) return [] as Product[];
     const limit = Math.max(4, Math.min(15, input.limitPerCell || 10));
     const client = getClient();

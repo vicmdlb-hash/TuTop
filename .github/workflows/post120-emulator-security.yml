@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - fix/post120-physical-failure-cluster
+      - integration/tutop-121-122-fcm-owner-ci-20261022
 
 permissions:
   contents: read
@@ -16,7 +17,7 @@ concurrency:
 jobs:
   successor-emulator-security:
     name: Firestore + Storage emulator security
-    if: github.ref_name == 'fix/post120-physical-failure-cluster'
+    if: github.ref_name == 'fix/post120-physical-failure-cluster' || github.ref_name == 'integration/tutop-121-122-fcm-owner-ci-20261022'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -25,6 +26,8 @@ jobs:
     steps:
       - name: Checkout exact successor ref
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Node 22
         uses: actions/setup-node@v7
@@ -50,8 +53,41 @@ jobs:
       - name: Prepare strict V2 Rules
         run: npm run v2:rules:prepare
 
+      - name: Prepare isolated signed national phone demo (no staging/prod)
+        run: node scripts/prepare-firestore-national-dual-factor-demo-rules.mjs
+
+      - name: National signed-identity emulator matrix (synthetic claims only)
+        run: >
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore,storage
+          --config firebase.national-dual-factor-demo.json
+          --project demo-tutop-post120-rules
+          "node --test --test-concurrency=1
+          tests/firestore.v2.national-dual-factor-demo.test.mjs"
+
       - name: Verify successor emulator gate is demo-only and isolated
         run: node scripts/post120-successor-emulator-gate-contract-tests.mjs
+
+      - name: Prepare independent guardian migration demo rules (no staging/prod)
+        run: node scripts/prepare-firestore-guardian-demo-rules.mjs
+
+      - name: Differential baseline for identical positive chat and message fixtures
+        run: >
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore,storage
+          --config firebase.v2.json
+          --project demo-tutop-post120-rules
+          "TUTOP_GUARDIAN_TEST_RULESET=baseline node --test --test-concurrency=1
+          --test-name-pattern='adult and teen verified accounts|verified adult with server-vetted active recipient'
+          tests/firestore.v2.guardian-gated-demo.test.mjs"
+
+      - name: Guardian capability rules emulator challenge (demo only)
+        run: >
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore,storage
+          --config firebase.guardian-demo.json
+          --project demo-tutop-post120-rules
+          "node --test --test-concurrency=1 tests/firestore.v2.guardian-gated-demo.test.mjs tests/firestore.v2.guardian-publication-demo.test.mjs"
 
       - name: Firestore + Storage emulator security suite
         run: >
@@ -75,8 +111,10 @@ jobs:
           tests/firestore.v2.favorite-membership.test.mjs
           tests/firestore.v2.post106-verified-identity.test.mjs
           tests/firestore.v2.private-admin-reads.test.mjs
+          tests/firestore.v2.guardian-authority.test.mjs
           tests/firestore.v2.publication-profile-coupling.test.mjs
           tests/firestore.v2.seller-follows.test.mjs
+          tests/firestore.v2.user-blocks.test.mjs
           tests/storage.rules.test.mjs"
 
       - name: Final dependency immutability check

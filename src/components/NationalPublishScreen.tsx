@@ -3,7 +3,7 @@ import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Images, Loader2, MapPin, 
 import { compressImageForFirestore } from '../lib/imageCompression';
 import { categorySafetyRequirements } from '../lib/marketplaceGovernance';
 import { getCachedApproxLocation, locationAttributes, nearbyLocationPermission, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
-import { nationalFieldsFor, normalizeNationalAttributes } from '../lib/nationalListingFields';
+import { missingRequiredNationalFields, nationalFieldsFor, normalizeNationalAttributes } from '../lib/nationalListingFields';
 import type { CanonicalListingV2, ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import { smartPriceFromTuTop } from '../lib/smartPricing';
 import { startTopiDictation } from '../lib/topiVoice';
@@ -123,6 +123,7 @@ export default function NationalPublishScreen() {
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
+  const locationRequestSerial = useRef(0);
   const nativeDevice = isNativeDeviceRuntime();
   const videoInfraEnabled = mediaStorageEnabled();
   const initialDraft = useMemo(() => readPublishDraft(user.id), [user.id]);
@@ -152,6 +153,10 @@ export default function NationalPublishScreen() {
   const [approxLocation, setApproxLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
   const [locationOptIn, setLocationOptIn] = useState(Boolean(initialDraft?.locationOptIn));
 
+  // Invalidate in-flight geolocation when the form unmounts or its UID changes.
+  // The App keys Publish by UID, but a pending browser/native callback can outlive it.
+  useEffect(() => () => { locationRequestSerial.current += 1; }, [user.id]);
+
   const institutionId = user.institution_id || user.university?.institution_id || '';
   const campusId = user.campus_id || user.university?.campus_id || '';
   const cityId = user.university?.city_id;
@@ -159,7 +164,8 @@ export default function NationalPublishScreen() {
   const safePoints = useMemo(() => safeMeetingPointsFor(campusId, institutionId), [campusId, institutionId]);
   const normalizedAttributes = useMemo(() => normalizeNationalAttributes(fields, attributes), [fields, attributes]);
   const required = useMemo(() => categorySafetyRequirements(category || undefined).required, [category]);
-  const missing = required.filter((key) => normalizedAttributes[key] === undefined || normalizedAttributes[key] === null || normalizedAttributes[key] === '');
+  const missing = missingRequiredNationalFields(fields, normalizedAttributes, required);
+  const missingLabels = missing.map((key) => fields.find((field) => field.key === key)?.label || key);
   const parsedPrice = Number(price);
   const parsedQuantity = Number(quantity);
   const hasValidPrice = price.trim() !== '' && Number.isFinite(parsedPrice) && parsedPrice >= 0.01 && parsedPrice <= 1_000_000;
@@ -175,7 +181,7 @@ export default function NationalPublishScreen() {
   if (!hasValidQuantity) publishIssues.push('cantidad entera entre 1 y 99');
   if (!deliveryMethods.length) publishIssues.push('forma de entrega');
   if (prohibitedDraft) publishIssues.push('artículo o servicio no permitido');
-  if (missing.length) publishIssues.push(`${missing.length} dato${missing.length === 1 ? '' : 's'} obligatorio${missing.length === 1 ? '' : 's'}`);
+  if (missing.length) publishIssues.push(`campos obligatorios: ${missingLabels.join(', ')}`);
   if (videoFile && !videoInfraEnabled) publishIssues.push('video no disponible en esta beta');
   const readyToPublish = publishIssues.length === 0;
 
@@ -325,8 +331,19 @@ export default function NationalPublishScreen() {
   };
 
   const refreshLocation = async () => {
+    const requestUid = user.id;
+    if (!requestUid || useAppStore.getState().user.id !== requestUid) return;
+    const requestSerial = ++locationRequestSerial.current;
+    const stillCurrent = () => locationRequestSerial.current === requestSerial
+      && useAppStore.getState().user.id === requestUid;
     setMessage('Obteniendo una ubicación aproximada para este anuncio…');
-    const location = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000, ownerUid: user.id });
+    const location = await requestApproxLocation({
+      requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000,
+      ownerUid: requestUid, isOwnerActive: stillCurrent,
+    });
+    // Neither switching accounts nor pressing Quitar while permission is pending
+    // may enable location for another account or reinstate revoked listing consent.
+    if (!stillCurrent()) return;
     setApproxLocation(location);
     if (location) {
       setLocationOptIn(true);
@@ -336,12 +353,14 @@ export default function NationalPublishScreen() {
     }
     setLocationOptIn(false);
     const permission = await nearbyLocationPermission();
-    if (permission === 'denied') setMessage('Android tiene bloqueada la ubicación para TuTop. Activa ubicación aproximada para la app y vuelve a intentarlo.');
+    if (!stillCurrent()) return;
+    if (permission === 'denied') setMessage('Android tiene bloqueada la ubicación para TuTop. Activa ubicación aproximada en los permisos de la app y vuelve a intentarlo.');
     else if (permission === 'unavailable') setMessage('No pudimos obtener ubicación del dispositivo. Comprueba que los servicios de ubicación de Android estén encendidos.');
     else setMessage('Android concedió el permiso, pero todavía no entregó una posición. Tu anuncio seguirá funcionando por campus y ciudad; vuelve a intentar ubicación en unos segundos.');
   };
 
   const removeListingLocation = () => {
+    locationRequestSerial.current += 1;
     setLocationOptIn(false);
     recordDiagnostic('location', 'listing_location_opt_in_removed');
     setMessage('Este anuncio no incluirá ubicación aproximada. TuTop puede seguir usando una ubicación cacheada para explorar cerca de ti, pero no la publicará aquí.');
@@ -423,7 +442,7 @@ export default function NationalPublishScreen() {
     if (!deliveryMethods.length) return setMessage('Selecciona al menos una forma de entrega.');
     if (missing.length) {
       setAdvancedOpen(true);
-      return setMessage('Completa los campos obligatorios marcados con * antes de publicar.');
+      return setMessage(`Completa estos campos obligatorios: ${missingLabels.join(', ')}.`);
     }
     if (videoFile && !videoInfraEnabled) return setMessage('Los videos todavía no están disponibles en esta beta. Puedes publicar el anuncio con fotos.');
 
@@ -605,16 +624,16 @@ export default function NationalPublishScreen() {
         <input ref={videoRef} type="file" accept="video/mp4,video/webm,video/quicktime" className="hidden" onChange={(event) => selectVideo(event.target.files)} />
       </section>
 
-      <section className="publish-card"><p className="eyebrow">REVISA LO ESENCIAL</p><label className="publish-label">Título</label><input className="publish-input" value={title} onChange={(e) => setTitle(e.target.value.slice(0, 120))} placeholder="¿Qué vendes?" /><label className="publish-label">Precio</label><input className="publish-input" type="number" min="0.01" step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Precio en MXN" /><label className="publish-label">Categoría</label><select className="publish-input" value={category} onChange={(e) => { const next = e.target.value as ProductCategory; setCategory(next); setAttributes({}); if (next) setScope(defaultScopeForCategory(next)); }}><option value="">Selecciona</option>{MARKETPLACE_CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select><label className="publish-label">Descripción</label><textarea className="publish-textarea" rows={3} maxLength={3000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Lo más importante del producto." /><p className="mt-1 text-right text-[8px] text-slate-600">{description.length.toLocaleString('es-MX')} / 3,000</p></section>
+      <section className="publish-card"><p className="eyebrow">REVISA LO ESENCIAL</p><label className="publish-label" htmlFor="tutop-publish-title">Título</label><input id="tutop-publish-title" className="publish-input" value={title} onChange={(e) => setTitle(e.target.value.slice(0, 120))} placeholder="¿Qué vendes?" /><label className="publish-label" htmlFor="tutop-publish-price">Precio</label><input id="tutop-publish-price" className="publish-input" type="number" min="0.01" step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Precio en MXN" /><label className="publish-label" htmlFor="tutop-publish-category">Categoría</label><select id="tutop-publish-category" className="publish-input" value={category} onChange={(e) => { const next = e.target.value as ProductCategory; setCategory(next); setAttributes({}); if (next) setScope(defaultScopeForCategory(next)); }}><option value="">Selecciona</option>{MARKETPLACE_CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select><label className="publish-label" htmlFor="tutop-publish-description">Descripción</label><textarea id="tutop-publish-description" className="publish-textarea" rows={3} maxLength={3000} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Lo más importante del producto." /><p className="mt-1 text-right text-[8px] text-slate-600">{description.length.toLocaleString('es-MX')} / 3,000</p></section>
 
       {required.length > 0 && <section className="publish-card"><div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-300" /><strong className="text-xs">Datos necesarios para {category}</strong></div><p className="mt-1 text-[9px] text-slate-500">Sólo pedimos estos datos porque esta categoría necesita información adicional para publicarse con seguridad.</p><div className="mt-3 grid grid-cols-2 gap-2">{fields.filter((field) => field.required).map((field) => <label key={field.key} className="text-[9px] text-slate-500">{field.label} *{field.kind === 'boolean' ? <input className="ml-2" type="checkbox" checked={Boolean(attributes[field.key])} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.checked }))} /> : <input className="publish-input mt-1" type={field.kind === 'number' ? 'number' : 'text'} value={String(attributes[field.key] ?? '')} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.value.slice(0, 300) }))} placeholder={field.placeholder} />}</label>)}</div></section>}
 
       <button type="button" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((open) => !open)} className="flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.025] px-4 py-3 text-left"><span><strong className="block text-xs">Más opciones</strong><small className="mt-0.5 block text-[9px] text-slate-500">Condición, cantidad, alcance, entrega y datos opcionales.</small></span><ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} /></button>
 
       {advancedOpen && <>
-        <section className="publish-card"><p className="eyebrow">DETALLES</p><div className="mt-2 grid grid-cols-2 gap-2"><select className="publish-input" value={condition} onChange={(e) => setCondition(e.target.value)}><option>Nuevo</option><option>Como nuevo</option><option>Buen estado</option><option>Uso visible</option><option>Para reparar</option><option>No aplica</option></select><input className="publish-input" type="number" min="1" max="99" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="Cantidad" /></div><label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={negotiable} onChange={(e) => setNegotiable(e.target.checked)} />Precio negociable</label>{fields.some((field) => !field.required) && <div className="mt-3 grid grid-cols-2 gap-2">{fields.filter((field) => !field.required).map((field) => <label key={field.key} className="text-[9px] text-slate-500">{field.label}{field.kind === 'boolean' ? <input className="ml-2" type="checkbox" checked={Boolean(attributes[field.key])} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.checked }))} /> : <input className="publish-input mt-1" type={field.kind === 'number' ? 'number' : 'text'} value={String(attributes[field.key] ?? '')} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.value.slice(0, 300) }))} placeholder={field.placeholder} />}</label>)}</div>}{category === 'Cuartos & Renta' && <p className="mt-2 text-[9px] text-amber-200/70">Nunca publiques la dirección exacta; sólo zona aproximada.</p>}</section>
+        <section className="publish-card"><p className="eyebrow">DETALLES</p><div className="mt-2 grid grid-cols-2 gap-2"><select aria-label="Condición del producto" className="publish-input" value={condition} onChange={(e) => setCondition(e.target.value)}><option>Nuevo</option><option>Como nuevo</option><option>Buen estado</option><option>Uso visible</option><option>Para reparar</option><option>No aplica</option></select><input aria-label="Cantidad de unidades" className="publish-input" type="number" min="1" max="99" step="1" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="Cantidad" /></div><label className="mt-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={negotiable} onChange={(e) => setNegotiable(e.target.checked)} />Precio negociable</label>{fields.some((field) => !field.required) && <div className="mt-3 grid grid-cols-2 gap-2">{fields.filter((field) => !field.required).map((field) => <label key={field.key} className="text-[9px] text-slate-500">{field.label}{field.kind === 'boolean' ? <input className="ml-2" type="checkbox" checked={Boolean(attributes[field.key])} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.checked }))} /> : <input className="publish-input mt-1" type={field.kind === 'number' ? 'number' : 'text'} value={String(attributes[field.key] ?? '')} onChange={(e) => setAttributes((current) => ({ ...current, [field.key]: e.target.value.slice(0, 300) }))} placeholder={field.placeholder} />}</label>)}</div>}{category === 'Cuartos & Renta' && <p className="mt-2 text-[9px] text-amber-200/70">Nunca publiques la dirección exacta; sólo zona aproximada.</p>}</section>
 
-        <section className="publish-card"><p className="eyebrow">ALCANCE Y ENTREGA</p><div className="mt-2 grid gap-2">{VISIBILITY_SCOPES.map((item) => <button key={item.id} type="button" onClick={() => setScope(item.id)} className={`rounded-xl p-3 text-left ${scope === item.id ? 'bg-violet-500/10 ring-1 ring-violet-400/20' : 'bg-white/[0.02]'}`}><strong className="text-[10px]">{item.label}</strong><p className="text-[9px] text-slate-600">{item.hint}</p></button>)}</div><div className="mt-3 flex flex-wrap gap-2">{DELIVERY.map((item) => <button key={item.id} type="button" onClick={() => toggleDelivery(item.id)} className={`filter-chip ${deliveryMethods.includes(item.id) ? 'filter-chip-active' : ''}`}>{item.label}</button>)}</div><p className="mt-2 rounded-xl bg-sky-500/[0.05] px-3 py-2 text-[9px] text-sky-200/80"><strong>TuTop no hace envíos.</strong> Si vendedor y comprador acuerdan mensajería o paquetería, se coordina directamente entre ellos.</p>{safePoints.length > 0 && <select className="publish-input mt-3" value={meetingPointId} onChange={(e) => setMeetingPointId(e.target.value)}><option value="">Punto a coordinar</option>{safePoints.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select>}</section>
+        <section className="publish-card"><p className="eyebrow">ALCANCE Y ENTREGA</p><div className="mt-2 grid gap-2">{VISIBILITY_SCOPES.map((item) => <button key={item.id} type="button" onClick={() => setScope(item.id)} className={`rounded-xl p-3 text-left ${scope === item.id ? 'bg-violet-500/10 ring-1 ring-violet-400/20' : 'bg-white/[0.02]'}`}><strong className="text-[10px]">{item.label}</strong><p className="text-[9px] text-slate-600">{item.hint}</p></button>)}</div><div className="mt-3 flex flex-wrap gap-2">{DELIVERY.map((item) => <button key={item.id} type="button" onClick={() => toggleDelivery(item.id)} className={`filter-chip ${deliveryMethods.includes(item.id) ? 'filter-chip-active' : ''}`}>{item.label}</button>)}</div><p className="mt-2 rounded-xl bg-sky-500/[0.05] px-3 py-2 text-[9px] text-sky-200/80"><strong>TuTop no hace envíos.</strong> Si vendedor y comprador acuerdan mensajería o paquetería, se coordina directamente entre ellos. Un anuncio visible en todo México también puede ofrecer entrega presencial; indica claramente las condiciones.</p>{safePoints.length > 0 && <select aria-label="Punto de encuentro" className="publish-input mt-3" value={meetingPointId} onChange={(e) => setMeetingPointId(e.target.value)}><option value="">Punto a coordinar</option>{safePoints.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select>}</section>
       </>}
 
       {category && <section className="publish-card"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-300" /><strong className="text-xs">Precio inteligente</strong></div>{pricing ? <><p className="mt-2 text-[10px] leading-5 text-slate-400">{pricing.sample_size} comparables · mediana ${pricing.median_mxn.toLocaleString('es-MX')} · vender rápido ${pricing.sell_fast_mxn.toLocaleString('es-MX')} · recomendado <strong className="text-violet-200">${pricing.recommended_mxn.toLocaleString('es-MX')}</strong> · probar alto ${pricing.try_high_mxn.toLocaleString('es-MX')}</p><button type="button" onClick={() => setPrice(String(pricing.recommended_mxn))} className="mt-2 rounded-xl bg-violet-500/10 px-3 py-2 text-[10px] font-bold text-violet-200">Usar precio recomendado</button></> : <p className="mt-2 text-[9px] text-slate-500">Aún no hay suficientes comparables reales. Topi no inventará un precio.</p>}</section>}

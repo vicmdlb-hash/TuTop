@@ -1,4 +1,6 @@
 import { pushBackend } from './pushBackend';
+import { verifiedEmailBetaAuth } from './verifiedEmailBetaAuth';
+import { matchesNativePushSession, type PushSessionWitness } from '../lib/nativePushSessionGuard';
 import { initializeNativeAppCheck, isNativeFirebaseRuntime } from './nativeAppCheckToken';
 
 type CapacitorPlugin = Record<string, (...args: any[]) => Promise<any>>;
@@ -30,6 +32,8 @@ export const NATIVE_NOTIFICATION_EVENT = 'tutop:native-notification';
 let initialization: Promise<void> | null = null;
 let listenersInstalled = false;
 let ownershipRetryInstalled = false;
+// A logout or native disable immediately invalidates all earlier registration work.
+let pushRegistrationEpoch = 0;
 const PENDING_PUSH_OWNERSHIP_RESET_KEY = 'tutop.push.pending-owner-reset.v1';
 
 function pendingPushOwnershipReset() {
@@ -94,10 +98,24 @@ function emitNotificationIntent(intent: NativeNotificationIntent) {
   window.dispatchEvent(new CustomEvent<NativeNotificationIntent>(NATIVE_NOTIFICATION_EVENT, { detail: intent }));
 }
 
-async function registerToken(token: string) {
+function currentPushSessionWitness(): PushSessionWitness | null {
+  if (pendingPushOwnershipReset()) return null;
+  const identity = verifiedEmailBetaAuth.readSessionIdentity();
+  if (!identity?.uid || !identity.refreshToken) return null;
+  return { ...identity, generation: verifiedEmailBetaAuth.sessionGeneration(), epoch: pushRegistrationEpoch };
+}
+function isCurrentPushSession(witness: PushSessionWitness) {
+  return matchesNativePushSession(
+    witness, verifiedEmailBetaAuth.readSessionIdentity(),
+    verifiedEmailBetaAuth.sessionGeneration(), pushRegistrationEpoch,
+    pendingPushOwnershipReset(),
+  );
+}
+async function registerToken(token: string, witness: PushSessionWitness) {
+  if (!isCurrentPushSession(witness)) throw new Error('PUSH_OWNER_SESSION_CHANGED');
   const clean = token.trim();
-  if (clean.length < 20) return;
-  await pushBackend.registerDeviceToken(clean, 'android', appVersion());
+  if (clean.length < 20 || clean.length > 4096) throw new Error('INVALID_PUSH_TOKEN');
+  await pushBackend.registerDeviceToken(clean, 'android', appVersion(), () => isCurrentPushSession(witness));
 }
 
 export async function nativePushPermission(): Promise<PushPermission> {
@@ -116,10 +134,12 @@ export async function nativePushPermission(): Promise<PushPermission> {
 async function installMessagingListeners(messaging: CapacitorPlugin) {
   if (listenersInstalled || !messaging.addListener) return;
   listenersInstalled = true;
-  await messaging.addListener('tokenReceived', async (event: { token?: string }) => {
-    const token = String(event?.token || '').trim();
-    if (!token) return;
-    await registerToken(token).catch(() => undefined);
+  await messaging.addListener('tokenReceived', async (_event: { token?: string }) => {
+    // Never bind the event's potentially delayed token to a new account.
+    // Re-read the native token behind a live Auth, permission and owner fence.
+    const witness = currentPushSessionWitness();
+    if (!witness) return;
+    await syncGrantedPushTokenHealth(witness).catch(() => undefined);
   });
   await messaging.addListener('notificationReceived', async (event: unknown) => {
     emitNotificationIntent(intentFromEvent(event, 'received'));
@@ -136,27 +156,32 @@ function classifyPushFailure(error: unknown): PushRegistrationReason {
   return 'token-registration-failed';
 }
 
-async function syncGrantedPushTokenHealth(): Promise<{ registered: boolean; reason: PushRegistrationReason }> {
+async function syncGrantedPushTokenHealth(
+  providedWitness?: PushSessionWitness,
+): Promise<{ registered: boolean; reason: PushRegistrationReason }> {
+  const witness = providedWitness || currentPushSessionWitness();
+  const denied = { registered: false, reason: 'ownership-reconciliation-pending' as PushRegistrationReason };
+  if (!witness || !isCurrentPushSession(witness)) return denied;
   const messaging = capacitorPlugin('FirebaseMessaging');
   if (!messaging?.getToken) return { registered: false, reason: 'plugin-unavailable' };
   await installMessagingListeners(messaging);
+  if (!isCurrentPushSession(witness)) return denied;
   const permission = await nativePushPermission();
   if (permission !== 'granted') return { registered: false, reason: 'permission-not-granted' };
+  if (!isCurrentPushSession(witness)) return denied;
   let result: any;
-  try {
-    result = await messaging.getToken();
-  } catch (error) {
-    return { registered: false, reason: classifyPushFailure(error) };
-  }
+  try { result = await messaging.getToken(); }
+  catch (error) { return { registered: false, reason: classifyPushFailure(error) }; }
+  // A delayed getToken from account A must not register as B after logout.
+  if (!isCurrentPushSession(witness)) return denied;
   const token = String(result?.token || '').trim();
   if (!token) return { registered: false, reason: 'token-empty' };
-  try {
-    await registerToken(token);
-  } catch (error) {
+  try { await registerToken(token, witness); }
+  catch (error) {
     const classified = classifyPushFailure(error);
     return { registered: false, reason: classified === 'token-registration-failed' ? 'server-registration-failed' : classified };
   }
-  return { registered: true, reason: 'registered' };
+  return isCurrentPushSession(witness) ? { registered: true, reason: 'registered' } : denied;
 }
 
 async function syncGrantedPushToken() {
@@ -252,6 +277,7 @@ export async function enableNativePushNotifications() {
 }
 
 export async function disableNativePushNotifications() {
+  pushRegistrationEpoch += 1;
   if (!isNativeFirebaseRuntime()) return false;
   const messaging = capacitorPlugin('FirebaseMessaging');
   if (!messaging?.getToken || !messaging?.deleteToken) return false;
@@ -284,6 +310,7 @@ function bounded<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promis
  * operation and then clear auth regardless of the result.
  */
 export async function prepareNativePushForAccountSignOut() {
+  pushRegistrationEpoch += 1;
   initialization = null;
   if (!isNativeFirebaseRuntime()) return { serverDeactivated: false, tokenDeleted: false };
 

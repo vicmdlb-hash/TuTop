@@ -2,6 +2,25 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 const source = fs.readFileSync(process.argv[2] || 'src/services/verifiedEmailBetaAuth.ts', 'utf8').replace(/\r\n/g, '\n');
+// The runtime harness strips TS imports. Inject the real source helper explicitly;
+// omitting it would yield a false failure unrelated to Firebase auth behavior.
+const phoneIndicatorSource = stripTypeScriptTypes(fs.readFileSync('src/lib/nationalVerificationIndicators.ts', 'utf8'))
+  .replace(/^export /gm, '');
+const nationalVerificationIndicators = new Function(
+  phoneIndicatorSource + '; return nationalVerificationIndicators;'
+)();
+// Execute the actual TypeScript national profile normalizer in the isolated harness.
+const academicSource = stripTypeScriptTypes(fs.readFileSync('src/lib/nationalAcademicMetadata.ts', 'utf8')).replace(/^export /gm, '');
+const { nationalAcademicMetadata, validateBetaAcademicCatalog } = new Function(academicSource + '; return { nationalAcademicMetadata, validateBetaAcademicCatalog };')();
+const INSTITUTIONS = [
+  { id: 'uatx', name: 'Universidad Autónoma de Tlaxcala', active: true },
+  { id: 'unam', name: 'Universidad Nacional Autónoma de México', active: true },
+];
+const CAMPUSES = [
+  { id: 'uatx-riberena', institution_id: 'uatx', name: 'Campus Ribereña', active: true },
+  { id: 'unam-cu', institution_id: 'unam', name: 'Ciudad Universitaria', active: true },
+  { id: 'closed-campus', institution_id: 'uatx', name: 'Campus cerrado', active: false },
+];
 function harness() {
   let session = null;
   let privateEmail = '';
@@ -43,14 +62,32 @@ function harness() {
   const firebaseFetch = fetch;
   const isFirebaseRequestTimeout = (error) => error?.message === 'FIREBASE_REQUEST_TIMEOUT' || error?.code === 'FIREBASE_REQUEST_TIMEOUT';
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
-  const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','isFirebaseRequestTimeout',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,isFirebaseRequestTimeout);
+  const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','isFirebaseRequestTimeout','nationalVerificationIndicators','nationalAcademicMetadata','validateBetaAcademicCatalog','INSTITUTIONS','CAMPUSES',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,isFirebaseRequestTimeout,nationalVerificationIndicators,nationalAcademicMetadata,validateBetaAcademicCatalog,INSTITUTIONS,CAMPUSES);
   return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set profileWait(v){profileWait=v;}};
 }
-const profile={nombre:'Tester',facultad:'Campus',institution_id:'inst',institution_name:'Institution',campus_id:'camp',campus_name:'Campus'};
+const profile={nombre:'Tester',facultad:'Campus',institution_id:'uatx',institution_name:'Universidad Autónoma de Tlaxcala',campus_id:'uatx-riberena',campus_name:'Campus Ribereña'};
 const tests = [
  ['optional Mexican phone is normalized before profile commit',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',{...profile,phone:'246 123 4567'});
    assert.equal(h.calls.find(c=>c.kind==='commit').writes.find(w=>w.update.path==='user_private/u1').update.data.telefono,'+522461234567');
+ }],
+ ['incomplete academic pair cannot create an orphan Firebase Auth identity',async()=>{
+   const h=harness();
+   await assert.rejects(h.auth.register('a@example.test','password123',{...profile,campus_name:''}),/ACADEMIC_NAME_INVALID/);
+   assert.equal(h.calls.length,0);
+ }],
+ ['invalid, mismatched, or inactive campus does not create a Firebase Auth UID',async()=>{
+   for(const values of [
+     {campus_id:'missing-campus'},
+     {campus_id:'unam-cu',campus_name:'Ciudad Universitaria'},
+     {campus_id:'closed-campus',campus_name:'Campus cerrado'},
+     {institution_name:'Universidad inventada'},
+     {campus_name:'Campus inventado'},
+   ]) {
+     const h=harness();
+     await assert.rejects(h.auth.register('a@example.test','password123',{...profile,...values}),/ACADEMIC_CATALOG_/);
+     assert.equal(h.calls.length,0);
+   }
  }],
  ['invalid optional phone rejected before account creation',async()=>{
    const h=harness(); await assert.rejects(h.auth.register('a@example.test','password123',{...profile,phone:'123'}));
@@ -61,6 +98,38 @@ const tests = [
    assert.equal(result.emailVerified,false); assert.equal(result.verificationEmailSent,false); assert.equal(h.session.uid,'u1');
    assert.equal(h.calls.some(c=>c.kind.includes('accounts:delete')),false);
    h.sendError=null; await h.auth.resendVerificationEmail();
+ }],
+ ['password reset hides nonexistent accounts and does not create an identity',async()=>{
+   const h=harness();
+   assert.equal(await h.auth.requestPasswordReset('TEST@Example.test'),true);
+   const requests=h.calls.filter(c=>String(c.kind).includes('accounts:sendOobCode'));
+   assert.equal(requests.length,1);
+   assert.deepEqual(requests[0].body,{requestType:'PASSWORD_RESET',email:'test@example.test'});
+   assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:signUp')),false);
+   assert.equal(h.session,null);
+   h.sendError='EMAIL_NOT_FOUND';
+   assert.equal(await h.auth.requestPasswordReset('unknown@example.test'),true,
+     'nonexistent emails must receive the same success-shaped response');
+ }],
+ ['password reset rejects invalid addresses and propagates transport errors',async()=>{
+   const h=harness();
+   await assert.rejects(h.auth.requestPasswordReset('invalid-email'),/EMAIL_INVALID/);
+   assert.equal(h.calls.length,0,'no Firebase request may be sent for an invalid email');
+   h.sendError='NETWORK_FAILED';
+   await assert.rejects(h.auth.requestPasswordReset('a@example.test'),/NETWORK_FAILED/);
+   assert.equal(h.session,null);
+ }],
+ ['verification resend failure preserves pending session without claiming delivery',async()=>{
+   const h=harness(); await h.auth.register('a@example.test','password123',profile);
+   h.sendError='NETWORK_FAILED';
+   await assert.rejects(h.auth.resendVerificationEmail(),/NETWORK_FAILED/);
+   assert.equal(h.session.uid,'u1','a failed verification mail must not delete the account');
+   const audit=h.calls.findLast(c=>c.kind==='setDocument' && c.path==='auth_status/u1');
+   assert.equal(audit?.data.last_client_code,'VERIFICATION_EMAIL_SEND_FAILED');
+   h.sendError=null;
+   assert.equal(await h.auth.resendVerificationEmail(),true);
+   const retried=h.calls.findLast(c=>c.kind==='setDocument' && c.path==='auth_status/u1');
+   assert.equal(retried?.data.last_client_code,'VERIFICATION_EMAIL_SENT');
  }],
  ['definite denied profile commit still rolls back Auth',async()=>{
    const h=harness(); h.commitError='PERMISSION_DENIED'; await assert.rejects(h.auth.register('a@example.test','password123',profile),/PERMISSION_DENIED/);

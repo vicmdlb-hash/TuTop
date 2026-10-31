@@ -52,6 +52,16 @@ assert.ok(phone.redactions.includes('phone'));
 const otp = redactTopiRemoteText('Código de verificación: 839201');
 assert.equal(otp.text?.includes('839201'), false);
 assert.ok(otp.redactions.includes('otp'));
+const keyExamples = [
+  'AIza' + 'a'.repeat(35),
+  'sk-proj-' + 'a'.repeat(36),
+  'sk-' + 'b'.repeat(24),
+];
+for (const value of keyExamples) {
+  const result = redactTopiRemoteText('Configuración API: ' + value);
+  assert.equal(result.text?.includes(value), false, 'raw API key must not survive redaction');
+  assert(result.redactions.includes('token'));
+}
 const productFacts = redactTopiRemoteText('Vendo iPhone 13 de 128 GB en $12,500, batería 88%');
 assert.equal(productFacts.text, 'Vendo iPhone 13 de 128 GB en $12,500, batería 88%');
 

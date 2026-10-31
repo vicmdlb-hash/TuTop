@@ -13,6 +13,9 @@ const LOCATION_KEY = 'tutop.approx-location.v1';
 export const NEARBY_LOCATION_EVENT = 'tutop:approx-location';
 export const NEARBY_RADIUS_OPTIONS = [5, 10, 25, 50] as const;
 const GEO_CELL_DEGREES = 1;
+// Increment even when no cache exists: pending native/browser location must
+// never recreate an account's location after logout or consent reset.
+let locationLifecycleEpoch = 0;
 
 function validCoordinate(latitude: number, longitude: number) {
   return Number.isFinite(latitude) && Number.isFinite(longitude)
@@ -35,7 +38,8 @@ export function toApproxLocation(latitude: number, longitude: number, source: Ap
   };
 }
 
-type PersistedApproxLocation = ApproxLocation & { owner_uid: string };
+export type ScopedApproxLocationEvent = ApproxLocation & { owner_uid: string };
+type PersistedApproxLocation = ScopedApproxLocationEvent;
 
 export function getCachedApproxLocation(ownerUid: string, maxAgeMs = 6 * 60 * 60_000): ApproxLocation | null {
   if (!ownerUid) return null;
@@ -45,27 +49,65 @@ export function getCachedApproxLocation(ownerUid: string, maxAgeMs = 6 * 60 * 60
     const parsed = JSON.parse(raw) as Partial<PersistedApproxLocation>;
     // Legacy/unscoped cache entries are intentionally rejected instead of being
     // attached to whichever account logs in next on the same device.
-    if (!parsed.owner_uid || parsed.owner_uid !== ownerUid) return null;
-    if (!validCoordinate(Number(parsed.latitude), Number(parsed.longitude))) return null;
+    if (!parsed.owner_uid) {
+      // A legacy cache with no owner can contain another user's location.
+      localStorage.removeItem(LOCATION_KEY);
+      return null;
+    }
+    if (parsed.owner_uid !== ownerUid) return null;
+    // A matching UID does not authorize extra location, contact, or credential
+    // fields left in the old global cache. Purge rather than silently retain.
+    const allowedKeys = ['latitude', 'longitude', 'captured_at', 'source', 'owner_uid'];
+    if (Object.keys(parsed).some((key) => !allowedKeys.includes(key))) {
+      localStorage.removeItem(LOCATION_KEY);
+      return null;
+    }
+    // Never restore precise or nonnumeric legacy coordinates from device storage.
+    // A matching UID alone does not establish the cache's privacy granularity.
+    if (typeof parsed.latitude !== 'number' || typeof parsed.longitude !== 'number'
+      || !validCoordinate(parsed.latitude, parsed.longitude)
+      || parsed.latitude !== coarseCoordinate(parsed.latitude)
+      || parsed.longitude !== coarseCoordinate(parsed.longitude)) {
+      localStorage.removeItem(LOCATION_KEY);
+      return null;
+    }
     const age = Date.now() - Date.parse(String(parsed.captured_at || ''));
-    if (!Number.isFinite(age) || age < 0 || age > maxAgeMs) return null;
+    if (!Number.isFinite(age) || age < 0 || age > maxAgeMs) {
+      localStorage.removeItem(LOCATION_KEY);
+      return null;
+    }
     return {
       latitude: Number(parsed.latitude),
       longitude: Number(parsed.longitude),
       captured_at: String(parsed.captured_at),
       source: 'cache',
     };
-  } catch { return null; }
+  } catch {
+    try { localStorage.removeItem(LOCATION_KEY); } catch { /* optional cache */ }
+    return null;
+  }
 }
 
 export function saveApproxLocation(location: ApproxLocation, ownerUid: string) {
-  if (!ownerUid) return;
-  const persisted: PersistedApproxLocation = { ...location, owner_uid: ownerUid };
+  if (!ownerUid || !validCoordinate(location.latitude, location.longitude)) return;
+  // Defend the storage/event boundary even when a caller did not pass through
+  // toApproxLocation: never persist or broadcast raw device GPS precision.
+  const capturedAt = Date.parse(location.captured_at);
+  if (!Number.isFinite(capturedAt) || capturedAt > Date.now()
+    || Date.now() - capturedAt > 6 * 60 * 60_000) return;
+  const persisted: PersistedApproxLocation = {
+    latitude: coarseCoordinate(location.latitude),
+    longitude: coarseCoordinate(location.longitude),
+    captured_at: location.captured_at,
+    source: ['device', 'cache', 'campus'].includes(location.source) ? location.source : 'device',
+    owner_uid: ownerUid,
+  };
   try { localStorage.setItem(LOCATION_KEY, JSON.stringify(persisted)); } catch { /* optional cache */ }
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ApproxLocation>(NEARBY_LOCATION_EVENT, { detail: location }));
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<ScopedApproxLocationEvent>(NEARBY_LOCATION_EVENT, { detail: persisted }));
 }
 
 export function clearApproxLocation(ownerUid?: string) {
+  locationLifecycleEpoch += 1;
   try {
     const raw = localStorage.getItem(LOCATION_KEY);
     if (!raw) return;
@@ -108,7 +150,8 @@ function requestBrowserLocation(options: { timeoutMs?: number; maximumAgeMs?: nu
   });
 }
 
-export async function requestApproxLocation(options: { timeoutMs?: number; maximumAgeMs?: number; requestPermission?: boolean; ownerUid?: string } = {}) {
+export async function requestApproxLocation(options: { timeoutMs?: number; maximumAgeMs?: number; requestPermission?: boolean; ownerUid?: string; isOwnerActive?: () => boolean } = {}) {
+  const initialEpoch = locationLifecycleEpoch;
   let location: ApproxLocation | null;
   if (isNativeDeviceRuntime()) {
     const position = await getNativeApproxPosition({
@@ -120,15 +163,34 @@ export async function requestApproxLocation(options: { timeoutMs?: number; maxim
   } else {
     location = await requestBrowserLocation(options);
   }
+  // Explicit account check rejects A->B without logout; epoch rejects any
+  // request that resolves after logout even if A reauthenticates later.
+  if (initialEpoch !== locationLifecycleEpoch || (options.isOwnerActive && !options.isOwnerActive())) return null;
   if (location && options.ownerUid) saveApproxLocation(location, options.ownerUid);
   return location;
 }
 
 export function geoCellForLocation(location: Pick<ApproxLocation, 'latitude' | 'longitude'>) {
   if (!validCoordinate(location.latitude, location.longitude)) return null;
-  const latIndex = Math.floor((location.latitude + 90) / GEO_CELL_DEGREES);
-  const lonIndex = Math.floor((location.longitude + 180) / GEO_CELL_DEGREES);
+  // Coordinates at +90 and +180 are valid, but must not generate cells
+  // outside the 180 x 360 grid. -180 and +180 are the same meridian.
+  const latIndex = Math.min(179, Math.floor((location.latitude + 90) / GEO_CELL_DEGREES));
+  const normalizedLongitude = location.longitude === 180 ? -180 : location.longitude;
+  const lonIndex = Math.floor((normalizedLongitude + 180) / GEO_CELL_DEGREES);
   return `g1:${latIndex}:${lonIndex}`;
+}
+
+/** Canonical g1 grid is 180 latitude rows by 360 longitude columns.
+ * Validate before a Firestore fanout: invalid cells must not cost reads.
+ */
+export function validNearbyGeoCell(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = /^g1:(0|[1-9]\d*):(0|[1-9]\d*)$/.exec(value);
+  if (!match) return false;
+  const latitudeRow = Number(match[1]);
+  const longitudeColumn = Number(match[2]);
+  return Number.isSafeInteger(latitudeRow) && latitudeRow < 180
+    && Number.isSafeInteger(longitudeColumn) && longitudeColumn < 360;
 }
 
 export function nearbyGeoCells(location: Pick<ApproxLocation, 'latitude' | 'longitude'>) {
@@ -139,25 +201,40 @@ export function nearbyGeoCells(location: Pick<ApproxLocation, 'latitude' | 'long
   const lon = Number(rawLon);
   const cells: string[] = [];
   for (let latOffset = -1; latOffset <= 1; latOffset += 1) {
-    for (let lonOffset = -1; lonOffset <= 1; lonOffset += 1) cells.push(`g1:${lat + latOffset}:${lon + lonOffset}`);
+    const row = lat + latOffset;
+    if (row < 0 || row >= 180) continue;
+    for (let lonOffset = -1; lonOffset <= 1; lonOffset += 1) {
+      // Geographic east and west join at the antimeridian.
+      const column = (lon + lonOffset + 360) % 360;
+      cells.push(`g1:${row}:${column}`);
+    }
   }
   return cells;
 }
 
 export function locationAttributes(location: ApproxLocation | null) {
-  if (!location) return {};
-  const geoCell = geoCellForLocation(location);
+  if (!location || !validCoordinate(location.latitude, location.longitude)) return {};
+  // Final listing-write boundary: no caller may persist more than coarse
+  // location, even if it bypasses the UI or cache normalizer.
+  const coarse = {
+    latitude: coarseCoordinate(location.latitude),
+    longitude: coarseCoordinate(location.longitude),
+  };
+  const geoCell = geoCellForLocation(coarse);
   return {
-    approx_latitude: location.latitude,
-    approx_longitude: location.longitude,
+    approx_latitude: coarse.latitude,
+    approx_longitude: coarse.longitude,
     ...(geoCell ? { geo_cell: geoCell } : {}),
   };
 }
 
 function productCoordinates(product: Pick<Product, 'attributes'>) {
-  const latitude = Number(product.attributes?.approx_latitude);
-  const longitude = Number(product.attributes?.approx_longitude);
-  return validCoordinate(latitude, longitude) ? { latitude, longitude } : null;
+  const latitude = product.attributes?.approx_latitude;
+  const longitude = product.attributes?.approx_longitude;
+  // Number(null) and Number('') become 0; missing/untrusted listing data
+  // must not masquerade as a position on the equator or prime meridian.
+  return typeof latitude === 'number' && typeof longitude === 'number'
+    && validCoordinate(latitude, longitude) ? { latitude, longitude } : null;
 }
 
 export function haversineDistanceKm(a: Pick<ApproxLocation, 'latitude' | 'longitude'>, b: { latitude: number; longitude: number }) {

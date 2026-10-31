@@ -1,5 +1,6 @@
 import { FirebaseRestClient, type AuthSession, type FirestoreDocument } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
+import { nextReportRateBucket, type ReportRateBucket } from '../lib/reportRateBudget';
 import { MARKETPLACE_CATEGORIES, VALID_MEETING_POINTS, normalizeCategory, sellerLevelFor } from '../lib/productAssistant';
 import type { AppNotification, Chat, Product, Review, User, WalletTransaction } from '../types';
 
@@ -591,8 +592,27 @@ export class TuTopOnlineBackend {
     const client = this.getClient();
     const uid = client.currentSession?.uid;
     if (!uid) throw new Error('AUTH_REQUIRED');
+    const cleanTarget = targetId.trim();
+    const cleanReason = reason.trim().slice(0, 500);
+    if (cleanTarget.length < 2 || cleanTarget.length > 180 || cleanReason.length < 3) throw new Error('REPORT_INPUT_INVALID');
     const reportId = id('report');
-    await client.setDocument(`reports/${reportId}`, { created_by: uid, target_type: targetType, target_id: targetId, reason: reason.trim().slice(0, 500), status: 'open', created_at: nowIso(), updated_at: nowIso() }, { exists: false });
+    const at = nowIso();
+    const report = { created_by: uid, target_type: targetType, target_id: cleanTarget, reason: cleanReason, status: 'open', created_at: at, updated_at: at };
+    if (!v2SnapshotMode()) {
+      await client.setDocument(`reports/${reportId}`, report, { exists: false });
+      return reportId;
+    }
+    // V2 Rules require the counter and report to be committed atomically.
+    const bucketPath = `rate_limits/${uid}-report_create`;
+    const previous = await client.getDocument<ReportRateBucket>(bucketPath);
+    if (client.currentSession?.uid !== uid) throw new Error('SESSION_CHANGED');
+    if (previous && !previous.updateTime) throw new Error('REPORT_RATE_VERSION_REQUIRED');
+    const next = nextReportRateBucket(uid, at, previous?.data || null);
+    await client.commit([
+      { update: client.encodeDocumentForWrite(`reports/${reportId}`, report), currentDocument: { exists: false } },
+      { update: client.encodeDocumentForWrite(bucketPath, next),
+        currentDocument: previous ? { updateTime: previous.updateTime } : { exists: false } },
+    ]);
     return reportId;
   }
 }

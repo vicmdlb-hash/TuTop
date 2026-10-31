@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { collectCursorPages } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages } from './firestore-query-pagination.mjs';
 
 const docs = Array.from({ length: 2505 }, (_, index) => ({
   name: `projects/demo/databases/(default)/documents/items/${String(index).padStart(5, '0')}`,
@@ -30,9 +30,49 @@ await assert.rejects(
   /QUERY_CURSOR_NAME_MISSING/,
 );
 
+// Firestore listDocuments pagination must never silently accept a partial
+// inventory or a looped nextPageToken (synthetic, no Firebase calls).
+const listDocs = Array.from({ length: 1205 }, (_, i) => ({
+  name: `projects/demo/databases/(default)/documents/chats/ch-1/messages/${i}`,
+}));
+const tokens = await collectTokenPages(async ({ pageToken, pageSize }) => {
+  const begin = pageToken ? Number(pageToken) : 0;
+  const documents = listDocs.slice(begin, begin + pageSize);
+  const nextPageToken = begin + documents.length < listDocs.length
+    ? String(begin + documents.length) : '';
+  return { documents, nextPageToken };
+}, { pageSize: 300 });
+assert.equal(tokens.length, 1205);
+await assert.rejects(
+  collectTokenPages(async () => ({ documents: [listDocs[0]], nextPageToken: 'again' }),
+    { pageSize: 300, maxPages: 3 }), /LIST_DOCUMENT_DUPLICATE|LIST_PAGE_TOKEN_CYCLE/,
+);
+await assert.rejects(
+  collectTokenPages(async () => ({ documents: [listDocs[0], listDocs[0]] }),
+    { pageSize: 300 }), /LIST_DOCUMENT_DUPLICATE/,
+);
+await assert.rejects(collectTokenPages(async () => null), /LIST_PAGE_INVALID/);
+await assert.rejects(
+  collectTokenPages(async () => ({ documents: 'malformed' })),
+  /LIST_DOCUMENTS_INVALID/,
+);
+await assert.rejects(
+  collectTokenPages(async () => ({ documents: [], nextPageToken: 123 })),
+  /LIST_PAGE_TOKEN_INVALID/,
+);
+await assert.rejects(
+  collectCursorPages(async () => [docs[2], docs[1]], { pageSize: 2 }),
+  /QUERY_PAGE_OUT_OF_ORDER/,
+);
+await assert.rejects(
+  collectCursorPages(async () => docs.slice(0, 3), { pageSize: 2 }),
+  /QUERY_PAGE_INVALID/,
+);
+
 const admin = fs.readFileSync('scripts/staging-v2-admin.mjs','utf8');
 const processor = fs.readFileSync('scripts/process-account-erasure.mjs','utf8');
 assert.match(admin, /export async function adminRunQueryAll/);
+assert.match(admin, /collectTokenPages/);
 assert.match(admin, /fieldPath: '__name__'/);
 assert.match(admin, /startAt: \{ values: \[\{ referenceValue: afterName \}\], before: false \}/);
 assert.doesNotMatch(admin, /offset:/);

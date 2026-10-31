@@ -11,7 +11,9 @@ export type SupportAnswer = {
 };
 
 function safeQuestion(value: string) {
-  return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim().slice(0, 900);
+  // Preserve complete spans for PII detection: redaction enforces the 900-char remote cap.
+  // Clipping here could expose the prefix of an email, token or street address.
+  return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function resolveRoute(question: string, routeHint: SupportRouteId) {
@@ -47,7 +49,7 @@ function aiPrompt(question: string, route: SupportRouteId) {
   const node = supportNode(route);
   const activeGuidance = node.answer || node.prompt;
   return [
-    'Eres Topi Ayuda, asistente de soporte al consumidor dentro de TuTop, marketplace universitario en México.',
+    'Eres Topi Ayuda de TuTop: la beta actual exige identidad universitaria y la futura expansión nacional sin campus todavía NO está habilitada. Nunca invites a inventar institución para registrarse.',
     'Responde en español de México, claro y breve, máximo 900 caracteres.',
     'Usa únicamente los hechos de soporte incluidos abajo y el contexto de la pregunta. Si el árbol no cubre algo, dilo claramente.',
     'No inventes políticas, reembolsos, soporte humano, garantías, alianzas, pagos, envíos, funciones o estados del backend.',
@@ -91,6 +93,13 @@ export async function answerConsumerSupport(question: string, routeHint: Support
   if (physicalQaRequiresRealAI()) {
     const reason = nativeTopiAIStatus().reason;
     recordDiagnostic('ai', `support_${reason}`);
+    if (reason === 'audience-provider-not-approved') {
+      return {
+        text: 'Topi generativa no está disponible en esta versión porque su proveedor aún no está aprobado para todas las edades. Puedes usar la guía de ayuda, identificada por separado.',
+        source: 'unavailable',
+        route,
+      };
+    }
     return {
       text: 'Topi no pudo conectarse con la IA en este momento. Revisa tu conexión e inténtalo de nuevo. La guía local sigue disponible en las opciones y se identifica por separado.',
       source: 'unavailable',

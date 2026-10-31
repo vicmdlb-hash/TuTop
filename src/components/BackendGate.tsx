@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeft, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole, Mail, MapPin, Phone, RefreshCw, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
 import { CAMPUSES, INSTITUTIONS } from '../lib/universityNetwork';
 import { clearApproxLocation } from '../lib/nearbyMarketplace';
+import { isCurrentBackendHydration } from '../lib/backendHydrationIdentity';
 import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { prepareNativePushForAccountSignOut } from '../services/nativeFirebaseSecurity';
 import { onlineBackend } from '../services/onlineBackend';
@@ -35,8 +36,11 @@ export default function BackendGate({ children }: { children: ReactNode }) {
   const [verificationPending, setVerificationPending] = useState<VerifiedEmailBetaStatus | null>(null);
   const [legacyIdentity, setLegacyIdentity] = useState(false);
   const syncInFlight = useRef(false);
+  const syncQueued = useRef(false);
+  const authEpoch = useRef(0);
 
   const signOutAll = async () => {
+    authEpoch.current += 1;
     const currentUid = useAppStore.getState().user.id;
     clearApproxLocation(currentUid || undefined);
     // Keep the old authenticated session alive long enough to deactivate its
@@ -53,13 +57,22 @@ export default function BackendGate({ children }: { children: ReactNode }) {
   };
 
   const sync = async (quiet = false) => {
-    if (syncInFlight.current) return;
+    if (syncInFlight.current) {
+      syncQueued.current = true;
+      return;
+    }
     syncInFlight.current = true;
+    const expectedEpoch = authEpoch.current;
+    let expectedUid = '';
+    const stillCurrent = (hydratedUid: string) => isCurrentBackendHydration(
+      expectedUid, onlineBackend.session?.uid, hydratedUid, expectedEpoch, authEpoch.current,
+    );
     try {
       if (!quiet) setLoading(true);
       setError(null);
       onlineBackend.configureFromRuntime();
-      if (!onlineBackend.session) {
+      expectedUid = onlineBackend.session?.uid || '';
+      if (!expectedUid) {
         clearOnline();
         setAuthenticated(false);
         setVerificationPending(null);
@@ -81,7 +94,10 @@ export default function BackendGate({ children }: { children: ReactNode }) {
       }
 
       const verified = await verifiedEmailBetaAuth.refreshVerificationStatus();
-      if (!verified.emailVerified) {
+      if (!stillCurrent(expectedUid)) return;
+      // Nation-wide accounts require BOTH Firebase Auth claims on the same UID.
+      // Never hydrate the marketplace after email-only verification.
+      if (!verified.emailVerified || verified.phoneVerified !== true) {
         setAuthenticated(true);
         setVerificationPending(verified);
         setLegacyIdentity(false);
@@ -92,7 +108,10 @@ export default function BackendGate({ children }: { children: ReactNode }) {
       setLegacyIdentity(false);
       onlineBackend.configureFromRuntime();
       if (nationalSchemaEnabled()) await completePendingUniversityIdentity().catch(() => false);
+      if (!stillCurrent(expectedUid)) return;
       const snapshot = await onlineBackend.loadSnapshot();
+      // Never hydrate account A into B when refresh/auth/registration finishes out of order.
+      if (!stillCurrent(snapshot.user.id)) return;
       hydrateOnline(snapshot);
       setAuthenticated(true);
       setSuspended({ active: snapshot.user.is_suspended === true, reason: snapshot.user.suspension_reason });
@@ -103,6 +122,12 @@ export default function BackendGate({ children }: { children: ReactNode }) {
     } finally {
       syncInFlight.current = false;
       setLoading(false);
+      // A login or user-initiated retry can arrive while a stale fetch is active.
+      // Do not drop it: let the next authenticated UID load after this request.
+      if (syncQueued.current) {
+        syncQueued.current = false;
+        void Promise.resolve().then(() => sync(true));
+      }
     }
   };
 
@@ -124,7 +149,9 @@ export default function BackendGate({ children }: { children: ReactNode }) {
   if (!authenticated && !loading) return <AuthScreen onAuthenticated={() => void sync()} />;
   if (loading && !authenticated) return <FullLoader label="Preparando TuTop…" />;
   if (legacyIdentity) return <LegacyIdentityScreen onMigrated={() => void sync()} onSignOut={() => void signOutAll()} />;
-  if (verificationPending) return <EmailVerificationScreen status={verificationPending} onVerified={() => void sync()} onSignOut={() => void signOutAll()} />;
+  if (verificationPending) return verificationPending.emailVerified
+    ? <PhoneVerificationPendingScreen status={verificationPending} onRefresh={() => void sync()} onSignOut={() => void signOutAll()} />
+    : <EmailVerificationScreen status={verificationPending} onVerified={() => void sync()} onSignOut={() => void signOutAll()} />;
   if (authenticated && suspended.active) return <SuspendedScreen reason={suspended.reason} onSignOut={() => void signOutAll()} />;
 
   return <>{error && <div className="fixed inset-x-3 top-[calc(10px+env(safe-area-inset-top))] z-[120] mx-auto max-w-xl rounded-2xl border border-amber-300/20 bg-[#17110b]/95 p-3 text-xs text-amber-100 shadow-2xl backdrop-blur"><div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" /><div className="min-w-0 flex-1"><strong>No pudimos sincronizar TuTop</strong><p className="mt-1 text-amber-100/65">{error}</p></div><button onClick={() => void sync()} className="rounded-lg border border-amber-200/15 px-2 py-1 font-bold">Reintentar</button></div></div>}{children}</>;
@@ -139,6 +166,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [name, setName] = useState('');
   const [institutionId, setInstitutionId] = useState('');
   const [campusId, setCampusId] = useState('');
+  // Local-only national choice, never persisted or sent to Auth.
+  const [nationalApplicant, setNationalApplicant] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +187,8 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
       setBusy(true);
       setError(null);
       if (mode === 'register') {
+        // No Firebase UID may be created through the campus-free preview.
+        if (nationalApplicant) throw new Error('NATIONAL_PHONE_AND_RULES_NOT_READY');
         if (name.trim().length < 2) throw new Error('Escribe tu nombre.');
         if (!institutionId || !campusId || !institution || !campus) throw new Error('Selecciona universidad y campus.');
         const legacyAdapter = campus.name || institution.short_name || 'Red universitaria';
@@ -211,7 +242,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           <div className="relative">
             <div><div className="wordmark text-4xl" aria-label="TuTop"><span>Tu</span><span>Top</span></div><p className="mt-1 text-[10px] font-bold uppercase tracking-[.18em] text-violet-300/80">Descubre, conecta y encuentra cerca de ti.</p></div>
             <h1 className="mt-7 text-[27px] font-black leading-[1.05] tracking-[-.04em]">Compra, vende y encuentra dentro de tu comunidad.</h1>
-            <p className="mt-3 text-sm leading-6 text-slate-400">Para proteger publicaciones y transacciones, esta beta verifica que tengas acceso a un correo real.</p>
+            <p className="mt-3 text-sm leading-6 text-slate-400">TuTop se prepara para todo México. Para operar necesitamos correo y celular confirmados en la misma cuenta; la verificación real por SMS sigue pendiente.</p>
             <div className="mt-5 flex flex-wrap gap-2 text-[10px] font-semibold text-slate-300"><span className="auth-benefit"><ShieldCheck />Identidad verificable</span><span className="auth-benefit"><Sparkles />10 UCoins de bienvenida</span></div>
           </div>
         </div>
@@ -231,12 +262,16 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
           </>}
           {mode === 'register' && step === 2 && <>
             <button onClick={() => setStep(1)} className="mt-4 inline-flex items-center gap-1 text-[10px] font-bold text-slate-500"><ArrowLeft className="h-3.5 w-3.5" />Atrás</button>
-            <h2 className="mt-4 text-lg font-black">¿En qué universidad estás?</h2><p className="mt-1 text-xs leading-5 text-slate-500">Elige institución y campus; nunca se infieren por LADA o ubicación.</p>
+            <h2 className="mt-4 text-lg font-black">Tu comunidad</h2><p className="mt-1 text-xs leading-5 text-slate-500">En el mercado nacional la universidad será opcional; el registro de esta beta aún exige un campus real. Universidad y campus nunca se infieren por LADA o ubicación.</p>
+             <button type="button" onClick={() => { setNationalApplicant((value) => !value); setError(null); }} className="mt-4 w-full rounded-xl border border-violet-400/30 bg-violet-950/30 p-3 text-left text-xs font-bold text-violet-100">{nationalApplicant ? 'Volver a la beta universitaria' : 'No pertenezco a una universidad'}</button>
+             {nationalApplicant && <div role="status" className="mt-3 rounded-xl border border-amber-300/20 bg-amber-950/20 p-4 text-xs leading-5 text-amber-100"><strong>Registro nacional en preparación</strong><p className="mt-1">No necesitas inventar una universidad. Falta la verificación real del celular y activar reglas nacionales seguras. Esta opción no crea cuenta, no envía SMS y no genera cargos.</p></div>}
+             {!nationalApplicant && <>
             <label className="auth-label">Institución</label><div className="relative"><Building2 className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={institutionId} onChange={(event) => chooseInstitution(event.target.value)} className="auth-input pl-10"><option value="">Selecciona institución</option>{INSTITUTIONS.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.short_name} · {item.name}</option>)}</select></div>
             <label className="auth-label">Campus</label><div className="relative"><MapPin className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><select value={campusId} onChange={(event) => setCampusId(event.target.value)} className="auth-input pl-10" disabled={!institutionId}><option value="">Selecciona campus</option>{campusOptions.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
             {error && <p className="mt-3 rounded-xl bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{error}</p>}
             <button disabled={busy || !institutionId || !campusId} onClick={() => void submit()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 py-3.5 text-sm font-black disabled:opacity-40">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}Crear mi cuenta TuTop</button>
             <p className="mt-3 text-center text-[9px] leading-5 text-slate-600">Seleccionar universidad no prueba afiliación académica. El correo prueba control de una identidad digital; otros niveles de verificación siguen separados.</p>
+             </>}
           </>}
           {mode === 'login' && <>
             <label className="auth-label">Correo electrónico</label><div className="relative"><Mail className="absolute left-3 top-3.5 h-4 w-4 text-slate-600" /><input value={email} onChange={(event) => setEmail(event.target.value)} className="auth-input pl-10" inputMode="email" autoComplete="email" placeholder="tu@correo.com" /></div>
@@ -346,6 +381,17 @@ function EmailVerificationScreen({ status, onVerified, onSignOut }: { status: Ve
     finally { setBusy(false); }
   };
   return <div className="grid min-h-screen place-items-center bg-[#070b12] px-6 text-center text-white"><div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#0b111c] p-6"><Mail className="mx-auto h-10 w-10 text-violet-300" /><h1 className="mt-4 text-xl font-black">Verifica tu correo</h1><p className="mt-2 text-sm leading-6 text-slate-400">Abre el enlace de verificación de <strong className="text-slate-200">{status.email}</strong>. TuTop volverá a comprobar el estado al regresar. Si el navegador no logra terminar la verificación, copia el enlace completo del correo y pégalo aquí. Publicación, chat, ofertas y reservaciones permanecen bloqueados por Security Rules hasta que Firebase confirme <code>emailVerified</code>.</p>{message && <p className="mt-4 rounded-xl bg-white/5 p-3 text-xs text-slate-300">{message}</p>}<div className="mt-4"><input value={verificationLink} onChange={(event) => setVerificationLink(event.target.value)} className="auth-input text-left text-xs" inputMode="url" autoComplete="off" placeholder="Pega el enlace de verificación si el navegador falló" /><button disabled={busy || !verificationLink.trim()} onClick={() => void applyLink()} className="mt-2 w-full rounded-2xl bg-emerald-500/10 py-2.5 text-xs font-black text-emerald-300 disabled:opacity-40">Verificar con este enlace</button></div><button disabled={busy} onClick={() => void check()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 py-3 text-sm font-black disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Ya verifiqué · comprobar</button><button disabled={busy} onClick={() => void resend()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-white/5 py-3 text-xs font-bold text-slate-300 disabled:opacity-50"><RefreshCw className="h-4 w-4" />Reenviar correo</button><button onClick={onSignOut} className="mt-4 text-xs font-bold text-slate-500">Usar otra cuenta</button></div></div>;
+}
+
+// No SMS, account linking, debug number, or billing is started from this screen.
+// Firebase Auth account lookup is informational; Firestore Rules must still
+// independently enforce trusted claims before ANY nationwide deployment.
+function PhoneVerificationPendingScreen({ status, onRefresh, onSignOut }: {
+  status: VerifiedEmailBetaStatus;
+  onRefresh: () => void;
+  onSignOut: () => void;
+}) {
+  return <div className="grid min-h-screen place-items-center bg-[#070b12] px-6 text-center text-white"><div className="w-full max-w-sm rounded-3xl border border-amber-300/15 bg-[#0b111c] p-6"><ShieldCheck className="mx-auto h-10 w-10 text-amber-300" /><h1 className="mt-4 text-xl font-black">Teléfono confirmado pendiente</h1><p className="mt-2 text-sm leading-6 text-slate-400">El correo <strong className="text-slate-200">{status.email}</strong> ya está confirmado. Para utilizar el mercado nacional también necesitamos que Firebase Auth confirme un número mexicano vinculado a esta misma cuenta. Esta beta gratuita todavía no puede realizar esa verificación real por SMS. No aceptamos números escritos en el perfil ni teléfonos simulados como prueba.</p><p className="mt-3 text-xs text-amber-200/80">Publicaciones, chats y operaciones comerciales permanecen cerrados mientras falta la verificación. No se enviarán SMS ni se generarán cargos.</p><button type="button" onClick={onRefresh} className="mt-5 w-full rounded-2xl bg-violet-600 py-3 text-xs font-black">Volver a comprobar con Firebase</button><button type="button" onClick={onSignOut} className="mt-4 text-xs font-bold text-slate-500">Cerrar sesión</button></div></div>;
 }
 
 function LegacyIdentityScreen({ onMigrated, onSignOut }: { onMigrated: () => void; onSignOut: () => void }) {

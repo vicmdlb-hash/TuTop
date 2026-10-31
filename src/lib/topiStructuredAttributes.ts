@@ -16,6 +16,21 @@ function safeText(value: unknown, max = 300) {
   return text || undefined;
 }
 
+// Suggested structured facts must be traceable to words or numbers supplied
+// by the seller. Unknown fields remain for manual entry, never AI autofill.
+function groundedInSellerPrompt(value: string | number, prompt: string) {
+  const sellerTerms = new Set(normalized(prompt).split(/[^a-z0-9]+/).filter(Boolean));
+  const proposedTerms = normalized(String(value)).split(/[^a-z0-9]+/).filter((term) => term.length > 1);
+  return proposedTerms.length > 0 && proposedTerms.every((term) => sellerTerms.has(term));
+}
+
+function supportedWarranty(value: boolean, prompt: string) {
+  const text = normalized(prompt);
+  const denied = /\b(?:sin garantia|no (?:tiene|incluye|cuenta con) garantia|garantia vencida)\b/.test(text);
+  const affirmed = /\b(?:con garantia|tiene garantia|incluye garantia|garantia vigente)\b/.test(text);
+  return value ? affirmed && !denied : denied && !affirmed;
+}
+
 function containsContactOrSecret(text: string) {
   return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)
     || /(?<!\d)(?:\d[\s().-]?){9}\d(?!\d)/.test(text)
@@ -24,7 +39,13 @@ function containsContactOrSecret(text: string) {
 
 function looksExactAddress(text: string) {
   const clean = normalized(text);
-  return /\b(?:calle|avenida|av\.?|boulevard|blvd|carretera|privada|numero|num\.?|#)\b[^\n]{0,60}\b\d{1,6}\b/i.test(clean);
+  if (/\b(?:calle|avenida|av\.?|boulevard|blvd|carretera|privada|numero|num\.?|#)\b[^\n]{0,60}\b\d{1,6}\b/i.test(clean)) return true;
+  // A street name and house number can appear without "calle" (e.g. "zona Reforma 123").
+  // Keep coarse distance labels like "zona centro, a 10 min" and numbered neighborhoods.
+  const withoutDistances = clean
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:min(?:utos?)?|km|metros?|m)\b/g, ' ')
+    .replace(/\b\d{1,2}:\d{2}\b/g, ' ');
+  return /\b(?!(?:zona|colonia|barrio|sector|a|de|del|el|la)\b)[a-z][a-z.-]*(?:\s+[a-z][a-z.-]*){0,5}\s+#?\d{1,6}\b/.test(withoutDistances);
 }
 
 function explicitZoneEvidence(prompt: string) {
@@ -43,7 +64,12 @@ function supportedAllergenValue(value: string, prompt: string) {
   }
   const stop = new Set(['contiene','puede','tener','trazas','alergenos','alergeno','conocido','conocidos']);
   const tokens = v.split(/[^a-z0-9ñ]+/i).filter((token) => token.length >= 3 && !stop.has(token));
-  return tokens.length > 0 && tokens.every((token) => p.includes(token));
+  // A proposed allergen must not contradict an explicit seller denial.
+  // Negated ingredients are not positive evidence merely because their names occur.
+  const blanketDenial = /\b(?:sin alergen(?:o|os)?|no (?:contienen?|tienen?|llevan?) alergen(?:o|os)?)\b/.test(p);
+  const denied = tokens.some((token) =>
+    new RegExp(`\\b(?:sin(?: trazas de)?|no (?:contienen?|tienen?|llevan?)|libre de)\\s+${token}\\b`).test(p));
+  return tokens.length > 0 && !blanketDenial && !denied && tokens.every((token) => p.includes(token));
 }
 
 export function sanitizeTopiStructuredAttributes(
@@ -62,26 +88,26 @@ export function sanitizeTopiStructuredAttributes(
     const value = source[field.key];
 
     if (field.kind === 'boolean') {
-      if (typeof value === 'boolean') output[field.key] = value;
+      if (typeof value === 'boolean' && field.key === 'warranty' && supportedWarranty(value, prompt)) output[field.key] = value;
       continue;
     }
 
     if (field.kind === 'number') {
       const number = Number(value);
-      if (Number.isFinite(number) && number >= 0 && number <= 1_000_000) output[field.key] = Math.round(number * 100) / 100;
+      if (Number.isFinite(number) && number >= 0 && number <= 1_000_000 && groundedInSellerPrompt(number, prompt)) output[field.key] = Math.round(number * 100) / 100;
       continue;
     }
 
     const text = safeText(value, 300);
-    if (!text || containsContactOrSecret(text)) continue;
+    // Allergens have their own stricter semantic evidence gate below (e.g. "none known").
+    if (!text || containsContactOrSecret(text) || (field.key !== 'allergens' && !groundedInSellerPrompt(text, prompt))) continue;
 
     if (field.key === 'allergens') {
       if (!explicitAllergenEvidence(prompt) || !supportedAllergenValue(text, prompt)) continue;
     }
 
-    if (field.key === 'approximate_zone') {
-      if (!explicitZoneEvidence(prompt) || looksExactAddress(text)) continue;
-    }
+    if (['approximate_zone', 'origin_zone', 'destination_zone'].includes(field.key) && looksExactAddress(text)) continue;
+    if (field.key === 'approximate_zone' && !explicitZoneEvidence(prompt)) continue;
 
     output[field.key] = text;
   }

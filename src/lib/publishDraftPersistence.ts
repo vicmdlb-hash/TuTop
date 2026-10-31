@@ -1,6 +1,7 @@
 import type { ListingDeliveryMethod } from './listingSchemaV2.ts';
 import type { ListingVisibilityScope, ProductCategory } from '../types/index.ts';
 import { MARKETPLACE_CATEGORIES } from './productAssistant.ts';
+import { nationalFieldsFor } from './nationalListingFields.ts';
 
 export const DURABLE_PUBLISH_DRAFT_PREFIX = 'tutop.publish.durable.v2.';
 export const DURABLE_PUBLISH_DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -52,15 +53,18 @@ function cleanText(value: unknown, max: number) {
   return typeof value === 'string' ? value.replace(/\u0000/g, '').slice(0, max) : undefined;
 }
 
-function cleanAttributes(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+function cleanAttributes(value: unknown, category?: ProductCategory | '') {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !category) return undefined;
+  // Drafts may contain only category-defined listing fields; arbitrary keys
+  // must never become a durable credential, location or account-data channel.
+  const allowed = new Set(nationalFieldsFor(category).map((field) => field.key));
+  if (!allowed.size) return undefined;
   const output: Record<string, string | number | boolean> = {};
   for (const [rawKey, rawValue] of Object.entries(value as Record<string, unknown>).slice(0, 40)) {
-    const field = rawKey.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
-    if (!field) continue;
-    if (typeof rawValue === 'boolean') output[field] = rawValue;
-    else if (typeof rawValue === 'number' && Number.isFinite(rawValue)) output[field] = rawValue;
-    else if (typeof rawValue === 'string') output[field] = rawValue.replace(/\u0000/g, '').slice(0, 300);
+    if (!allowed.has(rawKey)) continue;
+    if (typeof rawValue === 'boolean') output[rawKey] = rawValue;
+    else if (typeof rawValue === 'number' && Number.isFinite(rawValue)) output[rawKey] = rawValue;
+    else if (typeof rawValue === 'string') output[rawKey] = rawValue.replace(/\u0000/g, '').slice(0, 300);
   }
   return Object.keys(output).length ? output : undefined;
 }
@@ -92,7 +96,7 @@ export function sanitizeDurablePublishDraft(input: Record<string, unknown>): Dur
     scope,
     deliveryMethods,
     meetingPointId: cleanText(input.meetingPointId, 160),
-    attributes: cleanAttributes(input.attributes),
+    attributes: cleanAttributes(input.attributes, category),
     locationOptIn: typeof input.locationOptIn === 'boolean' ? input.locationOptIn : undefined,
   };
 }
