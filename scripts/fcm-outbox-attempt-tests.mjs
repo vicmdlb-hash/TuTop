@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { trustedFcmQueryRecord, trustedFcmDirectRecord } from './fcm-staging-document-identity-lib.mjs';
 import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup, isFreshFcmTargetStillEligible } from './fcm-outbox-attempt-lib.mjs';
 
 const oldTime = '2026-10-28T20:00:00.000Z';
@@ -85,4 +86,46 @@ const freshGateIndex = source.indexOf('if (!isFreshFcmTargetStillEligible(target
 assert(refreshIndex > cleanupStart && refreshIndex < sendStart, 'post-cleanup Firestore inventory required before FCM POST');
 assert(freshGateIndex > refreshIndex && freshGateIndex < sendStart, 'fresh exact owner/version gate must precede FCM POST');
 assert(source.includes('FCM_PHYSICAL_FRESH_TARGET_DENIED'), 'unsafe target must be quarantined without sending');
+// The trusted Firestore path is the only permitted source for a record's ID.
+// A forged field.id must never redirect token cleanup, chat auth or outbox CAS.
+const projectRoot = 'projects/tutop-beta-vicmdlb-1356585881/databases/(default)/documents';
+const record = (path, fields = {}, updateTime = newTime) => ({
+  name: `${projectRoot}/${path}`, updateTime, fields,
+});
+const identityDecode = fields => fields;
+assert.deepEqual(trustedFcmQueryRecord(record('device_tokens/token-a', {
+  owner_uid: 'synthetic-a', active: true,
+}), 'device_tokens', identityDecode), {
+  owner_uid: 'synthetic-a', active: true, id: 'token-a', _document_update_time: newTime,
+});
+assert.deepEqual(trustedFcmDirectRecord(record('chats/chat-a', {
+  buyer_id: 'synthetic-a',
+}), 'chats/chat-a', identityDecode), { buyer_id: 'synthetic-a', id: 'chat-a' });
+assert.throws(() => trustedFcmQueryRecord(record('device_tokens/token-a', {
+  id: 'another-token',
+}), 'device_tokens', identityDecode), /FCM_DOCUMENT_FIELD_ID_CONFLICT/);
+assert.throws(() => trustedFcmQueryRecord(record('notification_outbox/notice-a', {
+  id: 'notice-b',
+}), 'notification_outbox', identityDecode), /FCM_DOCUMENT_FIELD_ID_CONFLICT/);
+assert.throws(() => trustedFcmDirectRecord(record('chats/chat-a', {
+  id: 'chat-b',
+}), 'chats/chat-a', identityDecode), /FCM_DOCUMENT_FIELD_ID_CONFLICT/);
+assert.throws(() => trustedFcmQueryRecord(record('device_tokens/parent/subchild'),
+  'device_tokens', identityDecode), /FCM_QUERY_DOCUMENT_PATH_INVALID/);
+assert.throws(() => trustedFcmQueryRecord(record('other_collection/token-a'),
+  'device_tokens', identityDecode), /FCM_QUERY_DOCUMENT_PATH_INVALID/);
+assert.throws(() => trustedFcmQueryRecord({
+  ...record('device_tokens/token-a'),
+  name: 'projects/other-project/databases/(default)/documents/device_tokens/token-a',
+}, 'device_tokens', identityDecode), /FCM_QUERY_DOCUMENT_PATH_INVALID/);
+assert.throws(() => trustedFcmQueryRecord(record('device_tokens/token-a', {}, 'invalid-date'),
+  'device_tokens', identityDecode), /FCM_DOCUMENT_UPDATE_TIME_REQUIRED/);
+assert.throws(() => trustedFcmDirectRecord(record('user_blocks/a/targets/b'),
+  'user_blocks/a/targets/c', identityDecode), /FCM_DOCUMENT_NAME_MISMATCH/);
+assert.throws(() => trustedFcmDirectRecord(record('users/a'),
+  'users/a', identityDecode), /FCM_DIRECT_DOCUMENT_PATH_INVALID/);
+assert(source.includes('trustedFcmQueryRecord(row.document, collectionId, decodeFields)'));
+assert(source.includes('trustedFcmDirectRecord(result, path, decodeFields)'));
+assert(!source.includes("id: row.document.name.split('/').pop(),"),
+  'a Firestore field must never override the trusted document ID');
 console.log('PASS synthetic FCM outbox CAS claim-before-send and uncertain-delivery quarantine');

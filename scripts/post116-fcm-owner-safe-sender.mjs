@@ -1,5 +1,6 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
+import { trustedFcmQueryRecord, trustedFcmDirectRecord } from './fcm-staging-document-identity-lib.mjs';
 import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
 import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
@@ -94,12 +95,8 @@ async function query(collectionId) {
   });
   // Reject a full/ambiguous single page before selecting a token owner.
   // Do not report a partial inventory as complete and send to a stale UID.
-  return assertCompleteFcmInventory(rows, limit, collectionId).map((row) => ({
-    id: row.document.name.split('/').pop(),
-    ...decodeFields(row.document.fields || {}),
-    // Metadata from the SAME Firestore response, not an app-written field.
-    _document_update_time: row.document.updateTime,
-  }));
+  return assertCompleteFcmInventory(rows, limit, collectionId).map((row) =>
+    trustedFcmQueryRecord(row.document, collectionId, decodeFields));
 }
 
 async function documentOrNull(path) {
@@ -110,7 +107,7 @@ async function documentOrNull(path) {
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`BLOCK_CHECK_FAILED:${response.status}`);
   const result = await response.json();
-  return { id: String(result.name || '').split('/').pop(), ...decodeFields(result.fields || {}) };
+  return trustedFcmDirectRecord(result, path, decodeFields);
 }
 
 const blockChatCache = new Map();
