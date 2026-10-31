@@ -14,6 +14,7 @@ const commonSteps = [
   [process.execPath, ['scripts/security-tests.mjs']],
   [process.execPath, ['scripts/ci-auth-redaction-contract-tests.mjs']],
   [process.execPath, ['scripts/ci-auth-readiness-tests.mjs']],
+  [process.execPath, ['scripts/post116-accessibility-semantics-tests.mjs']],
   [process.execPath, ['scripts/ci-auth-parallel-workflow-tests.mjs']],
   [process.execPath, ['scripts/policy-scan.mjs']],
   [process.execPath, ['scripts/actions-budget-policy-tests.mjs']],
