@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup } from './fcm-outbox-attempt-lib.mjs';
+import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup, isFreshFcmTargetStillEligible } from './fcm-outbox-attempt-lib.mjs';
 
 const oldTime = '2026-10-28T20:00:00.000Z';
 const startTime = '2026-10-28T20:00:01.000Z';
@@ -37,6 +37,37 @@ assert.equal(canSendAfterStaleOwnerCleanup(1, 0), false, 'failed deactivation mu
 for (const [required, verified] of [[-1,0],[1,-1],[1,2],[1,NaN],[NaN,0],[1.5,1]]) {
   assert.throws(()=>canSendAfterStaleOwnerCleanup(required,verified), /FCM_STALE_OWNER_CLEANUP_COUNT_INVALID/);
 }
+// Synthetic proof: a token chosen before cleanup cannot be sent using a stale
+// Firestore snapshot after another account, logout or revocation takes over.
+const selected = {
+  id: 'device-record-a',
+  token: 'synthetic-token-not-a-real-fcm-secret',
+  owner_uid: 'synthetic-a',
+  active: true,
+  created_at: oldTime,
+  updated_at: startTime,
+  _document_update_time: newTime,
+};
+assert.equal(isFreshFcmTargetStillEligible(selected, [{ ...selected }], 'synthetic-a'), true);
+assert.equal(isFreshFcmTargetStillEligible(selected, [], 'synthetic-a'), false,
+  'empty/incomplete inventory cannot authorize the send');
+assert.equal(isFreshFcmTargetStillEligible(selected, [{ ...selected }], 'synthetic-b'), false,
+  'recipient UID must remain unchanged');
+assert.equal(isFreshFcmTargetStillEligible(selected, [
+  { ...selected, active: false, _document_update_time: sentTime },
+], 'synthetic-a'), false, 'revoked token must not receive');
+assert.equal(isFreshFcmTargetStillEligible(selected, [
+  { ...selected, _document_update_time: sentTime },
+], 'synthetic-a'), false, 'concurrently updated token cannot be reused');
+assert.equal(isFreshFcmTargetStillEligible(selected, [
+  { ...selected },
+  { id: 'device-record-b', token: selected.token, owner_uid: 'synthetic-b',
+    active: true, created_at: oldTime, updated_at: sentTime, _document_update_time: sentTime },
+], 'synthetic-a'), false, 'active competing account must quarantine the send');
+assert.equal(isFreshFcmTargetStillEligible(selected, [
+  { ...selected }, { ...selected },
+], 'synthetic-a'), false, 'duplicate inventory IDs are not trustworthy');
+
 const source=fs.readFileSync('scripts/post116-fcm-owner-safe-sender.mjs','utf8');
 const claimIndex=source.indexOf('const claimed = await claimPending(item);');
 const sendIndex=source.indexOf('messages:send');
@@ -49,4 +80,9 @@ const sendStart=source.indexOf('const response = await fetch(`https://fcm.google
 assert(cleanupStart > 0 && sendStart > cleanupStart);
 assert(source.slice(cleanupStart,sendStart).includes('if (!canSendAfterStaleOwnerCleanup('), 'physical FCM send requires verified cleanup');
 assert(source.includes('FCM_STALE_OWNER_CLEANUP_COMMIT_UNVERIFIED'), 'Firestore receipt must be validated');
+const refreshIndex = source.indexOf("const freshTokens = await query('device_tokens');", cleanupStart);
+const freshGateIndex = source.indexOf('if (!isFreshFcmTargetStillEligible(target, freshTokens, item.recipient_uid))', refreshIndex);
+assert(refreshIndex > cleanupStart && refreshIndex < sendStart, 'post-cleanup Firestore inventory required before FCM POST');
+assert(freshGateIndex > refreshIndex && freshGateIndex < sendStart, 'fresh exact owner/version gate must precede FCM POST');
+assert(source.includes('FCM_PHYSICAL_FRESH_TARGET_DENIED'), 'unsafe target must be quarantined without sending');
 console.log('PASS synthetic FCM outbox CAS claim-before-send and uncertain-delivery quarantine');

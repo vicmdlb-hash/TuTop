@@ -3,7 +3,7 @@ import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
 import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
-import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup } from './fcm-outbox-attempt-lib.mjs';
+import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup, isFreshFcmTargetStillEligible } from './fcm-outbox-attempt-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -234,6 +234,16 @@ for (const item of scopedPending) {
     // replay after an ambiguous cleanup of any superseded token mapping.
     if (!canSendAfterStaleOwnerCleanup(staleForTarget.length, verifiedCleanups)) {
       console.warn('FCM_PHYSICAL_STALE_OWNER_CLEANUP_UNVERIFIED; send quarantined');
+      continue;
+    }
+
+    // The first inventory was read before the CAS claim and stale-owner cleanup.
+    // Verify the exact token, recipient UID and Firestore version again from a
+    // complete read AFTER cleanup. Unknown ownership must quarantine the
+    // already-claimed notice; NEVER auto-replay an ambiguous FCM attempt.
+    const freshTokens = await query('device_tokens');
+    if (!isFreshFcmTargetStillEligible(target, freshTokens, item.recipient_uid)) {
+      console.warn('FCM_PHYSICAL_FRESH_TARGET_DENIED; send quarantined');
       continue;
     }
 
