@@ -2,9 +2,26 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import './native-notification-router-account-switch-integration-tests.mjs';
 import { canApplyNativeNotificationSnapshot, canRouteNativeNotification } from '../src/lib/nativeNotificationSessionGuard.ts';
+import { isCurrentPushSession } from '../src/lib/pushBackendSessionWitness.ts';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 
+// Synthetic proof of post-await session isolation, no real credentials.
+const witness={uid:'A',refreshToken:'synthetic-token-A1'};
+assert.equal(isCurrentPushSession(witness,{...witness},{...witness}),true);
+assert.equal(isCurrentPushSession(witness,{...witness},{uid:'B',refreshToken:'synthetic-token-B1'}),false);
+assert.equal(isCurrentPushSession(witness,{...witness},{uid:'A',refreshToken:'synthetic-token-A2'}),false);
+assert.equal(isCurrentPushSession(witness,{uid:'A',refreshToken:'synthetic-token-A2'},witness),false);
+for(const missing of [null,{}, {uid:'A'}, {uid:'A',refreshToken:''}])
+  assert.equal(isCurrentPushSession(witness,missing,witness),false);
+const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8');
+const notificationRead=backendSource.slice(backendSource.indexOf('async loadTrustedNotifications('),backendSource.indexOf('async markNotificationRead('));
+assert(notificationRead.includes('assertOwner(); // Reject A'));
+assert(notificationRead.indexOf('assertOwner(); // Reject A') > notificationRead.indexOf('await Promise.all(['));
+const receiptWrite=backendSource.slice(backendSource.indexOf('async markNotificationRead('),backendSource.indexOf('async markAllNotificationsRead('));
+assert(receiptWrite.includes('assertOwner();\n    const payload'));
+const unregister=backendSource.slice(backendSource.indexOf('async unregisterDeviceToken('),backendSource.indexOf('async loadTrustedNotifications('));
+assert(unregister.includes('assertOwner();\n    if (!existing) return;'));
 const token = 'fcm-token-shared-abcdefghijklmnopqrstuvwxyz';
 
 assert.deepEqual(
