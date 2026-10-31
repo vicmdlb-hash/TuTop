@@ -47,4 +47,24 @@ assert.match(sender,/if \(await blockedDirectOutbox\(item\)\)/);
 assert.doesNotMatch(sender,/blockEdgeCache/);
 assert.match(sender,/await documentOrNull\(`user_blocks/);
 assert.match(sender,/if \(!\['new_message','offer_received','counter_offer','offer_accepted'\]/);
-console.log('PASS bidirectional direct-message/offer block suppression in projector and FCM sender; transactional notifications remain independent');
+// A physical send must not rely on the pre-claim cached chat snapshot.
+const claimAt = sender.indexOf('const claimed = await claimPending(item);');
+const firstCheck = sender.indexOf('if (await blockedDirectOutbox(item))');
+const lastCheck = sender.indexOf('if (await blockedDirectOutbox(item, { freshChat: true }))');
+const sendAt = sender.indexOf('messages:send');
+assert(firstCheck >= 0 && firstCheck < claimAt);
+assert(lastCheck > claimAt && lastCheck < sendAt);
+assert(sender.includes('if (freshChat || !blockChatCache.has(chatId))'));
+assert(sender.slice(lastCheck,sendAt).includes('FCM_PHYSICAL_FRESH_DIRECT_BLOCKED'));
+const priorChat = { ...chat };
+const removedChat = null;
+const changedMemberChat = { id: chat.id, buyer_id: 'new-buyer', seller_id: 'seller' };
+assert.equal(await shouldSuppressBlockedDirectNotification(offer, priorChat, async()=>false),false);
+assert.equal(await shouldSuppressBlockedDirectNotification(offer, removedChat, async()=>false),true,
+  'a deleted conversation must not authorize a stale notification');
+assert.equal(await shouldSuppressBlockedDirectNotification(message, changedMemberChat, async()=>false),true,
+  'a changed chat participant must not receive an old message notification');
+blocks.clear();
+assert.equal(await shouldSuppressBlockedDirectNotification(message,priorChat,async(a,b)=>a==='buyer'&&b==='seller'),true,
+  'a block added after the first check must suppress the final send');
+console.log('PASS bidirectional blocks plus fresh post-claim direct recipient/chat validation; no live sends');

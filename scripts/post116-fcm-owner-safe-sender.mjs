@@ -119,10 +119,13 @@ async function hasUserBlockEdge(fromUid, toUid) {
   return Boolean(await documentOrNull(`user_blocks/${fromUid}/targets/${toUid}`));
 }
 
-async function blockedDirectOutbox(item) {
+async function blockedDirectOutbox(item, { freshChat = false } = {}) {
   if (!['new_message','offer_received','counter_offer','offer_accepted'].includes(item.kind)) return false;
   const chatId = String(item.chat_id || '');
-  if (!blockChatCache.has(chatId)) {
+  // A previously safe chat can be blocked, deleted or reassigned while the
+  // outbox CAS claim and token-owner cleanup are in flight. Never reuse its
+  // cached membership at the final physical-send authorization boundary.
+  if (freshChat || !blockChatCache.has(chatId)) {
     blockChatCache.set(chatId, chatId ? await documentOrNull(`chats/${chatId}`) : null);
   }
   return shouldSuppressBlockedDirectNotification(item, blockChatCache.get(chatId), hasUserBlockEdge);
@@ -244,6 +247,15 @@ for (const item of scopedPending) {
     const freshTokens = await query('device_tokens');
     if (!isFreshFcmTargetStillEligible(target, freshTokens, item.recipient_uid)) {
       console.warn('FCM_PHYSICAL_FRESH_TARGET_DENIED; send quarantined');
+      continue;
+    }
+
+    // Repeat direct-recipient consent, both block edges and CURRENT chat
+    // membership after the Firestore claim. A revoked block/changed member
+    // must quarantine the claimed outbox item; it is never auto-replayed.
+    if (await blockedDirectOutbox(item, { freshChat: true })) {
+      blockedSuppressed += 1;
+      console.warn('FCM_PHYSICAL_FRESH_DIRECT_BLOCKED; send quarantined');
       continue;
     }
 
