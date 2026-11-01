@@ -161,3 +161,61 @@ console.log('PASS App Check enforcement accepts fresh verified Android evidence 
 console.log('PASS two independent A/B device records, sessions and sanitized fingerprints are required');
 console.log('PASS fake device_count, duplicate evidence, stale devices and nested raw tokens fail closed');
 console.log('App Check enforcement readiness contract: PASS');
+// Late native App Check plugin registration regression. All fixtures are synthetic:
+ // no Android runtime, Firebase credentials, network requests, or real token.
+ // Transpile the production TypeScript file to exercise its actual exported API.
+import ts from 'typescript';
+const nativeAppCheckFixtureSource = fs.readFileSync('src/services/nativeAppCheckToken.ts', 'utf8')
+  .replaceAll('import.meta.env', 'globalThis.__tutopAppCheckTestEnv');
+const nativeAppCheckFixtureJs = ts.transpileModule(nativeAppCheckFixtureSource, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const originalWindow = globalThis.window;
+const originalEnv = globalThis.__tutopAppCheckTestEnv;
+let pluginExposed = false;
+let initializationCount = 0;
+const simulatedNativePlugin = {
+  initialize: async () => { initializationCount += 1; },
+  getToken: async () => ({ token: 'synthetic-only-app-check-token', expireTimeMillis: Date.now() + 15 * 60_000 }),
+};
+try {
+  globalThis.__tutopAppCheckTestEnv = {
+    VITE_TUTOP_ENVIRONMENT: 'staging',
+    VITE_TUTOP_APP_VERSION: '0.9.2-beta.0',
+  };
+  globalThis.window = {
+    Capacitor: {
+      isNativePlatform: () => true,
+      registerPlugin: (name) => name === 'FirebaseAppCheck' && pluginExposed
+        ? simulatedNativePlugin : null,
+    },
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
+  };
+  const appCheckModule = await import('data:text/javascript;base64,'
+    + Buffer.from(nativeAppCheckFixtureJs).toString('base64'));
+  const missing = await Promise.all([
+    appCheckModule.initializeNativeAppCheck(),
+    appCheckModule.initializeNativeAppCheck(),
+  ]);
+  assert.deepEqual(missing, [null, null],
+    'initial plugin absence must fail closed, not invent a token');
+  assert.equal(initializationCount, 0);
+  pluginExposed = true;
+  const recovered = await appCheckModule.initializeNativeAppCheck();
+  assert.equal(recovered, simulatedNativePlugin,
+    'native plugin must be rediscovered after initially unavailable');
+  assert.equal(initializationCount, 1,
+    'only one initialization after plugin becomes available');
+  assert.equal(await appCheckModule.getNativeAppCheckToken(false),
+    'synthetic-only-app-check-token');
+  assert.equal(appCheckModule.nativeAppCheckStatus().debugProvider, false,
+    '0.9.2 must retain Play Integrity, not silently switch to debug');
+} finally {
+  if (originalWindow === undefined) delete globalThis.window;
+  else globalThis.window = originalWindow;
+  if (originalEnv === undefined) delete globalThis.__tutopAppCheckTestEnv;
+  else globalThis.__tutopAppCheckTestEnv = originalEnv;
+}
+console.log('PASS synthetic late native App Check plugin registration recovery');
+
