@@ -16,8 +16,9 @@ const makeSession = (uid, epoch) => ({
 
 function deferred() {
   let resolve;
-  const promise = new Promise((done) => { resolve = done; });
-  return { promise, resolve };
+  let reject;
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }
 async function until(predicate, label) {
   for (let i = 0; i < 100 && !predicate(); i++) await Promise.resolve();
@@ -79,8 +80,15 @@ function makeHarness({ appCheckGate = null, bodyGate = null } = {}) {
       },
     });
   }
+  function settleHttpError(call, status) {
+    call.gate.resolve({
+      ok: false, status,
+      text: async () => JSON.stringify({ error: { status: 'NOT_FOUND', message: 'synthetic missing' } }),
+    });
+  }
+  function rejectNetwork(call) { call.gate.reject(new TypeError('synthetic-network-failed')); }
   return {
-    clientA, login, settle, requests,
+    clientA, login, settle, settleHttpError, rejectNetwork, requests,
     appCheckStarted: () => appCheckStarted,
     bodyStarted: () => bodyStarted,
     persisted: () => JSON.parse(storage.getItem(storageKey)),
@@ -146,4 +154,52 @@ for (const [name, uid] of [['A-to-B', 'B'], ['A-to-A-new-session', 'A']]) {
   h.settle(h.requests[0]);
   await assert.rejects(pending, /AUTH_SESSION_CHANGED/);
 }
-console.log('PASS 5 live REST client scenarios: success, App Check A->B, stale A->B/A->A, late body and sign-out; no Firebase traffic');
+// Unchanged A must preserve legitimate 404->null and network failure behavior.
+{
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/missing');
+  await until(() => h.requests.length === 1, 'unchanged 404');
+  h.settleHttpError(h.requests[0], 404);
+  assert.equal(await pending, null, 'current session should still return null for real 404');
+}
+{
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/unreachable');
+  await until(() => h.requests.length === 1, 'unchanged network failure');
+  h.rejectNetwork(h.requests[0]);
+  await assert.rejects(pending, /synthetic-network-failed/);
+}
+
+// The old session's 404 must NOT masquerade as B's nonexistent document.
+for (const [label, uid] of [['stale404-AtoB', 'B'], ['stale404-AtoA', 'A']]) {
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/missing');
+  await until(() => h.requests.length === 1, label);
+  h.login(uid, 'fresh');
+  h.settleHttpError(h.requests[0], 404);
+  await assert.rejects(pending, /AUTH_SESSION_CHANGED/, label);
+  assert.equal(h.persisted().refreshToken, 'synthetic-refresh-fresh');
+}
+
+// An old account's error path must fail closed even if the network itself rejects.
+{
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/error');
+  await until(() => h.requests.length === 1, 'stale network reject');
+  h.login('B', 'fresh');
+  h.rejectNetwork(h.requests[0]);
+  await assert.rejects(pending, /AUTH_SESSION_CHANGED/);
+  assert.equal(h.persisted().uid, 'B');
+}
+
+// A 403 returned from a previous session cannot be mistaken for a new account failure.
+{
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/denied');
+  await until(() => h.requests.length === 1, 'stale http 403');
+  h.login('B', 'fresh');
+  h.settleHttpError(h.requests[0], 403);
+  await assert.rejects(pending, /AUTH_SESSION_CHANGED/);
+}
+console.log('PASS Firestore response/error paths: unchanged 404 and network errors preserve semantics; stale 404 A->B/A->A, 403 and network rejection fail closed');
+console.log('PASS real client synthetic A/B in-flight races, no Firebase traffic');

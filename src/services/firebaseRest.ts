@@ -260,12 +260,15 @@ export class FirebaseRestClient {
     assertCurrent();
     if (appCheck) headers.set('X-Firebase-AppCheck', appCheck);
     if (init.body) headers.set('Content-Type', 'application/json');
-    const response = await firebaseFetch(url, { ...init, headers });
-    // Fail closed on late A responses, including while their response body parses.
-    assertCurrent();
-    const data = await readJson(response);
-    assertCurrent();
-    return data;
+    // Guard both successful and rejected network/body promises. Without finally,
+    // a late 404 could become a false "not found" for the newly signed-in account.
+    try {
+      const response = await firebaseFetch(url, { ...init, headers });
+      assertCurrent();
+      return await readJson(response);
+    } finally {
+      assertCurrent();
+    }
   }
 
   async getDocument<T = Record<string, unknown>>(path: string): Promise<FirestoreDocument<T> | null> {
