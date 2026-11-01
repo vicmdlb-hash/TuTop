@@ -148,6 +148,7 @@ assert.throws(() => assertFirebaseRequestSessionCurrent(null, activeRequest, act
 const firestoreRestSource = fs.readFileSync('src/services/firebaseRest.ts', 'utf8');
 const guardedFirestoreMethod = firestoreRestSource.split('private async firestoreFetch(')[1]?.split('async getDocument<')[0] || '';
 assert.match(guardedFirestoreMethod, /const requestSession = this\.session/);
+assert.match(guardedFirestoreMethod, /requestSession\.idToken !== token/);
 assert.match(guardedFirestoreMethod, /const assertCurrent = \(\) => assertFirebaseRequestSessionCurrent/);
 assert.equal((guardedFirestoreMethod.match(/assertCurrent\(\);/g) || []).length, 4, 'before dispatch, after attestation wait, before and after body parsing');
 assert(guardedFirestoreMethod.indexOf('assertCurrent();', guardedFirestoreMethod.indexOf('getNativeAppCheckToken')) < guardedFirestoreMethod.indexOf('firebaseFetch(url'), 'attestation wait must be followed by an exact-session guard before dispatch');

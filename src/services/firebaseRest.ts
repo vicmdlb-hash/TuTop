@@ -247,6 +247,8 @@ export class FirebaseRestClient {
     const token = await this.getIdToken();
     // Capture the exact post-refresh identity: UID alone is not enough on A -> A relogin.
     const requestSession = this.session;
+    // getIdToken() can yield: reject if an A token now belongs to a newer B or A login.
+    if (!requestSession || requestSession.idToken !== token) throw new Error('AUTH_SESSION_CHANGED');
     const assertCurrent = () => assertFirebaseRequestSessionCurrent(
       requestSession, this.session, this.readStoredSession(),
     );

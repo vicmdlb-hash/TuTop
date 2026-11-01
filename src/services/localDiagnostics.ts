@@ -9,8 +9,20 @@ export type DiagnosticEntry = {
 
 const STORAGE_KEY = 'tutop.diagnostics.v092';
 const MAX_ENTRIES = 80;
-const SAFE_KEY = /^[a-z][a-z0-9_]{0,39}$/;
-const SAFE_VALUE = /^[A-Za-z0-9 _.:/+-]{0,120}$/;
+// Only known, non-identifying diagnostic dimensions may be retained.
+// Character filtering alone cannot distinguish a harmless label from a UID or token.
+const SAFE_BOOLEAN_KEYS = new Set([
+  'ready', 'email', 'phone', 'otp', 'token', 'mixed_age_release',
+  'configuration_valid', 'app_check_required', 'fallback_model', 'retry', 'app_check_token',
+]);
+const SAFE_NUMBER_LIMITS: Record<string, readonly [number, number]> = {
+  count: [0, 20], status_class: [1, 5],
+};
+const SAFE_ENUM_VALUES: Record<string, ReadonlySet<string>> = {
+  source: new Set(['picker', 'camera', 'gallery']),
+  mime: new Set(['mp4', 'webm', 'quicktime']),
+  failure_kind: new Set(['none', 'timeout', 'network', 'firebase-config-rejected', 'app-check', 'capacity', 'native-request']),
+};
 
 function cleanCode(value: string) {
   return String(value || 'unknown').replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 80) || 'unknown';
@@ -20,10 +32,14 @@ function cleanContext(input?: Record<string, unknown>) {
   if (!input) return undefined;
   const output: Record<string, string | number | boolean> = {};
   for (const [key, value] of Object.entries(input).slice(0, 12)) {
-    if (!SAFE_KEY.test(key)) continue;
-    if (typeof value === 'boolean') output[key] = value;
-    else if (typeof value === 'number' && Number.isFinite(value)) output[key] = Math.round(value * 1000) / 1000;
-    else if (typeof value === 'string' && SAFE_VALUE.test(value)) output[key] = value.slice(0, 120);
+    if (typeof value === 'boolean' && SAFE_BOOLEAN_KEYS.has(key)) {
+      output[key] = value;
+    } else if (typeof value === 'number' && Number.isInteger(value) && SAFE_NUMBER_LIMITS[key]) {
+      const [min, max] = SAFE_NUMBER_LIMITS[key];
+      if (value >= min && value <= max) output[key] = value;
+    } else if (typeof value === 'string' && SAFE_ENUM_VALUES[key]?.has(value)) {
+      output[key] = value;
+    }
   }
   return Object.keys(output).length ? output : undefined;
 }
