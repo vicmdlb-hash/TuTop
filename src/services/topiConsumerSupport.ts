@@ -67,6 +67,11 @@ export async function answerConsumerSupport(question: string, routeHint: Support
   const clean = safeQuestion(question);
   if (clean.length < 3) return deterministicAnswer(clean, routeHint);
   const route = resolveRoute(clean, routeHint);
+  // Explicit guided staging beta: local help only, never acquire a remote token
+  // or send the user's question to the native generative provider.
+  const guidedBeta = String(import.meta.env.VITE_TUTOP_TOPI_GUIDED_BETA || '').toLowerCase() === 'true'
+    && String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').toLowerCase() === 'staging';
+  if (guidedBeta) return deterministicAnswer(clean, route);
   const privacy = redactTopiRemoteText(clean, 900);
   const remoteQuestion = privacy.text || '';
   const generated = await generateNativeTopiText(aiPrompt(remoteQuestion, route));
