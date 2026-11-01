@@ -29,6 +29,35 @@ const tests=[
   let attempts=0; const {check}=appCheckHarness({initialize:async()=>{if(++attempts===1)throw new Error('cold start');},getToken:async()=>({token:'test-token'})});
   assert.equal(await check.getNativeAppCheckToken(),null); assert.equal(await check.getNativeAppCheckToken(),'test-token');
  }],
+ ['late Firebase Messaging registration can recover without Firebase traffic',async()=>{
+   let available=false;
+   const listeners=[];
+   const messaging={
+     getToken:async()=>({token:'synthetic-inactive-token'}),
+     addListener:async(name)=>{listeners.push(name);return {remove:async()=>{}};},
+   };
+   const nativeWindow={
+     addEventListener:()=>{},
+     Capacitor:{registerPlugin:(name)=>name==='FirebaseMessaging'&&available?messaging:null},
+   };
+   const storage={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+   const security=compile(read('src/services/nativeFirebaseSecurity.ts'),
+     ['initializeNativeFirebaseSecurity'],{
+       window:nativeWindow,localStorage:storage,
+       ENV:{VITE_TUTOP_APP_VERSION:'0.9.2-beta.0'},
+       initializeNativeAppCheck:async()=>null,isNativeFirebaseRuntime:()=>true,
+       verifiedEmailBetaAuth:{readSessionIdentity:()=>null,sessionGeneration:()=>0},
+       matchesNativePushSession:()=>false,pushBackend:{},
+     });
+   await bounded(security.initializeNativeFirebaseSecurity());
+   assert.deepEqual(listeners,[],'plugin absence must not register a listener');
+   available=true;
+   await bounded(security.initializeNativeFirebaseSecurity());
+   assert.deepEqual(listeners,['tokenReceived','notificationReceived','notificationActionPerformed'],
+     'late plugin must register all three listeners on retry');
+   await bounded(security.initializeNativeFirebaseSecurity());
+   assert.equal(listeners.length,3,'successful bootstrap must remain idempotent');
+ }],
  ['private QA AI also denies remote calls without attestation',async()=>{
   const h=appCheckHarness({initialize:async()=>{},getToken:never}); let generated=0;
   h.window.Capacitor.registerPlugin=name=>name==='TuTopAI'?{generate:async()=>{generated++;return {text:'provider fixture'};}}:{initialize:async()=>{},getToken:never};
