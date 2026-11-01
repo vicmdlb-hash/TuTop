@@ -301,6 +301,11 @@ async function askConfiguredTopi(action: TopiAction, context: CopilotContext): P
  * successful local answer: physical QA must prove Firebase AI itself.
  */
 export async function askTopi(action: TopiAction, context: CopilotContext): Promise<CopilotResult> {
+  // Explicit, user-approved guided beta: answer by deterministic rules only.
+  // Never enter the native or HTTPS remote AI paths in this release mode.
+  const guidedBeta = String(import.meta.env.VITE_TUTOP_TOPI_GUIDED_BETA || '').toLowerCase() === 'true'
+    && String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').toLowerCase() === 'staging';
+  if (guidedBeta) return localTopi(action, context);
   const native = await askNativeFirebaseTopi(action, context);
   if (native) return native;
   const remote = await askConfiguredTopi(action, context);
