@@ -71,7 +71,7 @@ console.log('PASS Topi privacy redaction synthetic API keys, email, and product-
 function loadGuidedEntrypoint(source, marker, exportName, env, mocks) {
   const index = source.indexOf(marker);
   assert(index >= 0, 'missing guided beta entrypoint: ' + exportName);
-  const functionSource = source.slice(index).replace(/^export /, '').replace(/import\\.meta\\.env/g, 'ENV');
+  const functionSource = source.slice(index).replace(/^export /, '').replaceAll('import.meta.env', 'ENV');
   const js = stripTypeScriptTypes(functionSource);
   return new Function('ENV', ...Object.keys(mocks), js + ';return ' + exportName + ';')(env, ...Object.values(mocks));
 }
