@@ -6,6 +6,8 @@ assert.match(w,/prepare-staging-v2-auth\.mjs/);
 assert.match(w,/prepare-staging-android-app\.mjs/);
 assert.match(w,/VITE_TUTOP_SCHEMA_V2: 'true'/);
 assert.match(w,/VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED: 'false'/);
+assert.match(w,/VITE_TUTOP_TOPI_REMOTE_ENABLED: 'false'/);
+assert.match(w,/VITE_TUTOP_TOPI_GUIDED_BETA: 'true'/);
 assert.match(w,/VITE_TUTOP_ENVIRONMENT: staging/);
 assert.match(w,/verify-android-native-plugin-bundle/);
 assert.doesNotMatch(w,/firebase:deploy|reset-staging|gh release|upload-artifact|TUTOP_ALLOW_FIREBASE_DEPLOY/);
