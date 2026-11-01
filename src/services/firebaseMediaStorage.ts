@@ -163,8 +163,7 @@ export const firebaseMediaStorage = {
       recordDiagnostic('media', 'video_load_success');
       return URL.createObjectURL(blob);
     } catch (error) {
-      const raw = error instanceof Error ? error.message : 'MEDIA_STORAGE_UNKNOWN';
-      recordDiagnostic('media', raw.replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 80));
+      recordDiagnostic('media', 'video_load_failed');
       throw new Error(userFacingMediaError(error));
     }
   },
