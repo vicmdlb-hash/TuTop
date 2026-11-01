@@ -20,3 +20,14 @@ export function sameFirebaseSession(
     && a.refreshToken === b.refreshToken
   );
 }
+
+/** Fail closed when a Firestore request outlives its exact authenticated session. */
+export function assertFirebaseRequestSessionCurrent(
+  request: FirebaseSessionIdentity | null,
+  runtime: FirebaseSessionIdentity | null,
+  persisted: FirebaseSessionIdentity | null,
+): void {
+  if (!request || !sameFirebaseSession(request, runtime) || !sameFirebaseSession(request, persisted)) {
+    throw new Error('AUTH_SESSION_CHANGED');
+  }
+}

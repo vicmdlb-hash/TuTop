@@ -1,6 +1,6 @@
 import { firebaseFetch } from './firebaseHttp';
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
-import { sameFirebaseSession } from '../lib/firebaseSharedSessionGuard';
+import { sameFirebaseSession, assertFirebaseRequestSessionCurrent } from '../lib/firebaseSharedSessionGuard';
 import type { FirebaseRuntimeConfig } from './runtimeConfig';
 
 export interface AuthSession {
@@ -245,12 +245,25 @@ export class FirebaseRestClient {
 
   private async firestoreFetch(url: string, init: RequestInit = {}) {
     const token = await this.getIdToken();
+    // Capture the exact post-refresh identity: UID alone is not enough on A -> A relogin.
+    const requestSession = this.session;
+    const assertCurrent = () => assertFirebaseRequestSessionCurrent(
+      requestSession, this.session, this.readStoredSession(),
+    );
+    assertCurrent();
     const headers = new Headers(init.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
     const appCheck = await getNativeAppCheckToken(false).catch(() => null);
+    // An App Check wait must not send A's request after a logout or account switch.
+    assertCurrent();
     if (appCheck) headers.set('X-Firebase-AppCheck', appCheck);
     if (init.body) headers.set('Content-Type', 'application/json');
-    return readJson(await firebaseFetch(url, { ...init, headers }));
+    const response = await firebaseFetch(url, { ...init, headers });
+    // Fail closed on late A responses, including while their response body parses.
+    assertCurrent();
+    const data = await readJson(response);
+    assertCurrent();
+    return data;
   }
 
   async getDocument<T = Record<string, unknown>>(path: string): Promise<FirestoreDocument<T> | null> {
