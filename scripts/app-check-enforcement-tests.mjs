@@ -164,12 +164,10 @@ console.log('App Check enforcement readiness contract: PASS');
 // Late native App Check plugin registration regression. All fixtures are synthetic:
  // no Android runtime, Firebase credentials, network requests, or real token.
  // Transpile the production TypeScript file to exercise its actual exported API.
-import ts from 'typescript';
+import { stripTypeScriptTypes } from 'node:module';
 const nativeAppCheckFixtureSource = fs.readFileSync('src/services/nativeAppCheckToken.ts', 'utf8')
   .replaceAll('import.meta.env', 'globalThis.__tutopAppCheckTestEnv');
-const nativeAppCheckFixtureJs = ts.transpileModule(nativeAppCheckFixtureSource, {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-}).outputText;
+const nativeAppCheckFixtureJs = stripTypeScriptTypes(nativeAppCheckFixtureSource);
 const originalWindow = globalThis.window;
 const originalEnv = globalThis.__tutopAppCheckTestEnv;
 let pluginExposed = false;
