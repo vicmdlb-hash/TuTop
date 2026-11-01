@@ -561,6 +561,8 @@ export default function NationalPublishScreen() {
     }
   };
 
+  const guidedBeta = String(import.meta.env.VITE_TUTOP_TOPI_GUIDED_BETA || '').toLowerCase() === 'true'
+    && String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').toLowerCase() === 'staging';
   const aiChip = topiProvider === 'firebase-ai-logic'
     ? { label: 'Firebase AI real', className: 'bg-emerald-500/10 text-emerald-300' }
     : topiProvider === 'private-endpoint'
@@ -581,7 +583,7 @@ export default function NationalPublishScreen() {
           <TopiMascot className="h-12 w-12 shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2"><strong className="text-xs">Topi te ayuda a publicar</strong>{aiChip && <span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${aiChip.className}`}>{aiChip.label}</span>}</div>
-            <p className="mt-0.5 text-[9px] text-slate-500">Escribe o dicta una frase. Firebase AI real se identifica explícitamente; si falla en esta beta, TuTop lo muestra como fallo y no lo disfraza con un asistente local.</p>
+            <p className="mt-0.5 text-[9px] text-slate-500">{guidedBeta ? "Beta guiada: Topi organiza datos mediante reglas locales; no es IA generativa ni envía tu descripción a un proveedor remoto de IA." : "Escribe o dicta una frase. Firebase AI real se identifica explícitamente; si falla en esta beta, TuTop lo muestra como fallo y no lo disfraza con un asistente local."}</p>
           </div>
         </div>
         <div className="relative mt-3">
@@ -589,7 +591,7 @@ export default function NationalPublishScreen() {
           <button type="button" onClick={startVoice} className={`absolute bottom-2 right-2 grid h-9 w-9 place-items-center rounded-xl ${voiceStatus === 'listening' ? 'bg-fuchsia-500 text-white' : 'bg-white/[0.06] text-violet-200'}`} aria-label="Dictar a Topi"><Mic className="h-4 w-4" /></button>
         </div>
         <button disabled={topiBusy} type="button" onClick={() => void applyTopi()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-xs font-black text-white disabled:opacity-60">{topiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{topiBusy ? 'Topi está preparando…' : 'Topi, prepara mi anuncio'}</button>
-        <p className="mt-2 text-[8px] leading-4 text-slate-600">Cuando Topi usa Firebase AI real, el texto necesario se procesa remotamente. TuTop no adjunta automáticamente fotos ni ubicación del dispositivo; antes del envío se omiten emails, teléfonos y códigos sensibles evidentes. No escribas domicilio exacto, contraseñas ni secretos. La IA nunca publica por ti: sólo propone y tú confirmas.</p>
+        <p className="mt-2 text-[8px] leading-4 text-slate-600">{guidedBeta ? "Tu frase se procesa localmente con reglas; Topi puede sugerir campos, pero no inventa datos, no publica y no envía solicitudes a IA remota. El dictado depende del servicio de voz de tu dispositivo. Revisa y confirma todo antes de publicar." : "Cuando Topi usa Firebase AI real, el texto necesario se procesa remotamente. TuTop no adjunta automáticamente fotos ni ubicación del dispositivo; antes del envío se omiten emails, teléfonos y códigos sensibles evidentes. No escribas domicilio exacto, contraseñas ni secretos. La IA nunca publica por ti: sólo propone y tú confirmas."}</p>
       </section>
 
       <section className="publish-card">
