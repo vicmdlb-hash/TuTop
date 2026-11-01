@@ -77,6 +77,7 @@ const commonSteps = [
   [process.execPath, ['--experimental-strip-types', 'scripts/local-diagnostics-privacy-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/physical-qa-telemetry-privacy-tests.mjs']],
   [process.execPath, ['scripts/firebase-cross-client-shared-storage-tests.mjs']],
+  [process.execPath, ['scripts/firestore-rest-inflight-session-tests.mjs']],
   [process.execPath, ['scripts/native-secure-session-write-queue-tests.mjs']],
   [process.execPath, ['scripts/offline-reconnect-chaos-tests.mjs']],
   [process.execPath, ['scripts/offline-reconnect-extreme-tests.mjs']],
