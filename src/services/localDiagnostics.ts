@@ -53,7 +53,7 @@ const SAFE_CODES: Record<DiagnosticCategory, ReadonlySet<string>> = {
   notifications: new Set(),
   network: new Set(),
 };
-const ISO_UTC = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/;
+const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 function validCategory(value: unknown): value is DiagnosticCategory {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(SAFE_CODES, value);
