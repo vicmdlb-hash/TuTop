@@ -23,6 +23,7 @@ jobs:
       VITE_TUTOP_ENVIRONMENT: staging
       VITE_TUTOP_TOPI_REMOTE_ENABLED: 'false'
       VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED: 'false'
+      VITE_TUTOP_TOPI_GUIDED_BETA: 'true'
       VITE_TUTOP_MEDIA_STORAGE_ENABLED: 'false'
       FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
@@ -39,6 +40,9 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF_NAME}" = "integration/tutop-121-122-fcm-owner-ci-20261022"
           test "${TUTOP_ALLOW_STAGING_CONFIG_READ}" = read-only-v2
+          test "${VITE_TUTOP_TOPI_GUIDED_BETA}" = true
+          test "${VITE_TUTOP_TOPI_REMOTE_ENABLED}" = false
+          test "${VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED}" = false
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tutop-connected-staging-compile.yml"
