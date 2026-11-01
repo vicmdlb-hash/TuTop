@@ -210,7 +210,14 @@ export async function initializeNativeFirebaseSecurity() {
   initialization = (async () => {
     await initializeNativeAppCheck();
     const messaging = capacitorPlugin('FirebaseMessaging');
-    if (messaging) await installMessagingListeners(messaging);
+    // Capacitor can expose Messaging after the first native startup probe.
+    // Never memoize a completed initialization when the plugin is missing;
+    // otherwise a later retry cannot install its FCM event listeners.
+    if (!messaging?.getToken) {
+      initialization = null;
+      return;
+    }
+    await installMessagingListeners(messaging);
 
     // If a previous account logged out fully offline, never register that same
     // native token under a new UID. Invalidate it first; a fresh token can then
