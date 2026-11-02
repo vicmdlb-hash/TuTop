@@ -146,4 +146,25 @@ function harness({ attestationGate = null } = {}) {
   h.requests[0].pending.resolve({ ok: true, status: 200 });
   await assert.rejects(pending, /AUTH_SESSION_CHANGED/);
 }
-console.log('PASS actual Firebase media service: 7 isolated session cases, no Firebase traffic, no files written or deleted');
+// Same-bucket videos remain accessible to the current account.
+{
+  const h = harness();
+  const pending = h.media.loadVideoBlobUrl(uriA);
+  await until(() => h.requests.length === 1, 'same-bucket video read');
+  h.requests[0].pending.resolve({
+    ok: true, status: 200,
+    blob: async () => new Blob(['synthetic video body'], { type: 'video/mp4' }),
+  });
+  assert.equal(await pending, 'blob:synthetic');
+  assert.equal(h.urlCount(), 1, 'valid video URL should be created once');
+}
+// A forged foreign bucket URI cannot dispatch an authenticated read or delete.
+{
+  const h = harness();
+  const foreign = 'firebase-storage://other-bucket.test/product-videos/A/file.mp4';
+  await assert.rejects(h.media.loadVideoBlobUrl(foreign), /No pudimos procesar el video/);
+  assert.equal(h.requests.length, 0, 'foreign bucket video read must not reach transport');
+  await assert.rejects(h.media.delete(foreign), /MEDIA_STORAGE_BUCKET_MISMATCH/);
+  assert.equal(h.requests.length, 0, 'foreign bucket video deletion must not reach transport');
+}
+console.log('PASS actual Firebase media service: 9 isolated media/security cases, no Firebase traffic, no files written or deleted');
