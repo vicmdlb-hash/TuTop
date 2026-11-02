@@ -13,15 +13,18 @@ const durable = fs.readFileSync('src/lib/publishDraftPersistence.ts','utf8');
 const gate = fs.readFileSync('src/components/BackendGate.tsx','utf8');
 const assistant = fs.readFileSync('src/services/assistantProvider.ts','utf8');
 
-assert.match(nearby, /type PersistedApproxLocation = ApproxLocation & \{ owner_uid: string \}/);
+assert.match(nearby, /export type ScopedApproxLocationEvent = ApproxLocation & \{ owner_uid: string \}/);
+assert.match(nearby, /type PersistedApproxLocation = ScopedApproxLocationEvent/);
 assert.match(nearby, /getCachedApproxLocation\(ownerUid: string/);
-assert.match(nearby, /!parsed\.owner_uid \|\| parsed\.owner_uid !== ownerUid/);
+assert.match(nearby, /if \(!parsed\.owner_uid\) \{/);
+assert.match(nearby, /if \(parsed\.owner_uid !== ownerUid\) return null/);
+assert.match(nearby, /Object\.keys\(parsed\)\.some\(\(key\) => !allowedKeys\.includes\(key\)\)/);
 assert.match(nearby, /saveApproxLocation\(location: ApproxLocation, ownerUid: string\)/);
 assert.match(nearby, /clearApproxLocation\(ownerUid\?: string\)/);
 assert.match(nearby, /ownerUid\?: string/);
 
 assert.match(publish, /getCachedApproxLocation\(user\.id\)/);
-assert.match(publish, /ownerUid: user\.id/);
+assert.match(publish, /ownerUid: requestUid, isOwnerActive: stillCurrent/);
 assert.match(publish, /locationOptIn \? approxLocation : null/);
 assert.match(publish, /topi_privacy_redaction_applied/);
 assert.match(publish, /privacyRedactions\.includes\('email'\)/);
@@ -31,9 +34,11 @@ assert.match(publish, /const location = locationOptIn \? approxLocation : null/)
 assert.doesNotMatch(publish, /approxLocation \|\| await requestApproxLocation/);
 
 assert.match(explore, /getCachedApproxLocation\(user\.id\)/);
-assert.match(explore, /ownerUid: user\.id/);
+assert.match(explore, /ownerUid: requestUid/);
+assert.match(explore, /isOwnerActive: \(\) => useAppStore\.getState\(\)\.user\.id === requestUid/);
 assert.match(feed, /getCachedApproxLocation\(user\.id\)/);
-assert.match(feed, /ownerUid: user\.id/);
+assert.match(feed, /ownerUid: requestUid/);
+assert.match(feed, /isOwnerActive: \(\) => useAppStore\.getState\(\)\.user\.id === requestUid/);
 assert.doesNotMatch(feed, /void requestApproxLocation\(\)\.then/);
 assert.match(card, /getCachedApproxLocation\(user\.id\)/);
 assert.match(hydrator, /getCachedApproxLocation\(uid\)/);
