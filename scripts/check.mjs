@@ -59,6 +59,7 @@ const commonSteps = [
   [process.execPath, ['scripts/visible-favorites-cutover-tests.mjs']],
   [process.execPath, ['scripts/wallet-lazy-history-readiness-tests.mjs']],
   [process.execPath, ['scripts/trusted-public-reputation-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/post120-olympus-identity-tests.mjs']],
   [process.execPath, ['scripts/review-lazy-status-contract-tests.mjs']],
   [process.execPath, ['scripts/review-strike-cutover-readiness-tests.mjs']],
   [process.execPath, ['scripts/review-strike-emulator-gate-contract-tests.mjs']],
