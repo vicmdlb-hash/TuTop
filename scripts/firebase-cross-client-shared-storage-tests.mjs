@@ -47,7 +47,7 @@ function makeHarness(initial = session('A', 'old')) {
   const guard = exportsFor(guardSource);
   const lifecycle = exportsFor(lifecycleSource);
   const rest = exportsFor(restSource, {
-    './firebaseHttp': { firebaseFetch },
+    './firebaseHttp': { firebaseFetch, readFirebaseResponseText: async (response) => response.text() },
     './nativeAppCheckToken': { getNativeAppCheckToken: async () => null },
     '../lib/firebaseSharedSessionGuard': guard,
   });

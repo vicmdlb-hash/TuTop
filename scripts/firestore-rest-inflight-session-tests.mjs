@@ -61,7 +61,7 @@ function makeHarness({ appCheckGate = null, bodyGate = null } = {}) {
   }
   const guard = load(sharedGuard);
   const rest = load(restClient, {
-    './firebaseHttp': { firebaseFetch },
+    './firebaseHttp': { firebaseFetch, readFirebaseResponseText: async (response) => response.text() },
     './nativeAppCheckToken': { getNativeAppCheckToken: appCheck },
     '../lib/firebaseSharedSessionGuard': guard,
   });
