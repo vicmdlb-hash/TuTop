@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 const packageVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
 const commonSteps = [
   [process.execPath, ['scripts/verified-email-runtime-tests.mjs']],
+  [process.execPath, ['scripts/post120-admin-account-status-contract-tests.mjs']],
   [process.execPath, ['scripts/native-runtime-recovery-tests.mjs']],
   [process.execPath, ['scripts/preflight.mjs']],
   [process.execPath, ['scripts/syntax-check.mjs']],
@@ -15,6 +16,7 @@ const commonSteps = [
   [process.execPath, ['scripts/ci-auth-redaction-contract-tests.mjs']],
   [process.execPath, ['scripts/ci-auth-readiness-tests.mjs']],
   [process.execPath, ['scripts/post116-accessibility-semantics-tests.mjs']],
+  [process.execPath, ['scripts/post120-accessibility-hardening-tests.mjs']],
   [process.execPath, ['scripts/post116-nearby-moderation-freshness-tests.mjs']],
   [process.execPath, ['scripts/post116-seller-moderation-truth-tests.mjs']],
   [process.execPath, ['scripts/post116-pr88-moderation-privacy-integration-tests.mjs']],
@@ -122,6 +124,7 @@ const commonSteps = [
   [process.execPath, ['scripts/guardian-revocation-preflight-tests.mjs']],
   [process.execPath, ['scripts/first-admin-bootstrap-gate-tests.mjs']],
   [process.execPath, ['scripts/account-erasure-atomic-commit-tests.mjs']],
+  [process.execPath, ['scripts/account-erasure-tests.mjs']],
   [process.execPath, ['scripts/account-erasure-synthetic-tests.mjs']],
   [process.execPath, ['scripts/post116-erasure-completion-attestation-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/post116-erasure-user-status-truth-tests.mjs']],
