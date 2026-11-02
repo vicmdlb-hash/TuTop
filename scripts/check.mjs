@@ -80,6 +80,8 @@ const commonSteps = [
   [process.execPath, ['scripts/firestore-rest-inflight-session-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/media-storage-session-isolation-tests.mjs']],
   [process.execPath, ['scripts/native-secure-session-write-queue-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/native-notification-router-account-switch-integration-tests.mjs']],
+  [process.execPath, ['scripts/post116-firebase-request-timeout-tests.mjs']],
   [process.execPath, ['scripts/offline-reconnect-chaos-tests.mjs']],
   [process.execPath, ['scripts/offline-reconnect-extreme-tests.mjs']],
   [process.execPath, ['scripts/reservation-lock-residue-audit-tests.mjs']],
@@ -109,6 +111,7 @@ const commonSteps = [
   [process.execPath, ['scripts/guardian-revocation-preflight-tests.mjs']],
   [process.execPath, ['scripts/first-admin-bootstrap-gate-tests.mjs']],
   [process.execPath, ['scripts/account-erasure-atomic-commit-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/post116-erasure-user-status-truth-tests.mjs']],
   [process.execPath, ['scripts/auth-batch-delete-proof-tests.mjs']],
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
 ];
