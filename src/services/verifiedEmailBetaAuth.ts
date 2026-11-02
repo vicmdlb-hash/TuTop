@@ -3,6 +3,7 @@ import { CAMPUSES, INSTITUTIONS } from '../lib/universityNetwork';
 import { nationalVerificationIndicators } from '../lib/nationalVerificationIndicators';
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
 import { firebaseFetch, isFirebaseRequestTimeout } from './firebaseHttp';
+import { readFirebaseResponseText } from './firebaseHttp';
 import { FirebaseRestClient, normalizeMexicoPhone, phoneAliasEmail } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
 
@@ -65,7 +66,7 @@ async function authHeaders() {
 }
 
 async function readJson(response: Response) {
-  const text = await response.text();
+  const text = await readFirebaseResponseText(response);
   let data: any = null;
   if (text) { try { data = JSON.parse(text); } catch { data = { raw: text }; } }
   if (!response.ok) {

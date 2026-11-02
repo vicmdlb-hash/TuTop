@@ -1,4 +1,5 @@
 import { firebaseFetch } from './firebaseHttp';
+import { readFirebaseResponseText } from './firebaseHttp';
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
 import { sameFirebaseSession, assertFirebaseRequestSessionCurrent } from '../lib/firebaseSharedSessionGuard';
 import type { FirebaseRuntimeConfig } from './runtimeConfig';
@@ -87,7 +88,7 @@ function decodeFields(fields: Record<string, unknown>) {
 }
 
 async function readJson(response: Response) {
-  const text = await response.text();
+  const text = await readFirebaseResponseText(response);
   let data: any = null;
   if (text) {
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
