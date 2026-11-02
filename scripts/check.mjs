@@ -95,6 +95,8 @@ const commonSteps = [
   [process.execPath, ['scripts/offline-reconnect-chaos-tests.mjs']],
   [process.execPath, ['scripts/offline-reconnect-extreme-tests.mjs']],
   [process.execPath, ['scripts/reservation-lock-residue-audit-tests.mjs']],
+  [process.execPath, ['scripts/reservation-reconcile-availability-guard-tests.mjs']],
+  [process.execPath, ['scripts/reservation-runner-safety-tests.mjs']],
   [process.execPath, ['scripts/post116-reservation-availability-tests.mjs']],
   [process.execPath, ['scripts/recovery-local-provider-simulation-tests.mjs']],
   [process.execPath, ['scripts/recovery-local-provider-abuse-tests.mjs']],
