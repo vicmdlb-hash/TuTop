@@ -172,6 +172,8 @@ export const firebaseMediaStorage = {
       if (!featureFlag()) throw new Error('MEDIA_STORAGE_INFRASTRUCTURE_DISABLED');
       const reference = parseFirebaseMediaUri(uri);
       if (!reference) throw new Error('MEDIA_STORAGE_URI_INVALID');
+      // Never send this app's Firebase credentials to a foreign Storage bucket.
+      if (reference.bucket !== storageBucket()) throw new Error('MEDIA_STORAGE_BUCKET_MISMATCH');
       const { headers, assertCurrent } = await authHeaders();
       assertCurrent();
       try {
@@ -194,6 +196,8 @@ export const firebaseMediaStorage = {
     if (!featureFlag()) return;
     const reference = parseFirebaseMediaUri(uri);
     if (!reference) return;
+    // A stale or forged media URI must not delete an object from another bucket.
+    if (reference.bucket !== storageBucket()) throw new Error('MEDIA_STORAGE_BUCKET_MISMATCH');
     const { headers, uid, assertCurrent } = await authHeaders();
     // A stale cleanup URI cannot authorize deletion of another account's asset.
     if (reference.path.split('/')[1] !== uid) throw new Error('MEDIA_STORAGE_OWNER_MISMATCH');
