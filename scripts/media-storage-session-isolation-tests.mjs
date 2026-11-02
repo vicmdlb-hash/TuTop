@@ -23,10 +23,13 @@ async function until(predicate, label) {
   assert(predicate(), 'fixture did not reach ' + label);
 }
 
-function harness({ attestationGate = null } = {}) {
+function harness({ attestationGate = null, onObjectUrl = null } = {}) {
   let stored = first;
   let appCheckStarted = false;
   let createdUrls = 0;
+  let revokedUrls = 0;
+  const timers = new Map();
+  let nextTimerId = 0;
   const requests = [];
   const diagnostics = [];
   class FirebaseRestClient {
@@ -46,7 +49,12 @@ function harness({ attestationGate = null } = {}) {
     return request.pending.promise;
   };
   class Url extends URL {
-    static createObjectURL() { createdUrls += 1; return 'blob:synthetic'; }
+    static createObjectURL() {
+      createdUrls += 1;
+      if (onObjectUrl) onObjectUrl();
+      return 'blob:synthetic';
+    }
+    static revokeObjectURL() { revokedUrls += 1; }
   }
   const module = { exports: {} };
   vm.runInNewContext(compiled, {
@@ -67,7 +75,9 @@ function harness({ attestationGate = null } = {}) {
       VITE_TUTOP_MEDIA_STORAGE_ENABLED: 'true',
       VITE_FIREBASE_STORAGE_BUCKET: 'synthetic-bucket.test',
     },
-    fetch: mockFetch, Blob, URL: Url, Promise, Date, Math,
+    fetch: mockFetch, Blob, URL: Url, Promise, Date, Math, AbortController,
+    setTimeout(fn, delay) { const id = ++nextTimerId; timers.set(id, { fn, delay }); return id; },
+    clearTimeout(id) { timers.delete(id); },
     crypto: { randomUUID: () => 'synthetic-random-id' },
   }, { timeout: 3000 });
   return {
@@ -75,6 +85,13 @@ function harness({ attestationGate = null } = {}) {
     switchTo: (s) => { stored = s; },
     attestationStarted: () => appCheckStarted,
     urlCount: () => createdUrls,
+    revokedCount: () => revokedUrls,
+    activeTimers: () => timers.size,
+    expireTimers: () => {
+      const ready = [...timers.values()];
+      timers.clear();
+      for (const timer of ready) timer.fn();
+    },
   };
 }
 
@@ -167,4 +184,64 @@ function harness({ attestationGate = null } = {}) {
   await assert.rejects(h.media.delete(foreign), /MEDIA_STORAGE_BUCKET_MISMATCH/);
   assert.equal(h.requests.length, 0, 'foreign bucket video deletion must not reach transport');
 }
-console.log('PASS actual Firebase media service: 9 isolated media/security cases, no Firebase traffic, no files written or deleted');
+// A stalled upload is aborted and not automatically retried. Server completion stays UNKNOWN.
+{
+  const h = harness();
+  const pending = h.media.uploadListingVideo(file, 'A');
+  await until(() => h.requests.length === 1, 'upload timeout');
+  h.expireTimers();
+  await assert.rejects(pending, /MEDIA_STORAGE_TIMEOUT/);
+  assert.equal(h.requests.length, 1, 'timeout must never resend the upload');
+  assert.equal(h.requests[0].init.signal.aborted, true);
+  assert.equal(h.activeTimers(), 0);
+}
+// A video response that never returns headers does not leave the UI pending forever.
+{
+  const h = harness();
+  const pending = h.media.loadVideoBlobUrl(uriA);
+  await until(() => h.requests.length === 1, 'read headers timeout');
+  h.expireTimers();
+  await assert.rejects(pending, /La conexión tardó demasiado/);
+  assert.equal(h.requests[0].init.signal.aborted, true);
+  assert.equal(h.urlCount(), 0);
+}
+// A video body that hangs after HTTP headers is also bounded, without late blob URLs.
+{
+  const h = harness();
+  const pending = h.media.loadVideoBlobUrl(uriA);
+  await until(() => h.requests.length === 1, 'read body timeout');
+  const body = deferred();
+  let bodyStarted = false;
+  h.requests[0].pending.resolve({ ok: true, status: 200, blob: () => { bodyStarted = true; return body.promise; } });
+  await until(() => bodyStarted, 'body stalled');
+  h.expireTimers();
+  await assert.rejects(pending, /La conexión tardó demasiado/);
+  body.resolve(new Blob(['synthetic'], { type: 'video/mp4' }));
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(h.urlCount(), 0, 'late body may not create an object URL');
+}
+// A stalled delete aborts once; no background deletion retry is fabricated.
+{
+  const h = harness();
+  const pending = h.media.delete(uriA);
+  await until(() => h.requests.length === 1, 'delete timeout');
+  h.expireTimers();
+  await assert.rejects(pending, /MEDIA_STORAGE_TIMEOUT/);
+  assert.equal(h.requests[0].init.signal.aborted, true);
+  assert.equal(h.requests.length, 1);
+}
+// If an account changes at object-URL creation, revoke the newly created URL.
+{
+  let h;
+  h = harness({ onObjectUrl: () => h.switchTo(next) });
+  const pending = h.media.loadVideoBlobUrl(uriA);
+  await until(() => h.requests.length === 1, 'object URL owner change');
+  h.requests[0].pending.resolve({
+    ok: true, status: 200,
+    blob: async () => new Blob(['synthetic'], { type: 'video/mp4' }),
+  });
+  await assert.rejects(pending, /No pudimos procesar el video/);
+  assert.equal(h.urlCount(), 1);
+  assert.equal(h.revokedCount(), 1, 'a stale URL must be revoked');
+}
+console.log('PASS actual Firebase media service: 14 isolated media/security cases, no Firebase traffic, no files written or deleted');

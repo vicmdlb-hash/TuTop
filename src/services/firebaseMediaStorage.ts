@@ -9,6 +9,33 @@ export const LISTING_VIDEO_MIME_TYPES = ['video/mp4', 'video/webm', 'video/quick
 
 const MEDIA_SCHEME = 'firebase-storage://';
 
+// Bound the entire network operation, including a stalled response body.
+// Large 50 MB uploads need a much longer budget than Auth's 15s REST timeout.
+const MEDIA_UPLOAD_TIMEOUT_MS = 20 * 60_000;
+const MEDIA_READ_TIMEOUT_MS = 10 * 60_000;
+const MEDIA_DELETE_TIMEOUT_MS = 60_000;
+
+async function withMediaDeadline<T>(timeoutMs: number, task: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let expired = false;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      expired = true;
+      controller.abort();
+      reject(new Error('MEDIA_STORAGE_TIMEOUT'));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([task(controller.signal), deadline]);
+  } catch (error) {
+    if (expired) throw new Error('MEDIA_STORAGE_TIMEOUT');
+    throw error;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 type ListingVideoMime = typeof LISTING_VIDEO_MIME_TYPES[number];
 
 export type FirebaseMediaReference = {
@@ -76,6 +103,7 @@ export function userFacingMediaError(error: unknown) {
   if (raw === 'MEDIA_STORAGE_AUTH_FAILED') return 'Tu sesión necesita renovarse antes de subir el video. Vuelve a iniciar sesión e inténtalo otra vez.';
   if (raw === 'MEDIA_STORAGE_PERMISSION_DENIED') return 'No pudimos guardar el video con esta cuenta. Inténtalo otra vez después de revisar tu sesión.';
   if (raw === 'MEDIA_STORAGE_OWNER_MISMATCH') return 'No pudimos asociar el video con tu cuenta. Vuelve a iniciar sesión.';
+  if (raw === 'MEDIA_STORAGE_TIMEOUT') return 'La conexión tardó demasiado al procesar el video. Comprueba la red antes de volver a intentarlo.';
   if (raw === 'MEDIA_STORAGE_URI_INVALID' || raw === 'MEDIA_STORAGE_NOT_VIDEO') return 'Este video no se puede abrir. Prueba con otro archivo.';
   return 'No pudimos procesar el video en este momento. Inténtalo de nuevo.';
 }
@@ -154,12 +182,17 @@ export const firebaseMediaStorage = {
     // A->B may occur while preparing a multipart body or awaiting the response.
     assertCurrent();
     try {
-      const response = await fetch(`https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?name=${encodeURIComponent(path)}`, {
-        method: 'POST',
-        headers,
-        body,
+      // A timeout may leave a server-side object; never auto-retry or delete it blindly.
+      await withMediaDeadline(MEDIA_UPLOAD_TIMEOUT_MS, async (signal) => {
+        const response = await fetch(`https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?name=${encodeURIComponent(path)}`, {
+          method: 'POST',
+          headers,
+          body,
+          signal,
+        });
+        if (signal.aborted) throw new Error('MEDIA_STORAGE_TIMEOUT');
+        await assertOk(response);
       });
-      await assertOk(response);
       return { bucket, path, uri: encodeMediaUri(bucket, path) };
     } finally {
       // A completed server upload cannot be undone here; never return its URI to B.
@@ -177,12 +210,25 @@ export const firebaseMediaStorage = {
       const { headers, assertCurrent } = await authHeaders();
       assertCurrent();
       try {
-        const response = await assertOk(await fetch(objectUrl(reference.bucket, reference.path, true), { headers }));
-        const blob = await response.blob();
+        const blob = await withMediaDeadline(MEDIA_READ_TIMEOUT_MS, async (signal) => {
+          const response = await assertOk(await fetch(objectUrl(reference.bucket, reference.path, true), { headers, signal }));
+          if (signal.aborted) throw new Error('MEDIA_STORAGE_TIMEOUT');
+          const body = await response.blob();
+          // A body read that resolves after cancellation may not create an object URL.
+          if (signal.aborted) throw new Error('MEDIA_STORAGE_TIMEOUT');
+          return body;
+        });
         assertCurrent();
         if (!blob.type.startsWith('video/')) throw new Error('MEDIA_STORAGE_NOT_VIDEO');
+        if (blob.size > MAX_LISTING_VIDEO_BYTES) throw new Error('MEDIA_STORAGE_VIDEO_TOO_LARGE');
         const url = URL.createObjectURL(blob);
-        return url;
+        try {
+          assertCurrent();
+          return url;
+        } catch (error) {
+          URL.revokeObjectURL(url);
+          throw error;
+        }
       } finally {
         assertCurrent();
       }
@@ -203,8 +249,11 @@ export const firebaseMediaStorage = {
     if (reference.path.split('/')[1] !== uid) throw new Error('MEDIA_STORAGE_OWNER_MISMATCH');
     assertCurrent();
     try {
-      const response = await fetch(objectUrl(reference.bucket, reference.path), { method: 'DELETE', headers });
-      if (response.status !== 404) await assertOk(response);
+      await withMediaDeadline(MEDIA_DELETE_TIMEOUT_MS, async (signal) => {
+        const response = await fetch(objectUrl(reference.bucket, reference.path), { method: 'DELETE', headers, signal });
+        if (signal.aborted) throw new Error('MEDIA_STORAGE_TIMEOUT');
+        if (response.status !== 404) await assertOk(response);
+      });
     } finally {
       assertCurrent();
     }
