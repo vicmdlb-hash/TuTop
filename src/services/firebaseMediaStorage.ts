@@ -1,5 +1,6 @@
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
 import { FirebaseRestClient } from './firebaseRest';
+import { assertFirebaseRequestSessionCurrent } from '../lib/firebaseSharedSessionGuard';
 import { recordDiagnostic } from './localDiagnostics';
 import { getFirebaseConfig } from './runtimeConfig';
 
@@ -85,15 +86,24 @@ async function authHeaders(contentType?: string) {
   const session = client.currentSession;
   if (!session?.uid) throw new Error('AUTH_REQUIRED');
   const idToken = await client.getIdToken();
+  // Same UID on a fresh login is not the same credential session.
+  const requestSession = client.currentSession;
+  if (!requestSession || requestSession.idToken !== idToken) throw new Error('AUTH_SESSION_CHANGED');
+  const assertCurrent = () => assertFirebaseRequestSessionCurrent(
+    requestSession, client.currentSession, new FirebaseRestClient(config).currentSession,
+  );
+  assertCurrent();
   const headers: Record<string, string> = {
     Authorization: `Firebase ${idToken}`,
     'X-Firebase-Storage-Version': 'tutop/0.9.2',
   };
   if (config.appId) headers['X-Firebase-GMPID'] = config.appId;
   const appCheck = await getNativeAppCheckToken(false).catch(() => null);
+  // A changed account must never dispatch with the previous account's token.
+  assertCurrent();
   if (appCheck) headers['X-Firebase-AppCheck'] = appCheck;
   if (contentType) headers['Content-Type'] = contentType;
-  return { headers, uid: session.uid };
+  return { headers, uid: requestSession.uid, assertCurrent };
 }
 
 function objectUrl(bucket: string, path: string, media = false) {
@@ -121,7 +131,7 @@ export const firebaseMediaStorage = {
     }
     const mime = validateListingVideo(file);
     const bucket = storageBucket();
-    const { headers: baseHeaders, uid } = await authHeaders();
+    const { headers: baseHeaders, uid, assertCurrent } = await authHeaders();
     if (expectedUid && expectedUid !== uid) {
       recordDiagnostic('media', 'video_owner_mismatch');
       throw new Error('MEDIA_STORAGE_OWNER_MISMATCH');
@@ -141,14 +151,20 @@ export const firebaseMediaStorage = {
       'X-Goog-Upload-Protocol': 'multipart',
       'Content-Type': `multipart/related; boundary=${boundary}`,
     };
-    const response = await fetch(`https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?name=${encodeURIComponent(path)}`, {
-      method: 'POST',
-      headers,
-      body,
-    });
-    await assertOk(response);
-    recordDiagnostic('media', 'video_upload_success', { mime: mime.replace('video/', '') });
-    return { bucket, path, uri: encodeMediaUri(bucket, path) };
+    // A->B may occur while preparing a multipart body or awaiting the response.
+    assertCurrent();
+    try {
+      const response = await fetch(`https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o?name=${encodeURIComponent(path)}`, {
+        method: 'POST',
+        headers,
+        body,
+      });
+      await assertOk(response);
+      return { bucket, path, uri: encodeMediaUri(bucket, path) };
+    } finally {
+      // A completed server upload cannot be undone here; never return its URI to B.
+      assertCurrent();
+    }
   },
 
   async loadVideoBlobUrl(uri: string) {
@@ -156,12 +172,18 @@ export const firebaseMediaStorage = {
       if (!featureFlag()) throw new Error('MEDIA_STORAGE_INFRASTRUCTURE_DISABLED');
       const reference = parseFirebaseMediaUri(uri);
       if (!reference) throw new Error('MEDIA_STORAGE_URI_INVALID');
-      const { headers } = await authHeaders();
-      const response = await assertOk(await fetch(objectUrl(reference.bucket, reference.path, true), { headers }));
-      const blob = await response.blob();
-      if (!blob.type.startsWith('video/')) throw new Error('MEDIA_STORAGE_NOT_VIDEO');
-      recordDiagnostic('media', 'video_load_success');
-      return URL.createObjectURL(blob);
+      const { headers, assertCurrent } = await authHeaders();
+      assertCurrent();
+      try {
+        const response = await assertOk(await fetch(objectUrl(reference.bucket, reference.path, true), { headers }));
+        const blob = await response.blob();
+        assertCurrent();
+        if (!blob.type.startsWith('video/')) throw new Error('MEDIA_STORAGE_NOT_VIDEO');
+        const url = URL.createObjectURL(blob);
+        return url;
+      } finally {
+        assertCurrent();
+      }
     } catch (error) {
       recordDiagnostic('media', 'video_load_failed');
       throw new Error(userFacingMediaError(error));
@@ -172,10 +194,15 @@ export const firebaseMediaStorage = {
     if (!featureFlag()) return;
     const reference = parseFirebaseMediaUri(uri);
     if (!reference) return;
-    const { headers } = await authHeaders();
-    const response = await fetch(objectUrl(reference.bucket, reference.path), { method: 'DELETE', headers });
-    if (response.status === 404) return;
-    await assertOk(response);
-    recordDiagnostic('media', 'video_delete_success');
+    const { headers, uid, assertCurrent } = await authHeaders();
+    // A stale cleanup URI cannot authorize deletion of another account's asset.
+    if (reference.path.split('/')[1] !== uid) throw new Error('MEDIA_STORAGE_OWNER_MISMATCH');
+    assertCurrent();
+    try {
+      const response = await fetch(objectUrl(reference.bucket, reference.path), { method: 'DELETE', headers });
+      if (response.status !== 404) await assertOk(response);
+    } finally {
+      assertCurrent();
+    }
   },
 };
