@@ -227,6 +227,10 @@ for (const plan of actionable) {
 
 let cleanedLocks = 0;
 for (const lockPlan of terminalLockPlans) {
+  // Only known terminal statuses may be emitted into a Firestore Write.
+  if (!['cancelled', 'expired', 'no_show', 'completed'].includes(lockPlan.transaction_status)) {
+    throw new Error('TERMINAL_TRANSACTION_STATUS_INVALID');
+  }
   // Verify the transaction and lock still belong to the inspected snapshot.
   const writes = [patchWrite(`transactions_v2/${lockPlan.transaction_id}`,
     { status: lockPlan.transaction_status }, lockPlan.transaction_update_time)];

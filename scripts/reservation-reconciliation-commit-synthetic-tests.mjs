@@ -80,6 +80,7 @@ const expirePlan = { kind: 'expire_reserved', transaction_id: 'tx-1', listing_id
   transaction_update_time: T, listing_update_time: L, lock_update_time: K };
 const terminalPlan = (release_availability) => ({
   lock_id: 'list-1', listing_id: 'list-1', transaction_id: 'tx-1',
+  transaction_status: release_availability ? 'expired' : 'completed',
   transaction_update_time: T, listing_update_time: L, lock_update_time: K,
   release_availability,
 });
@@ -145,6 +146,13 @@ for (const [kind, changed] of [
   await assert.rejects(execute([], [terminalPlan(true)], state), /FAILED_PRECONDITION/);
   assert.equal(snapshot(state), original);
   console.log('PASS terminal cleanup rejects replaced lock');
+}
+{
+  const state = initialState();
+  const original = snapshot(state);
+  await assert.rejects(execute([], [{ ...terminalPlan(true), transaction_status: undefined }], state), /TERMINAL_TRANSACTION_STATUS_INVALID/);
+  assert.equal(snapshot(state), original);
+  console.log('PASS missing terminal status is rejected before any write');
 }
 {
   const state = initialState();
