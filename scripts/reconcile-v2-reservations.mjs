@@ -84,12 +84,6 @@ function deleteWrite(documentPath, expectedUpdateTime) {
     currentDocument: { updateTime: expectedUpdateTime },
   };
 }
-function verifyWrite(documentPath, expectedUpdateTime) {
-  return {
-    verify: `projects/${projectId}/databases/(default)/documents/${documentPath}`,
-    currentDocument: { updateTime: expectedUpdateTime },
-  };
-}
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, {
@@ -218,7 +212,10 @@ for (const plan of actionable) {
       { availability_status: 'available', updated_at: updatedAt }, plan.listing_update_time));
     writes.push(deleteWrite(`listing_reservation_locks/${plan.listing_id}`, plan.lock_update_time));
   } else if (plan.kind === 'repair_completed_listing') {
-    writes.push(verifyWrite(`transactions_v2/${plan.transaction_id}`, plan.transaction_update_time));
+    // Firestore REST Write supports update/delete/transform, not a verify operation.
+    // A status-preserving patch with updateTime is an atomic transaction witness.
+    writes.push(patchWrite(`transactions_v2/${plan.transaction_id}`,
+      { status: 'completed' }, plan.transaction_update_time));
     writes.push(patchWrite(`listings_v2/${plan.listing_id}`,
       { status: 'sold_out', updated_at: updatedAt }, plan.listing_update_time));
     writes.push(deleteWrite(`listing_reservation_locks/${plan.listing_id}`, plan.lock_update_time));
@@ -231,7 +228,8 @@ for (const plan of actionable) {
 let cleanedLocks = 0;
 for (const lockPlan of terminalLockPlans) {
   // Verify the transaction and lock still belong to the inspected snapshot.
-  const writes = [verifyWrite(`transactions_v2/${lockPlan.transaction_id}`, lockPlan.transaction_update_time)];
+  const writes = [patchWrite(`transactions_v2/${lockPlan.transaction_id}`,
+    { status: lockPlan.transaction_status }, lockPlan.transaction_update_time)];
   if (lockPlan.release_availability) {
     writes.push(patchWrite(`listings_v2/${lockPlan.listing_id}`,
       { availability_status: 'available', updated_at: new Date().toISOString() },
