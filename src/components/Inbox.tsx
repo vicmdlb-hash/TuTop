@@ -36,7 +36,8 @@ export default function Inbox() {
     return bTime.localeCompare(aTime);
   }), [chats, products, filter, query, user.id]);
 
-  if (activeChatId) return <ChatConversation chatId={activeChatId} />;
+  // Reset transient offers, reservations and report state on chat/account switches.
+  if (activeChatId) return <ChatConversation key={JSON.stringify([user.id, activeChatId])} chatId={activeChatId} />;
 
   return (
     <div className="page-pad pt-safe">
