@@ -9,7 +9,13 @@ assert.match(history, /CHAT_HISTORY_LIMIT = 100/);
 assert.match(history, /historyCache = new Map/);
 assert.match(history, /historyInflight = new Map/);
 assert.match(history, /async load\(chatId: string, buyerId: string, force = false\)/);
-assert.match(history, /if \(!force && inflight\) return inflight/);
+assert.match(history, /if \(!force && inflight\) \{\s*assertCurrent\(\);\s*return inflight;\s*\}/);
+assert.match(history, /const client = getClient\(\);[\s\S]*?const cached = historyCache\.get\(key\)/,
+  'private chat cache must not be read before authentication');
+assert.match(history, /cacheKey\(requestSession!\.uid, cleanChatId, cleanBuyerId\)/,
+  'cache must be partitioned by the current authenticated user');
+assert.match(history, /if \(historyInflight\.get\(key\) !== request\) throw new Error\('STALE_CHAT_HISTORY_READ'\)/,
+  'a displaced async read must never repopulate private chat history');
 assert.match(history, /senderId === cleanBuyerId \? 'comprador' as const : 'vendedor' as const/);
 assert.match(history, /invalidate\(chatId: string\)/);
 
