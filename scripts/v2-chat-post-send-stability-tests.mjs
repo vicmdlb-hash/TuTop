@@ -31,9 +31,9 @@ const inbox = fs.readFileSync('src/components/Inbox.tsx', 'utf8');
 const conversation = fs.readFileSync('src/components/ChatConversation.tsx', 'utf8');
 // React must remount the conversation if either owner or chat changes: the
 // component contains local offer, reservation and report state.
-assert.match(inbox, /<ChatConversation key=\\{JSON\\.stringify\\(\\[user\\.id, activeChatId\\]\\)\\} chatId=\\{activeChatId\\} \\/>/);
-assert.match(conversation, /const \\[structuredOffers, setStructuredOffers\\] = useState<Offer\\[\\]>\\(\\[\\]\\)/);
-assert.match(conversation, /const \\[canonicalTransaction, setCanonicalTransaction\\] = useState<MarketplaceTransaction \\| null>\\(null\\)/);
+assert(inbox.includes('<ChatConversation key={JSON.stringify([user.id, activeChatId])} chatId={activeChatId} />'));
+assert(conversation.includes('const [structuredOffers, setStructuredOffers] = useState<Offer[]>([]);'));
+assert(conversation.includes('const [canonicalTransaction, setCanonicalTransaction] = useState<MarketplaceTransaction | null>(null);'));
 const chatIdentity = (uid, chatId) => JSON.stringify([uid, chatId]);
 assert.equal(chatIdentity('A', 'chat-1'), chatIdentity('A', 'chat-1'));
 assert.notEqual(chatIdentity('A', 'chat-1'), chatIdentity('A', 'chat-2'));
