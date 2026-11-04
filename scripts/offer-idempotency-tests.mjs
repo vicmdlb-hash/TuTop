@@ -5,6 +5,7 @@ import {
   isAlreadyCommittedOfferError,
   isUncertainOfferWriteError,
 } from '../src/lib/offerIdempotency.ts';
+import { assertFreshOfferExpiry, parseStrictIsoTimestamp } from '../src/lib/transactionRetry.ts';
 
 let seq = 0;
 const window = new OfferIdempotencyWindow(1500, 30000, () => `offer-test-${++seq}`);
@@ -61,7 +62,18 @@ assert.match(backend, /OFFER_IDEMPOTENCY_COLLISION/);
 assert.match(backend, /assertCurrentPendingParent/);
 assert.match(backend, /PARENT_OFFER_NOT_FOUND/);
 assert.match(backend, /PARENT_OFFER_MISMATCH/);
-assert.match(backend, /OFFER_EXPIRED/);
+assert.match(backend, /assertFreshOfferExpiry\(offer\.expires_at\)/);
+const fixedNow = Date.parse('2026-09-05T18:00:00Z');
+assert.equal(parseStrictIsoTimestamp('2026-09-05T20:00:00+02:00'), fixedNow);
+assert.equal(parseStrictIsoTimestamp('2026-09-05T18:00:00.123456Z'), fixedNow + 123);
+for (const malformed of ['2026-02-31T18:00:00Z', '2026-04-31T18:00:00Z',
+  '2026-09-05T24:00:00Z', '2026-09-05T18:61:00Z', '', null, 123]) {
+  assert.equal(parseStrictIsoTimestamp(malformed), null);
+  assert.throws(() => assertFreshOfferExpiry(malformed, fixedNow), /OFFER_EXPIRY_INVALID/);
+}
+assert.doesNotThrow(() => assertFreshOfferExpiry(undefined, fixedNow));
+assert.doesNotThrow(() => assertFreshOfferExpiry('2026-09-05T18:01:00Z', fixedNow));
+assert.throws(() => assertFreshOfferExpiry('2026-09-05T17:59:00Z', fixedNow), /OFFER_EXPIRED/);
 assert.match(backend, /const currentParent = await assertCurrentPendingParent\(client, parent, actor\)/);
 assert.match(backend, /parent_offer_id: currentParent\.id/);
 assert.match(bridge, /createOffer: canonicalOffersBackend\.createOffer/);
