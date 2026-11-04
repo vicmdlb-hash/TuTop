@@ -74,6 +74,9 @@ export default function V2NearbyListingsHydrator() {
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
     const onBaseHydrated = () => {
+      // A fresh authoritative base snapshot invalidates outstanding Nearby
+      // responses even when location consent/cache is absent and no refetch runs.
+      requestSerial += 1;
       baseProductIds = new Set(useAppStore.getState().products.map((product) => product.id));
       nearbyInjectedIds.clear();
       hydrateCached(true);
