@@ -1,4 +1,5 @@
 import { OfferIdempotencyWindow, isAlreadyCommittedOfferError, isUncertainOfferWriteError } from '../lib/offerIdempotency';
+import { assertFreshOfferExpiry } from '../lib/transactionRetry';
 import type { Offer, OfferStatus } from '../types';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
@@ -37,8 +38,7 @@ async function assertOfferableListing(client: FirebaseRestClient, listingId: str
 }
 
 function assertOfferNotExpired(offer: Offer) {
-  const expiresAt = offer.expires_at ? Date.parse(offer.expires_at) : NaN;
-  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) throw new Error('OFFER_EXPIRED');
+  assertFreshOfferExpiry(offer.expires_at);
 }
 
 async function loadCurrentOffer(client: FirebaseRestClient, offerId: string) {
