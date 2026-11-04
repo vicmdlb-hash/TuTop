@@ -109,6 +109,28 @@ await assert.doesNotReject(assertOfferableListing(makeListingClient('available')
 await assert.doesNotReject(assertOfferableListing(makeListingClient(undefined), 'listing-1', 'seller-a'));
 assert.match(createOfferSource, /await assertOfferableListing\(client, input\.listingId, input\.sellerId\)/);
 assert.match(createCounterSource, /await assertOfferableListing\(client, currentParent\.listing_id, currentParent\.seller_id\)/);
+
+const chatSource = fs.readFileSync('src/components/ChatConversation.tsx', 'utf8');
+const pendingStart = chatSource.indexOf('function isActionablePendingOffer(');
+const pendingEnd = chatSource.indexOf('\nexport default function ChatConversation(', pendingStart);
+assert(pendingStart >= 0 && pendingEnd > pendingStart, 'V2 pending offer visibility helper is missing');
+const isActionablePendingOffer = new Function('parseStrictIsoTimestamp',
+  `${stripTypeScriptTypes(chatSource.slice(pendingStart, pendingEnd))}\nreturn isActionablePendingOffer;`,
+)(parseStrictIsoTimestamp);
+const offerNow = Date.parse('2026-09-05T18:00:00Z');
+assert.equal(isActionablePendingOffer({ status: 'pending', expires_at: '2026-09-05T18:00:01Z' }, offerNow), true);
+assert.equal(isActionablePendingOffer({ status: 'pending', expires_at: '2026-09-05T18:00:00Z' }, offerNow), false);
+assert.equal(isActionablePendingOffer({ status: 'pending', expires_at: '2026-09-05T17:59:59Z' }, offerNow), false);
+assert.equal(isActionablePendingOffer({ status: 'pending', expires_at: '2026-02-31T18:00:00Z' }, offerNow), false);
+assert.equal(isActionablePendingOffer({ status: 'pending', expires_at: 'not-a-date' }, offerNow), false);
+assert.equal(isActionablePendingOffer({ status: 'pending' }, offerNow), true, 'legacy undefined expiry remains supported');
+assert.equal(isActionablePendingOffer({ status: 'accepted', expires_at: '2026-09-05T18:00:01Z' }, offerNow), false);
+assert(chatSource.includes("if (v2 || !chat || structuredPending) return null;"), 'V2 must not revive stale text offers');
+assert(chatSource.includes("(!v2 && !isBuyer && legacyLatestOffer"), 'only legacy chats may show text-only offers');
+assert(chatSource.includes("window.setTimeout(() => setOfferClock(Date.now())"), 'V2 UI needs an expiry timer');
+assert(chatSource.includes("window.clearTimeout(timer)"), 'expiry timer needs proper cleanup');
+console.log('PASS V2 pending offers reject expired and impossible expiries without reviving legacy text actions');
+
 console.log('PASS reserved listings fail closed in canonical offer and counteroffer paths');
 
 console.log('PASS concurrent identical offers reuse one operation id');

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, Ban, Check, CheckCheck, CircleDollarSign, Flag, ImagePlus, Loader2, MapPin, PackageCheck, RefreshCw, Send, ShieldCheck, Sparkles, ThumbsDown, ThumbsUp, X } from 'lucide-react';
 import { compressImageForFirestore } from '../lib/imageCompression';
+import { parseStrictIsoTimestamp } from '../lib/transactionRetry';
 import { feedbackMessage, feedbackSuccess } from '../lib/feedback';
 import { riskSeverity, scanMessageForSafety } from '../lib/marketplaceGovernance';
 import { canonicalOffersBackend } from '../services/canonicalOffersBackend';
@@ -23,6 +24,15 @@ function parseOffer(text: string) {
 
 function proposer(offer: Offer) { return offer.created_by || offer.buyer_id; }
 
+// Keep expired or malformed V2 offers out of actionable UI. The backend
+// remains authoritative for every accept/counteroffer write.
+function isActionablePendingOffer(offer: Offer, nowMs: number) {
+  if (offer.status !== 'pending') return false;
+  if (offer.expires_at === undefined) return true; // Explicit legacy compatibility.
+  const expiresMs = parseStrictIsoTimestamp(offer.expires_at);
+  return expiresMs !== null && expiresMs > nowMs;
+}
+
 export default function ChatConversation({ chatId }: { chatId: string }) {
   const { chats, products, user, closeChat, sendMessage, sendImageMessage, markChatRead, confirmDelivery, reviews, submitReview } = useAppStore();
   const [text, setText] = useState('');
@@ -32,6 +42,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
   const [offerAmount, setOfferAmount] = useState('');
   const [counterAmount, setCounterAmount] = useState('');
   const [structuredOffers, setStructuredOffers] = useState<Offer[]>([]);
+  const [offerClock, setOfferClock] = useState(() => Date.now());
   const [structuredBusy, setStructuredBusy] = useState(false);
   const [structuredMessage, setStructuredMessage] = useState<string | null>(null);
   const [finalizedOfferId, setFinalizedOfferId] = useState<string | null>(null);
@@ -98,23 +109,36 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
   const deliveryCompleted = v2 ? canonicalCompleted : Boolean(chat?.entrega_confirmada);
   const isBuyer = chat?.comprador_id === user.id;
   const quickMessages = isBuyer ? BUYER_QUICK : SELLER_QUICK;
-  const structuredPending = structuredOffers.find((offer) => offer.status === 'pending');
+  const structuredPending = structuredOffers.find((offer) => isActionablePendingOffer(offer, offerClock));
   const actionableStructured = structuredPending && proposer(structuredPending) !== user.id ? structuredPending : null;
   const finalizableAccepted = !isBuyer && !canonicalTransaction
     ? structuredOffers.find((offer) => offer.status === 'accepted' && proposer(offer) === offer.seller_id && offer.id !== finalizedOfferId)
     : undefined;
   const legacyLatestOffer = useMemo(() => {
-    if (!chat || structuredPending) return null;
+    if (v2 || !chat || structuredPending) return null;
     for (let i = chat.mensajes.length - 1; i >= 0; i -= 1) {
       const message = chat.mensajes[i];
       const amount = parseOffer(message.texto || '');
       if (amount) return amount;
     }
     return null;
-  }, [chat, structuredPending]);
+  }, [chat, structuredPending, v2]);
   const visibleOffer: { amount: number; structured?: Offer } | null = actionableStructured
     ? { amount: actionableStructured.amount_mxn, structured: actionableStructured }
-    : (!isBuyer && legacyLatestOffer ? { amount: legacyLatestOffer } : null);
+    : (!v2 && !isBuyer && legacyLatestOffer ? { amount: legacyLatestOffer } : null);
+  // Expiry is a temporal rule: refresh the UI when the next pending offer expires,
+  // even if the user keeps this conversation open without new network events.
+  useEffect(() => {
+    const deadlines = structuredOffers
+      .filter((offer) => offer.status === 'pending' && offer.expires_at !== undefined)
+      .map((offer) => parseStrictIsoTimestamp(offer.expires_at))
+      .filter((time): time is number => time !== null && time > offerClock);
+    if (!deadlines.length) return;
+    const delay = Math.max(1, Math.min(Math.min(...deadlines) - Date.now() + 50, 2_147_483_647));
+    const timer = window.setTimeout(() => setOfferClock(Date.now()), delay);
+    return () => window.clearTimeout(timer);
+  }, [structuredOffers, offerClock]);
+
   const waitingText = useMemo(() => {
     if (!chat) return '';
     if (deliveryCompleted) return 'Entrega confirmada por ambas personas';
