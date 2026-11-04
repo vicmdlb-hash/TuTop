@@ -1,5 +1,6 @@
 import { OfferIdempotencyWindow, isAlreadyCommittedOfferError, isUncertainOfferWriteError } from '../lib/offerIdempotency';
 import { assertFreshOfferExpiry } from '../lib/transactionRetry';
+import { assertFirebaseRequestSessionCurrent } from '../lib/firebaseSharedSessionGuard';
 import type { Offer, OfferStatus } from '../types';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
@@ -17,9 +18,20 @@ function defaultOfferExpiry() { return new Date(Date.now() + DEFAULT_OFFER_TTL_M
 function patchWrite(client: FirebaseRestClient, path: string, data: Record<string, unknown>) {
   return { update: client.encodeDocumentForWrite(path, data), updateMask: { fieldPaths: Object.keys(data) } };
 }
+function offerListCacheKey(uid: string, chatId: string) {
+  // Encode both components so an attacker-controlled chat ID cannot collide
+  // with another UID's cache entry, even when it contains delimiters.
+  return `${encodeURIComponent(uid)}:${encodeURIComponent(chatId)}`;
+}
+
 function invalidateOfferList(chatId: string) {
-  offerListCache.delete(chatId);
-  offerListInflight.delete(chatId);
+  const suffix = `:${encodeURIComponent(chatId)}`;
+  for (const key of offerListCache.keys()) {
+    if (key.endsWith(suffix)) offerListCache.delete(key);
+  }
+  for (const key of offerListInflight.keys()) {
+    if (key.endsWith(suffix)) offerListInflight.delete(key);
+  }
 }
 
 function getClient() {
@@ -124,20 +136,40 @@ export const canonicalOffersBackend = {
   async listOffersForChat(chatId: string, force = false) {
     const cleanChatId = chatId.trim();
     if (!cleanChatId) throw new Error('CHAT_ID_REQUIRED');
-    const cached = offerListCache.get(cleanChatId);
-    if (!force && cached && cached.expiresAt > Date.now()) return cached.offers.map((offer) => ({ ...offer }));
-    const inflight = offerListInflight.get(cleanChatId);
-    if (!force && inflight) return inflight;
-
+    // Never return cached private chat offers without checking authentication.
     const client = getClient();
+    const requestSession = client.currentSession;
+    const key = offerListCacheKey(requestSession!.uid, cleanChatId);
+    const assertCurrent = () => assertFirebaseRequestSessionCurrent(
+      requestSession, client.currentSession, new FirebaseRestClient(getFirebaseConfig()).currentSession,
+    );
+    const cached = offerListCache.get(key);
+    if (!force && cached && cached.expiresAt > Date.now()) {
+      assertCurrent();
+      return cached.offers.map((offer) => ({ ...offer }));
+    }
+    const inflight = offerListInflight.get(key);
+    if (!force && inflight) {
+      assertCurrent();
+      return inflight;
+    }
+
     const request = client.runQuery<any>('offers', [{ field: 'chat_id', op: 'EQUAL', value: cleanChatId }], [{ field: 'created_at', direction: 'DESCENDING' }], 30)
-      .then((docs) => docs.map((doc) => ({ id: doc.id, ...doc.data } as Offer)))
+      .then((docs) => {
+        assertCurrent();
+        if (offerListInflight.get(key) !== request) throw new Error('STALE_OFFER_READ');
+        return docs.map((doc) => ({ id: doc.id, ...doc.data } as Offer));
+      })
       .then((offers) => {
-        offerListCache.set(cleanChatId, { offers, expiresAt: Date.now() + OFFER_LIST_CACHE_TTL_MS });
+        assertCurrent();
+        if (offerListInflight.get(key) !== request) throw new Error('STALE_OFFER_READ');
+        offerListCache.set(key, { offers, expiresAt: Date.now() + OFFER_LIST_CACHE_TTL_MS });
         return offers.map((offer) => ({ ...offer }));
       })
-      .finally(() => offerListInflight.delete(cleanChatId));
-    offerListInflight.set(cleanChatId, request);
+      .finally(() => {
+        if (offerListInflight.get(key) === request) offerListInflight.delete(key);
+      });
+    offerListInflight.set(key, request);
     return request;
   },
 
