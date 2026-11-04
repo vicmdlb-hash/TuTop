@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 const packageVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
 const commonSteps = [
   [process.execPath, ['scripts/verified-email-runtime-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/account-recovery-tests.mjs']],
   [process.execPath, ['scripts/post120-admin-account-status-contract-tests.mjs']],
   [process.execPath, ['scripts/native-runtime-recovery-tests.mjs']],
   [process.execPath, ['scripts/preflight.mjs']],
@@ -138,6 +139,7 @@ const commonSteps = [
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
   [process.execPath, ['scripts/legal-retention-review-tests.mjs']],
   [process.execPath, ['scripts/retention-matrix-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/credential-retention-tests.mjs']],
 ];
 
 const milestoneSteps = packageVersion === '0.9.1-beta.0'
