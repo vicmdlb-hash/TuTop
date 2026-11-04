@@ -112,6 +112,7 @@ const commonSteps = [
   [process.execPath, ['scripts/post116-push-health-contract-tests.mjs']],
   [process.execPath, ['scripts/post116-push-ownership-contract-tests.mjs']],
   [process.execPath, ['scripts/fcm-outbox-attempt-tests.mjs']],
+  [process.execPath, ['scripts/marketplace-notification-projection-tests.mjs']],
   [process.execPath, ['scripts/notification-projector-remote-error-redaction-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/post116-push-account-isolation-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/native-push-session-epoch-tests.mjs']],
@@ -135,6 +136,7 @@ const commonSteps = [
   [process.execPath, ['--experimental-strip-types', 'scripts/post116-erasure-user-status-truth-tests.mjs']],
   [process.execPath, ['scripts/auth-batch-delete-proof-tests.mjs']],
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
+  [process.execPath, ['scripts/legal-retention-review-tests.mjs']],
   [process.execPath, ['scripts/retention-matrix-tests.mjs']],
 ];
 
