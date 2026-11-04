@@ -165,6 +165,7 @@ export const canonicalOffersBackend = {
   },
 
   async createOffer(input: { listingId: string; chatId: string; sellerId: string; amountMxn: number; expiresAt?: string }) {
+    assertFreshOfferExpiry(input.expiresAt);
     const client = getClient();
     const buyerId = client.currentSession!.uid;
     if (buyerId === input.sellerId) throw new Error('SELF_OFFER_DENIED');
@@ -200,6 +201,7 @@ export const canonicalOffersBackend = {
   },
 
   async createCounterOffer(parent: Offer, amountMxn: number, expiresAt?: string) {
+    assertFreshOfferExpiry(expiresAt);
     const client = getClient();
     const actor = client.currentSession!.uid;
     if (actor !== parent.buyer_id && actor !== parent.seller_id) throw new Error('PARTICIPANT_REQUIRED');
