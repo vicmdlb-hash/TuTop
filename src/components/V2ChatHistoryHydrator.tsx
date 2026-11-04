@@ -18,21 +18,25 @@ function mergeWithOptimistic(server: ChatMessage[], current: ChatMessage[]) {
 
 export default function V2ChatHistoryHydrator() {
   const activeChatId = useAppStore((state) => state.activeChatId);
+  const viewerUid = useAppStore((state) => state.user.id);
   const buyerId = useAppStore((state) => state.chats.find((chat) => chat.id === state.activeChatId)?.comprador_id || '');
 
   useEffect(() => {
-    if (!nationalSchemaEnabled() || !activeChatId || !buyerId) return;
+    if (!nationalSchemaEnabled() || !activeChatId || !buyerId || !viewerUid) return;
     let active = true;
 
     const hydrate = (force = false) => {
       void chatHistoryBackend.load(activeChatId, buyerId, force)
         .then((messages) => {
-          if (!active) return;
-          useAppStore.setState((state) => ({
-            chats: state.chats.map((chat) => chat.id === activeChatId
-              ? { ...chat, mensajes: mergeWithOptimistic(messages, chat.mensajes) }
-              : chat),
-          }));
+          if (!active || useAppStore.getState().user.id !== viewerUid
+            || useAppStore.getState().activeChatId !== activeChatId) return;
+          useAppStore.setState((state) => state.user.id !== viewerUid || state.activeChatId !== activeChatId
+            ? state
+            : ({
+              chats: state.chats.map((chat) => chat.id === activeChatId
+                ? { ...chat, mensajes: mergeWithOptimistic(messages, chat.mensajes) }
+                : chat),
+            }));
         })
         .catch((error) => console.warn('[TuTop V2 chat history]', error));
     };
@@ -44,7 +48,7 @@ export default function V2ChatHistoryHydrator() {
       active = false;
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [activeChatId, buyerId]);
+  }, [activeChatId, buyerId, viewerUid]);
 
   return null;
 }
