@@ -47,6 +47,8 @@ async function assertOfferableListing(client: FirebaseRestClient, listingId: str
   if (listing.data.seller_id !== sellerId) throw new Error('SELLER_MISMATCH');
   if (listing.data.status !== 'active') throw new Error('LISTING_NOT_ACTIVE');
   if (listing.data.moderation_status !== 'approved') throw new Error('LISTING_NOT_APPROVED');
+  // Client-side defense: a reserved listing is not offerable. Server rules and atomic race tests remain separate gates.
+  if (listing.data.availability_status === 'reserved') throw new Error('LISTING_ALREADY_RESERVED');
 }
 
 function assertOfferNotExpired(offer: Offer) {

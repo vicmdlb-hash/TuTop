@@ -86,6 +86,31 @@ assert.match(backend, /parent_offer_id: currentParent\.id/);
 assert.match(bridge, /createOffer: canonicalOffersBackend\.createOffer/);
 assert.match(bridge, /createCounterOffer: canonicalOffersBackend\.createCounterOffer/);
 
+// Exercise the actual canonical listing guard with synthetic Firestore reads, never a real backend.
+const { stripTypeScriptTypes } = await import('node:module');
+const listingGuardStart = backend.indexOf('async function assertOfferableListing(');
+const listingGuardEnd = backend.indexOf('\nfunction assertOfferNotExpired(', listingGuardStart);
+assert(listingGuardStart >= 0 && listingGuardEnd > listingGuardStart, 'canonical listing guard must exist');
+const assertOfferableListing = new Function(
+  `${stripTypeScriptTypes(backend.slice(listingGuardStart, listingGuardEnd))}\nreturn assertOfferableListing;`,
+)();
+const makeListingClient = (availability_status) => ({
+  getDocument: async (path) => {
+    assert.equal(path, 'listings_v2/listing-1');
+    return { data: { seller_id: 'seller-a', status: 'active', moderation_status: 'approved', availability_status } };
+  },
+});
+await assert.rejects(
+  assertOfferableListing(makeListingClient('reserved'), 'listing-1', 'seller-a'),
+  /LISTING_ALREADY_RESERVED/,
+  'a reservation must block a new offer or counteroffer before any write',
+);
+await assert.doesNotReject(assertOfferableListing(makeListingClient('available'), 'listing-1', 'seller-a'));
+await assert.doesNotReject(assertOfferableListing(makeListingClient(undefined), 'listing-1', 'seller-a'));
+assert.match(createOfferSource, /await assertOfferableListing\(client, input\.listingId, input\.sellerId\)/);
+assert.match(createCounterSource, /await assertOfferableListing\(client, currentParent\.listing_id, currentParent\.seller_id\)/);
+console.log('PASS reserved listings fail closed in canonical offer and counteroffer paths');
+
 console.log('PASS concurrent identical offers reuse one operation id');
 console.log('PASS uncertain retry and accidental double tap cannot duplicate an offer');
 console.log('PASS intentional later repeat and distinct counteroffer inputs receive new ids');
