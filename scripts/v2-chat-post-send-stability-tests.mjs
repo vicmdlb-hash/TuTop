@@ -62,7 +62,7 @@ const assertSyntheticCurrent = (requested, runtime, persisted) => {
 };
 const historyBackend = new Function(
   'FirebaseRestClient', 'getFirebaseConfig', 'assertFirebaseRequestSessionCurrent',
-  `${stripTypeScriptTypes(historySource.slice(historyStart))}\nreturn chatHistoryBackend;`,
+  `${stripTypeScriptTypes(historySource.slice(historyStart)).replace('export const chatHistoryBackend =', 'const chatHistoryBackend =')}\nreturn chatHistoryBackend;`,
 )(FakeFirebaseRestClient, () => ({}), assertSyntheticCurrent);
 const fakeMessage = (label) => [{
   id: 'message-' + label, data: { sender_id: 'buyer-1', text: label, created_at: '2026-09-05T18:00:00Z' },
