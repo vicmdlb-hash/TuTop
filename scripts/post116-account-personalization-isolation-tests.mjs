@@ -33,6 +33,10 @@ assert.match(feed, /readAccountLocalJson<Array<Record<string, unknown>>>\(ACCOUN
 assert.match(detail, /writeAccountLocalList\([\s\S]*ACCOUNT_LOCAL_KEYS\.recentProducts,[\s\S]*user\.id/);
 assert.match(tour, /readAccountLocalText\(ACCOUNT_LOCAL_KEYS\.onboarding, userId\)/);
 assert.match(tour, /writeAccountLocalList\(ACCOUNT_LOCAL_KEYS\.interests, userId, interests, 6\)/);
+// A and B must never reuse onboarding/interests React state after account switch.
+assert.match(tour, /function WelcomeTourForUser\(\{ userId \}: \{ userId: string \}\)/);
+assert.match(tour, /if \(!userId\) return null;/);
+assert.match(tour, /return <WelcomeTourForUser key=\{userId\} userId=\{userId\} \/>/);
 
 assert.doesNotMatch(feed, /localStorage\.getItem\(['"]tutop\.search-history\.v1/);
 assert.doesNotMatch(detail, /localStorage\.getItem\(['"]tutop\.recent-products\.v1/);
@@ -66,5 +70,15 @@ assert.deepEqual(readAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, 'bob', 6
 
 assert.notEqual(accountLocalKey(ACCOUNT_LOCAL_KEYS.searchHistory, 'alice'), accountLocalKey(ACCOUNT_LOCAL_KEYS.searchHistory, 'bob'));
 assert.equal(accountLocalKey(ACCOUNT_LOCAL_KEYS.searchHistory, ''), null);
+
+// Valid JSON with an unexpected structure is not a valid saved-search array.
+const malformedKey = accountLocalKey(ACCOUNT_LOCAL_KEYS.savedSearches, 'bob');
+for (const malformed of ['{}', 'null', '"wrong-shape"', '17']) {
+  localStorage.setItem(malformedKey, malformed);
+  assert.deepEqual(readAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'bob', []), [],
+    'malformed per-owner JSON must fail closed without reaching Feed spread');
+}
+assert.equal(readAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'alice', [])[0].id, 'saved-a',
+  'rejecting B malformed state must preserve A owned state');
 
 console.log('PASS account-local personalization: legacy rejected, A->B isolated, same UID restores only its own state');
