@@ -135,6 +135,7 @@ const commonSteps = [
   [process.execPath, ['--experimental-strip-types', 'scripts/post116-erasure-user-status-truth-tests.mjs']],
   [process.execPath, ['scripts/auth-batch-delete-proof-tests.mjs']],
   [process.execPath, ['scripts/legal-retention-dossier-tests.mjs']],
+  [process.execPath, ['scripts/retention-matrix-tests.mjs']],
 ];
 
 const milestoneSteps = packageVersion === '0.9.1-beta.0'
