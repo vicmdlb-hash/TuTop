@@ -297,6 +297,7 @@ assert.match(exploreFreshness,/document\.removeEventListener\('visibilitychange'
 // A UID-only comparison passes incorrectly when the same account signs back in.
 const hydratorJs = compileTypescriptFixture('src/components/V2NearbyListingsHydrator.tsx');
 const hydrationRequests = [];
+let hydrationCacheAvailable = true;
 const hydrationSubscriptions = new Set();
 const hydrationListeners = new Map();
 const hydrationState = { user: { id: A }, products: [] };
@@ -329,7 +330,7 @@ vm.runInNewContext(hydratorJs, {
   require(name) {
     if (name === 'react') return { useEffect: (effect) => { hydrationCleanup = effect(); } };
     if (name === '../lib/nearbyMarketplace') return {
-      getCachedApproxLocation: (uid) => uid ? loc : null,
+      getCachedApproxLocation: (uid) => uid && hydrationCacheAvailable ? loc : null,
       nearbyGeoCells: () => ['g1:1:1'],
       NEARBY_LOCATION_EVENT: 'tutop:approx-location',
     };
@@ -394,6 +395,21 @@ await Promise.resolve();
 await Promise.resolve();
 await new Promise((resolve) => setImmediate(resolve));
 assert.equal(hydrationState.products.map((product) => product.id).join(','), 'base-authoritative-product');
+// The base can refresh after location consent/cache was cleared. Its new
+// approved-only snapshot must invalidate earlier in-flight Nearby responses,
+// even if no cached coordinate exists to trigger another Nearby fetch.
+mockHydrationWindow.dispatchEvent({ type: 'tutop:approx-location', detail: { ...loc, owner_uid: B } });
+assert.equal(hydrationRequests.length, 6, 'a new Nearby request is pending before base refresh');
+hydrationCacheAvailable = false;
+mockAppStore.setState({ products: [{ id: 'fresh-base-only', updated_at: '2026-10-23T00:00:04Z' }] });
+mockHydrationWindow.dispatchEvent({ type: 'tutop:v2-listings-base-hydrated' });
+assert.equal(hydrationRequests.length, 6, 'no cache: base refresh must not schedule a Nearby request');
+hydrationRequests[5]([{ id: 'stale-nearby-before-base', updated_at: '2026-10-23T00:00:05Z' }]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hydrationState.products.map((product) => product.id).join(','), 'fresh-base-only',
+  'in-flight Nearby result cannot reintroduce a listing removed by base refresh');
 assert.equal(hydrationSubscriptions.size, 1);
 hydrationCleanup();
 assert.equal(hydrationSubscriptions.size, 0, 'cleanup must remove the owner subscription');
