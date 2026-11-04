@@ -52,7 +52,15 @@ export function writeAccountLocalList(baseKey: string, ownerUid: string, values:
 export function readAccountLocalJson<T>(baseKey: string, ownerUid: string, fallback: T): T {
   const raw = readAccountLocalText(baseKey, ownerUid);
   if (!raw) return fallback;
-  try { return JSON.parse(raw) as T; } catch { return fallback; }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    // JSON syntax alone does not make cached account data the expected shape.
+    // A stale object/null in an array-backed preference must not crash Feed.
+    if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
+    if (fallback !== null && typeof fallback === 'object' && !Array.isArray(fallback)
+      && (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))) return fallback;
+    return parsed as T;
+  } catch { return fallback; }
 }
 
 export function writeAccountLocalJson(baseKey: string, ownerUid: string, value: unknown) {
