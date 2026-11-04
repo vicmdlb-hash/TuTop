@@ -63,6 +63,13 @@ assert.match(backend, /assertCurrentPendingParent/);
 assert.match(backend, /PARENT_OFFER_NOT_FOUND/);
 assert.match(backend, /PARENT_OFFER_MISMATCH/);
 assert.match(backend, /assertFreshOfferExpiry\(offer\.expires_at\)/);
+const createOfferSource = backend.slice(backend.indexOf('  async createOffer('), backend.indexOf('  async createCounterOffer('));
+const createCounterSource = backend.slice(backend.indexOf('  async createCounterOffer('));
+assert.match(createOfferSource, /assertFreshOfferExpiry\(input\.expiresAt\)/,
+  'a caller-supplied invalid expiry must be rejected before creating the offer');
+assert.match(createCounterSource, /assertFreshOfferExpiry\(expiresAt\)/,
+  'a caller-supplied invalid counteroffer expiry must be rejected');
+
 const fixedNow = Date.parse('2026-09-05T18:00:00Z');
 assert.equal(parseStrictIsoTimestamp('2026-09-05T20:00:00+02:00'), fixedNow);
 assert.equal(parseStrictIsoTimestamp('2026-09-05T18:00:00.123456Z'), fixedNow + 123);
