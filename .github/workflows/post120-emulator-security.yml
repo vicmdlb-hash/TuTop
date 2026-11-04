@@ -53,6 +53,12 @@ jobs:
       - name: Prepare strict V2 Rules
         run: npm run v2:rules:prepare
 
+      - name: Verify generated least-privilege private-read contracts (read-only)
+        run: node scripts/post117-generated-rules-least-privilege-tests.mjs
+
+      - name: Verify generated counteroffer atomic reservation contract (read-only)
+        run: node scripts/post116-counteroffer-atomic-reservation-tests.mjs
+
       - name: Prepare isolated signed national phone demo (no staging/prod)
         run: node scripts/prepare-firestore-national-dual-factor-demo-rules.mjs
 
