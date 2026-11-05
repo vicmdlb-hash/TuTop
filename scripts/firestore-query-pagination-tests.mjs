@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { collectCursorPages, collectTokenPages } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows } from './firestore-query-pagination.mjs';
 
 const docs = Array.from({ length: 2505 }, (_, index) => ({
   name: `projects/demo/databases/(default)/documents/items/${String(index).padStart(5, '0')}`,
@@ -92,5 +92,35 @@ assert.equal(processor.includes('adminRunQuery('), false);
 assert.match(processor, /ACCOUNT_ERASURE_QUERY_RESIDUAL/);
 assert.match(processor, /ACCOUNT_ERASURE_DIRECT_RESIDUAL/);
 assert.match(processor, /ACCOUNT_ERASURE_WITHDRAW_RESIDUAL/);
+
+
+const firestoreName = 'projects/demo/databases/(default)/documents/chats/chat1';
+const accepted = parseFirestoreRunQueryRows([
+  { readTime: '2026-11-05T12:00:00Z' },
+  { document: { name: firestoreName, fields: { uid: { stringValue: 'synthetic-user' } } } },
+]);
+assert.deepEqual(accepted, [{
+  name: firestoreName, path: 'chats/chat1',
+  fields: { uid: { stringValue: 'synthetic-user' } },
+}]);
+assert.deepEqual(parseFirestoreRunQueryRows([]), []);
+for (const malformed of [
+  null, {}, { error: { code: 403, message: 'denied' } },
+  { document: null }, { document: {} },
+  { document: { name: 'users/user1' } },
+  { document: { name: 'projects/demo/databases/(default)/documents/chats' } },
+  { document: { name: firestoreName, fields: 'invalid' } },
+]) {
+  assert.throws(() => parseFirestoreRunQueryRows([malformed]),
+    /QUERY_RESPONSE_ROW_INVALID|QUERY_DOCUMENT_INVALID/);
+}
+assert.throws(() => parseFirestoreRunQueryRows(null), /QUERY_RESPONSE_INVALID/);
+// A 200 status with an in-band Firestore error must never be mistaken for
+// an exhausted residual inventory.
+await assert.rejects(
+  collectTokenPages(async () => ({ error: { status: 'PERMISSION_DENIED' } })),
+  /LIST_PAGE_REMOTE_ERROR/,
+);
+assert.match(admin, /parseFirestoreRunQueryRows\(rows\)/);
 
 console.log('PASS erasure query pagination covers 2505 rows with stable __name__ cursor and fails closed on cursor drift');
