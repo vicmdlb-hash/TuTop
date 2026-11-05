@@ -18,7 +18,7 @@ export function parseFirestoreRunQueryRows(rows) {
     const name = doc?.name;
     if (!doc || typeof doc !== 'object' || Array.isArray(doc)
         || typeof name !== 'string'
-        || !/^projects\\/[^/]+\\/databases\\/[^/]+\\/documents\\/.+/.test(name)) {
+        || !name.startsWith('projects/') || !name.includes('/databases/') || !name.includes('/documents/')) {
       throw new Error('QUERY_DOCUMENT_INVALID');
     }
     const relativePath = name.split('/documents/')[1];
