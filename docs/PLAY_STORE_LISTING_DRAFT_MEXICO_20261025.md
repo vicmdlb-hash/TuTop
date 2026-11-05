@@ -16,7 +16,7 @@ TuTop busca conectar a personas de todo México para descubrir, publicar y encon
 - Utiliza funciones de reporte, bloqueo y revisión de contenido según el alcance de la versión aprobada.
 - La compra y el pago del producto se acuerdan entre las personas fuera de TuTop; TuTop no recibe pagos ni garantiza transacciones entre usuarios.
 
-La aplicación planea admitir distintos grupos de edad y controles para tutores, pero esas funciones sólo podrán anunciarse cuando estén implementadas y aprobadas legal y técnicamente. La primera versión puede limitarse a adultos si el acceso infantil aún no cumple los requisitos.
+**Decisión de audiencia del 05-nov-2026:** TuTop se proyecta para todas las edades, incluidos menores de 13 y adolescentes. Esta ficha sigue en estado NO PUBLICAR hasta que estén realmente implementados y verificados los controles de edad, tutela, revocación, moderación, avisos de seguridad, bloqueo, privacidad, clasificación de contenido y seguridad de los datos. No se presentará una beta exclusiva para adultos como decisión vigente ni se declarará apta para menores por tener sólo pruebas sintéticas.
 
 Topi puede ayudar con funciones guiadas y de voz si están validadas. No anunciar IA generativa mientras el proveedor/modelo y las pruebas permanezcan pendientes.
 
