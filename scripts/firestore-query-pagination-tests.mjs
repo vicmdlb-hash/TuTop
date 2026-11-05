@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse, collectAuthAccountPages } from './firestore-query-pagination.mjs';
 
 const docs = Array.from({ length: 2505 }, (_, index) => ({
   name: `projects/demo/databases/(default)/documents/items/${String(index).padStart(5, '0')}`,
@@ -140,5 +140,50 @@ assert(admin.includes("throw new Error('FIREBASE_ADMIN_HTTP_' + response.status)
 assert(admin.includes("throw new Error('FIREBASE_ADMIN_EMPTY_GET_RESPONSE')"));
 assert(!admin.includes('text.slice(0, 800)'), 'No raw provider error body in logs');
 assert(!admin.includes('catch { return text; }'), 'Malformed JSON must not pass as a successful response');
+
+// AUTH_LIST_PAGE_SYNTHETIC_TEST — no Firebase calls or real identities.
+const syntheticAccounts = Array.from({ length: 2505 }, (_, i) => ({
+  localId: `synthetic_${String(i).padStart(6, '0')}`,
+  email: `synthetic${i}@example.invalid`,
+}));
+let authPageCalls = 0;
+const authPages = await collectAuthAccountPages(async ({ pageToken, pageSize }) => {
+  authPageCalls += 1;
+  const start = pageToken ? Number(pageToken) : 0;
+  const users = syntheticAccounts.slice(start, start + pageSize);
+  return { users, nextPageToken: start + users.length < syntheticAccounts.length
+    ? String(start + users.length) : '' };
+}, { pageSize: 500 });
+assert.equal(authPages.length, 2505);
+assert.equal(new Set(authPages.map(user => user.localId)).size, 2505);
+assert.equal(authPageCalls, 6);
+assert.deepEqual(await collectAuthAccountPages(async () => ({})), []);
+for (const page of [null, [], { error: { code: 403 } },
+  { users: 'malformed' }, { users: [{ email: 'missing-uid@example.invalid' }] },
+  { users: [{ localId: ' invalid-uid ' }] },
+  { users: [{ localId: 'ok', email: 123 }] },
+  { users: [{ localId: 'x' }, { localId: 'x' }] },
+  { nextPageToken: 4 },
+]) {
+  await assert.rejects(collectAuthAccountPages(async () => page),
+    /AUTH_PAGE_INVALID|AUTH_USERS_INVALID|AUTH_USER_INVALID|AUTH_USER_DUPLICATE|AUTH_TOKEN_INVALID/);
+}
+await assert.rejects(collectAuthAccountPages(async () => ({
+  users: [{ localId: 'same-uid' }], nextPageToken: 'again',
+})), /AUTH_USER_DUPLICATE|AUTH_TOKEN_CYCLE/);
+await assert.rejects(collectAuthAccountPages(async () => ({
+  users: [], nextPageToken: 'new-token',
+}), { maxPages: 2 }), /AUTH_TOKEN_CYCLE|AUTH_PAGE_LIMIT_EXCEEDED/);
+await assert.rejects(collectAuthAccountPages(async () => ({
+  users: [{ localId: 'valid-uid' }, { localId: 'second' }],
+}), { pageSize: 1 }), /AUTH_USERS_INVALID/);
+assert.match(admin, /accounts:batchGet/);
+assert.doesNotMatch(admin, /accounts:query/);
+assert.match(admin, /collectAuthAccountPages/);
+assert.match(admin, /params\.set\('nextPageToken', pageToken\)/);
+const authListSource = admin.slice(admin.indexOf('export async function adminListAuthUsers'),
+  admin.indexOf('export async function adminAssertAuthUserAbsent'));
+assert.match(authListSource, /method: 'GET'/);
+assert.doesNotMatch(authListSource, /method: 'POST'/);
 
 console.log('PASS erasure query pagination covers 2505 rows with stable __name__ cursor and fails closed on cursor drift');
