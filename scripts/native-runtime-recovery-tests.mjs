@@ -58,6 +58,43 @@ const tests=[
    await bounded(security.initializeNativeFirebaseSecurity());
    assert.equal(listeners.length,3,'successful bootstrap must remain idempotent');
  }],
+ ['partially failed Messaging listener registration can recover without duplicates',async()=>{
+   let failOnce = true;
+   const added = [], removed = [];
+   const messaging = {
+     getToken: async()=>({token:'synthetic-inactive-token'}),
+     addListener: async(name)=>{
+       if(name === 'notificationReceived' && failOnce) {
+         failOnce = false;
+         throw new Error('synthetic-listener-registration-failure');
+       }
+       added.push(name);
+       return {remove:async()=>{removed.push(name);}};
+     },
+   };
+   const nativeWindow = {
+     addEventListener:()=>{},
+     Capacitor:{registerPlugin:name=>name==='FirebaseMessaging'?messaging:null},
+   };
+   const storage = {getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+   const security = compile(read('src/services/nativeFirebaseSecurity.ts'),
+     ['initializeNativeFirebaseSecurity'],{
+       window:nativeWindow,localStorage:storage,
+       ENV:{VITE_TUTOP_APP_VERSION:'0.9.2-beta.0'},
+       initializeNativeAppCheck:async()=>null,isNativeFirebaseRuntime:()=>true,
+       verifiedEmailBetaAuth:{readSessionIdentity:()=>null,sessionGeneration:()=>0},
+       matchesNativePushSession:()=>false,pushBackend:{},
+     });
+   await assert.rejects(bounded(security.initializeNativeFirebaseSecurity()),
+     /synthetic-listener-registration-failure/);
+   assert.deepEqual(removed,['tokenReceived'],'partial listener must be removed before retry');
+   await bounded(security.initializeNativeFirebaseSecurity());
+   assert.deepEqual(added,[
+     'tokenReceived','tokenReceived','notificationReceived','notificationActionPerformed',
+   ],'second attempt must attach exactly one complete listener set');
+   await bounded(security.initializeNativeFirebaseSecurity());
+   assert.equal(added.length,4,'subsequent successful startup must remain idempotent');
+ }],
  ['private QA AI also denies remote calls without attestation',async()=>{
   const h=appCheckHarness({initialize:async()=>{},getToken:never}); let generated=0;
   h.window.Capacitor.registerPlugin=name=>name==='TuTopAI'?{generate:async()=>{generated++;return {text:'provider fixture'};}}:{initialize:async()=>{},getToken:never};
