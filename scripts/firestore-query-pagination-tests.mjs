@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse } from './firestore-query-pagination.mjs';
 
 const docs = Array.from({ length: 2505 }, (_, index) => ({
   name: `projects/demo/databases/(default)/documents/items/${String(index).padStart(5, '0')}`,
@@ -122,5 +122,23 @@ await assert.rejects(
   /LIST_PAGE_REMOTE_ERROR/,
 );
 assert.match(admin, /parseFirestoreRunQueryRows\(rows\)/);
+
+const expectedDocumentName = 'projects/demo/databases/(default)/documents/users/test-user';
+const validDoc = { name: expectedDocumentName, fields: { flag: { booleanValue: true } } };
+assert.equal(assertAdminDocumentResponse(validDoc, expectedDocumentName), validDoc);
+for (const invalid of [
+  null, [], {}, { name: 'projects/demo/databases/(default)/documents/users/other' },
+  { name: expectedDocumentName, fields: 'invalid' },
+  { name: expectedDocumentName, fields: null },
+  { name: expectedDocumentName, fields: [] },
+]) {
+  assert.throws(() => assertAdminDocumentResponse(invalid, expectedDocumentName),
+    /FIREBASE_ADMIN_DOCUMENT_INVALID/);
+}
+assert(admin.includes('assertAdminDocumentResponse(result,'));
+assert(admin.includes("throw new Error('FIREBASE_ADMIN_HTTP_' + response.status)"));
+assert(admin.includes("throw new Error('FIREBASE_ADMIN_EMPTY_GET_RESPONSE')"));
+assert(!admin.includes('text.slice(0, 800)'), 'No raw provider error body in logs');
+assert(!admin.includes('catch { return text; }'), 'Malformed JSON must not pass as a successful response');
 
 console.log('PASS erasure query pagination covers 2505 rows with stable __name__ cursor and fails closed on cursor drift');
