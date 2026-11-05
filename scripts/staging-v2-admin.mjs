@@ -1,6 +1,6 @@
 import { assertAuthBatchDeleteResponse, assertAuthAccountAbsent } from './auth-batch-delete-proof.mjs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse, collectAuthAccountPages } from './firestore-query-pagination.mjs';
 import { buildAccountErasureFinalCommit } from './account-erasure-atomic-commit.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
@@ -146,21 +146,15 @@ export async function adminListDocuments(collectionPath, pageSize = 300) {
 }
 
 export async function adminListAuthUsers(pageSize = 500) {
-  const users = [];
-  let nextPageToken = '';
-  do {
-    const body = { maxResults: Math.max(1, Math.min(1000, Number(pageSize) || 500)), ...(nextPageToken ? { nextPageToken } : {}) };
-    const raw = await request(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:query`, {
-      method: 'POST',
-      body: JSON.stringify(body),
+  // Identity Toolkit accounts:batchGet is the paginated listing endpoint.
+  // accounts:query accepts a different schema and cannot prove exhaustive inventory.
+  return collectAuthAccountPages(async ({ pageToken, pageSize: size }) => {
+    const params = new URLSearchParams({ maxResults: String(size) });
+    if (pageToken) params.set('nextPageToken', pageToken);
+    return request(`https://identitytoolkit.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/accounts:batchGet?${params}`, {
+      method: 'GET',
     });
-    for (const user of raw?.users || []) {
-      const localId = String(user?.localId || '').trim();
-      if (localId) users.push({ localId, email: String(user?.email || '') });
-    }
-    nextPageToken = String(raw?.nextPageToken || '');
-  } while (nextPageToken);
-  return users;
+  }, { pageSize });
 }
 
 export async function adminAssertAuthUserAbsent(uid) {
