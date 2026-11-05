@@ -28,6 +28,11 @@ for(const bad of [null,{}, {writeResults:[]},{writeResults:[{}]},
  {writeResults:[{updateTime:'bad'}]},
  {writeResults:[{updateTime:newTime},{updateTime:newTime}]}])
   assert.throws(()=>attachCommittedFcmClaim(pending,planned,bad));
+for (const invalidAttempt of ['2', '', null, true, false]) {
+  assert.throws(() => planFcmOutboxClaim(
+    { ...pending, attempts: invalidAttempt }, startTime),
+    /FCM_OUTBOX_ATTEMPTS_INVALID/);
+}
 assert.throws(()=>planFcmOutboxCompletion(pending,sentTime),/FCM_OUTBOX_NOT_DISPATCHING/);
 assert.throws(()=>planFcmOutboxCompletion(claimed,'bad'),/FCM_OUTBOX_SENT_TIME_INVALID/);
 
