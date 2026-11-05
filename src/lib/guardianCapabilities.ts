@@ -116,6 +116,11 @@ export function decideCapability(input: {
 
   if (band === 'adult') return ALLOWED;
   if (band === 'teen_13_17') {
+    // Mixed-age social commerce is opt-in at the trusted guardian boundary.
+    // A mere age claim must not permit chat, listing, or offer access.
+    if (['direct_chat', 'publish_listing', 'make_offer'].includes(capability)
+      && !trustedGuardian(uid, input.guardian || null, capability, nowMs))
+      return DENIED('guardian_missing');
     if (capability === 'share_personal_info') {
       const action = input.adultAction;
       const guardian = input.guardian || null;
