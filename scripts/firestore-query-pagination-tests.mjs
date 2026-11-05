@@ -72,6 +72,17 @@ await assert.rejects(
 const admin = fs.readFileSync('scripts/staging-v2-admin.mjs','utf8');
 const processor = fs.readFileSync('scripts/process-account-erasure.mjs','utf8');
 assert.match(admin, /export async function adminRunQueryAll/);
+// Staging reset must inventory every orphan chat subcollection with the same
+// fail-closed cursor pagination used by account erasure, never one raw runQuery.
+const groupListStart = admin.indexOf('export async function adminListCollectionGroupDocuments(');
+const groupListEnd = admin.indexOf('export async function adminListDocuments(', groupListStart);
+assert(groupListStart >= 0 && groupListEnd > groupListStart, 'staging group inventory function must exist');
+const groupList = admin.slice(groupListStart, groupListEnd);
+assert.match(groupList, /return adminRunCollectionGroupQueryAll\(clean, \[\], 500\);/);
+assert.doesNotMatch(groupList, /const rows = await request\(|runStructuredQuery\(/);
+assert.match(admin, /from: \[\{ collectionId: clean, allDescendants: true \}\]/);
+const reset = fs.readFileSync('scripts/reset-staging-accounts.mjs', 'utf8');
+assert.match(reset, /adminListCollectionGroupDocuments\(subcollection\)/);
 assert.match(admin, /collectTokenPages/);
 assert.match(admin, /fieldPath: '__name__'/);
 assert.match(admin, /startAt: \{ values: \[\{ referenceValue: afterName \}\], before: false \}/);
