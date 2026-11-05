@@ -108,9 +108,8 @@ const helpers = `
       let proof = get(guardianAgeDoc(uid)).data;
       return signedIn() && uid is string
         && guardianAgeDataAllowed(uid, ['adult','teen_13_17','under_13'], proof)
-        && (proof.band in ['adult','teen_13_17']
-          || (proof.band == 'under_13'
-            && guardianValidGrant(uid, 'publish_listing')));
+        && (proof.band == 'adult'
+          || guardianValidGrant(uid, 'publish_listing'));
     }
 `;
 rules = rules.replace(signedIn, signedIn + helpers);
