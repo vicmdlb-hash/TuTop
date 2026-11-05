@@ -34,7 +34,12 @@ assert.equal(check('publish_listing', 'under_13', { guardian: guardian(['publish
 denied(check('direct_chat', 'under_13', { guardian: guardian(['direct_chat']) }), 'age_restricted');
 denied(check('share_personal_info', 'under_13', { guardian: guardian(['share_personal_info']), adultAction: { subjectUid: 'child', actorUid: 'guardian', capability: 'share_personal_info', issuer: 'trusted_server', authorized: true, expiresAtMs: nowMs + 60_000 } }), 'age_restricted');
 denied(check('precise_location', 'under_13', { guardian: guardian(['precise_location']) }), 'age_restricted');
-assert.equal(check('direct_chat', 'teen_13_17').allowed, true);
+// A 13–17-year-old cannot enable social-commerce features merely by age.
+for (const capability of ['direct_chat', 'publish_listing', 'make_offer']) {
+  denied(check(capability, 'teen_13_17'), 'guardian_missing');
+  denied(check(capability, 'teen_13_17', { guardian: guardian([capability], { active: false }) }), 'guardian_missing');
+  assert.equal(check(capability, 'teen_13_17', { guardian: guardian([capability]) }).allowed, true);
+}
 denied(check('share_personal_info', 'teen_13_17'), 'requires_guardian_action');
 denied(check('share_personal_info', 'teen_13_17', { adultAction: {
   subjectUid: 'other', actorUid: 'guardian', capability: 'share_personal_info',
