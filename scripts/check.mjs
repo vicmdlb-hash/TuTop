@@ -42,6 +42,7 @@ const commonSteps = [
   [process.execPath, ['scripts/report-rate-atomic-contract-tests.mjs']],
   [process.execPath, ['scripts/chat-user-report-entrypoint-tests.mjs']],
   [process.execPath, ['scripts/user-block-contract-tests.mjs']],
+  [process.execPath, ['scripts/user-block-session-epoch-tests.mjs']],
   [process.execPath, ['scripts/user-block-notification-tests.mjs']],
   [process.execPath, ['scripts/seller-profile-privacy-tests.mjs']],
   [process.execPath, ['scripts/canonical-offer-read-cache-tests.mjs']],
