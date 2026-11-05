@@ -47,8 +47,12 @@ const helpers = `
     function guardianVerifiedAge(uid) {
       return guardianAgeAllowed(uid, ['under_13','teen_13_17','adult']);
     }
-    function guardianAdultOrTeen(uid) {
-      return guardianAgeAllowed(uid, ['adult','teen_13_17']);
+    function guardianAdultOrTeen(uid, cap) {
+      // The demo must not authorize teenage social commerce by age alone.
+      let proof = get(guardianAgeDoc(uid)).data;
+      return signedIn() && uid is string
+        && guardianAgeDataAllowed(uid, ['adult','teen_13_17'], proof)
+        && (proof.band == 'adult' || guardianValidGrant(uid, cap));
     }
     function guardianValidGrant(uid, cap) {
       // Load once instead of repeatedly re-evaluating get() and keys().
