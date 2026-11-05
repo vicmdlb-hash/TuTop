@@ -1,4 +1,4 @@
-import { assertFirebaseRequestSessionCurrent } from '../lib/firebaseSharedSessionGuard';
+import { assertFirebaseRequestSessionCurrent, sameFirebaseSession } from '../lib/firebaseSharedSessionGuard';
 import type { ChatMessage } from '../types';
 import { FirebaseRestClient } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
@@ -6,7 +6,7 @@ import { getFirebaseConfig } from './runtimeConfig';
 const CHAT_HISTORY_CACHE_TTL_MS = 20_000;
 const CHAT_HISTORY_LIMIT = 100;
 const historyCache = new Map<string, { messages: ChatMessage[]; expiresAt: number }>();
-const historyInflight = new Map<string, Promise<ChatMessage[]>>();
+const historyInflight = new Map<string, { promise: Promise<ChatMessage[]>; session: { uid: string; idToken: string; refreshToken: string } }>();
 
 function getClient() {
   const client = new FirebaseRestClient(getFirebaseConfig());
@@ -51,9 +51,11 @@ export const chatHistoryBackend = {
       return cloneMessages(cached.messages);
     }
     const inflight = historyInflight.get(key);
-    if (!force && inflight) {
+    // A relogin as the same UID starts a new auth epoch. Never reuse an old
+    // session's pending result (or its eventual AUTH_SESSION_CHANGED rejection).
+    if (!force && inflight && sameFirebaseSession(inflight.session, requestSession)) {
       assertCurrent();
-      return inflight;
+      return inflight.promise;
     }
 
     const request = client.runQuery<any>(
@@ -64,7 +66,7 @@ export const chatHistoryBackend = {
       `chats/${cleanChatId}`,
     ).then((docs) => {
       assertCurrent();
-      if (historyInflight.get(key) !== request) throw new Error('STALE_CHAT_HISTORY_READ');
+      if (historyInflight.get(key)?.promise !== request) throw new Error('STALE_CHAT_HISTORY_READ');
       return docs.map((doc) => {
         const senderId = String(doc.data.sender_id || '');
         return {
@@ -81,15 +83,15 @@ export const chatHistoryBackend = {
     })
       .then((messages) => {
         assertCurrent();
-        if (historyInflight.get(key) !== request) throw new Error('STALE_CHAT_HISTORY_READ');
+        if (historyInflight.get(key)?.promise !== request) throw new Error('STALE_CHAT_HISTORY_READ');
         historyCache.set(key, { messages, expiresAt: Date.now() + CHAT_HISTORY_CACHE_TTL_MS });
         return cloneMessages(messages);
       })
       .finally(() => {
-        if (historyInflight.get(key) === request) historyInflight.delete(key);
+        if (historyInflight.get(key)?.promise === request) historyInflight.delete(key);
       });
 
-    historyInflight.set(key, request);
+    historyInflight.set(key, { promise: request, session: requestSession! });
     return request;
   },
 };
