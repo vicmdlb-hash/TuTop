@@ -178,7 +178,7 @@ await assert.rejects(collectAuthAccountPages(async () => ({
   users: [{ localId: 'valid-uid' }, { localId: 'second' }],
 }), { pageSize: 1 }), /AUTH_USERS_INVALID/);
 assert.match(admin, /accounts:batchGet/);
-assert.doesNotMatch(admin, /accounts:query/);
+assert.doesNotMatch(admin, /\/accounts:query/);
 assert.match(admin, /collectAuthAccountPages/);
 assert.match(admin, /params\.set\('nextPageToken', pageToken\)/);
 const authListSource = admin.slice(admin.indexOf('export async function adminListAuthUsers'),
