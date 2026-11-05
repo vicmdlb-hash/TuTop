@@ -116,8 +116,13 @@ test('unknown or missing age proof cannot establish a chat', async () => {
   await assertFails(createChat(verifiedContext(env, 'buyer').firestore()));
 });
 
-test('adult and teen verified accounts can establish a chat with adult recipient', async () => {
+test('teen verified age alone cannot enable stranger chat', async () => {
   await seed('teen_13_17');
+  await assertFails(createChat(verifiedContext(env, 'buyer').firestore()));
+});
+
+test('teen requires a current, capability-specific trusted guardian grant for chat', async () => {
+  await seed('teen_13_17', 'adult', grant(['direct_chat']));
   await assertSucceeds(createChat(verifiedContext(env, 'buyer').firestore()));
 });
 
