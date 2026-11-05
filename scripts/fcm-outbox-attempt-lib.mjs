@@ -9,7 +9,7 @@ function validTime(t) {
 export function planFcmOutboxClaim(item, now) {
   if (item?.status !== 'pending') throw new Error('FCM_OUTBOX_NOT_PENDING');
   if (!validTime(now)) throw new Error('FCM_OUTBOX_CLAIM_TIME_INVALID');
-  const attempts = item.attempts === undefined ? 0 : Number(item.attempts);
+  const attempts = item.attempts === undefined ? 0 : item.attempts;
   if (!Number.isSafeInteger(attempts) || attempts < 0
       || attempts >= Number.MAX_SAFE_INTEGER)
     throw new Error('FCM_OUTBOX_ATTEMPTS_INVALID');
