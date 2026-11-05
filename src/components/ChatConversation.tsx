@@ -260,9 +260,10 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
       if (v2 && visibleOffer.structured) {
         if (kind === 'accept') {
           const result = await nationalBackend.acceptOfferAndCreateTransaction(visibleOffer.structured, 120);
+          // Do not announce acceptance before an authoritative reservation exists.
+          if (!result.transaction) throw new Error('RESERVATION_NOT_CREATED');
           setStructuredOffers((current) => current.map((item) => item.id === visibleOffer.structured!.id ? { ...item, status: 'accepted', updated_at: new Date().toISOString() } : item));
           refreshCanonicalOffers();
-          if (!result.transaction) throw new Error('RESERVATION_NOT_CREATED');
           setFinalizedOfferId(visibleOffer.structured.id);
           syncCanonicalTransaction(result.transaction);
           setStructuredMessage(`En trato · reservado por 2 h · operación ${result.transaction.id.slice(-6)}`);
