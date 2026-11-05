@@ -5,6 +5,7 @@ import { trustedFcmQueryRecord, trustedFcmDirectRecord } from './fcm-staging-doc
 import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup, isFreshFcmTargetStillEligible } from './fcm-outbox-attempt-lib.mjs';
 
 assert.deepEqual(fcmDataForNotification({ id: 'synthetic-notice', recipient_uid: 'synthetic_user', kind: 'new_message' }), { notification_id: 'synthetic-notice', recipient_uid: 'synthetic_user', kind: 'new_message' });
+assert.throws(() => fcmDataForNotification({ id: 123, recipient_uid: 'synthetic_user' }), /FCM_NOTIFICATION_ID_INVALID/);
 const oldTime = '2026-10-28T20:00:00.000Z';
 const startTime = '2026-10-28T20:00:01.000Z';
 const newTime = '2026-10-28T20:00:02.000Z';
