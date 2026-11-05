@@ -12,6 +12,8 @@ assert.match(history, /historyCache = new Map/);
 assert.match(history, /historyInflight = new Map/);
 assert.match(history, /async load\(chatId: string, buyerId: string, force = false\)/);
 assert.match(history, /if \(!force && inflight && sameFirebaseSession\(inflight\.session, requestSession\)\) \{\s*assertCurrent\(\);\s*return inflight\.promise;\s*\}/);
+assert.match(history, /sameFirebaseSession\(cached\.session, requestSession\)/,
+  'cache entries must be tied to the exact auth epoch, not only a UID');
 assert.match(history, /const client = getClient\(\);[\s\S]*?const cached = historyCache\.get\(key\)/,
   'private chat cache must not be read before authentication');
 assert.match(history, /cacheKey\(requestSession!\.uid, cleanChatId, cleanBuyerId\)/,
@@ -106,4 +108,14 @@ await assert.rejects(pendingA, /AUTH_SESSION_CHANGED/);
 session = null;
 await assert.rejects(loader.load('shared-room', 'buyer'), /AUTH_REQUIRED/,
   'guests must not read cached private chat');
+// A complete cache hit must also be scoped by auth epoch, not just pending reads.
+session = identity('A', 'one');
+assert.equal((await loader.load('warm-room', 'buyer'))[0].texto, 'private A');
+session = identity('A', 'third');
+const freshCacheEpoch = loader.load('warm-room', 'buyer');
+assert.equal(calls.length, 7, 'new auth epoch of same UID must refresh the cached chat');
+calls[6].resolve(rows('current session A'));
+assert.equal((await freshCacheEpoch)[0].texto, 'current session A');
+assert.equal((await loader.load('warm-room', 'buyer'))[0].texto, 'current session A');
 console.log('PASS behavioral chat history isolation: A->A relogin, A->B, stale replies, cache, guest and same-epoch dedupe');
+console.log('PASS cached private chat also checks exact auth epoch across logout/relogin');

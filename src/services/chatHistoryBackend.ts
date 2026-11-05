@@ -5,7 +5,10 @@ import { getFirebaseConfig } from './runtimeConfig';
 
 const CHAT_HISTORY_CACHE_TTL_MS = 20_000;
 const CHAT_HISTORY_LIMIT = 100;
-const historyCache = new Map<string, { messages: ChatMessage[]; expiresAt: number }>();
+const historyCache = new Map<string, {
+  messages: ChatMessage[]; expiresAt: number;
+  session: { uid: string; idToken: string; refreshToken: string };
+}>();
 const historyInflight = new Map<string, { promise: Promise<ChatMessage[]>; session: { uid: string; idToken: string; refreshToken: string } }>();
 
 function getClient() {
@@ -46,7 +49,9 @@ export const chatHistoryBackend = {
     );
     const key = cacheKey(requestSession!.uid, cleanChatId, cleanBuyerId);
     const cached = historyCache.get(key);
-    if (!force && cached && cached.expiresAt > Date.now()) {
+    // A new auth epoch (even the SAME UID) must never inherit old private data.
+    if (!force && cached && cached.expiresAt > Date.now()
+      && sameFirebaseSession(cached.session, requestSession)) {
       assertCurrent();
       return cloneMessages(cached.messages);
     }
@@ -84,7 +89,7 @@ export const chatHistoryBackend = {
       .then((messages) => {
         assertCurrent();
         if (historyInflight.get(key)?.promise !== request) throw new Error('STALE_CHAT_HISTORY_READ');
-        historyCache.set(key, { messages, expiresAt: Date.now() + CHAT_HISTORY_CACHE_TTL_MS });
+        historyCache.set(key, { messages, expiresAt: Date.now() + CHAT_HISTORY_CACHE_TTL_MS, session: requestSession! });
         return cloneMessages(messages);
       })
       .finally(() => {

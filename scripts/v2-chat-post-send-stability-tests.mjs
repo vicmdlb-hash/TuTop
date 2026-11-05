@@ -53,6 +53,9 @@ class FakeFirebaseRestClient {
     return new Promise((resolve) => outstanding.push({ owner: this.currentSession.uid, resolve }));
   }
 }
+const syntheticSameFirebaseSession = (a, b) => Boolean(a && b
+  && a.uid && a.idToken && a.refreshToken
+  && a.uid === b.uid && a.idToken === b.idToken && a.refreshToken === b.refreshToken);
 const assertSyntheticCurrent = (requested, runtime, persisted) => {
   if (!requested || !runtime || !persisted
     || requested.uid !== runtime.uid || requested.uid !== persisted.uid
@@ -61,9 +64,9 @@ const assertSyntheticCurrent = (requested, runtime, persisted) => {
     throw new Error('AUTH_SESSION_CHANGED');
 };
 const historyBackend = new Function(
-  'FirebaseRestClient', 'getFirebaseConfig', 'assertFirebaseRequestSessionCurrent',
+  'FirebaseRestClient', 'getFirebaseConfig', 'assertFirebaseRequestSessionCurrent', 'sameFirebaseSession',
   `${stripTypeScriptTypes(historySource.slice(historyStart)).replace('export const chatHistoryBackend =', 'const chatHistoryBackend =')}\nreturn chatHistoryBackend;`,
-)(FakeFirebaseRestClient, () => ({}), assertSyntheticCurrent);
+)(FakeFirebaseRestClient, () => ({}), assertSyntheticCurrent, syntheticSameFirebaseSession);
 const fakeMessage = (label) => [{
   id: 'message-' + label, data: { sender_id: 'buyer-1', text: label, created_at: '2026-09-05T18:00:00Z' },
 }];
