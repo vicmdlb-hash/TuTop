@@ -83,6 +83,8 @@ export async function collectTokenPages(fetchPage, { pageSize = 300, maxPages = 
     const raw = await fetchPage({ pageToken, pageSize });
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
       throw new Error('LIST_PAGE_INVALID');
+    if (Object.prototype.hasOwnProperty.call(raw, 'error'))
+      throw new Error('LIST_PAGE_REMOTE_ERROR');
     const docs = raw.documents === undefined ? [] : raw.documents;
     if (!Array.isArray(docs) || docs.length > pageSize)
       throw new Error('LIST_DOCUMENTS_INVALID');
