@@ -2,6 +2,7 @@ import { feedbackMessage } from '../lib/feedback';
 import { onlineBackend } from './onlineBackend';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { chatHistoryBackend } from './chatHistoryBackend';
+import { acknowledgeOptimisticChatMessage } from '../lib/chatOptimisticReconciliation';
 import { useAppStore } from '../store/useAppStore';
 
 function localId(prefix: string) {
@@ -31,10 +32,15 @@ if (nationalSchemaEnabled()) {
         chats: current.chats.map((item) => item.id === chatId ? { ...item, mensajes: [...item.mensajes, message], sin_leer: 0 } : item),
         syncError: null,
       }));
-      void onlineBackend.sendMessage(chatId, clean).then(() => {
+      void onlineBackend.sendMessage(chatId, clean).then((serverId) => {
         if (useAppStore.getState().user.id !== actorUid) return;
         chatHistoryBackend.invalidate(chatId);
-        useAppStore.setState({ syncError: null });
+        useAppStore.setState((current) => current.user.id !== actorUid ? current : ({
+          chats: current.chats.map((item) => item.id === chatId
+            ? { ...item, mensajes: acknowledgeOptimisticChatMessage(item.mensajes, message.id, serverId) }
+            : item),
+          syncError: null,
+        }));
       }).catch((error) => {
         if (useAppStore.getState().user.id !== actorUid) return;
         useAppStore.setState((current) => ({
@@ -62,10 +68,15 @@ if (nationalSchemaEnabled()) {
         syncError: null,
       }));
       feedbackMessage();
-      void onlineBackend.sendMessage(chatId, '', imageUrl).then(() => {
+      void onlineBackend.sendMessage(chatId, '', imageUrl).then((serverId) => {
         if (useAppStore.getState().user.id !== actorUid) return;
         chatHistoryBackend.invalidate(chatId);
-        useAppStore.setState({ syncError: null });
+        useAppStore.setState((current) => current.user.id !== actorUid ? current : ({
+          chats: current.chats.map((item) => item.id === chatId
+            ? { ...item, mensajes: acknowledgeOptimisticChatMessage(item.mensajes, message.id, serverId) }
+            : item),
+          syncError: null,
+        }));
       }).catch((error) => {
         if (useAppStore.getState().user.id !== actorUid) return;
         useAppStore.setState((current) => ({

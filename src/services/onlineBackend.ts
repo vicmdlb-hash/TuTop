@@ -462,6 +462,7 @@ export class TuTopOnlineBackend {
       { update: client.encodeDocumentForWrite(`chats/${chatId}/messages/${messageId}`, messageData), currentDocument: { exists: false } },
       { update: client.encodeDocumentForWrite(`chats/${chatId}`, { updated_at: createdAt, last_message: lastMessage.slice(0, 180), last_message_at: createdAt }), updateMask: { fieldPaths: ['updated_at', 'last_message', 'last_message_at'] } },
     ]);
+    return messageId;
   }
 
   async markChatRead(chatId: string) {

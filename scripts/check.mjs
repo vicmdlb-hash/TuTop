@@ -78,6 +78,7 @@ const commonSteps = [
   [process.execPath, ['scripts/unread-aggregation-migration-tests.mjs']],
   [process.execPath, ['scripts/unread-emulator-gate-contract-tests.mjs']],
   [process.execPath, ['scripts/v2-chat-post-send-stability-tests.mjs']],
+  [process.execPath, ['--experimental-strip-types', 'scripts/chat-optimistic-ack-tests.mjs']],
   [process.execPath, ['scripts/firestore-static-contract-tests.mjs']],
   [process.execPath, ['scripts/offer-expiry-contract-tests.mjs']],
   [process.execPath, ['scripts/demand-budget-contract-tests.mjs']],
