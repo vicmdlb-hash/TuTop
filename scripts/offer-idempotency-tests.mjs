@@ -111,6 +111,17 @@ assert.match(createOfferSource, /await assertOfferableListing\(client, input\.li
 assert.match(createCounterSource, /await assertOfferableListing\(client, currentParent\.listing_id, currentParent\.seller_id\)/);
 
 const chatSource = fs.readFileSync('src/components/ChatConversation.tsx', 'utf8');
+// A missing reservation acknowledgement cannot mark an offer accepted in UI.
+const respondStart = chatSource.indexOf("  const respondToOffer = async (kind: 'accept' | 'reject') => {");
+const respondEnd = chatSource.indexOf('  const finalizeAcceptedCounter = async () => {', respondStart);
+assert(respondStart >= 0 && respondEnd > respondStart, 'canonical accept UI handler must exist');
+const acceptUI = chatSource.slice(respondStart, respondEnd);
+const callPosition = acceptUI.indexOf('await nationalBackend.acceptOfferAndCreateTransaction(');
+const truthPosition = acceptUI.indexOf("if (!result.transaction) throw new Error('RESERVATION_NOT_CREATED');");
+const optimisticPosition = acceptUI.indexOf("setStructuredOffers((current) => current.map((item) => item.id === visibleOffer.structured!.id ? { ...item, status: 'accepted'");
+assert(callPosition >= 0 && truthPosition > callPosition && optimisticPosition > truthPosition,
+  'accepted UI must wait for the authoritative reservation response');
+
 const pendingStart = chatSource.indexOf('function isActionablePendingOffer(');
 const pendingEnd = chatSource.indexOf('\nexport default function ChatConversation(', pendingStart);
 assert(pendingStart >= 0 && pendingEnd > pendingStart, 'V2 pending offer visibility helper is missing');
