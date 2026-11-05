@@ -8,7 +8,7 @@ assert.match(source, /OFFER_LIST_CACHE_TTL_MS = 30_000/);
 assert.match(source, /offerListCache = new Map/);
 assert.match(source, /offerListInflight = new Map/);
 assert.match(source, /async listOffersForChat\(chatId: string, force = false\)/);
-assert.match(source, /if \(!force && inflight\) \{/);
+assert.match(source, /if \(!force && inflight && sameFirebaseSession\(inflight\.session, requestSession\)\) \{/);
 assert.match(source, /const client = getClient\(\);\s*const requestSession = client\.currentSession;/);
 assert.match(source, /assertFirebaseRequestSessionCurrent\(/);
 assert.match(source, /const key = offerListCacheKey\(requestSession!\.uid, cleanChatId\)/);
