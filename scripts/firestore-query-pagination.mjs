@@ -1,3 +1,37 @@
+// Fail closed on in-band query errors or malformed document envelopes.
+// Firestore may return readTime-only metadata rows for an empty result set;
+// these are not equivalent to arbitrary, silently discarded response objects.
+export function parseFirestoreRunQueryRows(rows) {
+  if (!Array.isArray(rows)) throw new Error('QUERY_RESPONSE_INVALID');
+  const results = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)
+        || Object.prototype.hasOwnProperty.call(row, 'error')) {
+      throw new Error('QUERY_RESPONSE_ROW_INVALID');
+    }
+    if (!Object.prototype.hasOwnProperty.call(row, 'document')) {
+      if (!('readTime' in row) && !('skippedResults' in row)
+          && !('explainMetrics' in row)) throw new Error('QUERY_RESPONSE_ROW_INVALID');
+      continue;
+    }
+    const doc = row.document;
+    const name = doc?.name;
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)
+        || typeof name !== 'string'
+        || !/^projects\\/[^/]+\\/databases\\/[^/]+\\/documents\\/.+/.test(name)) {
+      throw new Error('QUERY_DOCUMENT_INVALID');
+    }
+    const relativePath = name.split('/documents/')[1];
+    if (!relativePath || relativePath.split('/').length % 2 !== 0
+        || (doc.fields !== undefined
+            && (!doc.fields || typeof doc.fields !== 'object' || Array.isArray(doc.fields)))) {
+      throw new Error('QUERY_DOCUMENT_INVALID');
+    }
+    results.push({ name, path: relativePath, fields: doc.fields || {} });
+  }
+  return results;
+}
+
 export async function collectCursorPages(fetchPage, { pageSize = 500, maxPages = 10000 } = {}) {
   if (typeof fetchPage !== 'function') throw new Error('FETCH_PAGE_REQUIRED');
   const size = Math.max(1, Math.min(1000, Number(pageSize) || 500));
