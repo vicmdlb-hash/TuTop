@@ -79,6 +79,14 @@ test('adult with trusted age can publish without a guardian grant', async () => 
   await seed('adult');
   await assertSucceeds(publish('approved-adult'));
 });
+test('teen requires explicit guardian publication capability', async () => {
+  await seed('teen_13_17');
+  await assertFails(publish('teen-no-grant'));
+});
+test('teen with valid specific guardian grant can publish to moderation', async () => {
+  await seed('teen_13_17', guardian());
+  await assertSucceeds(publish('teen-approved-by-guardian'));
+});
 test('under13 with valid specific guardian grant can publish pending moderation', async () => {
   await seed('under_13', guardian());
   await assertSucceeds(publish('guardian-approved'));
