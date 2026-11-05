@@ -32,6 +32,18 @@ export function parseFirestoreRunQueryRows(rows) {
   return results;
 }
 
+// An unexpected successful GET document cannot prove that an account was deleted.
+export function assertAdminDocumentResponse(document, expectedName) {
+  if (!document || typeof document !== 'object' || Array.isArray(document)
+      || typeof expectedName !== 'string' || document.name !== expectedName
+      || (document.fields !== undefined
+          && (!document.fields || typeof document.fields !== 'object'
+              || Array.isArray(document.fields)))) {
+    throw new Error('FIREBASE_ADMIN_DOCUMENT_INVALID');
+  }
+  return document;
+}
+
 export async function collectCursorPages(fetchPage, { pageSize = 500, maxPages = 10000 } = {}) {
   if (typeof fetchPage !== 'function') throw new Error('FETCH_PAGE_REQUIRED');
   const size = Math.max(1, Math.min(1000, Number(pageSize) || 500));
