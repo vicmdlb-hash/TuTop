@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import fs from 'node:fs';
 import { trustedFcmQueryRecord, trustedFcmDirectRecord } from './fcm-staging-document-identity-lib.mjs';
 import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup, isFreshFcmTargetStillEligible } from './fcm-outbox-attempt-lib.mjs';
