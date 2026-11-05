@@ -115,18 +115,13 @@ export async function adminRunCollectionGroupQueryAll(collectionId, filters = []
   }), { pageSize });
 }
 
-// Collection-group scan used by destructive staging cleanup. allDescendants=true
-// is essential: a Firestore subcollection can survive even when its parent chat
-// document no longer exists, so parent traversal alone cannot prove a clean beta.
+// Destructive staging cleanup must enumerate ALL collection-group descendants,
+// even when chat parents are absent. Reuse fail-closed __name__ pagination:
+// a single unbounded runQuery response cannot prove an exhaustive inventory.
 export async function adminListCollectionGroupDocuments(collectionId) {
   const clean = String(collectionId || '').trim();
   if (!/^[A-Za-z0-9_-]{1,120}$/.test(clean)) throw new Error(`Collection group inválido: ${clean || 'empty'}`);
-  const body = { structuredQuery: { from: [{ collectionId: clean, allDescendants: true }] } };
-  const rows = await request(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:runQuery`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-  return queryRows(rows);
+  return adminRunCollectionGroupQueryAll(clean, [], 500);
 }
 
 export async function adminListDocuments(collectionPath, pageSize = 300) {
