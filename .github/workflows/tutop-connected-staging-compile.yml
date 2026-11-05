@@ -25,9 +25,6 @@ jobs:
       VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED: 'false'
       VITE_TUTOP_TOPI_GUIDED_BETA: 'true'
       VITE_TUTOP_MEDIA_STORAGE_ENABLED: 'false'
-      FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-      TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
-      TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
     steps:
       - name: Checkout source without persisted credentials
         uses: actions/checkout@v7
@@ -45,8 +42,11 @@ jobs:
           test "${VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED}" = false
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/tutop-connected-staging-compile.yml"
-          test -n "${FIREBASE_TOKEN:-}" || { echo 'BLOCKED: Firebase read-only config credentials not connected'; exit 42; }
+          # Exact parent + two-file allowlist: one deliberate source-only QA trigger.
+          test "$(git rev-parse HEAD^)" = '8737463c61eb9e237e59f46789c3d0ea73bc7022'
+          changed="$(git diff --name-only HEAD^ HEAD)"
+          expected="$(printf '%s\n' '.github/workflows/tutop-connected-staging-compile.yml' 'scripts/connected-staging-compile-workflow-tests.mjs')"
+          test "$changed" = "$expected"
       - name: Node 22
         uses: actions/setup-node@v7
         with:
@@ -70,9 +70,14 @@ jobs:
           node scripts/connected-staging-compile-workflow-tests.mjs
           node --experimental-strip-types scripts/native-push-session-epoch-tests.mjs
       - name: Fetch existing Firebase Web and Android V2 configs READ ONLY
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+          TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
+          test -n "${FIREBASE_TOKEN:-}" || { echo 'BLOCKED: Firebase read-only config credentials not connected'; exit 42; }
           node scripts/prepare-staging-v2-auth.mjs
           node scripts/prepare-staging-android-app.mjs
       - name: Export masked Firebase client bundle environment
@@ -271,6 +276,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "PASS code and Android Firebase connected compile, NO publish, NO staging mutation, NO physical R6"
       - name: Read back off-Play App Check policy for physical QA, no Firebase writes
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          TUTOP_FIREBASE_OAUTH_CLIENT_ID: ${{ secrets.FIREBASE_OAUTH_CLIENT_ID }}
+          TUTOP_FIREBASE_OAUTH_CLIENT_SECRET: ${{ secrets.FIREBASE_OAUTH_CLIENT_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
