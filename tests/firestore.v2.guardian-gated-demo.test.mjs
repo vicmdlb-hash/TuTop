@@ -126,6 +126,18 @@ test('teen requires a current, capability-specific trusted guardian grant for ch
   await assertSucceeds(createChat(verifiedContext(env, 'buyer').firestore()));
 });
 
+test('teen age alone is insufficient to create an offer', async () => {
+  await seed('teen_13_17');
+  await seedChat({ vetted: true });
+  await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
+test('teen with current guardian make_offer grant can submit an offer', async () => {
+  await seed('teen_13_17', 'adult', grant(['make_offer']));
+  await seedChat({ vetted: true });
+  await assertSucceeds(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
 test('under-13 child cannot independently open direct chat even with signed guardian grant', async () => {
   await seed('under_13', 'adult', grant(['direct_chat']));
   await assertFails(createChat(verifiedContext(env, 'buyer').firestore()));
