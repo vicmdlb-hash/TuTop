@@ -31,6 +31,7 @@ export const NATIVE_NOTIFICATION_EVENT = 'tutop:native-notification';
 
 let initialization: Promise<void> | null = null;
 let listenersInstalled = false;
+let listenerInstallation: Promise<void> | null = null;
 let ownershipRetryInstalled = false;
 // A logout or native disable immediately invalidates all earlier registration work.
 let pushRegistrationEpoch = 0;
@@ -133,20 +134,35 @@ export async function nativePushPermission(): Promise<PushPermission> {
 
 async function installMessagingListeners(messaging: CapacitorPlugin) {
   if (listenersInstalled || !messaging.addListener) return;
-  listenersInstalled = true;
-  await messaging.addListener('tokenReceived', async (_event: { token?: string }) => {
-    // Never bind the event's potentially delayed token to a new account.
-    // Re-read the native token behind a live Auth, permission and owner fence.
-    const witness = currentPushSessionWitness();
-    if (!witness) return;
-    await syncGrantedPushTokenHealth(witness).catch(() => undefined);
-  });
-  await messaging.addListener('notificationReceived', async (event: unknown) => {
-    emitNotificationIntent(intentFromEvent(event, 'received'));
-  });
-  await messaging.addListener('notificationActionPerformed', async (event: unknown) => {
-    emitNotificationIntent(intentFromEvent(event, 'action'));
-  });
+  // A partially registered listener set must not be treated as installed.
+  // Coalesce simultaneous starts, then remove partial handlers before retry.
+  if (listenerInstallation) return listenerInstallation;
+  const attempt = (async () => {
+    const handles: Array<{ remove?: () => Promise<void> }> = [];
+    try {
+      handles.push(await messaging.addListener('tokenReceived', async (_event: { token?: string }) => {
+        // Never bind the event's potentially delayed token to a new account.
+        // Re-read the native token behind a live Auth, permission and owner fence.
+        const witness = currentPushSessionWitness();
+        if (!witness) return;
+        await syncGrantedPushTokenHealth(witness).catch(() => undefined);
+      }));
+      handles.push(await messaging.addListener('notificationReceived', async (event: unknown) => {
+        emitNotificationIntent(intentFromEvent(event, 'received'));
+      }));
+      handles.push(await messaging.addListener('notificationActionPerformed', async (event: unknown) => {
+        emitNotificationIntent(intentFromEvent(event, 'action'));
+      }));
+      listenersInstalled = true;
+    } catch (error) {
+      // Capacitor addListener returns a removable handle. Leave no duplicate
+      // partially installed callbacks when one of the later listeners fails.
+      await Promise.allSettled(handles.map(async (handle) => handle?.remove?.()));
+      throw error;
+    }
+  })();
+  listenerInstallation = attempt;
+  try { await attempt; } finally { listenerInstallation = null; }
 }
 
 function classifyPushFailure(error: unknown): PushRegistrationReason {
@@ -207,7 +223,7 @@ export async function initializeNativeFirebaseSecurity() {
   if (!isNativeFirebaseRuntime()) return;
   installPushOwnershipRetryListener();
   if (initialization) return initialization;
-  initialization = (async () => {
+  const pending = (async () => {
     await initializeNativeAppCheck();
     const messaging = capacitorPlugin('FirebaseMessaging');
     // Capacitor can expose Messaging after the first native startup probe.
@@ -230,7 +246,11 @@ export async function initializeNativeFirebaseSecurity() {
     }
     await syncGrantedPushToken().catch(() => false);
   })();
-  return initialization;
+  initialization = pending;
+  // A transient native plugin failure must not poison all future retries.
+  // Do not clear a newer initialization started after sign-out.
+  void pending.catch(() => { if (initialization === pending) initialization = null; });
+  return pending;
 }
 
 export async function nativePushRegistrationHealth() {
