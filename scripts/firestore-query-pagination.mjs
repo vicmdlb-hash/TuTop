@@ -118,3 +118,46 @@ export async function collectTokenPages(fetchPage, { pageSize = 300, maxPages = 
   }
   throw new Error('LIST_PAGE_LIMIT_EXCEEDED');
 }
+
+/**
+ * Pure Firebase Authentication list-users pagination for GET accounts:batchGet.
+ * Fail closed on malformed pages, duplicate UIDs and pagination-token cycles;
+ * never log complete user data or infer that an invalid response means empty.
+ */
+export async function collectAuthAccountPages(fetchPage, { pageSize = 500, maxPages = 10000 } = {}) {
+  if (typeof fetchPage !== 'function') throw new Error('AUTH_FETCH_REQUIRED');
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 1000
+      || !Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 10000)
+    throw new Error('AUTH_PAGE_OPTIONS_INVALID');
+  const seenIds = new Set();
+  const seenTokens = new Set();
+  const result = [];
+  let pageToken = '';
+  for (let page = 0; page < maxPages; page += 1) {
+    const raw = await fetchPage({ pageToken, pageSize });
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)
+        || Object.prototype.hasOwnProperty.call(raw, 'error'))
+      throw new Error('AUTH_PAGE_INVALID');
+    const users = raw.users === undefined ? [] : raw.users;
+    if (!Array.isArray(users) || users.length > pageSize)
+      throw new Error('AUTH_USERS_INVALID');
+    for (const user of users) {
+      if (!user || typeof user !== 'object' || Array.isArray(user)
+          || typeof user.localId !== 'string' || user.localId.length < 1
+          || user.localId.length > 128 || user.localId.trim() !== user.localId
+          || (user.email !== undefined && typeof user.email !== 'string'))
+        throw new Error('AUTH_USER_INVALID');
+      if (seenIds.has(user.localId)) throw new Error('AUTH_USER_DUPLICATE');
+      seenIds.add(user.localId);
+      result.push({ localId: user.localId, email: user.email || '' });
+    }
+    const next = raw.nextPageToken === undefined ? '' : raw.nextPageToken;
+    if (typeof next !== 'string') throw new Error('AUTH_TOKEN_INVALID');
+    if (!next) return result;
+    if (next === pageToken || seenTokens.has(next))
+      throw new Error('AUTH_TOKEN_CYCLE');
+    seenTokens.add(next);
+    pageToken = next;
+  }
+  throw new Error('AUTH_PAGE_LIMIT_EXCEEDED');
+}
