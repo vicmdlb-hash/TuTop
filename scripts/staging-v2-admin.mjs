@@ -1,6 +1,6 @@
 import { assertAuthBatchDeleteResponse, assertAuthAccountAbsent } from './auth-batch-delete-proof.mjs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { collectCursorPages, collectTokenPages } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows } from './firestore-query-pagination.mjs';
 import { buildAccountErasureFinalCommit } from './account-erasure-atomic-commit.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
@@ -28,11 +28,7 @@ async function request(url, options = {}, allow = []) {
 }
 
 function queryRows(rows) {
-  return (Array.isArray(rows) ? rows : []).map((row) => row?.document).filter(Boolean).map((document) => ({
-    name: String(document.name || ''),
-    path: String(document.name || '').split('/documents/')[1] || '',
-    fields: document.fields || {},
-  }));
+  return parseFirestoreRunQueryRows(rows);
 }
 
 export async function adminGetDocument(path) {
