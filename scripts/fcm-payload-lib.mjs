@@ -1,5 +1,6 @@
 export function fcmDataForNotification(item = {}) {
-  const notificationId = String(item.id || '').trim();
+  if (typeof item?.id !== 'string') throw new Error('FCM_NOTIFICATION_ID_INVALID');
+  const notificationId = item.id.trim();
   if (!notificationId) throw new Error('FCM_NOTIFICATION_ID_REQUIRED');
 
   return Object.fromEntries(
