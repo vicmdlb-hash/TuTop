@@ -149,7 +149,7 @@ guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} 
   '(canReadCommercePrivate() || guardianPairReady(resource.data))', 'chat read');
 guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
   'allow create: if signedIn() && notSuspended()',
-  'guardianAdultOrTeen(request.auth.uid) && guardianAdultOrTeen(request.resource.data.seller_id)',
+  'guardianAdultOrTeen(request.auth.uid, 'direct_chat') && guardianAdultOrTeen(request.resource.data.seller_id, 'direct_chat')',
   'chat create');
 guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
   'allow update: if participant(chatId) && notSuspended()',
@@ -179,19 +179,19 @@ guardSection('      match /reads/{uid} {', '    match /listings_v2/{listingId} {
 
 guardSection('    match /offers/{offerId} {', '    match /transactions_v2/{transactionId} {',
   'allow create: if signedIn() && notSuspended()',
-  'guardianAdultOrTeen(request.resource.data.buyer_id) && guardianAdultOrTeen(request.resource.data.seller_id)',
+  'guardianAdultOrTeen(request.resource.data.buyer_id, 'make_offer') && guardianAdultOrTeen(request.resource.data.seller_id, 'make_offer')',
   'offer create');
 guardSection('    match /offers/{offerId} {', '    match /transactions_v2/{transactionId} {',
   'allow update: if signedIn() && notSuspended()',
-  'guardianAdultOrTeen(resource.data.buyer_id) && guardianAdultOrTeen(resource.data.seller_id)',
+  'guardianAdultOrTeen(resource.data.buyer_id, 'make_offer') && guardianAdultOrTeen(resource.data.seller_id, 'make_offer')',
   'offer update');
 guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_requests/{requestId} {',
   'allow create: if signedIn() && notSuspended()',
-  'guardianAdultOrTeen(request.resource.data.buyer_id) && guardianAdultOrTeen(request.resource.data.seller_id)',
+  'guardianAdultOrTeen(request.resource.data.buyer_id, 'make_offer') && guardianAdultOrTeen(request.resource.data.seller_id, 'make_offer')',
   'transaction create');
 guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_requests/{requestId} {',
   'allow update: if signedIn() && notSuspended()',
-  'guardianAdultOrTeen(resource.data.buyer_id) && guardianAdultOrTeen(resource.data.seller_id)',
+  'guardianAdultOrTeen(resource.data.buyer_id, 'make_offer') && guardianAdultOrTeen(resource.data.seller_id, 'make_offer')',
   'transaction update');
 
 // Minimal DEMO-ONLY diagnostic isolates proof verification from marketplace
@@ -199,7 +199,7 @@ guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_
 const catchAll = '    match /{document=**} { allow read, write: if false; }';
 exactlyOne(rules, catchAll, 'catchall');
 rules = rules.replace(catchAll, `    match /guardian_demo_probe/{uid} {
-      allow create: if owner(uid) && guardianAdultOrTeen(uid);
+      allow create: if owner(uid) && guardianAdultOrTeen(uid, 'direct_chat');
       allow read, update, delete: if false;
     }
 ` + catchAll);
