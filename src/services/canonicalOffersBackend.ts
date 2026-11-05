@@ -1,6 +1,6 @@
 import { OfferIdempotencyWindow, isAlreadyCommittedOfferError, isUncertainOfferWriteError } from '../lib/offerIdempotency';
 import { assertFreshOfferExpiry } from '../lib/transactionRetry';
-import { assertFirebaseRequestSessionCurrent } from '../lib/firebaseSharedSessionGuard';
+import { assertFirebaseRequestSessionCurrent, sameFirebaseSession, type FirebaseSessionIdentity } from '../lib/firebaseSharedSessionGuard';
 import type { Offer, OfferStatus } from '../types';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
@@ -10,8 +10,8 @@ import { getFirebaseConfig } from './runtimeConfig';
 const operations = new OfferIdempotencyWindow();
 const DEFAULT_OFFER_TTL_MS = 24 * 60 * 60_000;
 const OFFER_LIST_CACHE_TTL_MS = 30_000;
-const offerListCache = new Map<string, { offers: Offer[]; expiresAt: number }>();
-const offerListInflight = new Map<string, Promise<Offer[]>>();
+const offerListCache = new Map<string, { offers: Offer[]; expiresAt: number; session: FirebaseSessionIdentity }>();
+const offerListInflight = new Map<string, { promise: Promise<Offer[]>; session: FirebaseSessionIdentity }>();
 
 function nowIso() { return new Date().toISOString(); }
 function defaultOfferExpiry() { return new Date(Date.now() + DEFAULT_OFFER_TTL_MS).toISOString(); }
@@ -146,32 +146,33 @@ export const canonicalOffersBackend = {
       requestSession, client.currentSession, new FirebaseRestClient(getFirebaseConfig()).currentSession,
     );
     const cached = offerListCache.get(key);
-    if (!force && cached && cached.expiresAt > Date.now()) {
+    if (!force && cached && cached.expiresAt > Date.now()
+      && sameFirebaseSession(cached.session, requestSession)) {
       assertCurrent();
       return cached.offers.map((offer) => ({ ...offer }));
     }
     const inflight = offerListInflight.get(key);
-    if (!force && inflight) {
+    if (!force && inflight && sameFirebaseSession(inflight.session, requestSession)) {
       assertCurrent();
-      return inflight;
+      return inflight.promise;
     }
 
     const request = client.runQuery<any>('offers', [{ field: 'chat_id', op: 'EQUAL', value: cleanChatId }], [{ field: 'created_at', direction: 'DESCENDING' }], 30)
       .then((docs) => {
         assertCurrent();
-        if (offerListInflight.get(key) !== request) throw new Error('STALE_OFFER_READ');
+        if (offerListInflight.get(key)?.promise !== request) throw new Error('STALE_OFFER_READ');
         return docs.map((doc) => ({ id: doc.id, ...doc.data } as Offer));
       })
       .then((offers) => {
         assertCurrent();
-        if (offerListInflight.get(key) !== request) throw new Error('STALE_OFFER_READ');
-        offerListCache.set(key, { offers, expiresAt: Date.now() + OFFER_LIST_CACHE_TTL_MS });
+        if (offerListInflight.get(key)?.promise !== request) throw new Error('STALE_OFFER_READ');
+        offerListCache.set(key, { offers, expiresAt: Date.now() + OFFER_LIST_CACHE_TTL_MS, session: requestSession! });
         return offers.map((offer) => ({ ...offer }));
       })
       .finally(() => {
-        if (offerListInflight.get(key) === request) offerListInflight.delete(key);
+        if (offerListInflight.get(key)?.promise === request) offerListInflight.delete(key);
       });
-    offerListInflight.set(key, request);
+    offerListInflight.set(key, { promise: request, session: requestSession! });
     return request;
   },
 

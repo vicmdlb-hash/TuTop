@@ -74,6 +74,7 @@ const commonSteps = [
   [process.execPath, ['scripts/review-strike-cutover-readiness-tests.mjs']],
   [process.execPath, ['scripts/review-strike-emulator-gate-contract-tests.mjs']],
   [process.execPath, ['scripts/chat-lazy-history-contract-tests.mjs']],
+  [process.execPath, ['scripts/canonical-offers-auth-epoch-tests.mjs']],
   [process.execPath, ['scripts/v2-lean-chat-snapshot-tests.mjs']],
   [process.execPath, ['scripts/unread-aggregation-migration-tests.mjs']],
   [process.execPath, ['scripts/unread-emulator-gate-contract-tests.mjs']],
