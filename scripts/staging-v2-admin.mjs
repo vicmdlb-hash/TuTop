@@ -1,6 +1,6 @@
 import { assertAuthBatchDeleteResponse, assertAuthAccountAbsent } from './auth-batch-delete-proof.mjs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse } from './firestore-query-pagination.mjs';
 import { buildAccountErasureFinalCommit } from './account-erasure-atomic-commit.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
@@ -22,9 +22,19 @@ function value(input) {
 async function request(url, options = {}, allow = []) {
   const response = await fetch(url, { ...options, headers: { ...headers, ...(options.headers || {}) } });
   const text = await response.text();
-  if (!response.ok && !allow.includes(response.status)) throw new Error(`${response.status}: ${text.slice(0, 800)}`);
-  if (!text) return null;
-  try { return JSON.parse(text); } catch { return text; }
+  if (!response.ok) {
+    if (allow.includes(response.status)) return null;
+    throw new Error('FIREBASE_ADMIN_HTTP_' + response.status);
+  }
+  if (!text) {
+    if ((options.method || 'GET').toUpperCase() === 'GET') throw new Error('FIREBASE_ADMIN_EMPTY_GET_RESPONSE');
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed === null) throw new Error('FIREBASE_ADMIN_NULL_RESPONSE');
+    return parsed;
+  } catch { throw new Error('FIREBASE_ADMIN_INVALID_RESPONSE'); }
 }
 
 function queryRows(rows) {
@@ -33,8 +43,8 @@ function queryRows(rows) {
 
 export async function adminGetDocument(path) {
   const result = await request(`${firestoreBase}/${path}`, { method: 'GET' }, [404]);
-  if (!result || typeof result !== 'object' || !result.name) return null;
-  return result;
+  if (result === null) return null;
+  return assertAdminDocumentResponse(result, `projects/${projectId}/databases/(default)/documents/${path}`);
 }
 
 export async function adminPatchDocument(path, fields) {
