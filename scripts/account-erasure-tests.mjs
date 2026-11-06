@@ -4,6 +4,13 @@ import assert from 'node:assert/strict';
 const processor = fs.readFileSync('scripts/process-account-erasure.mjs', 'utf8');
 const planner = fs.readFileSync('scripts/account-erasure-planner.mjs', 'utf8');
 const liveSmoke = fs.readFileSync('scripts/staging-account-erasure-smoke.mjs', 'utf8');
+// Keep the processor and real staging smoke on the same completion contract.
+// This is a source-only assertion: never run destructive staging smoke in npm check.
+const processorNote = processor.match(/processing_note:\s*'([^']+)'/)?.[1];
+const smokeNote = liveSmoke.match(/assert\.equal\(fieldString\(request,\s*'processing_note'\),\s*'([^']+)'\)/)?.[1];
+assert(processorNote && smokeNote, 'erasure completion note contract must exist on both sides');
+assert.equal(smokeNote, processorNote, 'smoke must expect the processor completion note');
+
 const smokeWorkflow = fs.readFileSync('.github/workflows/staging-v2-smoke.yml', 'utf8');
 const policy = fs.readFileSync('src/lib/accountErasurePolicy.ts', 'utf8');
 
