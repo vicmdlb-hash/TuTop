@@ -229,7 +229,7 @@ try {
 
   const request = await mustExist(`account_deletion_requests/${uid}`);
   assert.equal(fieldString(request, 'status'), 'completed');
-  assert.equal(fieldString(request, 'processing_note'), 'staging-controlled-erasure-v1');
+  assert.equal(fieldString(request, 'processing_note'), 'staging-controlled-erasure-v2');
   assert.equal(fieldString(request, 'residual_manifest_version'), 'staging-erasure-residual-v2');
   assert(fieldInteger(request, 'retained_count') >= 6, 'el manifiesto no contó los residuos chat anidados');
   const audits = await adminRunQuery('audit_log', [{ field: 'target_id', value: uid }], 100);
