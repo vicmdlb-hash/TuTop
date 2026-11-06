@@ -12,6 +12,11 @@ if (!/^[A-Za-z0-9_-]{8,128}$/.test(uid)) throw new Error('ACCOUNT_ERASURE_INVALI
 if (apply && process.env.TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed') throw new Error('Apply bloqueado: requiere TUTOP_ALLOW_ACCOUNT_ERASURE=staging-reviewed.');
 const processorRunId = String(process.env.TUTOP_ERASURE_RUN_ID || process.env.GITHUB_RUN_ID || '').trim();
 if (apply && !/^[A-Za-z0-9_-]{1,128}$/.test(processorRunId)) throw new Error('ACCOUNT_ERASURE_RUN_ID_INVALID_BEFORE_ADMIN_READ');
+// Fail closed: a transaction inventory alone cannot prove that no new offers or
+// transactions will start during deletion. Block ALL apply before admin reads/writes
+// until the backend implements an atomic, shared admission freeze for both parties.
+// An env flag or source-only test is NOT proof of the required server-side gate.
+if (apply) throw new Error('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED');
 
 function fieldString(document, field) {
   return String(document?.fields?.[field]?.stringValue || '');

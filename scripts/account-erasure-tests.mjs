@@ -56,7 +56,10 @@ assert.match(processor, /ACCOUNT_ERASURE_BLOCKED/);
 assert.match(processor, /terminalStatuses = new Set\(\['completed', 'cancelled', 'expired', 'no_show'\]\)/);
 assert.match(planner, /mode: apply \? 'apply' : 'dry-run'/);
 assert.match(planner, /blocked: normalizedBlockers\.length > 0/);
-assert.match(planner, /safe_to_execute_in_staging: !plan\.blocked/);
+assert.match(planner, /safe_to_execute_in_staging: false/);
+assert.match(planner, /admission_freeze_verified: false/);
+assert.match(processor, /ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED/);
+assert(processor.indexOf('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED') < processor.indexOf('const request = await adminGetDocument'), 'apply gate must fail before admin reads');
 assert.match(planner, /auth_delete_last: true/);
 // CI/staging logs must never reveal full UID, Firestore document paths,
 // chat identifiers or transaction IDs from a real erasure plan.

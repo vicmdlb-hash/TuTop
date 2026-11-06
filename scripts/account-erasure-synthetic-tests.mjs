@@ -13,7 +13,8 @@ assert.equal(clean.auth_delete_last, true);
 assert.equal(clean.blocked, false);
 assert.deepEqual(clean.delete_paths, [`user_private/${uid}`, `users/${uid}`, `wallets/${uid}`].sort());
 assert.equal(residualRiskSummary(clean).requires_retention_review, false);
-assert.equal(residualRiskSummary(clean).safe_to_execute_in_staging, true);
+assert.equal(residualRiskSummary(clean).safe_to_execute_in_staging, false);
+assert.equal(residualRiskSummary(clean).admission_freeze_verified, false);
 
 const marketplace = buildAccountErasurePlan({
   projectId, uid, status: 'processing',

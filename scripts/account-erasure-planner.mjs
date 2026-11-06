@@ -95,6 +95,9 @@ export function residualRiskSummary(plan) {
     retained_count: plan.retained_count,
     blocker_count: plan.blockers?.length || 0,
     requires_retention_review: plan.retained_count > 0,
-    safe_to_execute_in_staging: !plan.blocked && (plan.request_status === 'pending' || plan.request_status === 'processing'),
+    // A clean inventory snapshot does not atomically prevent new marketplace operations.
+    // Until a trusted admission freeze is enforced, dry-run safety cannot authorize apply.
+    admission_freeze_verified: false,
+    safe_to_execute_in_staging: false,
   };
 }
