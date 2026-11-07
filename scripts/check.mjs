@@ -6,6 +6,7 @@ const commonSteps = [
   [process.execPath, ['scripts/verified-email-runtime-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/account-recovery-tests.mjs']],
   [process.execPath, ['scripts/post120-admin-account-status-contract-tests.mjs']],
+  [process.execPath, ['scripts/post120-device-health-panel-tests.mjs']],
   [process.execPath, ['scripts/native-runtime-recovery-tests.mjs']],
   [process.execPath, ['scripts/preflight.mjs']],
   [process.execPath, ['scripts/syntax-check.mjs']],
