@@ -80,10 +80,17 @@ export const pushBackend = {
     const tokenHash = await sha256(token.trim());
     assertOwner();
     const id = `${uid}-${platform}-${tokenHash.slice(0, 20)}`;
-    const existing = await client.getDocument(`device_tokens/${id}`);
+    // A missing or unreadable token cannot be distinguished safely by a
+    // pre-GET under owner-only Rules: update only an existing owner record.
+    // Any 404/403/failed precondition propagates to the sign-out quarantine;
+    // never report server deactivation without an acknowledged write.
     assertOwner();
-    if (!existing) return;
-    await client.setDocument(`device_tokens/${id}`, { active: false, updated_at: new Date().toISOString() }, { merge: true });
+    await client.setDocument(
+      `device_tokens/${id}`,
+      { active: false, updated_at: new Date().toISOString() },
+      { merge: true, exists: true },
+    );
+    assertOwner();
   },
 
   async loadTrustedNotifications(limit = 80): Promise<AppNotification[]> {

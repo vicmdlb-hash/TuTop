@@ -21,7 +21,16 @@ assert(notificationRead.indexOf('assertOwner(); // Reject A') > notificationRead
 const receiptWrite=backendSource.slice(backendSource.indexOf('async markNotificationRead('),backendSource.indexOf('async markAllNotificationsRead('));
 assert(receiptWrite.includes('assertOwner();\n    const payload'));
 const unregister=backendSource.slice(backendSource.indexOf('async unregisterDeviceToken('),backendSource.indexOf('async loadTrustedNotifications('));
-assert(unregister.includes('assertOwner();\n    if (!existing) return;'));
+assert(!unregister.includes('getDocument(`device_tokens/${id}`)'),
+  'logout must not pre-GET a missing token under strict owner-only Rules');
+assert(unregister.includes('{ merge: true, exists: true }'),
+  'logout must use an exists-only update so it cannot create a token document');
+assert(unregister.includes('await client.setDocument('),
+  'logout requires an acknowledged server write before reporting success');
+assert(unregister.includes('    assertOwner();\n  },'),
+  'logout must recheck owner after the server write');
+assert(!unregister.includes('catch'),
+  'logout must not silently treat denied or missing writes as server deactivation');
 const token = 'fcm-token-shared-abcdefghijklmnopqrstuvwxyz';
 
 assert.deepEqual(
