@@ -69,8 +69,17 @@ export function buildAccountErasurePlan({ projectId, uid, status, apply = false,
       return { code: item.code, collection: item.collection, id: item.id,
         status: String(item.status || 'unknown') };
     })
-    .filter((item, index, items) => items.findIndex((other) => `${other.code}:${other.collection}:${other.id}` === `${item.code}:${item.collection}:${item.id}`) === index)
+    .filter((item, index, items) => items.findIndex((other) => JSON.stringify([other.code, other.collection, other.id])
+      === JSON.stringify([item.code, item.collection, item.id])) === index)
     .sort((a, b) => `${a.collection}:${a.id}`.localeCompare(`${b.collection}:${b.id}`));
+
+  // Individual counts can be safe integers even when their total is not.
+  // Never report an imprecise residual inventory as proof of erasure.
+  const retainedCount = normalizedRetained.reduce((sum, item) => {
+    const total = sum + item.count;
+    if (!Number.isSafeInteger(total)) throw new Error('ERASURE_RETAINED_TOTAL_INVALID');
+    return total;
+  }, 0);
 
   return {
     project_id: projectId,
@@ -81,7 +90,7 @@ export function buildAccountErasurePlan({ projectId, uid, status, apply = false,
     withdraw_paths: normalizedWithdrawals.map((item) => item.path),
     withdrawals: normalizedWithdrawals,
     retained_operational: normalizedRetained,
-    retained_count: normalizedRetained.reduce((sum, item) => sum + item.count, 0),
+    retained_count: retainedCount,
     blockers: normalizedBlockers,
     blocked: normalizedBlockers.length > 0,
     auth_delete_last: true,

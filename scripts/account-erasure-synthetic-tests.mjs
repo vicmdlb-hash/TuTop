@@ -113,6 +113,29 @@ assert.equal(buildAccountErasurePlan({
   retained: [{ collection: 'chats', field: 'buyer_id', count: 0 }],
 }).retained_count, 0);
 
+// Blocker identities are tuples, never colon-joined strings: a caller can
+// otherwise collide two distinct reasons and under-report residual risk.
+const collision = buildAccountErasurePlan({
+  projectId, uid, status: 'pending',
+  blockers: [
+    { code: 'active:marketplace', collection: 'transactions_v2', id: 'tx-3', status: 'reserved' },
+    { code: 'active', collection: 'marketplace:transactions_v2', id: 'tx-3', status: 'disputed' },
+    { code: 'active:marketplace', collection: 'transactions_v2', id: 'tx-3', status: 'reserved' },
+  ],
+});
+assert.equal(collision.blockers.length, 2, 'distinct blocker tuples must survive delimiter collision');
+assert.equal(residualRiskSummary(collision).blocker_count, 2);
+assert.equal(collision.blocked, true);
+
+// Safe individual integers do not imply a safe sum: overflow must fail closed.
+assert.throws(() => buildAccountErasurePlan({
+  projectId, uid, status: 'pending',
+  retained: [
+    { collection: 'transactions_v2', field: 'buyer_id', count: Number.MAX_SAFE_INTEGER },
+    { collection: 'chats', field: 'buyer_id', count: 1 },
+  ],
+}), /ERASURE_RETAINED_TOTAL_INVALID/);
+
 console.log('PASS clean account dry-run plan');
 console.log('PASS marketplace account dedupe/withdraw/retain plan');
 console.log('PASS active marketplace transactions block destructive erasure');
