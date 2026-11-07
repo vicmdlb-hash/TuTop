@@ -161,6 +161,13 @@ export async function requestApproxLocation(options: { timeoutMs?: number; maxim
     });
     location = position ? toApproxLocation(position.latitude, position.longitude, 'device') : null;
   } else {
+    // A browser getCurrentPosition call can prompt for geolocation.
+    // Passive reads are allowed only when permission is already granted;
+    // unsupported, denied and prompt states all fail closed.
+    if (options.requestPermission === false) {
+      const permission = await nearbyLocationPermission();
+      if (permission !== 'granted') return null;
+    }
     location = await requestBrowserLocation(options);
   }
   // Explicit account check rejects A->B without logout; epoch rejects any

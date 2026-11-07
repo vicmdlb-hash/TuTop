@@ -24,6 +24,8 @@ const pendingPositions = [];
 const navigator = { geolocation:{
   getCurrentPosition(success) { pendingPositions.push(success); }
 }};
+let permissionState = 'prompt';
+navigator.permissions = { query: async () => ({ state: permissionState }) };
 const module = {exports:{}};
 vm.runInNewContext(js,{
   module,exports:module.exports,require(name){
@@ -208,6 +210,27 @@ assert.equal(events.length,beforeStaleEvents,'invalid or stale direct saves must
 lib.saveApproxLocation({ ...loc, source:'unapproved' },A);
 assert.equal(JSON.parse(backing.get(key)).source,'device','unknown source should not survive');
 lib.clearApproxLocation(A);
+
+// Passive location callers must never trigger a browser permission dialog.
+const passiveCount = pendingPositions.length;
+permissionState = 'prompt';
+assert.equal(await lib.requestApproxLocation({
+  ownerUid: B, requestPermission: false, isOwnerActive: () => currentUid === B,
+}), null, 'prompt state must not request passive browser location');
+permissionState = 'denied';
+assert.equal(await lib.requestApproxLocation({
+  ownerUid: B, requestPermission: false, isOwnerActive: () => currentUid === B,
+}), null, 'denied state must not request passive browser location');
+assert.equal(pendingPositions.length, passiveCount, 'passive requests must not call geolocation API');
+permissionState = 'granted';
+const existingGrant = lib.requestApproxLocation({
+  ownerUid: B, requestPermission: false, isOwnerActive: () => currentUid === B,
+});
+await Promise.resolve();
+assert.equal(pendingPositions.length, passiveCount + 1, 'existing grant may support passive location');
+pendingPositions.at(-1)({ coords: { latitude: 19.314, longitude: -98.251 } });
+assert.equal((await existingGrant)?.latitude, 19.31);
+lib.clearApproxLocation(B);
 
 // Full consumer contracts prevent cross-account UI dispatch and stale async hydration.
 for(const path of ['src/components/ProductCard.tsx','src/components/ExploreScreen.tsx']){
