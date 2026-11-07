@@ -1,4 +1,4 @@
-import { buildAccountErasurePlan, residualRiskSummary } from './account-erasure-planner.mjs';
+import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const REQUIRED = 'tutop-beta-vicmdlb-1356585881';
@@ -95,11 +95,15 @@ for (const [collection, field] of withdrawals) {
 
 const retained = [];
 const retainedChatPaths = new Set();
+const reservationLocks = new Map();
 for (const [collection, field] of retainedOperational) {
   const docs = await adminRunQueryAll(collection, [{ field, value: uid }], 500);
   if (docs.length) retained.push({ collection, field, count: docs.length });
   if (collection === 'chats') {
     for (const document of docs) retainedChatPaths.add(document.path);
+  }
+  if (collection === 'listing_reservation_locks') {
+    for (const document of docs) reservationLocks.set(document.path, document);
   }
 }
 
@@ -134,6 +138,9 @@ const blockers = [...transactionDocs.values()]
     status: fieldString(document, 'status') || 'unknown',
   }))
   .filter((item) => !terminalStatuses.has(item.status));
+// A leftover reservation lock still blocks an account erasure even if the
+// linked transaction has been marked terminal or the transaction query missed it.
+blockers.push(...reservationLockBlockers([...reservationLocks.values()], uid));
 
 const plan = buildAccountErasurePlan({ projectId, uid, status, apply, directDeletes, queryDeletePaths, withdrawDocs, retained, blockers });
 // A dry-run may inspect real UIDs, messages, paths, and transaction IDs.

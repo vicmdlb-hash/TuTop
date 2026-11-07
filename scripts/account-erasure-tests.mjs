@@ -53,6 +53,8 @@ assert.match(processor, /adminListDocuments\(`\$\{chatPath\}\/\$\{nested\}`, 500
 assert.match(processor, /residual_manifest_version: 'staging-erasure-residual-v2'/);
 assert.match(processor, /retained_count: plan\.retained_count/);
 assert.match(processor, /active_marketplace_transaction/);
+assert.match(processor, /reservationLocks\.set\(document\.path, document\)/);
+assert.match(processor, /blockers\.push\(\.\.\.reservationLockBlockers\(\[\.\.\.reservationLocks\.values\(\)\], uid\)\)/);
 assert.match(processor, /ACCOUNT_ERASURE_BLOCKED/);
 assert.match(processor, /terminalStatuses = new Set\(\['completed', 'cancelled', 'expired', 'no_show'\]\)/);
 assert.match(planner, /mode: apply \? 'apply' : 'dry-run'/);

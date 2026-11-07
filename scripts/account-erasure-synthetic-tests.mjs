@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildAccountErasurePlan, residualRiskSummary } from './account-erasure-planner.mjs';
+import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary } from './account-erasure-planner.mjs';
 
 const projectId = 'tutop-beta-vicmdlb-1356585881';
 const uid = 'synthetic-user-001';
@@ -15,6 +15,32 @@ assert.deepEqual(clean.delete_paths, [`user_private/${uid}`, `users/${uid}`, `wa
 assert.equal(residualRiskSummary(clean).requires_retention_review, false);
 assert.equal(residualRiskSummary(clean).safe_to_execute_in_staging, false);
 assert.equal(residualRiskSummary(clean).admission_freeze_verified, false);
+
+// Terminal transaction alone cannot prove safe deletion while a residual
+// lock remains: lock inventory is scoped, deduped, and fail-closed.
+const mkLock = (path, buyer = uid, seller = 'seller-002') => ({
+  path, fields: { buyer_id: { stringValue: buyer }, seller_id: { stringValue: seller } },
+});
+const locks = reservationLockBlockers([
+  mkLock('listing_reservation_locks/listing-1'),
+  mkLock('listing_reservation_locks/listing-1'),
+  mkLock('listing_reservation_locks/listing-2', 'buyer-002', uid),
+], uid);
+assert.deepEqual(locks.map(item => item.id), ['listing-1', 'listing-2']);
+assert(locks.every(item => item.code === 'marketplace_reservation_lock_present'));
+const stillLocked = buildAccountErasurePlan({
+  projectId, uid, status: 'pending', blockers: locks,
+});
+assert.equal(stillLocked.blocked, true, 'residual locks must block erasure');
+assert.equal(residualRiskSummary(stillLocked).blocker_count, 2);
+for (const malformed of [
+  mkLock('chats/other'), mkLock('listing_reservation_locks/../oops'),
+  mkLock('listing_reservation_locks/listing-1', 'other-1', 'other-2'),
+  { path: 'listing_reservation_locks/listing-1', fields: {} }, null,
+]) {
+  assert.throws(() => reservationLockBlockers([malformed], uid), /ERASURE_LOCK_/);
+}
+assert.throws(() => reservationLockBlockers(null, uid), /ERASURE_LOCK_INVENTORY_INVALID/);
 
 const marketplace = buildAccountErasurePlan({
   projectId, uid, status: 'processing',

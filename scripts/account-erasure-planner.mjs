@@ -107,6 +107,31 @@ export function buildAccountErasurePlan({ projectId, uid, status, apply = false,
   };
 }
 
+// Retained reservation locks are not disposable data, but their presence
+// prevents truthful completion: a transaction can appear terminal while a
+// stale lock still reserves the listing. This is an inventory-only blocker.
+export function reservationLockBlockers(lockDocs, uid) {
+  if (!Array.isArray(lockDocs) || typeof uid !== 'string'
+    || !/^[A-Za-z0-9_-]{8,128}$/.test(uid)) throw Error('ERASURE_LOCK_INVENTORY_INVALID');
+  const blockers = new Map();
+  for (const doc of lockDocs) {
+    const match = typeof doc?.path === 'string'
+      ? /^listing_reservation_locks\\/([A-Za-z0-9_-]{1,128})$/.exec(doc.path)
+      : null;
+    if (!match || match[1].startsWith('__')) throw Error('ERASURE_LOCK_PATH_INVALID');
+    const buyer = doc?.fields?.buyer_id?.stringValue;
+    const seller = doc?.fields?.seller_id?.stringValue;
+    if (buyer !== uid && seller !== uid) throw Error('ERASURE_LOCK_OWNER_MISMATCH');
+    blockers.set(doc.path, {
+      code: 'marketplace_reservation_lock_present',
+      collection: 'listing_reservation_locks',
+      id: match[1],
+      status: 'lock_present',
+    });
+  }
+  return [...blockers.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export function residualRiskSummary(plan) {
   return {
     delete_count: plan.delete_paths.length,
