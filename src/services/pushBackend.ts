@@ -1,5 +1,6 @@
 import { appNotificationKindFromOutbox } from '../lib/notificationProjection';
 import { isCurrentPushSession } from '../lib/pushBackendSessionWitness';
+import { createFirstPushTokenDocument } from '../lib/pushTokenCreateFirst';
 import type { AppNotification } from '../types';
 import { FirebaseRestClient, type AuthSession } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
@@ -55,19 +56,20 @@ export const pushBackend = {
     assertOwner();
     const id = `${uid}-${platform}-${tokenHash.slice(0, 20)}`;
     const now = new Date().toISOString();
-    const existing = await client.getDocument(`device_tokens/${id}`);
-    assertOwner();
     const payload = {
       owner_uid: uid,
       token: cleanToken,
       platform,
       app_version: appVersion.slice(0, 40),
       active: true,
-      ...(existing ? {} : { created_at: now }),
+      created_at: now,
       updated_at: now,
     };
-    if (existing) await client.setDocument(`device_tokens/${id}`, payload, { merge: true });
-    else await client.setDocument(`device_tokens/${id}`, payload, { exists: false });
+    await createFirstPushTokenDocument(
+      (record, options) => client.setDocument(`device_tokens/${id}`, record, options),
+      payload,
+      assertOwner,
+    );
     return id;
   },
 
