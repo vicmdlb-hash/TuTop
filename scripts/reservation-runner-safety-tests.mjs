@@ -96,10 +96,10 @@ for (const invalid of [
   Array.from({ length: 4 }, (_, n) => inventoryRow('X' + n)),
 ]) assert.throws(() => validateReconciliationInventoryPage(invalid, inventoryScope),
   /RECONCILE_INVENTORY_/);
-await assert.rejects(collectCursorPages(async () =>
-  validateReconciliationInventoryPage([rows12[0]], inventoryScope)
+await assert.rejects(collectCursorPages(async ({ pageSize }) =>
+  validateReconciliationInventoryPage([rows12[0]], { ...inventoryScope, limit: pageSize })
     .map(doc => ({ name: doc.name })),
-  { pageSize: 3, maxPages: 2 }), /QUERY_CURSOR_NOT_ADVANCING/);
+  { pageSize: 1, maxPages: 2 }), /QUERY_CURSOR_NOT_ADVANCING/);
 assert.match(runner, /id: document.name.split/);
 assert.match(runner, /name: document.name/);
 console.log('PASS reservation inventory paginates all pages and rejects malformed cursors');
