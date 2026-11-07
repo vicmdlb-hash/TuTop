@@ -58,7 +58,7 @@ assert.match(planner, /mode: apply \? 'apply' : 'dry-run'/);
 assert.match(planner, /blocked: normalizedBlockers\.length > 0/);
 assert.match(planner, /safe_to_execute_in_staging: false/);
 assert.match(planner, /admission_freeze_verified: false/);
-assert.match(processor, /ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED/);
+assert.match(processor, /if\s*\(apply\)\s*throw new Error\('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED'\)/, 'apply must remain unconditionally blocked until a verified server-side admission freeze exists');
 assert(processor.indexOf('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED') < processor.indexOf('const request = await adminGetDocument'), 'apply gate must fail before admin reads');
 assert.match(planner, /auth_delete_last: true/);
 // CI/staging logs must never reveal full UID, Firestore document paths,
@@ -89,6 +89,7 @@ assert.match(liveSmoke, /fieldInteger\(request, 'retained_count'\)/);
 assert.match(liveSmoke, /signInWithEmailAndPassword/);
 assert.match(liveSmoke, /Real staging account erasure smoke: PASS/);
 assert.match(smokeWorkflow, /Real controlled account erasure smoke/);
+assert.match(smokeWorkflow, /if:\s*github\.ref_name == 'feat\/tutop-0\.9\.1-nearby-topi'/, 'legacy staging workflow must not be dispatchable from the integration branch');
 assert.match(smokeWorkflow, /TUTOP_ALLOW_ACCOUNT_ERASURE: staging-reviewed/);
 assert.match(smokeWorkflow, /node scripts\/staging-account-erasure-smoke\.mjs/);
 
@@ -99,5 +100,5 @@ console.log('PASS processor reports transaction locks plus nested chat residuals
 console.log('PASS processor defaults to dry-run and requires explicit staging apply gate');
 console.log('PASS Auth deletion occurs only after Firestore withdrawal/deletion');
 console.log('PASS transaction/lock/chat/report evidence is not blindly deleted');
-console.log('PASS real staging smoke exercises synthetic destructive erasure behind explicit gate');
+console.log('PASS source-only staging smoke contract exists; no staging smoke or destructive erasure executed');
 console.log('Account erasure safety contract: PASS');
