@@ -62,7 +62,7 @@ assert.match(planner, /admission_freeze_verified: false/);
 assert.match(processor, /if\s*\(apply\)\s*throw new Error\('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED'\)/, 'apply must remain unconditionally blocked until a verified server-side admission freeze exists');
 assert(processor.indexOf('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED') < processor.indexOf('const request = await adminGetDocument'), 'apply gate must fail before admin reads');
 
-assert.doesNotMatch(processor, /^import\\b[^\\n]*staging-v2-admin\\.mjs/m,
+assert(!processor.split('\n').some((line) => line.trimStart().startsWith('import ') && line.includes("'./staging-v2-admin.mjs'")),
   'static import would initialize Firebase admin credentials before the apply freeze');
 const adminImport = processor.indexOf("await import('./staging-v2-admin.mjs')");
 const admissionStop = processor.indexOf("if (apply) throw new Error('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED')");
@@ -122,7 +122,7 @@ assert(liveSmoke.indexOf(legacyStop) < liveSmoke.indexOf('fs.existsSync(configPa
 assert(liveSmoke.indexOf(legacyStop) < liveSmoke.indexOf('createUserWithEmailAndPassword(auth, email, password)'), 'legacy smoke must fail before Auth user creation');
 assert(liveSmoke.indexOf(legacyStop) < liveSmoke.indexOf('await cleanup()'), 'legacy destructive cleanup must be unreachable');
 
-assert.doesNotMatch(liveSmoke, /^import\\b[^\\n]*staging-v2-admin\\.mjs/m,
+assert(!liveSmoke.split('\n').some((line) => line.trimStart().startsWith('import ') && line.includes("'./staging-v2-admin.mjs'")),
   'static staging admin import would fetch a credential even when smoke is disabled');
 const smokeAdminImport = liveSmoke.indexOf("await import('./staging-v2-admin.mjs')");
 assert(smokeAdminImport > liveSmoke.indexOf(legacyStop) && smokeAdminImport < liveSmoke.indexOf('fs.existsSync(configPath)'),
