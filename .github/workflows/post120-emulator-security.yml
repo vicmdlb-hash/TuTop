@@ -95,6 +95,17 @@ jobs:
           --project demo-tutop-post120-rules
           "node --test --test-concurrency=1 tests/firestore.v2.guardian-gated-demo.test.mjs tests/firestore.v2.guardian-publication-demo.test.mjs"
 
+      - name: Prepare isolated account-erasure admission demo Rules (no staging/prod)
+        run: node scripts/prepare-firestore-erasure-admission-demo-rules.mjs
+
+      - name: Erasure admission freeze emulator challenge (synthetic; no admin apply)
+        run: >
+          npx --yes firebase-tools@15.29.0 emulators:exec
+          --only firestore,storage
+          --config firebase.erasure-admission-demo.json
+          --project demo-tutop-post120-rules
+          "node --test --test-concurrency=1 tests/firestore.v2.erasure-admission-demo.test.mjs"
+
       - name: Firestore + Storage emulator security suite
         run: >
           npx --yes firebase-tools@15.29.0 emulators:exec
