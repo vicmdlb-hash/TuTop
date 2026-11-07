@@ -48,6 +48,33 @@ assert.doesNotMatch(backend, /releaseCompletedLockBestEffort/);
 assert.match(lockRuleHardener, /completed queda reservado a cleanup trusted/);
 assert.doesNotMatch(lockRuleHardener, /data\.status == 'completed'.*allow delete/s);
 
+// Pure synthetic inventory tests: do NOT contact Firestore or use credentials.
+const { assertCompleteReconciliationPage } = await import('./reservation-reconcile-inventory-lib.mjs');
+const inventoryScope = { projectId: 'tutop-beta-vicmdlb-1356585881', collectionId: 'transactions_v2', limit: 3 };
+const inventoryRow = (id) => ({ document: {
+  name: `projects/${inventoryScope.projectId}/databases/(default)/documents/${inventoryScope.collectionId}/${id}`,
+  fields: {}, updateTime: '2026-11-07T00:00:00Z',
+} });
+assert.equal(assertCompleteReconciliationPage([inventoryRow('A'), inventoryRow('B')], inventoryScope).length, 2);
+assert.equal(assertCompleteReconciliationPage([{ readTime: '2026-11-07T00:00:00Z' }], inventoryScope).length, 0);
+for (const invalid of [
+  [inventoryRow('A'), inventoryRow('B'), inventoryRow('C')],
+  [inventoryRow('A'), inventoryRow('A')],
+  [{ document: { name: 'projects/other/databases/(default)/documents/transactions_v2/A' } }],
+  [{ document: { name: `projects/${inventoryScope.projectId}/databases/(default)/documents/listing_reservation_locks/A` } }],
+  [{ error: { code: 500 } }],
+  null,
+]) assert.throws(() => assertCompleteReconciliationPage(invalid, inventoryScope), /RECONCILE_INVENTORY_/);
+for (const invalidScope of [
+  { ...inventoryScope, collectionId: 'user_private' },
+  { ...inventoryScope, projectId: 'tutop-3a4f7' },
+  { ...inventoryScope, limit: 0 }, { ...inventoryScope, limit: 501 },
+  { ...inventoryScope, limit: Number.NaN },
+]) assert.throws(() => assertCompleteReconciliationPage([inventoryRow('A')], invalidScope), /RECONCILE_INVENTORY_/);
+assert.match(runner, /assertCompleteReconciliationPage\(response, \{ projectId, collectionId, limit: maxDocs \}\)/);
+assert.match(runner, /RECONCILE_LIMIT_INVALID/);
+console.log('PASS reconciliation inventory: incomplete/duplicate/untrusted pages refuse all writes');
+
 console.log('PASS reservation runner is dry-run by default');
 console.log('PASS apply mode requires explicit staging-v2 permission');
 console.log('PASS historical Firebase project is blocked');

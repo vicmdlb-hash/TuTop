@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { assertCompleteReconciliationPage } from './reservation-reconcile-inventory-lib.mjs';
 
 if (process.env.TUTOP_NODE_TS_STRIP !== '1') {
   const result = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
@@ -17,7 +18,8 @@ const apply = process.argv.includes('--apply');
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_V2_RECONCILE || '').trim();
 const historicalProject = 'tutop-3a4f7';
-const maxDocs = Math.max(1, Math.min(500, Number(process.env.TUTOP_V2_RECONCILE_LIMIT || 200)));
+const maxDocs = Number(process.env.TUTOP_V2_RECONCILE_LIMIT ?? '200');
+if (!Number.isSafeInteger(maxDocs) || maxDocs < 1 || maxDocs > 500) throw new Error('RECONCILE_LIMIT_INVALID');
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -102,10 +104,10 @@ async function runCollectionQuery(collectionId) {
     method: 'POST',
     body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], limit: maxDocs } }),
   });
-  return (response || []).filter((row) => row.document).map((row) => ({
-    id: row.document.name.split('/').pop(),
-    ...decodeFields(row.document.fields || {}),
-    __updateTime: row.document.updateTime || null,
+  return assertCompleteReconciliationPage(response, { projectId, collectionId, limit: maxDocs }).map((document) => ({
+    id: document.name.split('/').pop(),
+    ...decodeFields(document.fields || {}),
+    __updateTime: document.updateTime || null,
   }));
 }
 
