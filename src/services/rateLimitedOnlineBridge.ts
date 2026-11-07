@@ -12,7 +12,7 @@ function id(prefix: string) {
 }
 
 const messageIdempotency = new ChatMessageIdempotencyWindow();
-const inflightMessageOps = new Map<string, Promise<void>>();
+const inflightMessageOps = new Map<string, Promise<string>>();
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -95,17 +95,18 @@ if (nationalSchemaEnabled()) {
       if (imageUrl) messageData.image_url = imageUrl;
       const lastMessage = clean || '📷 Foto';
 
-      let task: Promise<void>;
+      let task: Promise<string>;
       task = commitWithRateLimit(firebase, 'message_create', [
         { update: firebase.encodeDocumentForWrite(`chats/${chatId}/messages/${operation.messageId}`, messageData), currentDocument: { exists: false } },
         patchWrite(firebase, `chats/${chatId}`, { updated_at: at, last_message: lastMessage.slice(0, 180), last_message_at: at }),
         patchWrite(firebase, `chats/${chatId}/reads/${uid}`, { user_id: uid, read_at: at }),
       ], at).then(() => {
         messageIdempotency.markSuccess(operation.key);
+        return operation.messageId;
       }).catch((error) => {
         if (isAlreadyCommitted(error)) {
           messageIdempotency.markSuccess(operation.key);
-          return;
+          return operation.messageId;
         }
         messageIdempotency.markUncertain(operation.key);
         throw error;

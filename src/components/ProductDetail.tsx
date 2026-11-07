@@ -6,6 +6,8 @@ import { ACCOUNT_LOCAL_KEYS, readAccountLocalList, writeAccountLocalList } from 
 import { parseListingDescription } from '../lib/listingDetails';
 import { normalizeCategory } from '../lib/productAssistant';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
+import { canViewerOpenListing } from '../lib/publicDiscovery';
+import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { firebaseMediaStorage, mediaStorageEnabled } from '../services/firebaseMediaStorage';
 import { onlineBackend } from '../services/onlineBackend';
 import { useAppStore } from '../store/useAppStore';
@@ -29,16 +31,23 @@ export default function ProductDetail() {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [topiOpen, setTopiOpen] = useState(false);
   const [sellerProfileOpen, setSellerProfileOpen] = useState(false);
-  const [videoObjectUrl, setVideoObjectUrl] = useState<string | null>(null);
+  const [videoBlob, setVideoBlob] = useState<{ ownerUid: string; sourceUri: string; url: string } | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   useEffect(() => { setPhotoIndex(0); setSellerProfileOpen(false); }, [selectedProductId]);
-  const product = selectedProductId ? products.find((item) => item.id === selectedProductId) : undefined;
+  const candidate = selectedProductId ? products.find((item) => item.id === selectedProductId) : undefined;
+  const product = candidate && canViewerOpenListing(candidate, user.id, nationalSchemaEnabled())
+    ? candidate : undefined;
   const videoUri = product ? (product as Product & { video_urls?: string[] }).video_urls?.[0] : undefined;
+  // A's already-loaded blob must not render for B, even before effect cleanup.
+  const videoObjectUrl = videoBlob?.ownerUid === user.id && videoBlob?.sourceUri === videoUri
+    ? videoBlob.url : null;
   const similar = useMemo(
     () => product
-      ? products.filter((item) => item.id !== product.id && item.estado === 'Activo' && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4)
+      ? products.filter((item) => item.id !== product.id && item.estado === 'Activo'
+        && canViewerOpenListing(item, user.id, nationalSchemaEnabled())
+        && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4)
       : [],
-    [products, product],
+    [products, product, user.id],
   );
 
   useEffect(() => {
@@ -55,7 +64,7 @@ export default function ProductDetail() {
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
-    setVideoObjectUrl(null);
+    setVideoBlob(null);
     setVideoError(null);
     if (!videoUri) return () => undefined;
     if (!mediaStorageEnabled()) {
@@ -66,7 +75,7 @@ export default function ProductDetail() {
       .then((url) => {
         if (cancelled) { URL.revokeObjectURL(url); return; }
         objectUrl = url;
-        setVideoObjectUrl(url);
+        setVideoBlob({ ownerUid: user.id, sourceUri: videoUri, url });
       })
       .catch((error) => {
         if (!cancelled) setVideoError(error instanceof Error ? error.message : 'No pudimos cargar el video.');
@@ -75,7 +84,7 @@ export default function ProductDetail() {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [videoUri]);
+  }, [videoUri, user.id]);
 
   if (!product) return null;
 
@@ -88,7 +97,8 @@ export default function ProductDetail() {
     ? product.moderation_status === 'pending' ? 'En revisión · aún no visible para otros'
       : product.moderation_status === 'rejected' ? 'Rechazada'
         : product.moderation_status === 'review' ? 'Revisión necesaria'
-          : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado
+          : product.moderation_status === 'flagged' ? 'Marcada para revisión · no visible para otros'
+            : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado
     : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado;
   const photos = product.imagenes_url?.length ? product.imagenes_url : [product.imagen_url];
   const activePhoto = photos[Math.min(photoIndex, photos.length - 1)] || product.imagen_url;

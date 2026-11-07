@@ -10,7 +10,14 @@ assert.match(backend, /if \(!input\.force && cached && cached\.expiresAt > Date\
 
 assert.match(hydrator, /const hydrate = async \(location: ApproxLocation, force = false\)/);
 assert.match(hydrator, /loadNearbyProducts\(\{ geoCells: cells, limitPerCell: 10, force \}\)/);
-assert.match(hydrator, /const onBaseHydrated = \(\) => hydrateCached\(true\)/);
+// Current owner-safe base refresh first drops stale Nearby-only records.
+const handlerStart = hydrator.indexOf('const onBaseHydrated = () => {');
+const handlerEnd = hydrator.indexOf('window.addEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT', handlerStart);
+assert(handlerStart >= 0 && handlerEnd > handlerStart, 'base hydration handler must exist');
+const handler = hydrator.slice(handlerStart, handlerEnd);
+assert.match(handler, /baseProductIds = new Set/);
+assert.match(handler, /nearbyInjectedIds\.clear\(\)/);
+assert.match(handler, /hydrateCached\(true\)/);
 
 assert.match(explore, /V2_LISTINGS_BASE_HYDRATED_EVENT/);
 assert.match(explore, /setNearbyProducts\(\[\]\)/);

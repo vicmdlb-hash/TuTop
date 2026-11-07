@@ -8,6 +8,8 @@ const checks = [
   ['src/services/onlineBackend.ts', 'acciones admin online'],
   ['firebase/firestore.rules', 'reglas de acceso admin'],
   ['firebase.json', 'Hosting/config Spark'],
+  ['scripts/first-admin-bootstrap-gate-lib.mjs', 'bootstrap de moderacion con roles y alcance'],
+  ['scripts/first-admin-bootstrap-gate-tests.mjs', 'pruebas fail-closed del primer admin'],
 ];
 
 let failures = 0;
@@ -44,4 +46,4 @@ if (failures) {
   console.error(`Admin doctor: ${failures} fallo(s).`);
   process.exit(1);
 }
-console.log('Admin doctor Spark: PASS. Pendiente externo: Firebase real + bootstrap admins/{uid}.active=true.');
+console.log('Admin doctor SOURCE: PASS (no prueba cuenta real). Pendiente: readback admin staging con active=true, role permitido e institution_id obligatorio para institution_moderator; seleccionar identidad legitima y verificar permisos antes del bootstrap.');

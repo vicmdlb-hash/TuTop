@@ -2,6 +2,7 @@ import { feedbackMessage } from '../lib/feedback';
 import { onlineBackend } from './onlineBackend';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { chatHistoryBackend } from './chatHistoryBackend';
+import { acknowledgeOptimisticChatMessage } from '../lib/chatOptimisticReconciliation';
 import { useAppStore } from '../store/useAppStore';
 
 function localId(prefix: string) {
@@ -19,8 +20,9 @@ if (nationalSchemaEnabled()) {
       const clean = text.trim();
       if (!clean) return;
       const state = useAppStore.getState();
+      const actorUid = state.user.id;
       const chat = state.chats.find((item) => item.id === chatId);
-      if (!chat) return;
+      if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)) return;
       const emisor = chat.comprador_id === state.user.id ? 'comprador' : 'vendedor';
       const message = {
         id: localId('msg-local'), sender_id: state.user.id, emisor,
@@ -30,10 +32,17 @@ if (nationalSchemaEnabled()) {
         chats: current.chats.map((item) => item.id === chatId ? { ...item, mensajes: [...item.mensajes, message], sin_leer: 0 } : item),
         syncError: null,
       }));
-      void onlineBackend.sendMessage(chatId, clean).then(() => {
+      void onlineBackend.sendMessage(chatId, clean).then((serverId) => {
+        if (useAppStore.getState().user.id !== actorUid) return;
         chatHistoryBackend.invalidate(chatId);
-        useAppStore.setState({ syncError: null });
+        useAppStore.setState((current) => current.user.id !== actorUid ? current : ({
+          chats: current.chats.map((item) => item.id === chatId
+            ? { ...item, mensajes: acknowledgeOptimisticChatMessage(item.mensajes, message.id, serverId) }
+            : item),
+          syncError: null,
+        }));
       }).catch((error) => {
+        if (useAppStore.getState().user.id !== actorUid) return;
         useAppStore.setState((current) => ({
           chats: current.chats.map((item) => item.id === chatId
             ? { ...item, mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id) }
@@ -45,8 +54,10 @@ if (nationalSchemaEnabled()) {
 
     sendImageMessage: (chatId: string, imageUrl: string) => {
       const state = useAppStore.getState();
+      const actorUid = state.user.id;
       const chat = state.chats.find((item) => item.id === chatId);
-      if (!chat || !imageUrl.startsWith('data:image/')) return;
+      if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)
+        || !imageUrl.startsWith('data:image/')) return;
       const emisor = chat.comprador_id === state.user.id ? 'comprador' : 'vendedor';
       const message = {
         id: localId('msg-local'), sender_id: state.user.id, emisor,
@@ -57,10 +68,17 @@ if (nationalSchemaEnabled()) {
         syncError: null,
       }));
       feedbackMessage();
-      void onlineBackend.sendMessage(chatId, '', imageUrl).then(() => {
+      void onlineBackend.sendMessage(chatId, '', imageUrl).then((serverId) => {
+        if (useAppStore.getState().user.id !== actorUid) return;
         chatHistoryBackend.invalidate(chatId);
-        useAppStore.setState({ syncError: null });
+        useAppStore.setState((current) => current.user.id !== actorUid ? current : ({
+          chats: current.chats.map((item) => item.id === chatId
+            ? { ...item, mensajes: acknowledgeOptimisticChatMessage(item.mensajes, message.id, serverId) }
+            : item),
+          syncError: null,
+        }));
       }).catch((error) => {
+        if (useAppStore.getState().user.id !== actorUid) return;
         useAppStore.setState((current) => ({
           chats: current.chats.map((item) => item.id === chatId
             ? { ...item, mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id) }

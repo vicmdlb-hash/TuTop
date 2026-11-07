@@ -14,6 +14,8 @@ export default function TopiSupportAssistant() {
   const [listening, setListening] = useState(false);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const guidedBeta = String(import.meta.env.VITE_TUTOP_TOPI_GUIDED_BETA || '').toLowerCase() === 'true'
+    && String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').toLowerCase() === 'staging';
   const currentId = route[route.length - 1] || 'root';
   const node = useMemo(() => supportNode(currentId), [currentId]);
 
@@ -81,7 +83,7 @@ export default function TopiSupportAssistant() {
           <TopiMascot className="h-11 w-11 shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-black">Topi</h2>
-            <p className="mt-0.5 text-[9px] text-slate-500">Tu amigo para resolver dudas y usar TuTop · guía segura e IA real claramente identificada.</p>
+            <p className="mt-0.5 text-[9px] text-slate-500">{guidedBeta ? "Guía local de reglas. No es IA generativa ni consulta a proveedores externos de IA." : "Tu amigo para resolver dudas y usar TuTop · guía segura e IA real claramente identificada."}</p>
           </div>
           <button type="button" onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-xl bg-white/[0.05] text-slate-400" aria-label="Cerrar"><X className="h-4 w-4" /></button>
         </header>
@@ -122,7 +124,7 @@ export default function TopiSupportAssistant() {
               <button type="button" disabled={busy || question.trim().length < 3} onClick={() => void ask()} className="grid h-10 w-10 place-items-center rounded-xl bg-violet-600 text-white disabled:opacity-40" aria-label="Preguntar a Topi">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
             </div>
             {voiceNote && <p className="mt-2 text-[8px] leading-4 text-violet-200/80">{voiceNote}</p>}
-            <p className="mt-2 text-[8px] leading-4 text-slate-600">Si la respuesta se marca como Firebase AI real, tu pregunta se procesa remotamente después de omitir emails, teléfonos y códigos sensibles evidentes. Por seguridad, no compartas contraseñas, tarjetas ni tu domicilio exacto.</p>
+            <p className="mt-2 text-[8px] leading-4 text-slate-600">{guidedBeta ? "Beta segura: tus preguntas se resuelven con la guía local de TuTop, sin generación ni envío a proveedores de IA. El dictado del dispositivo puede depender de su servicio de voz; evita compartir datos sensibles." : "Si la respuesta se marca como Firebase AI real, tu pregunta se procesa remotamente después de omitir emails, teléfonos y códigos sensibles evidentes. Por seguridad, no compartas contraseñas, tarjetas ni tu domicilio exacto."}</p>
           </div>
         </div>
       </section>

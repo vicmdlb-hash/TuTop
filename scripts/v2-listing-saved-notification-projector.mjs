@@ -49,7 +49,7 @@ async function request(url,options={},allowStatuses=[]){
   const response=await fetch(url,{...options,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json',...(options.headers||{})}});
   const text=await response.text();let data=null;
   if(text){try{data=JSON.parse(text);}catch{data={raw:text};}}
-  if(!response.ok&&!allowStatuses.includes(response.status))throw new Error(`${response.status} ${url}: ${text.slice(0,800)}`);
+  if(!response.ok&&!allowStatuses.includes(response.status))throw new Error(`NOTIFICATION_PROJECTOR_HTTP_${response.status}`);
   return {status:response.status,data};
 }
 function decodeRows(rows=[]){

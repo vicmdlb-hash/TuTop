@@ -1,10 +1,11 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Bell, BookmarkPlus, Building2, Clock3, Globe2, Heart, ListFilter, LocateFixed, MapPin, PlusCircle, Search, SlidersHorizontal, Sparkles, Store, X } from 'lucide-react';
 import { ACCOUNT_LOCAL_KEYS, readAccountLocalJson, readAccountLocalList, writeAccountLocalJson, writeAccountLocalList } from '../lib/accountLocalState';
 import { NEARBY_RADIUS_OPTIONS, getCachedApproxLocation, productDistanceKm, requestApproxLocation, withinRadius, type ApproxLocation } from '../lib/nearbyMarketplace';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant';
 import { parseListingDescription } from '../lib/listingDetails';
+import { isPublicDiscoveryProduct } from '../lib/publicDiscovery';
 import { normalizeSearchText, sortMarketplace } from '../lib/marketplaceCore';
 import { defaultScopeForCategory } from '../lib/universityNetwork';
 import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
@@ -96,36 +97,55 @@ export default function Feed() {
   const recentIds = readAccountLocalList(ACCOUNT_LOCAL_KEYS.recentProducts, user.id, 12);
   const onboardingInterests = readAccountLocalList(ACCOUNT_LOCAL_KEYS.interests, user.id, 8);
 
+  useEffect(() => {
+    // Feed can remain mounted while its authenticated user changes.
+    const scoped = getCachedApproxLocation(user.id);
+    setViewerLocation(scoped);
+    setLocationStatus(scoped ? 'ready' : 'fallback');
+    setSearchHistory(readAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, user.id, 6));
+  }, [user.id]);
+
   const requestLocationAgain = async () => {
+    const requestUid = user.id;
+    if (!requestUid || useAppStore.getState().user.id !== requestUid) return;
     setLocationStatus('asking');
-    const location = await requestApproxLocation({ maximumAgeMs: 0, requestPermission: true, ownerUid: user.id });
+    const location = await requestApproxLocation({
+      maximumAgeMs: 0, requestPermission: true, ownerUid: requestUid,
+      isOwnerActive: () => useAppStore.getState().user.id === requestUid,
+    });
+    if (useAppStore.getState().user.id !== requestUid) return;
     setViewerLocation(location);
     setLocationStatus(location ? 'ready' : 'fallback');
   };
 
   const scopedProducts = products;
+  const publicProducts = useMemo(
+    () => scopedProducts.filter((product) => isPublicDiscoveryProduct(product, nationalSchemaEnabled())),
+    [scopedProducts],
+  );
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
   const activeFilterCount = Number(Boolean(maxPrice)) + Number(favoritesOnly) + Number(verifiedOnly) + Number(negotiableOnly) + Number(deliveryOnly) + Number(sortMode !== 'relevant');
   const mySellerProducts = scopedProducts.filter((product) => product.vendedor_id === user.id && product.estado === 'Activo');
   const myPublicProducts = mySellerProducts.filter((product) => product.moderation_status === 'approved');
   const myPendingProducts = mySellerProducts.filter((product) => product.moderation_status === 'pending' || product.moderation_status === 'review');
+  const myNeedsAttentionProducts = mySellerProducts.filter((product) => product.moderation_status === 'rejected' || product.moderation_status === 'flagged');
   const sellerUnread = chats.filter((chat) => chat.vendedor_id === user.id).reduce((sum, chat) => sum + (chat.sin_leer || 0), 0);
 
   const interestCategories = useMemo(() => {
     const counts = new Map<string, number>();
     onboardingInterests.forEach((category) => counts.set(normalizeCategory(category), (counts.get(normalizeCategory(category)) || 0) + 3));
     const ids = new Set([...favorites, ...recentIds]);
-    scopedProducts.filter((product) => ids.has(product.id)).forEach((product) => {
+    publicProducts.filter((product) => ids.has(product.id)).forEach((product) => {
       const category = normalizeCategory(product.categoria);
       counts.set(category, (counts.get(category) || 0) + 1);
     });
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([category]) => category);
-  }, [scopedProducts, favorites, onboardingInterests.join('|'), recentIds.join('|')]);
+  }, [publicProducts, favorites, onboardingInterests.join('|'), recentIds.join('|')]);
 
   const regularProducts = useMemo(() => {
     const needle = normalizeSearchText(query);
     const priceLimit = Number(maxPrice) || Infinity;
-    const list = scopedProducts.filter((product) => {
+    const list = publicProducts.filter((product) => {
       const parsed = parseListingDescription(product.descripcion);
       const detailSearch = Object.entries(parsed.details).map(([key, value]) => `${key} ${value}`).join(' ');
       const searchable = normalizeSearchText(`${product.titulo} ${parsed.body} ${detailSearch} ${normalizeCategory(product.categoria)} ${product.vendedor_nombre} ${product.vendedor_handle || ''} ${product.facultad} ${product.city_name || ''}`);
@@ -146,10 +166,10 @@ export default function Feed() {
       return list.sort((a, b) => (productDistanceKm(viewerLocation, a) ?? Number.POSITIVE_INFINITY) - (productDistanceKm(viewerLocation, b) ?? Number.POSITIVE_INFINITY));
     }
     return sortMarketplace(list, { query, user, favoriteCategories: interestCategories });
-  }, [scopedProducts, currentFacultad, selectedCategoria, query, sortMode, maxPrice, favoritesOnly, verifiedOnly, negotiableOnly, deliveryOnly, favorites, browseScope, user, interestCategories, viewerLocation, nearbyRadius]);
+  }, [publicProducts, currentFacultad, selectedCategoria, query, sortMode, maxPrice, favoritesOnly, verifiedOnly, negotiableOnly, deliveryOnly, favorites, browseScope, user, interestCategories, viewerLocation, nearbyRadius]);
 
   const topProducts = useMemo(() => regularProducts.filter((product) => product.es_top).sort((a, b) => a.jerarquia_top - b.jerarquia_top).slice(0, 3), [regularProducts]);
-  const recentProducts = useMemo(() => recentIds.map((id) => scopedProducts.find((product) => product.id === id)).filter((product): product is Product => Boolean(product && product.estado === 'Activo' && visibleByPublicationScope(product, user, currentFacultad))).slice(0, 4), [scopedProducts, user, currentFacultad, recentIds.join('|')]);
+  const recentProducts = useMemo(() => recentIds.map((id) => publicProducts.find((product) => product.id === id)).filter((product): product is Product => Boolean(product && product.estado === 'Activo' && visibleByPublicationScope(product, user, currentFacultad))).slice(0, 4), [publicProducts, user, currentFacultad, recentIds.join('|')]);
 
   const clearFilters = () => { setSortMode('relevant'); setMaxPrice(''); setFavoritesOnly(false); setVerifiedOnly(false); setNegotiableOnly(false); setDeliveryOnly(false); };
 
@@ -186,7 +206,7 @@ export default function Feed() {
 
       <section className="rounded-2xl border border-violet-400/10 bg-violet-500/[0.04] p-2.5"><div className="mb-2 flex items-center gap-2 px-1"><MapPin className="h-3.5 w-3.5 text-violet-300" /><p className="min-w-0 flex-1 truncate text-[9px] text-slate-500">{locationStatus === 'ready' ? <><strong className="text-emerald-300">Cerca de ti activo</strong> · ubicación aproximada</> : locationStatus === 'asking' ? 'Activando cercanía…' : <>Sin ubicación · usando <strong className="text-slate-300">{identityLabel}</strong></>}</p>{locationStatus !== 'ready' && <button onClick={() => void requestLocationAgain()} className="rounded-lg bg-violet-500/10 px-2 py-1 text-[8px] font-bold text-violet-300">Activar ubicación</button>}</div><div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">{scopeOptions.map((scope) => <button key={scope.id} onClick={() => setBrowseScope(scope.id)} className={`min-w-[116px] rounded-xl px-3 py-2 text-left transition ${browseScope === scope.id ? 'bg-violet-600/25 text-violet-100 ring-1 ring-violet-400/20' : 'bg-white/[0.025] text-slate-500'}`}><strong className="flex items-center gap-1.5 text-[10px] [&>svg]:h-3.5 [&>svg]:w-3.5">{scope.icon}{scope.label}</strong><span className="mt-0.5 block text-[8px] opacity-70">{scope.hint}</span></button>)}</div>{browseScope === 'nearby' && <div className="mt-2 flex items-center gap-1.5 overflow-x-auto"><span className="mr-1 text-[8px] font-bold uppercase tracking-wider text-slate-600">Radio</span>{NEARBY_RADIUS_OPTIONS.map((radius) => <button key={radius} onClick={() => setNearbyRadius(radius)} className={`rounded-full px-3 py-1.5 text-[9px] font-bold ${nearbyRadius === radius ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20' : 'bg-white/[0.035] text-slate-500'}`}>{radius} km</button>)}</div>}</section>
 
-      {mySellerProducts.length > 0 && <section className="mt-3 rounded-2xl border border-violet-400/10 bg-gradient-to-r from-violet-500/[0.08] to-fuchsia-500/[0.04] p-3"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-violet-500/15 text-violet-200"><Store className="h-5 w-5" /></div><div className="min-w-0 flex-1"><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-violet-300">Modo vendedor</p><h2 className="mt-0.5 text-xs font-black">{myPublicProducts.length} {myPublicProducts.length === 1 ? 'publicación visible' : 'publicaciones visibles'}{myPendingProducts.length ? ` · ${myPendingProducts.length} en revisión` : ''}</h2><p className="mt-0.5 text-[9px] text-slate-500">{myPendingProducts.length ? 'Las publicaciones en revisión todavía no son visibles para otros usuarios.' : sellerUnread ? `${sellerUnread} mensaje${sellerUnread === 1 ? '' : 's'} pendiente${sellerUnread === 1 ? '' : 's'}` : 'Todo al día por ahora'}</p></div><button onClick={() => setActiveTab('bot')} className="rounded-xl bg-violet-600 px-3 py-2 text-[9px] font-black text-white"><PlusCircle className="mx-auto mb-1 h-4 w-4" />Vender</button></div></section>}
+      {mySellerProducts.length > 0 && <section className="mt-3 rounded-2xl border border-violet-400/10 bg-gradient-to-r from-violet-500/[0.08] to-fuchsia-500/[0.04] p-3"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-violet-500/15 text-violet-200"><Store className="h-5 w-5" /></div><div className="min-w-0 flex-1"><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-violet-300">Modo vendedor</p><h2 className="mt-0.5 text-xs font-black">{myPublicProducts.length} {myPublicProducts.length === 1 ? 'publicación visible' : 'publicaciones visibles'}{myPendingProducts.length ? ` · ${myPendingProducts.length} en revisión` : ''}{myNeedsAttentionProducts.length ? ` · ${myNeedsAttentionProducts.length} requieren atención` : ''}</h2><p className="mt-0.5 text-[9px] text-slate-500">{myPendingProducts.length ? 'Las publicaciones en revisión todavía no son visibles para otros usuarios.' : sellerUnread ? `${sellerUnread} mensaje${sellerUnread === 1 ? '' : 's'} pendiente${sellerUnread === 1 ? '' : 's'}` : 'Todo al día por ahora'}</p></div><button onClick={() => setActiveTab('bot')} className="rounded-xl bg-violet-600 px-3 py-2 text-[9px] font-black text-white"><PlusCircle className="mx-auto mb-1 h-4 w-4" />Vender</button></div></section>}
 
       {topProducts.length > 0 && <section className="mt-5"><div className="mb-2.5 flex items-center justify-between"><h2 className="section-title">Top en este alcance</h2><span className="text-[9px] text-slate-600">Ranking contextual</span></div><div className="grid grid-cols-3 gap-2">{topProducts.map((product) => <button key={product.id} onClick={() => openProduct(product.id)} className={`top-mini top-mini-${product.jerarquia_top} text-left`}><div className="relative aspect-square overflow-hidden rounded-[13px]"><img src={product.imagen_url} alt={product.titulo} className="h-full w-full object-cover" /><span className="top-rank">#{product.jerarquia_top}</span></div><h3 className="mt-2 line-clamp-2 text-[11px] font-bold leading-tight">{product.titulo}</h3></button>)}</div></section>}
 

@@ -675,6 +675,23 @@ service cloud.firestore {
     }
 
     match /admins/{uid} { allow read: if owner(uid) || isAdmin(); allow write: if false; }
+    // Trusted age/guardian/adult-action evidence must be issued and revoked only
+    // by a verified backend using privileged server credentials (never an app).
+    // Owner-only single-document reads; listing and ALL client mutations denied.
+    // This storage boundary alone does NOT enforce marketplace capabilities.
+    match /age_proofs_v2/{uid} {
+      allow get: if owner(uid);
+      allow list, create, update, delete: if false;
+    }
+    match /guardian_grants_v2/{uid} {
+      allow get: if owner(uid);
+      allow list, create, update, delete: if false;
+    }
+    match /adult_actions_v2/{uid} {
+      allow get: if owner(uid);
+      allow list, create, update, delete: if false;
+    }
+
     match /{document=**} { allow read, write: if false; }
   }
 }

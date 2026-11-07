@@ -1,0 +1,108 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const policy = JSON.parse(fs.readFileSync('config/tutop-national-product-direction.json', 'utf8'));
+const project = JSON.parse(fs.readFileSync('config/project.json', 'utf8'));
+const registration = fs.readFileSync('src/components/BackendGate.tsx', 'utf8');
+const publish = fs.readFileSync('src/components/NationalPublishScreen.tsx', 'utf8');
+const recovery = fs.readFileSync('src/services/v2OnboardingRecovery.ts', 'utf8');
+const accessRules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
+const privacyDraft = fs.readFileSync('public/privacy.html', 'utf8');
+const nationalRulesPreview = fs.readFileSync('scripts/harden-verified-email-beta-rules.mjs', 'utf8');
+const termsDraft = fs.readFileSync('public/terms.html', 'utf8');
+const topiAssistant = fs.readFileSync('src/services/assistantProvider.ts', 'utf8');
+
+// Optional campus membership must be reflected in future AI assistance, not
+// only in product configuration. This does NOT enable remote AI or registration.
+assert.match(topiAssistant, /marketplace nacional en México/);
+assert.match(topiAssistant, /La pertenencia a universidad o campus es opcional/);
+assert.match(topiAssistant, /un campus es opcional/);
+assert.doesNotMatch(topiAssistant, /marketplace universitario en México|entre estudiantes en México/);
+const topiHelp = fs.readFileSync('src/services/topiConsumerSupport.ts', 'utf8');
+const supportTree = fs.readFileSync('src/lib/supportDecisionTree.ts', 'utf8');
+assert.match(topiHelp, /expansión nacional sin campus todavía NO está habilitada/);
+assert.match(topiHelp, /Nunca invites a inventar institución/);
+assert.match(supportTree, /registro nacional sin campus aún no permite crear cuenta/);
+assert.match(supportTree, /beta universitaria actual también puede exigir universidad\/campus válidos/);
+assert.match(supportTree, /acceso nacional sin campus aún está en preparación/);
+assert.doesNotMatch(supportTree, /Tu identidad universitaria controla campus, cercanía y alcance/);
+
+
+assert(privacyDraft.includes('borrador beta'));
+assert(privacyDraft.includes('La audiencia prevista es nacional'));
+assert(privacyDraft.includes('no está implementada integralmente'));
+assert(privacyDraft.includes('Menores y supervisión adulta'));
+assert(termsDraft.includes('Ámbito nacional y acceso'));
+assert(termsDraft.includes('sin exigencia de pertenecer a una universidad'));
+assert(termsDraft.includes('Visibilidad promocionada — no disponible'));
+assert(termsDraft.includes('Menores y tutores'));
+assert.equal(policy.schemaVersion, 1);
+assert.equal(policy.status, 'OWNER_DECISION_NOT_DEPLOYED');
+assert.equal(policy.market.country, 'MX');
+assert.equal(policy.market.national, true);
+assert.equal(policy.market.accountVerificationRequired, true);
+assert.equal(policy.market.institutionMembershipRequired, false);
+assert.equal(policy.market.verificationMethod, 'VERIFIED_EMAIL_AND_VERIFIED_PHONE_SAME_FIREBASE_UID');
+assert.equal(policy.market.verificationEvidence, 'FIREBASE_AUTH_ACCOUNT_LOOKUP_AND_SERVER_TOKEN');
+assert.deepEqual(policy.verification.requiredFactors, ['firebase_auth_email_verified', 'firebase_auth_linked_phone_number']);
+assert.equal(policy.verification.phoneSource, 'TRUSTED_FIREBASE_AUTH_SAME_UID');
+assert.equal(policy.verification.declaredProfilePhoneIsProof, false);
+assert.equal(policy.verification.legacyPhoneAliasIsProof, false);
+assert.equal(policy.verification.smsSendingEnabled, false);
+assert.equal(policy.verification.billingUpgradeApproved, false);
+assert.equal(policy.verification.realPhoneVerificationAvailableInSpark, false);
+assert.equal(policy.verification.publicRegistrationWithDualFactor, 'BLOCKED_UNTIL_REAL_PHONE_PROOF');
+assert.equal(policy.verification.authorizationMustBeEnforcedOnServer, true);
+// The browser may not hydrate national marketplace views on email-only status.
+// This is defense-in-depth, not a replacement for server-side Firestore Rules.
+assert.match(registration, /verified\.phoneVerified !== true/);
+assert.match(registration, /PhoneVerificationPendingScreen/);
+// Nationwide/non-student path remains an honest, zero-side-effect preview.
+assert.match(registration, /No pertenezco a una universidad/);
+assert.match(registration, /Registro nacional en preparación/);
+assert.match(registration, /Esta opción no crea cuenta, no envía SMS y no genera cargos/);
+assert.match(registration, /\{!nationalApplicant && <>/);
+const signup = registration.slice(registration.indexOf("  const submit = async () => {"), registration.indexOf("  const requestPasswordReset = async () => {"));
+assert(signup.indexOf("if (nationalApplicant) throw new Error('NATIONAL_PHONE_AND_RULES_NOT_READY')") >= 0);
+assert(signup.indexOf("if (nationalApplicant)") < signup.indexOf("verifiedEmailBetaAuth.register("),
+  'no national registration can reach Firebase Auth during Spark-only migration');
+assert.equal((registration.match(/verifiedEmailBetaAuth\.register\(/g) || []).length, 1,
+  'do not create a second signup path that bypasses university-only beta guard');
+
+assert.match(registration, /No se enviarán SMS ni se generarán cargos/);
+// Future server-side cutover must use Firebase-signed account claims, not a
+// self-declared profile number. This verifies the preparation ONLY, never a
+// functional phone OTP or actual Firestore permission grant.
+assert.match(nationalRulesPreview, /function nationalVerifiedIdentity\(\)/);
+assert.match(nationalRulesPreview, /request\.auth\.token\.sub == request\.auth\.uid/);
+assert.match(nationalRulesPreview, /request\.auth\.token\.email_verified == true/);
+assert.match(nationalRulesPreview, /request\.auth\.token\.phone_number is string/);
+assert.match(nationalRulesPreview, /phone_number\.matches\('.*\[\+\]52|phone_number\.matches\('\^\[\+\]52/);
+assert.doesNotMatch(nationalRulesPreview, /request\.resource\.data\.telefono\s*==\s*request\.auth\.token\.phone_number/);
+assert.equal(policy.audience.under13DirectChatAllowed, false);
+assert.equal(policy.audience.under18PersonalInfoRequiresVerifiedAdultAction, true);
+assert.equal(policy.audience.guardianCanRevokeImmediately, true);
+assert.equal(policy.moderation.initialModeration, 'OWNER_ONLY');
+assert.equal(policy.moderation.preApproveAllListings, true);
+assert.equal(policy.ai.generativeRequiredForV1, false);
+assert.equal(policy.ai.remoteProviderApproved, false);
+assert.equal(policy.promotion.billingEnabled, false);
+assert.equal(policy.release.billingBudgetMXN, 0);
+assert.equal(policy.release.releaseApproved, false);
+assert.equal(project.productionPublishingAllowed, false);
+assert.equal(project.zeroInvestmentMode, true);
+assert.equal(project.billingAllowed, false);
+
+// A PRODUCT DECISION is not evidence of deployment. Document each active
+// university-bound onboarding/publishing dependency instead of bypassing it
+// with fake campus IDs or weakening Firestore Rules to allow everyone.
+const blockers = [
+  ['registration', registration.includes('Selecciona universidad y campus.')],
+  ['national onboarding', recovery.includes('V2_REGISTRATION_IDENTITY_REQUIRED')],
+  ['publication', publish.includes("publishIssues.push('universidad/campus')")],
+  ['Firestore metadata', accessRules.includes('validUniversityMetadata(data)')],
+].filter(([,blocked]) => blocked).map(([name]) => name);
+assert(blockers.length >= 1, 'migration gate must be revisited after all legacy restrictions are removed');
+console.log('PASS owner-confirmed nationwide scope recorded; STILL BLOCKED on ' + blockers.join(', '));
+console.log('PASS national double-factor owner decision captured; SMS and server grants still blocked');
+console.log('PASS zero-spend, no paid boosts, no underage bypass, no release approval');

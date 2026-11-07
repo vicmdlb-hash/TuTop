@@ -1,5 +1,6 @@
 import { getNativeAppCheckToken, initializeNativeAppCheck, nativeAppCheckStatus } from './nativeAppCheckToken';
 import { recordDiagnostic } from './localDiagnostics';
+import { topiRemoteProviderAudienceGate } from '../lib/topiAllAgesProviderGate';
 
 type CapacitorPlugin = Record<string, (...args: any[]) => Promise<any>>;
 type CapacitorRuntime = {
@@ -9,7 +10,7 @@ type CapacitorRuntime = {
   Plugins?: Record<string, CapacitorPlugin>;
 };
 
-export type NativeTopiAIReason = 'ready' | 'not-native' | 'disabled' | 'plugin-missing' | 'app-check-unavailable' | 'request-failed' | 'empty-response';
+export type NativeTopiAIReason = 'ready' | 'not-native' | 'disabled' | 'audience-provider-not-approved' | 'plugin-missing' | 'app-check-unavailable' | 'request-failed' | 'empty-response';
 export type NativeTopiAIFailureKind = 'none' | 'timeout' | 'network' | 'firebase-config-rejected' | 'app-check' | 'capacity' | 'native-request';
 const AI_REQUEST_TIMEOUT_MS = 20_000;
 const AI_TRANSIENT_RETRY_DELAY_MS = 650;
@@ -58,29 +59,24 @@ function firebaseAIEnabled() {
   return String(import.meta.env.VITE_TUTOP_TOPI_FIREBASE_AI_ENABLED || '').toLowerCase() === 'true';
 }
 
-function isPrivatePhysicalQaBuild() {
-  const environment = String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').trim().toLowerCase();
-  const version = String(import.meta.env.VITE_TUTOP_APP_VERSION || '').trim();
-  return environment === 'staging' && /^0\.9\.2-beta\./.test(version);
-}
-
 function appCheckRequired() {
-  // Private 0.9.2 physical QA keeps Firebase AI App Check UNENFORCED on the
-  // staging backend. Play Integrity is still initialized and observed, but a
-  // sideloaded APK must not lose the real AI path only because attestation is
-  // unavailable. Production/release builds keep the configured strict default.
-  if (isPrivatePhysicalQaBuild()) return false;
-  return String(import.meta.env.VITE_TUTOP_AI_APP_CHECK_REQUIRED || 'true').toLowerCase() !== 'false';
+  // Firebase AI Logic requires production attestation from 2026-11-02.
+  // No staging or client-env bypass: sideloaded QA reports unavailable
+  // rather than falsely claiming an AI call is safe without App Check.
+  return true;
 }
 
 export function nativeTopiAIAvailable() {
-  if (!nativeRuntime()) return false;
-  return firebaseAIEnabled() && Boolean(plugin()?.generate);
+  if (!nativeRuntime() || !firebaseAIEnabled()) return false;
+  // Feature flag and App Check do NOT establish permission for under-18.
+  if (!topiRemoteProviderAudienceGate().allowed) return false;
+  return Boolean(plugin()?.generate);
 }
 
 export function nativeTopiAIStatus() {
   if (!nativeRuntime()) return { available: false, reason: 'not-native' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
   if (!firebaseAIEnabled()) return { available: false, reason: 'disabled' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
+  if (!topiRemoteProviderAudienceGate().allowed) return { available: false, reason: 'audience-provider-not-approved' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
   if (!plugin()?.generate) return { available: false, reason: 'plugin-missing' as NativeTopiAIReason, failureKind: 'none' as NativeTopiAIFailureKind, model: '', appCheck: nativeAppCheckStatus() };
   return { available: lastReason === 'ready', reason: lastReason, failureKind: lastFailureKind, model: lastModel, appCheck: nativeAppCheckStatus() };
 }
@@ -97,15 +93,16 @@ function delay(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
-/**
- * Native Firebase AI Logic only. Production may require a valid App Check token
- * before the SDK call. Private 0.9.2 staging Physical-QA deliberately leaves
- * enforcement off, so token acquisition is best-effort and cannot silently
- * downgrade Topi to the deterministic local assistant.
- */
+/** Native Firebase AI Logic only: a valid App Check token is always mandatory. */
 export async function generateNativeTopiText(prompt: string): Promise<{ text: string; model: string; provider: 'firebase-ai-logic' } | null> {
   if (!nativeRuntime()) { setReason('not-native'); return null; }
   if (!firebaseAIEnabled()) { setReason('disabled'); return null; }
+  // Abort BEFORE reading the prompt, plugin, token, model or remote transport.
+  // This mixed-age release cannot inherit Gemini Developer API eligibility.
+  if (!topiRemoteProviderAudienceGate().allowed) {
+    setReason('audience-provider-not-approved', { mixed_age_release: true });
+    return null;
+  }
   const ai = plugin();
   if (!ai?.generate) { setReason('plugin-missing'); return null; }
   const clean = prompt.replace(/\u0000/g, '').trim().slice(0, 6000);
@@ -141,10 +138,6 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
     setReason('app-check-unavailable', { app_check_required: true, app_check: nativeAppCheckStatus() }, 'app-check');
     return null;
   }
-  if (!required && !appCheckToken) {
-    recordDiagnostic('ai', 'app_check_token_missing_best_effort', { app_check: nativeAppCheckStatus() });
-  }
-
   const models = preferred === 'gemini-3.8-flash'
     ? ['gemini-3.8-flash', 'gemini-3.5-flash-lite']
     : ['gemini-3.5-flash-lite'];

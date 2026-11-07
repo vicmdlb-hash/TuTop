@@ -14,8 +14,11 @@ async function fileToImage(file: File) {
     image.src = url;
     await image.decode();
     return image;
-  } finally {
-    // Revoke after drawing, not here. Caller owns cleanup through returned image.src.
+  } catch (error) {
+    // decode() can reject for unsupported formats (including some HEIC/HEIF).
+    // No Image is returned to the drawing caller in that case: release the blob URL here.
+    URL.revokeObjectURL(url);
+    throw error;
   }
 }
 

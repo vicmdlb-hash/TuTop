@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { sellerLevelFor } from '../lib/productAssistant';
 import { onlineBackend, type OnlineSnapshot } from '../services/onlineBackend';
 import { feedbackMessage } from '../lib/feedback';
+import { canViewerOpenListing } from '../lib/publicDiscovery';
+import { isLiveAccountSnapshot } from '../lib/backendHydrationIdentity';
+import { nationalSchemaEnabled } from '../services/nationalBackend';
 import type { AppNotification, AppTab, Chat, Product, Review, User, WalletTransaction } from '../types';
 
 interface AppState {
@@ -50,6 +53,8 @@ interface AppState {
 
 const NEUTRAL_COMMUNITY_LABEL = 'Comunidad universitaria';
 const favoriteMutationVersion = new Map<string, number>();
+const productMutationVersion = new Map<string, number>();
+const chatReadMutationVersion = new Map<string, number>();
 
 function favoriteState(favorites: string[], productId: string, favorited: boolean) {
   const exists = favorites.includes(productId);
@@ -97,6 +102,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   ...blankState(),
 
   hydrateOnline: (snapshot) => set((state) => {
+    // Mutations may resolve after logout or A→B even if BackendGate is guarded.
+    if (!isLiveAccountSnapshot(state.user.id, onlineBackend.session?.uid, snapshot.user.id)) return state;
     const readNotifications = new Set(state.notifications.filter((item) => item.read).map((item) => item.id));
     return {
       ...snapshot,
@@ -113,35 +120,52 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSyncError: (syncError) => set({ syncError }),
   setUser: (user) => set({ user }),
   setActiveTab: (activeTab) => set({ activeTab }),
-  openProduct: (selectedProductId) => set({ selectedProductId }),
+  openProduct: (selectedProductId) => set((state) => {
+    const product = state.products.find((item) => item.id === selectedProductId);
+    return { selectedProductId: product && canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())
+      ? selectedProductId : null };
+  }),
   closeProduct: () => set({ selectedProductId: null }),
   setCurrentFacultad: (currentFacultad) => set({ currentFacultad }),
 
   addProduct: (product) => {
+    const actorUid = get().user.id;
     set((state) => ({ products: [product, ...state.products] }));
     void onlineBackend.createProduct(product).catch((error) => {
+      if (get().user.id !== actorUid) return;
       set((state) => ({ products: state.products.filter((item) => item.id !== product.id) }));
       reportSyncError(set, error);
     });
   },
 
   publishProduct: async (product, bidAmount = 0) => {
+    const actorUid = get().user.id;
     try {
       await onlineBackend.createProduct(product);
+      if (get().user.id !== actorUid) return false;
       if (bidAmount > 0) await onlineBackend.bidProduct(product, bidAmount);
+      if (get().user.id !== actorUid) return false;
       const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return false;
       get().hydrateOnline(snapshot);
-      return true;
+      return get().user.id === actorUid;
     } catch (error) {
-      reportSyncError(set, error);
+      if (get().user.id === actorUid) reportSyncError(set, error);
       return false;
     }
   },
 
   updateProduct: (id, updates) => {
+    const actorUid = get().user.id;
+    const mutationKey = `${actorUid}:${id}`;
+    const version = (productMutationVersion.get(mutationKey) || 0) + 1;
+    productMutationVersion.set(mutationKey, version);
     const before = get().products.find((product) => product.id === id);
     set((state) => ({ products: state.products.map((product) => product.id === id ? { ...product, ...updates } : product) }));
     void onlineBackend.updateProduct(id, updates).catch((error) => {
+      if (get().user.id !== actorUid) return;
+      // A stale failed edit must never undo a later edit to this account's listing.
+      if (productMutationVersion.get(mutationKey) !== version) return;
       if (before) set((state) => ({ products: state.products.map((product) => product.id === id ? before : product) }));
       reportSyncError(set, error);
     });
@@ -152,15 +176,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addChat: (chat) => {
+    const actorUid = get().user.id;
+    if (!actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)) return;
     set((state) => ({ chats: [chat, ...state.chats] }));
-    void onlineBackend.createChat(chat).catch((error) => reportSyncError(set, error));
+    void onlineBackend.createChat(chat).catch((error) => {
+      if (get().user.id !== actorUid) return;
+      reportSyncError(set, error);
+    });
   },
   updateChat: (id, updates) => set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, ...updates } : chat) })),
 
   contactProduct: (productId) => {
     const state = get();
+    const actorUid = state.user.id;
     const product = state.products.find((item) => item.id === productId);
-    if (!product || product.vendedor_id === state.user.id) return null;
+    if (!actorUid || !product || product.vendedor_id === actorUid
+      || !canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())) return null;
     const existing = state.chats.find((chat) => chat.producto_id === productId && chat.comprador_id === state.user.id && chat.vendedor_id === product.vendedor_id);
     if (product.availability_status === 'reserved' && !existing) return null;
     const chatId = existing?.id || `chat-${state.user.id}-${product.id}`;
@@ -179,6 +210,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       set((current) => ({ chats: [chat, ...current.chats] }));
       void onlineBackend.createChat(chat).catch((error) => {
+        if (get().user.id !== actorUid) return;
         set((current) => ({
           chats: current.chats.filter((item) => item.id !== chatId),
           activeChatId: current.activeChatId === chatId ? null : current.activeChatId,
@@ -194,72 +226,116 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeChat: () => set({ activeChatId: null }),
 
   sendMessage: (chatId, text) => {
+    const actorUid = get().user.id;
     const clean = text.trim();
     if (!clean) return;
     const state = get();
     const chat = state.chats.find((item) => item.id === chatId);
-    if (!chat) return;
+    if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)) return;
     const emisor = chat.comprador_id === state.user.id ? 'comprador' : 'vendedor';
     const message = { id: localId('msg-local'), sender_id: state.user.id, emisor, texto: clean.slice(0, 1500), hora: new Date().toISOString(), leido: true } as const;
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, mensajes: [...item.mensajes, message], sin_leer: 0 } : item) }));
     void onlineBackend.sendMessage(chatId, clean).then(async () => {
+      if (get().user.id !== actorUid) return;
       const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return;
       get().hydrateOnline(snapshot);
     }).catch((error) => {
-      set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? chat : item) }));
+      if (get().user.id !== actorUid) return;
+      // Preserve newer messages; roll back only the failed optimistic message.
+      set((current) => ({ chats: current.chats.map((item) => item.id === chatId
+        ? { ...item, mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id) }
+        : item) }));
       reportSyncError(set, error);
     });
   },
 
   sendImageMessage: (chatId, imageUrl) => {
     const state = get();
+    const actorUid = state.user.id;
     const chat = state.chats.find((item) => item.id === chatId);
-    if (!chat || !imageUrl.startsWith('data:image/')) return;
+    if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)
+      || !imageUrl.startsWith('data:image/')) return;
     const emisor = chat.comprador_id === state.user.id ? 'comprador' : 'vendedor';
     const message = { id: localId('msg-local'), sender_id: state.user.id, emisor, texto: '', image_url: imageUrl, hora: new Date().toISOString(), leido: true } as const;
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, mensajes: [...item.mensajes, message], sin_leer: 0 } : item) }));
     feedbackMessage();
     void onlineBackend.sendMessage(chatId, '', imageUrl).then(async () => {
-      get().hydrateOnline(await onlineBackend.loadSnapshot());
+      if (get().user.id !== actorUid) return;
+      const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return;
+      get().hydrateOnline(snapshot);
     }).catch((error) => {
-      set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? chat : item) }));
+      if (get().user.id !== actorUid) return;
+      // Preserve newer messages; roll back only the failed optimistic message.
+      set((current) => ({ chats: current.chats.map((item) => item.id === chatId
+        ? { ...item, mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id) }
+        : item) }));
       reportSyncError(set, error);
     });
   },
 
   markChatRead: (chatId) => {
+    const actorUid = get().user.id;
     const before = get().chats.find((chat) => chat.id === chatId);
-    if (!before || (before.sin_leer || 0) === 0) return;
+    if (!before || !actorUid || (before.comprador_id !== actorUid && before.vendedor_id !== actorUid)
+      || (before.sin_leer || 0) === 0) return;
+    const mutationKey = `${actorUid}:${chatId}`;
+    const version = (chatReadMutationVersion.get(mutationKey) || 0) + 1;
+    chatReadMutationVersion.set(mutationKey, version);
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, sin_leer: 0 } : chat) }));
     void onlineBackend.markChatRead(chatId).catch((error) => {
-      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? before : chat) }));
+      if (get().user.id !== actorUid) return;
+      if (chatReadMutationVersion.get(mutationKey) !== version) return;
+      // Recover the unread counter only. Do not replace messages or a newer nonzero count.
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId && (chat.sin_leer || 0) === 0
+        ? { ...chat, sin_leer: before.sin_leer } : chat) }));
       reportSyncError(set, error);
     });
   },
 
   confirmDelivery: (chatId) => {
     const state = get();
+    const actorUid = state.user.id;
     const chat = state.chats.find((item) => item.id === chatId);
-    if (!chat || chat.entrega_confirmada) return;
+    if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)
+      || chat.entrega_confirmada) return;
     const isBuyer = chat.comprador_id === state.user.id;
     const confirmations = { comprador: Boolean(chat.confirmaciones_entrega?.comprador), vendedor: Boolean(chat.confirmaciones_entrega?.vendedor) };
     if (isBuyer) confirmations.comprador = true; else confirmations.vendedor = true;
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, confirmaciones_entrega: confirmations, entrega_confirmada: confirmations.comprador && confirmations.vendedor, entrega_estado: confirmations.comprador && confirmations.vendedor ? 'completada' : 'esperando_confirmacion' } : item) }));
-    void onlineBackend.confirmDelivery(chatId).then(async () => get().hydrateOnline(await onlineBackend.loadSnapshot())).catch((error) => {
-      set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? chat : item) }));
+    void onlineBackend.confirmDelivery(chatId).then(async () => {
+      if (get().user.id !== actorUid) return;
+      const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return;
+      get().hydrateOnline(snapshot);
+    }).catch((error) => {
+      if (get().user.id !== actorUid) return;
+      // Revert only our unchanged optimistic confirmation; never erase later chat messages.
+      set((current) => ({ chats: current.chats.map((item) => item.id === chatId && item.confirmaciones_entrega === confirmations
+        ? { ...item, confirmaciones_entrega: chat.confirmaciones_entrega, entrega_confirmada: chat.entrega_confirmada, entrega_estado: chat.entrega_estado }
+        : item) }));
       reportSyncError(set, error);
     });
   },
 
   submitReview: (chatId, calificacion, comentario) => {
     const state = get();
+    const actorUid = state.user.id;
     const chat = state.chats.find((item) => item.id === chatId);
-    if (!chat || !chat.entrega_confirmada) return false;
+    if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)
+      || !chat.entrega_confirmada) return false;
     if (state.reviews.some((review) => review.chat_id === chatId && review.evaluador_id === state.user.id)) return false;
     const evaluadoId = chat.comprador_id === state.user.id ? chat.vendedor_id : chat.comprador_id;
     const review: Review = { id: `${chatId}_${state.user.id}`, chat_id: chatId, evaluador_id: state.user.id, evaluado_id: evaluadoId, calificacion, comentario: comentario?.trim().slice(0, 500), fecha: new Date().toISOString() };
     set((current) => ({ reviews: [review, ...current.reviews] }));
-    void onlineBackend.submitReview(chat, calificacion, comentario).then(async () => get().hydrateOnline(await onlineBackend.loadSnapshot())).catch((error) => {
+    void onlineBackend.submitReview(chat, calificacion, comentario).then(async () => {
+      if (get().user.id !== actorUid) return;
+      const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return;
+      get().hydrateOnline(snapshot);
+    }).catch((error) => {
+      if (get().user.id !== actorUid) return;
       set((current) => ({ reviews: current.reviews.filter((item) => item.id !== review.id) }));
       reportSyncError(set, error);
     });
@@ -268,28 +344,36 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   bidProduct: async (productId, amount) => {
     const state = get();
+    const actorUid = state.user.id;
     const product = state.products.find((item) => item.id === productId);
-    if (!product) return false;
+    if (!actorUid || !product || !canViewerOpenListing(product, actorUid, nationalSchemaEnabled())) return false;
     try {
       await onlineBackend.bidProduct(product, amount);
-      get().hydrateOnline(await onlineBackend.loadSnapshot());
-      return true;
+      if (get().user.id !== actorUid) return false;
+      const snapshot = await onlineBackend.loadSnapshot();
+      if (get().user.id !== actorUid) return false;
+      get().hydrateOnline(snapshot);
+      return get().user.id === actorUid;
     } catch (error) {
-      reportSyncError(set, error);
+      if (get().user.id === actorUid) reportSyncError(set, error);
       return false;
     }
   },
 
   toggleFavorite: (productId) => {
     const state = get();
+    const actorUid = state.user.id;
+    const mutationKey = `${actorUid}:${productId}`;
     const wasFavorite = state.favorites.includes(productId);
     const shouldFavorite = !wasFavorite;
-    const version = (favoriteMutationVersion.get(productId) || 0) + 1;
-    favoriteMutationVersion.set(productId, version);
+    const version = (favoriteMutationVersion.get(mutationKey) || 0) + 1;
+    favoriteMutationVersion.set(mutationKey, version);
     set({ favorites: favoriteState(state.favorites, productId, shouldFavorite) });
 
     void onlineBackend.toggleFavorite(productId, shouldFavorite).catch((error) => {
-      if (favoriteMutationVersion.get(productId) === version) {
+      // An expired request from A must not roll back B's favorites or show B A's error.
+      if (get().user.id !== actorUid) return;
+      if (favoriteMutationVersion.get(mutationKey) === version) {
         set((current) => ({ favorites: favoriteState(current.favorites, productId, wasFavorite) }));
       }
       reportSyncError(set, error);

@@ -58,3 +58,24 @@ export async function firebaseFetch(
     upstream?.removeEventListener('abort', relayAbort);
   }
 }
+
+/**
+ * Headers may arrive before the response body stalls. Limit body consumption
+ * independently from firebaseFetch's header timeout; never log response text.
+ * The original network reader may finish later, but cannot keep its caller hung.
+ */
+export async function readFirebaseResponseText(
+  response: Pick<Response, 'text'>,
+  timeoutMs = FIREBASE_REQUEST_TIMEOUT_MS,
+): Promise<string> {
+  const boundedTimeout = Number.isFinite(timeoutMs) ? Math.max(1, Math.floor(timeoutMs)) : FIREBASE_REQUEST_TIMEOUT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new FirebaseRequestTimeoutError(boundedTimeout)), boundedTimeout);
+  });
+  try {
+    return await Promise.race([response.text(), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

@@ -5,13 +5,26 @@ const MAX_EVIDENCE_AGE_MS = 7 * 24 * 60 * 60_000;
 const MIN_DEVICE_COUNT = 2;
 const CANDIDATE_MANIFEST_PATH = path.resolve('docs/PHYSICAL_QA_CANDIDATE_0.9.json');
 const SHA256 = /^[a-f0-9]{64}$/i;
-const FORBIDDEN_DEVICE_KEYS = new Set(['token', 'app_check_token', 'raw_token', 'idToken', 'refreshToken']);
+const GIT_SHA = /^[a-f0-9]{40}$/i;
+const ARTIFACT_DIGEST = /^sha256:[a-f0-9]{64}$/i;
+// Match semantically sensitive keys across camelCase, snake_case and casing.
+// Observation flags such as app_check_token_observed are not raw credentials.
+const FORBIDDEN_DEVICE_KEYS = new Set([
+  'apikey', 'authorization', 'authorizationheader', 'clientsecret',
+  'credentials', 'credential', 'password', 'privatekey',
+]);
+function sensitiveEvidenceKey(key) {
+  const normalized = String(key).replace(/[^a-z0-9]/gi, '').toLowerCase();
+  // Metadata flag reports whether evidence contains a token; it is not a credential.
+  if (normalized === 'containsrawtoken') return false;
+  return normalized === 'token' || normalized.endsWith('token') || FORBIDDEN_DEVICE_KEYS.has(normalized);
+}
 
 function loadCandidateManifest() {
   if (!fs.existsSync(CANDIDATE_MANIFEST_PATH)) throw new Error('APP_CHECK_CANDIDATE_MANIFEST_MISSING');
   const candidate = JSON.parse(fs.readFileSync(CANDIDATE_MANIFEST_PATH, 'utf8'));
   if (candidate?.schema !== 'tutop.physical-qa-candidate.v1') throw new Error('APP_CHECK_CANDIDATE_MANIFEST_INVALID');
-  if (candidate?.physical_release_candidate !== true) throw new Error('APP_CHECK_CANDIDATE_NOT_ACTIVE');
+  if (candidate?.physical_release_candidate !== true || candidate?.replacement_required === true) throw new Error('APP_CHECK_CANDIDATE_NOT_ACTIVE');
   return candidate;
 }
 
@@ -22,7 +35,13 @@ function placeholder(value) {
 function hasForbiddenKey(value) {
   if (Array.isArray(value)) return value.some(hasForbiddenKey);
   if (!value || typeof value !== 'object') return false;
-  return Object.entries(value).some(([key, child]) => FORBIDDEN_DEVICE_KEYS.has(key) || hasForbiddenKey(child));
+  return Object.entries(value).some(([key, child]) => {
+    // Every nested raw-token declaration is security-sensitive, not only the
+    // top-level flag. Require literal false rather than a truthy string or null.
+    const normalized = String(key).replace(/[^a-z0-9]/gi, '').toLowerCase();
+    if (normalized === 'containsrawtoken') return child !== false;
+    return sensitiveEvidenceKey(key) || hasForbiddenKey(child);
+  });
 }
 
 function freshTimestamp(value, now) {
@@ -33,12 +52,30 @@ function freshTimestamp(value, now) {
 export function validateAppCheckPhysicalEvidence(input, now = Date.now(), expectedCandidate = loadCandidateManifest()) {
   const errors = [];
   if (!input || typeof input !== 'object') return { ready: false, errors: ['evidence_missing'] };
+  // Evidence is bound to one active signed artifact; generic beta is unsafe.
+  const candidate = expectedCandidate || {};
+  if (candidate.physical_release_candidate !== true || candidate.replacement_required === true)
+    errors.push('candidate_not_active');
+  if (!String(candidate.app_version || '').trim()
+      || !Number.isSafeInteger(candidate.android_version_code)
+      || candidate.android_version_code <= 0
+      || candidate.staging_project !== 'tutop-beta-vicmdlb-1356585881'
+      || !SHA256.test(String(candidate.apk_sha256 || ''))
+      || !SHA256.test(String(candidate.apk_cert_sha256 || ''))
+      || !GIT_SHA.test(String(candidate.build_commit_sha || ''))
+      || !GIT_SHA.test(String(candidate.build_tree_sha || ''))
+      || !Number.isSafeInteger(candidate.artifact_id) || candidate.artifact_id <= 0
+      || !Number.isSafeInteger(candidate.build_run_id) || candidate.build_run_id <= 0
+      || !String(candidate.artifact_url || '').startsWith('https://')
+      || !ARTIFACT_DIGEST.test(String(candidate.artifact_digest || '')))
+    errors.push('candidate_provenance_incomplete');
   if (input.status !== 'verified') errors.push('status_not_verified');
   if (input.platform !== 'android') errors.push('platform_not_android');
-  if (!/^0\.9\.0-beta\./.test(String(input.app_version || ''))) errors.push('app_version_not_0_9_beta');
+  if (String(input.app_version || '') !== String(candidate.app_version || '')) errors.push('app_version_candidate_mismatch');
+  if (input.android_version_code !== candidate.android_version_code) errors.push('android_version_code_candidate_mismatch');
   if (input.app_check_token_observed !== true) errors.push('app_check_token_not_observed');
-  if (input.staging_project !== 'tutop-beta-vicmdlb-1356585881') errors.push('wrong_staging_project');
-  if (input.contains_raw_token === true || hasForbiddenKey(input.devices)) errors.push('raw_token_must_not_be_stored');
+  if (input.staging_project !== candidate.staging_project) errors.push('wrong_staging_project');
+  if (input.contains_raw_token === true || hasForbiddenKey(input)) errors.push('raw_token_must_not_be_stored');
 
   const devices = Array.isArray(input.devices) ? input.devices : [];
   if (!Number.isInteger(input.device_count) || input.device_count < MIN_DEVICE_COUNT || input.device_count !== devices.length) errors.push('two_device_evidence_required');
@@ -59,18 +96,22 @@ export function validateAppCheckPhysicalEvidence(input, now = Date.now(), expect
   if (!Number.isFinite(verifiedAt)) errors.push('verified_at_invalid');
   else if (verifiedAt > now + 5 * 60_000 || now - verifiedAt > MAX_EVIDENCE_AGE_MS) errors.push('evidence_stale_or_future');
 
-  if (input.candidate_apk_sha256 !== expectedCandidate.apk_sha256) errors.push('wrong_apk_candidate');
-  if (input.candidate_artifact_id !== expectedCandidate.artifact_id) errors.push('wrong_artifact_candidate');
-  if (input.candidate_build_run_id !== expectedCandidate.build_run_id) errors.push('wrong_build_run_candidate');
-  if (input.candidate_build_tree_sha !== expectedCandidate.build_tree_sha) errors.push('wrong_build_tree_candidate');
+  if (input.candidate_apk_sha256 !== candidate.apk_sha256) errors.push('wrong_apk_candidate');
+  if (input.candidate_apk_cert_sha256 !== candidate.apk_cert_sha256) errors.push('wrong_apk_cert_candidate');
+  if (input.candidate_artifact_id !== candidate.artifact_id) errors.push('wrong_artifact_candidate');
+  if (input.candidate_artifact_url !== candidate.artifact_url) errors.push('wrong_artifact_url_candidate');
+  if (input.candidate_artifact_digest !== candidate.artifact_digest) errors.push('wrong_artifact_digest_candidate');
+  if (input.candidate_build_run_id !== candidate.build_run_id) errors.push('wrong_build_run_candidate');
+  if (input.candidate_build_commit_sha !== candidate.build_commit_sha) errors.push('wrong_build_commit_candidate');
+  if (input.candidate_build_tree_sha !== candidate.build_tree_sha) errors.push('wrong_build_tree_candidate');
 
   return {
     ready: errors.length === 0,
     errors,
     min_device_count: MIN_DEVICE_COUNT,
     max_age_days: 7,
-    candidate_artifact_id: expectedCandidate.artifact_id,
-    candidate_apk_sha256: expectedCandidate.apk_sha256,
+    candidate_artifact_id: candidate.artifact_id,
+    candidate_apk_sha256: candidate.apk_sha256,
   };
 }
 

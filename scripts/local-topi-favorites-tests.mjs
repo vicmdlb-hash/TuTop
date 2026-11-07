@@ -30,7 +30,9 @@ assert.doesNotMatch(assistant, /api[_-]?key\s*:/i, 'Topi client must never embed
 
 assert.match(store, /favoriteMutationVersion = new Map<string, number>\(\)/);
 assert.match(store, /favoriteState\(current\.favorites, productId, wasFavorite\)/);
-assert.match(store, /favoriteMutationVersion\.get\(productId\) === version/);
+assert(store.includes('favoriteMutationVersion.get(mutationKey) === version'));
+assert(store.includes('if (get().user.id !== actorUid) return;'));
+assert(store.includes('const mutationKey = `${actorUid}:${productId}`;'));
 assert.doesNotMatch(store, /set\(\{ favorites: state\.favorites \}\)/);
 assert.match(store, /NEUTRAL_COMMUNITY_LABEL = 'Comunidad universitaria'/);
 assert.doesNotMatch(store, /facultad: 'Turismo Internacional'/);

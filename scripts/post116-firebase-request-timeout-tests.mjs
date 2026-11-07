@@ -5,6 +5,7 @@ const {
   FIREBASE_REQUEST_TIMEOUT_CODE,
   FirebaseRequestTimeoutError,
   firebaseFetch,
+  readFirebaseResponseText,
   isFirebaseRequestTimeout,
 } = await import('../src/services/firebaseHttp.ts');
 
@@ -66,5 +67,29 @@ try {
 } finally {
   globalThis.fetch = originalFetch;
 }
+
+// Headers can complete while the body itself stalls; both clients must fail bounded.
+const responseBodyStarted = Date.now();
+await assert.rejects(
+  readFirebaseResponseText({ text: () => new Promise(() => {}) }, 25),
+  (error) => {
+    assert.ok(error instanceof FirebaseRequestTimeoutError);
+    assert.equal(error.message, FIREBASE_REQUEST_TIMEOUT_CODE);
+    assert.equal(error.retryable, true);
+    assert.equal(error.timeoutMs, 25);
+    return true;
+  },
+);
+assert.ok(Date.now() - responseBodyStarted < 500, 'response body must not hang indefinitely');
+assert.equal(await readFirebaseResponseText({ text: async () => '{"ok":true}' }, 25), '{"ok":true}');
+await assert.rejects(
+  readFirebaseResponseText({ text: async () => { throw new Error('synthetic body read failure'); } }, 25),
+  /synthetic body read failure/,
+);
+assert.match(rest, /await readFirebaseResponseText\(response\)/);
+assert.match(auth, /await readFirebaseResponseText\(response\)/);
+assert.doesNotMatch(rest, /const text = await response\.text\(\)/);
+assert.doesNotMatch(auth, /const text = await response\.text\(\)/);
+console.log('PASS Firebase response body timeout: stalled body bounded, success and failure semantics retained, both clients wired');
 
 console.log('PASS Firebase request timeout: stalled network is bounded/retryable and a later request recovers');

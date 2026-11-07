@@ -6,6 +6,7 @@ import { adaptiveFieldsFor, formatListingDescription } from '../lib/listingDetai
 import { defaultScopeForCategory, VISIBILITY_SCOPES } from '../lib/universityNetwork';
 import { feedbackError, feedbackSuccess, feedbackTap } from '../lib/feedback';
 import { compressImageForFirestore } from '../lib/imageCompression';
+import { readLegacyPublishDraft, writeLegacyPublishDraft, clearLegacyPublishDraft } from '../lib/legacyPublishDraftPrivacy';
 import { askTopi } from '../services/assistantProvider';
 import { nationalBackend, nationalSchemaEnabled } from '../services/nationalBackend';
 import { useAppStore } from '../store/useAppStore';
@@ -13,30 +14,25 @@ import type { DeliveryMethod, ListingVisibilityScope, Product, ProductCategory, 
 import PreviewModal from './PreviewModal';
 import TopiMascot from './TopiMascot';
 
-const DRAFT_KEY = 'tutop.publish.draft.v4';
 const fallbackImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="#111827"/><text x="450" y="310" text-anchor="middle" fill="#c4b5fd" font-size="42" font-family="Arial">TuTop</text></svg>')}`;
 const conditions: ProductCondition[] = ['Nuevo', 'Como nuevo', 'Buen estado', 'Uso visible', 'Para reparar', 'No aplica'];
 const deliveryMethods: DeliveryMethod[] = ['Nos encontramos', 'Recoge conmigo', 'Yo entrego', 'Acordamos por chat', 'Envío local', 'Punto TuTop'];
 const emptyDraft = (faculty: string): Partial<ProductFormData> => ({ facultad: faculty, punto_encuentro: 'Coordinar por Chat', stock: 1, precio_negociable: false, shipping_available: false });
 
-type StoredDraft = { draft?: Partial<ProductFormData>; images?: string[]; adaptive?: Record<string, string> };
-function safeStoredDraft(faculty: string) {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') as StoredDraft;
-    return {
-      draft: { ...emptyDraft(faculty), ...(parsed.draft || {}), facultad: faculty },
-      images: Array.isArray(parsed.images) ? parsed.images.filter((value) => typeof value === 'string' && value.startsWith('data:image/')).slice(0, 4) : [],
-      adaptive: parsed.adaptive && typeof parsed.adaptive === 'object' ? parsed.adaptive : {},
-    };
-  } catch { return { draft: emptyDraft(faculty), images: [] as string[], adaptive: {} as Record<string, string> }; }
+function safeStoredDraft(uid: string, faculty: string) {
+  const saved = readLegacyPublishDraft(uid);
+  return {
+    draft: { ...emptyDraft(faculty), ...(saved?.draft || {}), facultad: faculty },
+    adaptive: saved?.adaptive || {} as Record<string, string>,
+  };
 }
 
 export default function Chatbot() {
   const { publishProduct, user, setActiveTab, syncError, products } = useAppStore();
-  const initial = useMemo(() => safeStoredDraft(user.facultad), [user.facultad]);
+  const initial = useMemo(() => safeStoredDraft(user.id, user.facultad), [user.id, user.facultad]);
   const [draft, setDraft] = useState<Partial<ProductFormData>>(initial.draft);
   const [adaptive, setAdaptive] = useState<Record<string, string>>(initial.adaptive);
-  const [images, setImages] = useState<string[]>(initial.images);
+  const [images, setImages] = useState<string[]>([]); // Photos stay in memory, not in durable storage.
   const [imageBusy, setImageBusy] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -56,11 +52,13 @@ export default function Chatbot() {
   const requiredReady = Boolean(draft.titulo?.trim() && draft.precio_mxn && draft.categoria && draft.punto_encuentro && draft.facultad);
 
   useEffect(() => {
+    const ownerUid = user.id;
     const timer = window.setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ draft, images, adaptive })); } catch { /* optional */ }
+      if (useAppStore.getState().user.id !== ownerUid) return;
+      writeLegacyPublishDraft(ownerUid, draft, adaptive);
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [draft, images, adaptive]);
+  }, [user.id, draft, adaptive]);
 
   useEffect(() => {
     if (!draft.categoria || draft.visibility_scope) return;
@@ -114,7 +112,7 @@ export default function Chatbot() {
     setShowPreview(true);
   };
 
-  const resetDraft = () => { setDraft(emptyDraft(user.facultad)); setAdaptive({}); setImages([]); localStorage.removeItem(DRAFT_KEY); };
+  const resetDraft = () => { setDraft(emptyDraft(user.facultad)); setAdaptive({}); setImages([]); clearLegacyPublishDraft(user.id); };
 
   const handlePublish = async (impulsar: boolean) => {
     if (!draft.titulo || !draft.precio_mxn || !draft.categoria || !draft.facultad || !draft.punto_encuentro || publishing) return;

@@ -34,7 +34,9 @@ assert.match(card, /onTransactionChange\?: \(transaction: MarketplaceTransaction
 assert.match(card, /nationalBackend\.confirmDelivery\(transaction\)/);
 assert.match(card, /if \(!transactionHint \|\| transactionHint\.chat_id !== chatId\) return/);
 assert.match(card, /setTransaction\(transactionHint\)/);
-assert.match(card, /onTransactionChange\?\.\(transaction\)/);
+assert.match(card, /onTransactionChange\?\.\(currentAccount && transaction\?\.chat_id === chatId/);
+assert.match(card, /transaction\.buyer_id === currentUserId \|\| transaction\.seller_id === currentUserId/);
+assert.match(card, /: null\);/, 'stale or unauthorized transaction must not propagate to parent');
 assert.match(card, /Operación completada y publicación cerrada como Vendido/);
 assert.doesNotMatch(card, /finalizeCompletedListing/);
 assert.doesNotMatch(card, /Sincronizar publicación como Vendido/);

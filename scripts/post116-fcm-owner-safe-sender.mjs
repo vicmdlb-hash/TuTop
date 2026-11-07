@@ -1,18 +1,29 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
-import { eligibleRecipientTargets, isPermanentFcmTokenError } from './fcm-token-ownership-lib.mjs';
-import { validateBuild120FcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './build120-fcm-physical-gate-lib.mjs';
+import { trustedFcmQueryRecord, trustedFcmDirectRecord } from './fcm-staging-document-identity-lib.mjs';
+import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
+import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
+import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
+import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup, isFreshFcmTargetStillEligible } from './fcm-outbox-attempt-lib.mjs';
 
 const STAGING_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const apply = process.argv.includes('--apply');
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
-const limit = Math.max(1, Math.min(500, Number(process.env.TUTOP_POST110_FCM_LIMIT || 300)));
-const applyGate = validateBuild120FcmApplyGate({
+// A malformed bound must not silently disable query completeness checks.
+const limit = Number(process.env.TUTOP_POST110_FCM_LIMIT ?? 300);
+if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+  throw new Error('FCM_QUERY_LIMIT_INVALID');
+}
+const applyGate = validatePhysicalQaFcmApplyGate({
   apply,
   maintenanceAllow: allow,
   ack: process.env.TUTOP_FCM_PHYSICAL_APPLY_ACK,
   candidateSha: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_SHA,
+  candidateArtifactId: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_ARTIFACT_ID,
+  candidateBuildRunId: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_BUILD_RUN_ID,
+  candidateApkSha256: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_APK_SHA256,
+  candidateCertSha256: process.env.TUTOP_FCM_PHYSICAL_CANDIDATE_CERT_SHA256,
   notificationId: process.env.TUTOP_FCM_PHYSICAL_NOTIFICATION_ID,
   recipientUid: process.env.TUTOP_FCM_PHYSICAL_RECIPIENT_UID,
   deviceTokenRecordId: process.env.TUTOP_FCM_PHYSICAL_DEVICE_TOKEN_RECORD_ID,
@@ -72,7 +83,8 @@ async function request(url, options = {}) {
   if (text) {
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
   }
-  if (!response.ok) throw new Error(`${response.status} ${url}: ${text.slice(0, 800)}`);
+  // Backend errors can include sensitive device identifiers: emit status only.
+  if (!response.ok) throw new Error(`FCM_STAGING_REQUEST_HTTP_${response.status}`);
   return data;
 }
 
@@ -81,33 +93,72 @@ async function query(collectionId) {
     method: 'POST',
     body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], limit } }),
   });
-  return (rows || []).filter((row) => row.document).map((row) => ({
-    id: row.document.name.split('/').pop(),
-    ...decodeFields(row.document.fields || {}),
-  }));
+  // Reject a full/ambiguous single page before selecting a token owner.
+  // Do not report a partial inventory as complete and send to a stale UID.
+  return assertCompleteFcmInventory(rows, limit, collectionId).map((row) =>
+    trustedFcmQueryRecord(row.document, collectionId, decodeFields));
 }
 
-async function markSent(item) {
-  const at = new Date().toISOString();
-  const name = `projects/${projectId}/databases/(default)/documents/notification_outbox/${item.id}`;
-  const fields = encodeFields({
-    status: 'sent',
-    attempts: Number(item.attempts || 0) + 1,
-    sent_at: at,
-    updated_at: at,
+async function documentOrNull(path) {
+  const uri = path.split('/').map(encodeURIComponent).join('/');
+  const response = await fetch(`${base}/${uri}`, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   });
-  await request(`${base}:commit`, {
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`BLOCK_CHECK_FAILED:${response.status}`);
+  const result = await response.json();
+  return trustedFcmDirectRecord(result, path, decodeFields);
+}
+
+const blockChatCache = new Map();
+async function hasUserBlockEdge(fromUid, toUid) {
+  // Read again for each pending direct notice; an earlier negative can expire.
+  return Boolean(await documentOrNull(`user_blocks/${fromUid}/targets/${toUid}`));
+}
+
+async function blockedDirectOutbox(item, { freshChat = false } = {}) {
+  if (!['new_message','offer_received','counter_offer','offer_accepted'].includes(item.kind)) return false;
+  const chatId = String(item.chat_id || '');
+  // A previously safe chat can be blocked, deleted or reassigned while the
+  // outbox CAS claim and token-owner cleanup are in flight. Never reuse its
+  // cached membership at the final physical-send authorization boundary.
+  if (freshChat || !blockChatCache.has(chatId)) {
+    blockChatCache.set(chatId, chatId ? await documentOrNull(`chats/${chatId}`) : null);
+  }
+  return shouldSuppressBlockedDirectNotification(item, blockChatCache.get(chatId), hasUserBlockEdge);
+}
+
+async function claimPending(item) {
+  const planned = planFcmOutboxClaim(item, new Date().toISOString());
+  const name = 'projects/' + projectId + '/databases/(default)/documents/notification_outbox/' + item.id;
+  const fields = encodeFields(planned.fields);
+  const committed = await request(base + ':commit', {
     method: 'POST',
-    body: JSON.stringify({
-      writes: [{
-        update: { name, fields },
-        updateMask: { fieldPaths: Object.keys(fields) },
-      }],
-    }),
+    body: JSON.stringify({ writes: [{
+      update: { name, fields },
+      updateMask: { fieldPaths: Object.keys(fields) },
+      currentDocument: planned.precondition,
+    }] }),
+  });
+  // A missing commit receipt must not be interpreted as permission to send.
+  return attachCommittedFcmClaim(item, planned, committed);
+}
+
+async function markSent(claimed) {
+  const planned = planFcmOutboxCompletion(claimed, new Date().toISOString());
+  const name = 'projects/' + projectId + '/databases/(default)/documents/notification_outbox/' + claimed.id;
+  const fields = encodeFields(planned.fields);
+  await request(base + ':commit', {
+    method: 'POST',
+    body: JSON.stringify({ writes: [{
+      update: { name, fields },
+      updateMask: { fieldPaths: Object.keys(fields) },
+      currentDocument: planned.precondition,
+    }] }),
   });
 }
 
-async function deactivateTokenRecord(target, reason) {
+async function deactivateTokenRecord(target, reason, { preserveOwnershipTime = false } = {}) {
   if (!target?.id) return false;
   const at = new Date().toISOString();
   const name = `projects/${projectId}/databases/(default)/documents/device_tokens/${target.id}`;
@@ -115,31 +166,41 @@ async function deactivateTokenRecord(target, reason) {
     active: false,
     invalidated_at: at,
     invalidation_reason: String(reason || 'fcm-permanent-error').slice(0, 80),
-    updated_at: at,
+    ...(preserveOwnershipTime ? {} : { updated_at: at }),
   });
-  await request(`${base}:commit`, {
+  const committed = await request(`${base}:commit`, {
     method: 'POST',
     body: JSON.stringify({
       writes: [{
         update: { name, fields },
         updateMask: { fieldPaths: Object.keys(fields) },
-        currentDocument: { exists: true },
+        currentDocument: fcmTokenCleanupPrecondition(target),
       }],
     }),
   });
+  if (!Array.isArray(committed?.writeResults) || committed.writeResults.length !== 1)
+    throw new Error('FCM_STALE_OWNER_CLEANUP_COMMIT_UNVERIFIED');
+  fcmTokenCleanupPrecondition({ _document_update_time: committed.writeResults[0]?.updateTime });
   return true;
 }
 
 const [outbox, tokens] = await Promise.all([query('notification_outbox'), query('device_tokens')]);
 const pending = outbox.filter((item) => item.status === 'pending');
+const supersededActiveTokens = supersededActiveTokenRecords(tokens);
 const scopedPending = apply
   ? [selectExactPhysicalNotification(pending, applyGate.notificationId, applyGate.recipientUid)]
   : pending;
 let planned = 0;
 let delivered = 0;
 let waitingForToken = 0;
+let blockedSuppressed = 0;
+let supersededOwnershipDeactivated = 0;
 
 for (const item of scopedPending) {
+  if (await blockedDirectOutbox(item)) {
+    blockedSuppressed += 1;
+    continue;
+  }
   const eligibleTargets = eligibleRecipientTargets(tokens, item.recipient_uid);
   const targets = apply
     ? [selectExactPhysicalTarget(eligibleTargets, applyGate.deviceTokenRecordId)]
@@ -155,8 +216,46 @@ for (const item of scopedPending) {
     continue;
   }
 
+  // Exact single-target physical send is gated above. A committed CAS claim
+  // prevents retries after an ambiguous external HTTP outcome.
+  const claimed = await claimPending(item);
   let deliveredForItem = 0;
   for (const target of targets) {
+    const staleForTarget = supersededActiveTokens.filter((record) => record.token === target.token);
+    let verifiedCleanups = 0;
+    for (const stale of staleForTarget) {
+      const cleaned = await deactivateTokenRecord(stale, 'superseded-token-owner', { preserveOwnershipTime: true }).catch(() => false);
+      if (cleaned) {
+        verifiedCleanups += 1;
+        supersededOwnershipDeactivated += 1;
+      }
+    }
+    // The outbox was already claimed by CAS. Do not send or automatically
+    // replay after an ambiguous cleanup of any superseded token mapping.
+    if (!canSendAfterStaleOwnerCleanup(staleForTarget.length, verifiedCleanups)) {
+      console.warn('FCM_PHYSICAL_STALE_OWNER_CLEANUP_UNVERIFIED; send quarantined');
+      continue;
+    }
+
+    // The first inventory was read before the CAS claim and stale-owner cleanup.
+    // Verify the exact token, recipient UID and Firestore version again from a
+    // complete read AFTER cleanup. Unknown ownership must quarantine the
+    // already-claimed notice; NEVER auto-replay an ambiguous FCM attempt.
+    const freshTokens = await query('device_tokens');
+    if (!isFreshFcmTargetStillEligible(target, freshTokens, item.recipient_uid)) {
+      console.warn('FCM_PHYSICAL_FRESH_TARGET_DENIED; send quarantined');
+      continue;
+    }
+
+    // Repeat direct-recipient consent, both block edges and CURRENT chat
+    // membership after the Firestore claim. A revoked block/changed member
+    // must quarantine the claimed outbox item; it is never auto-replayed.
+    if (await blockedDirectOutbox(item, { freshChat: true })) {
+      blockedSuppressed += 1;
+      console.warn('FCM_PHYSICAL_FRESH_DIRECT_BLOCKED; send quarantined');
+      continue;
+    }
+
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -176,11 +275,11 @@ for (const item of scopedPending) {
       if (isPermanentFcmTokenError(response.status, detail)) {
         await deactivateTokenRecord(target, 'fcm-permanent-token-error').catch(() => false);
       }
-      console.warn(`FCM ${item.id}/${target.id}: ${response.status} ${detail.slice(0, 220)}`);
+      console.warn(`FCM_PHYSICAL_SEND_HTTP_${response.status}; target details redacted`);
     }
   }
 
-  if (deliveredForItem > 0) await markSent(item);
+  if (deliveredForItem > 0) await markSent(claimed);
 }
 
 console.log(JSON.stringify({
@@ -191,10 +290,19 @@ console.log(JSON.stringify({
   planned_deliveries: planned,
   delivered,
   waiting_for_device_token: waitingForToken,
+  suppressed_by_user_blocks: blockedSuppressed,
   current_owner_filter: true,
+  superseded_active_token_records_detected: supersededActiveTokens.length,
+  superseded_active_token_records_deactivated: apply ? supersededOwnershipDeactivated : 0,
+  superseded_owner_cleanup_scoped_to_selected_token: apply ? true : null,
   permanent_invalid_token_cleanup: apply,
   notification_id_in_payload: true,
   single_target_apply_guard: apply ? true : null,
   selected_device_token_record_id: apply ? applyGate.deviceTokenRecordId : null,
+  candidate_sha: applyGate.authority?.sha || null,
+  candidate_artifact_id: applyGate.authority?.artifactId || null,
+  candidate_build_run_id: applyGate.authority?.buildRunId || null,
+  candidate_apk_sha256: applyGate.authority?.apkSha256 || null,
+  candidate_cert_sha256: applyGate.authority?.certSha256 || null,
   real_fcm_sent: apply && delivered > 0,
 }, null, 2));
