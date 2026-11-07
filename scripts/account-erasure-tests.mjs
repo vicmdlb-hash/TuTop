@@ -80,6 +80,14 @@ assert.doesNotMatch(processor, /adminDeleteDocument\(`listing_reservation_locks/
 assert.doesNotMatch(processor, /adminDeleteDocument\(`chats/);
 assert.doesNotMatch(processor, /adminDeleteDocument\(`reports/);
 
+// Legacy staging destructive smoke is deliberately disabled before ANY config
+// preparation, test-user creation or remote Firebase IO. Source-only contract.
+// The later legacy success assertions are historical and must never run.
+const legacyStop = "throw new Error('ACCOUNT_ERASURE_STAGING_SMOKE_DISABLED_UNTIL_ATOMIC_ADMISSION_FREEZE');";
+assert(liveSmoke.includes(legacyStop), 'legacy staging erasure smoke must explicitly fail closed');
+assert(liveSmoke.indexOf(legacyStop) < liveSmoke.indexOf('fs.existsSync(configPath)'), 'legacy smoke must fail before staging config access');
+assert(liveSmoke.indexOf(legacyStop) < liveSmoke.indexOf('createUserWithEmailAndPassword(auth, email, password)'), 'legacy smoke must fail before Auth user creation');
+assert(liveSmoke.indexOf(legacyStop) < liveSmoke.indexOf('await cleanup()'), 'legacy destructive cleanup must be unreachable');
 assert.match(liveSmoke, /createUserWithEmailAndPassword/);
 assert.match(liveSmoke, /account_deletion_requests/);
 assert.match(liveSmoke, /process-account-erasure\.mjs', '--uid', uid, '--apply'/);
