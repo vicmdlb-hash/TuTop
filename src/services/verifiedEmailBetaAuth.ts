@@ -198,14 +198,24 @@ async function synchronizePrivateEmail(uid: string, email: string) {
   }, { merge: true });
 }
 
-async function migrateLegacySessionToEmail(session: CompatibleSession, emailInput: string, expectedGeneration: number) {
+async function migrateLegacySessionToEmail(session: CompatibleSession, emailInput: string, expectedGeneration: number, expectedCanonicalSession: CompatibleSession | null) {
   const email = normalizeEmail(emailInput);
   const data = await identityRequest('accounts:update', {
     idToken: session.idToken,
     email,
     returnSecureToken: true,
   }) as AuthPayload;
-  if (authGeneration !== expectedGeneration) throw new Error('AUTH_SESSION_CHANGED');
+  // FirebaseRestClient (including the phone-password path) can replace shared
+  // credentials without incrementing this module's authGeneration. A delayed
+  // legacy migration must never overwrite a newer A->B or A->A login.
+  const current = readCompatibleSession();
+  const sameCanonical = expectedCanonicalSession
+    ? Boolean(current
+      && current.uid === expectedCanonicalSession.uid
+      && current.idToken === expectedCanonicalSession.idToken
+      && current.refreshToken === expectedCanonicalSession.refreshToken)
+    : current === null;
+  if (authGeneration !== expectedGeneration || !sameCanonical) throw new Error('AUTH_SESSION_CHANGED');
   if (!data.localId || data.localId !== session.uid) {
     clearCanonicalSession();
     throw new Error('AUTH_UID_MISMATCH');
@@ -336,6 +346,7 @@ export const verifiedEmailBetaAuth = {
     const email = normalizeEmail(emailInput);
     if (password.length < 8) throw new Error('WEAK_PASSWORD');
     const aliasEmail = await phoneAliasEmail(phone);
+    const expectedCanonicalSession = readCompatibleSession();
     const requestGeneration = ++authGeneration;
     const data = await identityRequest('accounts:signInWithPassword', {
       email: aliasEmail,
@@ -350,7 +361,7 @@ export const verifiedEmailBetaAuth = {
       expiresAt: Date.now() + Number(data.expiresIn || 3600) * 1000,
       phone,
     };
-    return migrateLegacySessionToEmail(legacySession, email, requestGeneration);
+    return migrateLegacySessionToEmail(legacySession, email, requestGeneration, expectedCanonicalSession);
   },
 
   async migrateCurrentLegacySession(emailInput: string) {
@@ -358,7 +369,7 @@ export const verifiedEmailBetaAuth = {
     if (!stored?.idToken || !stored.uid) throw new Error('AUTH_REQUIRED');
     if (stored.email || stored.authMode === 'email_password_verified_beta') throw new Error('LEGACY_MIGRATION_NOT_REQUIRED');
     const requestGeneration = ++authGeneration;
-    return migrateLegacySessionToEmail(stored, emailInput, requestGeneration);
+    return migrateLegacySessionToEmail(stored, emailInput, requestGeneration, stored);
   },
 
   async applyVerificationLink(linkInput: string) {
