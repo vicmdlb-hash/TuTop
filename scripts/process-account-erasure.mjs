@@ -1,4 +1,3 @@
-import { adminDeleteDocument, adminDeleteTestUsers, adminAssertAuthUserAbsent, adminGetDocument, adminListDocuments, adminPatchDocument, adminCommitAccountErasureCompletion, adminRunQueryAll, adminRunCollectionGroupQueryAll } from './staging-v2-admin.mjs';
 import { buildAccountErasurePlan, residualRiskSummary } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
@@ -17,6 +16,11 @@ if (apply && !/^[A-Za-z0-9_-]{1,128}$/.test(processorRunId)) throw new Error('AC
 // until the backend implements an atomic, shared admission freeze for both parties.
 // An env flag or source-only test is NOT proof of the required server-side gate.
 if (apply) throw new Error('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED');
+
+// Only initialize admin credentials AFTER all fail-closed preflight guards.
+// The imported module obtains a token at top level: static ESM imports run
+// before this module's body, which would otherwise bypass the apply freeze.
+const { adminDeleteDocument, adminDeleteTestUsers, adminAssertAuthUserAbsent, adminGetDocument, adminListDocuments, adminPatchDocument, adminCommitAccountErasureCompletion, adminRunQueryAll, adminRunCollectionGroupQueryAll } = await import('./staging-v2-admin.mjs');
 
 function fieldString(document, field) {
   return String(document?.fields?.[field]?.stringValue || '');
