@@ -91,8 +91,8 @@ async function requestJson(url, options = {}) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`${response.status} ${detail.slice(0, 800)}`);
+    // Public CI logs must not expose Firestore error bodies with document paths.
+    throw new Error(`RESERVATION_RECONCILE_HTTP_${response.status}`);
   }
   return response.status === 204 ? null : response.json();
 }
@@ -188,10 +188,20 @@ for (const lock of locks) {
 
 console.log(`TuTop V2 reservation reconciliation · ${projectId}`);
 console.log(`Transacciones revisadas: ${plans.length} · Reparaciones: ${actionable.length} · Locks terminales: ${terminalLockPlans.length} · Modo: ${apply ? 'APPLY' : 'DRY RUN'}`);
-if (actionable.length) console.table(actionable);
-else console.log('Sin reparaciones de transacción/listing necesarias en la muestra revisada.');
-if (terminalLockPlans.length) console.table(terminalLockPlans);
-else console.log('Sin reservation locks terminales para cleanup trusted.');
+// Only finite plan categories are logged: never print buyer/seller, listing,
+// transaction or lock IDs into an Actions log on this public repository.
+const actionTypeCounts = Object.fromEntries(
+  ['expire_reserved', 'repair_completed_listing'].map((kind) => [
+    kind, actionable.filter((plan) => plan.kind === kind).length,
+  ]),
+);
+const lockReasonCounts = Object.fromEntries(
+  ['completed_sold_out_trusted_cleanup', 'terminal_transaction_trusted_cleanup'].map((reason) => [
+    reason, terminalLockPlans.filter((plan) => plan.reason === reason).length,
+  ]),
+);
+console.log(`Acciones de reparación por clase: ${JSON.stringify(actionTypeCounts)}`);
+console.log(`Limpieza de reservation locks por clase: ${JSON.stringify(lockReasonCounts)}`);
 
 if (!apply) {
   console.log('\nDRY RUN: no se escribió nada.');
