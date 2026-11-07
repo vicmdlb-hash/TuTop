@@ -116,7 +116,7 @@ export function reservationLockBlockers(lockDocs, uid) {
   const blockers = new Map();
   for (const doc of lockDocs) {
     const match = typeof doc?.path === 'string'
-      ? /^listing_reservation_locks\\/([A-Za-z0-9_-]{1,128})$/.exec(doc.path)
+      ? /^listing_reservation_locks\/([A-Za-z0-9_-]{1,128})$/.exec(doc.path)
       : null;
     if (!match || match[1].startsWith('__')) throw Error('ERASURE_LOCK_PATH_INVALID');
     const buyer = doc?.fields?.buyer_id?.stringValue;
