@@ -1,9 +1,9 @@
 // Credential-free preflight: a limit-sized runQuery result cannot prove
-// complete inventory. Refuse reconciliation until full pagination is designed.
+// complete inventory. Use cursor pagination for full pages; never act on incomplete scans.
 const PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const COLLECTIONS = new Set(['transactions_v2', 'listing_reservation_locks']);
 
-export function assertCompleteReconciliationPage(rows, { projectId, collectionId, limit } = {}) {
+export function validateReconciliationInventoryPage(rows, { projectId, collectionId, limit } = {}) {
   if (projectId !== PROJECT || !COLLECTIONS.has(collectionId)) throw new Error('RECONCILE_INVENTORY_SCOPE_INVALID');
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new Error('RECONCILE_INVENTORY_LIMIT_INVALID');
   if (!Array.isArray(rows)) throw new Error('RECONCILE_INVENTORY_RESPONSE_INVALID');
@@ -12,7 +12,10 @@ export function assertCompleteReconciliationPage(rows, { projectId, collectionId
   const documents = [];
   for (const row of rows) {
     if (!row || typeof row !== 'object' || Array.isArray(row) || row.error) throw new Error('RECONCILE_INVENTORY_ROW_INVALID');
-    if (!Object.hasOwn(row, 'document')) continue; // empty-query readTime row
+    if (!Object.hasOwn(row, 'document')) {
+      if (!('readTime' in row) && !('skippedResults' in row) && !('explainMetrics' in row)) throw new Error('RECONCILE_INVENTORY_METADATA_INVALID');
+      continue;
+    }
     const document = row.document;
     const name = document?.name;
     const id = typeof name === 'string' && name.startsWith(prefix) ? name.slice(prefix.length) : '';
@@ -21,7 +24,14 @@ export function assertCompleteReconciliationPage(rows, { projectId, collectionId
     seen.add(name);
     documents.push(document);
   }
-  // Equality is ambiguous: exactly `limit` documents might be a partial page.
-  if (documents.length >= limit) throw new Error('RECONCILE_INVENTORY_INCOMPLETE');
+  if (documents.length > limit) throw new Error('RECONCILE_INVENTORY_OVERFULL_PAGE');
+  return documents;
+}
+
+// Single-page callers may not claim completeness when the limit is reached.
+// The reservation runner uses validateReconciliationInventoryPage with cursors.
+export function assertCompleteReconciliationPage(rows, options = {}) {
+  const documents = validateReconciliationInventoryPage(rows, options);
+  if (documents.length >= options.limit) throw new Error('RECONCILE_INVENTORY_INCOMPLETE');
   return documents;
 }

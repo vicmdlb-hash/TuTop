@@ -49,7 +49,8 @@ assert.match(lockRuleHardener, /completed queda reservado a cleanup trusted/);
 assert.doesNotMatch(lockRuleHardener, /data\.status == 'completed'.*allow delete/s);
 
 // Pure synthetic inventory tests: do NOT contact Firestore or use credentials.
-const { assertCompleteReconciliationPage } = await import('./reservation-reconcile-inventory-lib.mjs');
+const { assertCompleteReconciliationPage, validateReconciliationInventoryPage } = await import('./reservation-reconcile-inventory-lib.mjs');
+const { collectCursorPages } = await import('./firestore-query-pagination.mjs');
 const inventoryScope = { projectId: 'tutop-beta-vicmdlb-1356585881', collectionId: 'transactions_v2', limit: 3 };
 const inventoryRow = (id) => ({ document: {
   name: `projects/${inventoryScope.projectId}/databases/(default)/documents/${inventoryScope.collectionId}/${id}`,
@@ -71,8 +72,38 @@ for (const invalidScope of [
   { ...inventoryScope, limit: 0 }, { ...inventoryScope, limit: 501 },
   { ...inventoryScope, limit: Number.NaN },
 ]) assert.throws(() => assertCompleteReconciliationPage([inventoryRow('A')], invalidScope), /RECONCILE_INVENTORY_/);
-assert.match(runner, /assertCompleteReconciliationPage\(response, \{ projectId, collectionId, limit: maxDocs \}\)/);
+assert.match(runner, /validateReconciliationInventoryPage/);
+assert.match(runner, /collectCursorPages/);
+assert.match(runner, /RECONCILE_MAX_PAGES_INVALID/);
 assert.match(runner, /RECONCILE_LIMIT_INVALID/);
+
+// Cursor pagination must exhaust all pages, including exact-boundary pages.
+const rows12 = Array.from({ length: 12 }, (_, n) => inventoryRow('ID' + String(n).padStart(3, '0')));
+let pagesRead = 0;
+const collected = await collectCursorPages(async ({ afterName, pageSize }) => {
+  pagesRead += 1;
+  const start = afterName ? rows12.findIndex(x => x.document.name === afterName) + 1 : 0;
+  return validateReconciliationInventoryPage(rows12.slice(start, start + pageSize),
+    { ...inventoryScope, limit: pageSize }).map(doc => ({ name: doc.name }));
+}, { pageSize: 3, maxPages: 10 });
+assert.equal(collected.length, 12);
+assert.equal(pagesRead, 5, 'full last page must be followed by a final empty query');
+assert.equal(new Set(collected.map(x => x.name)).size, 12);
+assert.equal(validateReconciliationInventoryPage(rows12.slice(0, 3), inventoryScope).length, 3);
+for (const invalid of [
+  [{}], [{ document: null }],
+  [{ document: { name: rows12[0].document.name + '/nested' } }],
+  Array.from({ length: 4 }, (_, n) => inventoryRow('X' + n)),
+]) assert.throws(() => validateReconciliationInventoryPage(invalid, inventoryScope),
+  /RECONCILE_INVENTORY_/);
+await assert.rejects(collectCursorPages(async () =>
+  validateReconciliationInventoryPage([rows12[0]], inventoryScope)
+    .map(doc => ({ name: doc.name })),
+  { pageSize: 3, maxPages: 2 }), /QUERY_CURSOR_NOT_ADVANCING/);
+assert.match(runner, /id: document.name.split/);
+assert.match(runner, /name: document.name/);
+console.log('PASS reservation inventory paginates all pages and rejects malformed cursors');
+
 console.log('PASS reconciliation inventory: incomplete/duplicate/untrusted pages refuse all writes');
 
 console.log('PASS reservation runner is dry-run by default');

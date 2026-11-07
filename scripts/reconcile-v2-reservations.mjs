@@ -2,7 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { assertCompleteReconciliationPage } from './reservation-reconcile-inventory-lib.mjs';
+import { validateReconciliationInventoryPage } from './reservation-reconcile-inventory-lib.mjs';
+import { collectCursorPages } from './firestore-query-pagination.mjs';
 
 if (process.env.TUTOP_NODE_TS_STRIP !== '1') {
   const result = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
@@ -20,6 +21,8 @@ const allow = String(process.env.TUTOP_ALLOW_V2_RECONCILE || '').trim();
 const historicalProject = 'tutop-3a4f7';
 const maxDocs = Number(process.env.TUTOP_V2_RECONCILE_LIMIT ?? '200');
 if (!Number.isSafeInteger(maxDocs) || maxDocs < 1 || maxDocs > 500) throw new Error('RECONCILE_LIMIT_INVALID');
+const maxPages = Number(process.env.TUTOP_V2_RECONCILE_MAX_PAGES ?? '20');
+if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 100) throw new Error('RECONCILE_MAX_PAGES_INVALID');
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -100,15 +103,27 @@ async function requestJson(url, options = {}) {
 }
 
 async function runCollectionQuery(collectionId) {
-  const response = await requestJson(`${base}:runQuery`, {
-    method: 'POST',
-    body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], limit: maxDocs } }),
-  });
-  return assertCompleteReconciliationPage(response, { projectId, collectionId, limit: maxDocs }).map((document) => ({
-    id: document.name.split('/').pop(),
-    ...decodeFields(document.fields || {}),
-    __updateTime: document.updateTime || null,
-  }));
+  // Both collection inventories must finish before any mutation is considered.
+  return collectCursorPages(async ({ afterName, pageSize }) => {
+    const structuredQuery = {
+      from: [{ collectionId }],
+      orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }],
+      ...(afterName ? { startAt: { values: [{ referenceValue: afterName }], before: false } } : {}),
+      limit: pageSize,
+    };
+    const response = await requestJson(`${base}:runQuery`, {
+      method: 'POST',
+      body: JSON.stringify({ structuredQuery }),
+    });
+    return validateReconciliationInventoryPage(response, { projectId, collectionId, limit: pageSize })
+      .map((document) => ({
+        ...decodeFields(document.fields || {}),
+        // Authenticated document path overrides any untrusted data field 'id'.
+        id: document.name.split('/').pop(),
+        name: document.name,
+        __updateTime: document.updateTime || null,
+      }));
+  }, { pageSize: maxDocs, maxPages });
 }
 
 assertStagingTarget();
