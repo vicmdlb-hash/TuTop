@@ -38,15 +38,21 @@ export function buildAccountErasurePlan({ projectId, uid, status, apply = false,
   // A caller may provide collection='listings_v2' with path='users/victim'.
   // Never allow that metadata mismatch to mutate unrelated Firestore records.
   const allowedWithdrawals = new Set(['listings_v2', 'demand_requests']);
-  const normalizedWithdrawals = withdrawDocs
-    .filter((item) => item && allowedWithdrawals.has(item.collection))
+  // Unknown or malformed inventory entries may represent missed account data.
+  // Fail closed instead of silently dropping them from the withdrawal proof.
+  if (!Array.isArray(withdrawDocs)) throw new Error('ERASURE_WITHDRAW_INVENTORY_INVALID');
+  const normalizedWithdrawals = [...new Map(withdrawDocs
     .map((item) => {
+      if (!item || !allowedWithdrawals.has(item.collection)) {
+        throw new Error('ERASURE_WITHDRAW_COLLECTION_INVALID');
+      }
       const parts = typeof item.path === 'string' ? item.path.split('/') : [];
       if (parts.length !== 2 || parts[0] !== item.collection || !segment(parts[1])) {
         throw new Error('ERASURE_WITHDRAW_PATH_INVALID');
       }
       return { collection: item.collection, path: item.path };
     })
+    .map((item) => [item.path, item])).values()]
     .sort((a, b) => a.path.localeCompare(b.path));
   // An invalid count must never be silently discarded from the retention
   // inventory; otherwise the report could falsely claim a clean deletion.

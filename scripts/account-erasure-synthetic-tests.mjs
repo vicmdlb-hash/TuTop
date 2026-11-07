@@ -60,15 +60,38 @@ for (const malformed of ['12345678/../admin', '../12345678', 'bad name_123', 'ü
 assert.throws(() => buildAccountErasurePlan({ projectId, uid, status: 'completed' }), /UNPROCESSABLE_STATUS:completed/);
 assert.throws(() => buildAccountErasurePlan({ projectId, uid, status: 'rejected' }), /UNPROCESSABLE_STATUS:rejected/);
 
-const hostile = buildAccountErasurePlan({
+// An unsupported withdrawal is not a disposable document and must not vanish
+// from the erasure report: rejecting the whole plan prevents false clean proof.
+for (const bad of [
+  { collection: 'transactions_v2', path: 'transactions_v2/t1' },
+  { collection: 'audit_log', path: 'audit_log/a1' },
+  { collection: 'chats', path: 'chats/c1' },
+  null,
+  {},
+]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending',
+    withdrawDocs: [
+      { collection: 'listings_v2', path: 'listings_v2/l2' }, bad,
+    ],
+  }), /ERASURE_WITHDRAW_COLLECTION_INVALID/);
+}
+for (const malformedInventory of [null, 'not-an-array', {}]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending', withdrawDocs: malformedInventory,
+  }), /ERASURE_WITHDRAW_INVENTORY_INVALID/);
+}
+const deduplicatedWithdrawals = buildAccountErasurePlan({
   projectId, uid, status: 'pending',
   withdrawDocs: [
-    { collection: 'transactions_v2', path: 'transactions_v2/t1' },
-    { collection: 'audit_log', path: 'audit_log/a1' },
     { collection: 'listings_v2', path: 'listings_v2/l2' },
+    { collection: 'listings_v2', path: 'listings_v2/l2' },
+    { collection: 'demand_requests', path: 'demand_requests/q2' },
   ],
 });
-assert.deepEqual(hostile.withdraw_paths, ['listings_v2/l2'], 'planner must reject unsupported destructive withdrawal collections');
+assert.deepEqual(deduplicatedWithdrawals.withdraw_paths,
+  ['demand_requests/q2', 'listings_v2/l2'],
+  'duplicate withdrawals must not inflate mutation attempts or proof counts');
 
 // A trusted staging processor must never let a withdrawal's claimed
 // collection disguise a document in another collection or a nested path.
