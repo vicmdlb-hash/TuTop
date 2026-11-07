@@ -25,7 +25,7 @@ function harness() {
   let session = null;
   let privateEmail = '';
   const calls = [];
-  let commitError, sendError, lookupWait, signInWait, profileWait, lookupVerified=true, lookupEmail='a@example.test';
+  let commitError, sendError, lookupWait, signInWait, updateWait, profileWait, lookupVerified=true, lookupEmail='a@example.test';
   class Client {
     get currentSession() { return session && {...session}; }
     persistSession(value) { session = value; }
@@ -52,6 +52,7 @@ function harness() {
     calls.push({kind:url,body});
     if(url.includes('accounts:lookup') && lookupWait) await lookupWait;
     if(url.includes('accounts:signInWithPassword') && signInWait) await signInWait;
+    if(url.includes('accounts:update') && updateWait) await updateWait;
     if(url.includes('sendOobCode') && sendError) throw new Error(sendError);
     let data = url.includes('accounts:lookup') ? {users:[{localId:'u1',email:lookupEmail,emailVerified:lookupVerified}]} :
       url.includes('accounts:update') ? {localId:'u1',email:body.email,idToken:'migrated-token',refreshToken:'migrated-refresh',expiresIn:'3600'} :
@@ -64,7 +65,7 @@ function harness() {
   const isFirebaseRequestTimeout = (error) => error?.message === 'FIREBASE_REQUEST_TIMEOUT' || error?.code === 'FIREBASE_REQUEST_TIMEOUT';
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
   const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','readFirebaseResponseText','isFirebaseRequestTimeout','nationalVerificationIndicators','nationalAcademicMetadata','validateBetaAcademicCatalog','INSTITUTIONS','CAMPUSES',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,readFirebaseResponseText,isFirebaseRequestTimeout,nationalVerificationIndicators,nationalAcademicMetadata,validateBetaAcademicCatalog,INSTITUTIONS,CAMPUSES);
-  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set profileWait(v){profileWait=v;}};
+  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set updateWait(v){updateWait=v;},set profileWait(v){profileWait=v;}};
 }
 const profile={nombre:'Tester',facultad:'Campus',institution_id:'uatx',institution_name:'Universidad Autónoma de Tlaxcala',campus_id:'uatx-riberena',campus_name:'Campus Ribereña'};
 const tests = [
@@ -178,6 +179,44 @@ const tests = [
    assert.equal(h.session.phone,'+522461234567');
    assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:signUp')),false);
    assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:delete')),false);
+ }],
+ ['current legacy migration succeeds only when its canonical session stays unchanged',async()=>{
+   const h=harness();
+   h.session={uid:'u1',idToken:'legacy-token',refreshToken:'legacy-r1',expiresAt:Date.now()+300000,phone:'+522461234567'};
+   const result=await h.auth.migrateCurrentLegacySession('legacy@example.test');
+   assert.equal(result.uid,'u1');
+   assert.equal(h.session.email,'legacy@example.test');
+   assert.equal(h.session.refreshToken,'migrated-refresh');
+ }],
+ ['delayed current legacy migration cannot overwrite B or a same-UID re-login',async()=>{
+   for(const replacement of [
+     {uid:'u2',idToken:'token-B',refreshToken:'refresh-B'},
+     {uid:'u1',idToken:'new-A-token',refreshToken:'new-A-refresh'},
+   ]) {
+     const h=harness();
+     h.session={uid:'u1',idToken:'legacy-token',refreshToken:'legacy-r1',expiresAt:Date.now()+300000,phone:'+522461234567'};
+     let release; h.updateWait=new Promise(r=>release=r);
+     const pending=h.auth.migrateCurrentLegacySession('legacy@example.test');
+     await new Promise(r=>setImmediate(r));
+     assert(h.calls.some(c=>String(c.kind).includes('accounts:update')), 'update request must be pending');
+     h.session={...replacement,expiresAt:Date.now()+300000,phone:''};
+     release();
+     await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+     assert.equal(h.session.idToken,replacement.idToken,'new canonical session must survive stale migration response');
+     assert.equal(h.calls.filter(c=>String(c.kind).includes('accounts:sendOobCode')).length,0,'stale migration cannot request verification email');
+   }
+ }],
+ ['signed-out legacy recovery cannot resurrect A after another client logs in as B',async()=>{
+   const h=harness();
+   let release; h.updateWait=new Promise(r=>release=r);
+   const pending=h.auth.recoverLegacyPhoneAccount('2461234567','password123','legacy@example.test');
+   await new Promise(r=>setImmediate(r));
+   assert(h.calls.some(c=>String(c.kind).includes('accounts:update')),'recovery update must be pending');
+   h.session={uid:'u2',idToken:'token-B',refreshToken:'refresh-B',expiresAt:Date.now()+300000,phone:''};
+   release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2');
+   assert.equal(h.calls.filter(c=>String(c.kind).includes('accounts:sendOobCode')).length,0);
  }],
  ['verified legacy recovery synchronizes private email without creating a new marketplace account',async()=>{
    const h=harness(); h.lookupEmail='legacy@example.test';
