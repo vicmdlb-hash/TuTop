@@ -1,4 +1,8 @@
 export function buildAccountErasurePlan({ projectId, uid, status, apply = false, directDeletes = [], queryDeletePaths = [], withdrawDocs = [], retained = [], blockers = [] }) {
+  // A pure planner may be reused outside this CLI: never label a non-staging
+  // project or a truthy non-boolean (e.g. 'false') as an authorized apply plan.
+  if (projectId !== 'tutop-beta-vicmdlb-1356585881') throw new Error('ERASURE_PROJECT_NOT_ALLOWED');
+  if (typeof apply !== 'boolean') throw new Error('ERASURE_APPLY_FLAG_INVALID');
   if (typeof uid !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(uid)) throw new Error('INVALID_UID');
   if (!['pending', 'processing'].includes(status)) throw new Error(`UNPROCESSABLE_STATUS:${status || 'unknown'}`);
 

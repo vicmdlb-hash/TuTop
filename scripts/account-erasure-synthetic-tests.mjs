@@ -136,6 +136,21 @@ assert.throws(() => buildAccountErasurePlan({
   ],
 }), /ERASURE_RETAINED_TOTAL_INVALID/);
 
+// The pure planner must not accidentally accept a production project or a
+// string/number masquerading as a boolean apply flag, regardless of caller.
+for (const wrongProject of ['other-project', 'tutop-3a4f7', '', null, undefined]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId: wrongProject, uid, status: 'pending',
+  }), /ERASURE_PROJECT_NOT_ALLOWED/);
+}
+for (const malformedApply of ['false', 'true', 0, 1, null, {}, []]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending', apply: malformedApply,
+  }), /ERASURE_APPLY_FLAG_INVALID/);
+}
+assert.equal(buildAccountErasurePlan({projectId, uid, status: 'pending', apply: false}).mode, 'dry-run');
+assert.equal(buildAccountErasurePlan({projectId, uid, status: 'pending', apply: true}).mode, 'apply');
+
 console.log('PASS clean account dry-run plan');
 console.log('PASS marketplace account dedupe/withdraw/retain plan');
 console.log('PASS active marketplace transactions block destructive erasure');
