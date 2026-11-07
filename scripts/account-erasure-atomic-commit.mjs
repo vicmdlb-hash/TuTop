@@ -12,11 +12,25 @@ function encode(v) {
   throw Error('ERASURE_ATOMIC_FIELD_TYPE_INVALID');
 }
 const fields = o=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,encode(v)]));
+const utcTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+function canonicalUtcNanoKey(timestamp) {
+  // Firestore updateTime can contain nine decimal digits. Date.parse only
+  // preserves milliseconds, which is insufficient for proof chronology.
+  const ms = typeof timestamp === 'string' ? Date.parse(timestamp) : NaN;
+  if (typeof timestamp !== 'string' || !utcTimestamp.test(timestamp)
+    || !Number.isFinite(ms)
+    || new Date(ms).toISOString().slice(0, 19) !== timestamp.slice(0, 19)) {
+    throw Error('ERASURE_ATOMIC_UPDATE_TIME_REQUIRED');
+  }
+  const dot = timestamp.indexOf('.');
+  const nanos = dot < 0 ? '000000000' : timestamp.slice(dot + 1, -1).padEnd(9, '0');
+  return timestamp.slice(0, 19) + '.' + nanos;
+}
+
 export function buildAccountErasureFinalCommit({projectId,uid,processorRunId,requestUpdateTime,completed,audit}) {
   if(projectId!==PROJECT) throw Error('ERASURE_ATOMIC_STAGING_ONLY');
   if(!safeId(uid,8)||!safeId(processorRunId)) throw Error('ERASURE_ATOMIC_ID_INVALID');
-  if(typeof requestUpdateTime!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(requestUpdateTime)
-    ||!Number.isFinite(Date.parse(requestUpdateTime))) throw Error('ERASURE_ATOMIC_UPDATE_TIME_REQUIRED');
+  const requestNanoKey = canonicalUtcNanoKey(requestUpdateTime);
   // A completion timestamp cannot predate the request generation it finalizes.
   // Treat inconsistent audit timestamps as contradictory proof, never success.
   const requestUpdatedMs = Date.parse(requestUpdateTime);
@@ -24,6 +38,7 @@ export function buildAccountErasureFinalCommit({projectId,uid,processorRunId,req
     ||completed.processor_run_id!==processorRunId
     ||!(completed.completed_at instanceof Date)||Number.isNaN(completed.completed_at.getTime())
     ||completed.completed_at.getTime()<requestUpdatedMs
+    ||canonicalUtcNanoKey(completed.completed_at.toISOString())<requestNanoKey
     ||!(completed.updated_at instanceof Date)
     ||Number.isNaN(completed.updated_at.getTime())
     ||completed.updated_at.getTime()!==completed.completed_at.getTime()

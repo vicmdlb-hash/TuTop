@@ -52,6 +52,23 @@ for(const bad of [
   {audit:{...audit,residual_manifest_version:'other'}},
   {audit:{...audit,created_at:new Date('2026-10-22T22:01:00Z')}}
 ]) assert.throws(()=>buildAccountErasureFinalCommit({...input,...bad}),/ERASURE_ATOMIC_/);
+// Firestore updateTime retains up to nanoseconds; milliseconds-only ordering
+// can incorrectly accept a "completed" timestamp before a newer request edit.
+for (const invalidUpdateTime of [
+  '2026-02-31T21:59:00Z',
+  '2026-10-22T21:59:00+00:00',
+  '2026-10-22T21:59:00.1234567890Z',
+  '2026-10-22 21:59:00Z',
+  '2026-10-22T22:00:00.000000001Z',
+]) {
+  assert.throws(() => buildAccountErasureFinalCommit({
+    ...input, requestUpdateTime: invalidUpdateTime,
+  }), /ERASURE_ATOMIC_/);
+}
+assert.equal(buildAccountErasureFinalCommit({
+  ...input, requestUpdateTime: '2026-10-22T21:59:00.123456789Z',
+}).writes.length, 2, 'valid nine-digit Firestore updateTime remains supported');
+
 const processor=fs.readFileSync('scripts/process-account-erasure.mjs','utf8');
 const admin=fs.readFileSync('scripts/staging-v2-admin.mjs','utf8');
 const del=processor.indexOf('await adminDeleteTestUsers([uid])');
