@@ -206,10 +206,11 @@ export class FirebaseRestClient {
     return session;
   }
 
-  async deleteAuthAccount() {
-    const token = await this.getIdToken();
-    await this.authRequest('accounts:delete', { idToken: token });
-    this.persistSession(null);
+  async deleteAuthAccount(): Promise<never> {
+    // Auth account deletion is not a browser-side rollback. Only a trusted
+    // processor may delete an identity AFTER the full residual inventory,
+    // admission freeze and retention checks have passed.
+    throw new Error('ACCOUNT_ERASURE_TRUSTED_PROCESSOR_REQUIRED');
   }
 
   async getIdToken() {

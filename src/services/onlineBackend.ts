@@ -82,13 +82,11 @@ export class TuTopOnlineBackend {
   async register(phone: string, password: string, profile: { nombre: string; facultad: string }) {
     const client = this.getClient();
     let session: AuthSession;
-    let createdAuthIdentity = true;
     try {
       session = await client.registerWithPhonePassword(phone, password);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!/EMAIL_EXISTS/i.test(message)) throw error;
-      createdAuthIdentity = false;
       session = await client.signInWithPhonePassword(phone, password);
       const existingProfile = await client.getDocument<any>(`users/${session.uid}`);
       if (existingProfile) {
@@ -97,14 +95,18 @@ export class TuTopOnlineBackend {
       }
     }
     try {
+      // A Firestore commit may have SUCCEEDED even when its response was lost.
+      // Deleting the newly created Auth user here would orphan the profile,
+      // wallet and other committed documents. Keep the identity for an
+      // explicit sign-in or reviewed recovery instead of destructive rollback.
       await this.createInitialAccount(session, profile);
-      await this.ensureMarketplaceCatalog();
     } catch (error) {
-      if (createdAuthIdentity) {
-        try { await client.deleteAuthAccount(); } catch { client.signOut(); }
-      } else client.signOut();
+      client.signOut();
       throw error;
     }
+    // Shared catalog bootstrap is optional and must not roll back an otherwise
+    // committed account. A subsequent signed-in refresh may try it again.
+    await this.ensureMarketplaceCatalog().catch(() => undefined);
     return session;
   }
 
