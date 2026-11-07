@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 
 const processor = fs.readFileSync('scripts/process-account-erasure.mjs', 'utf8');
 const planner = fs.readFileSync('scripts/account-erasure-planner.mjs', 'utf8');
@@ -60,6 +61,38 @@ assert.match(planner, /safe_to_execute_in_staging: false/);
 assert.match(planner, /admission_freeze_verified: false/);
 assert.match(processor, /if\s*\(apply\)\s*throw new Error\('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED'\)/, 'apply must remain unconditionally blocked until a verified server-side admission freeze exists');
 assert(processor.indexOf('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED') < processor.indexOf('const request = await adminGetDocument'), 'apply gate must fail before admin reads');
+
+assert.doesNotMatch(processor, /^import\\b[^\\n]*staging-v2-admin\\.mjs/m,
+  'static import would initialize Firebase admin credentials before the apply freeze');
+const adminImport = processor.indexOf("await import('./staging-v2-admin.mjs')");
+const admissionStop = processor.indexOf("if (apply) throw new Error('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED')");
+assert(adminImport > admissionStop && admissionStop >= 0,
+  'admin credentials must only initialize after unconditional apply freeze');
+// Evaluate just the actual processor preflight in an isolated VM: no imports,
+// network, credentials, Firestore or Auth are available in this sandbox.
+const processorPrelude = processor.slice(processor.indexOf('const projectId ='), processor.lastIndexOf('const { adminDeleteDocument', adminImport));
+assert(processorPrelude.includes('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED') && !processorPrelude.includes('await import'),
+  'synthetic prelude extraction must end before credential import');
+function syntheticApply({ projectId = 'tutop-beta-vicmdlb-1356585881', uid = 'syntheticUser12345', gate = 'staging-reviewed', runId = 'synthetic-run-1' } = {}) {
+  return () => vm.runInNewContext(processorPrelude, {
+    process: {
+      env: {
+        TUTOP_FIREBASE_PROJECT_ID: projectId,
+        TUTOP_ALLOW_ACCOUNT_ERASURE: gate,
+        TUTOP_ERASURE_RUN_ID: runId,
+      },
+      argv: ['node', 'scripts/process-account-erasure.mjs', '--uid', uid, '--apply'],
+    },
+  }, { timeout: 250 });
+}
+assert.throws(syntheticApply(), /ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED/,
+  'even a valid synthetic staging gate/run ID must never allow destructive apply');
+assert.throws(syntheticApply({ gate: '' }), /Apply bloqueado/,
+  'missing staging authorization must be denied first');
+assert.throws(syntheticApply({ uid: 'bad!' }), /ACCOUNT_ERASURE_INVALID_UID_BEFORE_ADMIN_READ/);
+assert.throws(syntheticApply({ runId: '' }), /ACCOUNT_ERASURE_RUN_ID_INVALID_BEFORE_ADMIN_READ/);
+assert.throws(syntheticApply({ projectId: 'other-project' }), /Account erasure sólo puede operar en staging/);
+
 assert.match(planner, /auth_delete_last: true/);
 // CI/staging logs must never reveal full UID, Firestore document paths,
 // chat identifiers or transaction IDs from a real erasure plan.
@@ -88,6 +121,18 @@ assert(liveSmoke.includes(legacyStop), 'legacy staging erasure smoke must explic
 assert(liveSmoke.indexOf(legacyStop) < liveSmoke.indexOf('fs.existsSync(configPath)'), 'legacy smoke must fail before staging config access');
 assert(liveSmoke.indexOf(legacyStop) < liveSmoke.indexOf('createUserWithEmailAndPassword(auth, email, password)'), 'legacy smoke must fail before Auth user creation');
 assert(liveSmoke.indexOf(legacyStop) < liveSmoke.indexOf('await cleanup()'), 'legacy destructive cleanup must be unreachable');
+
+assert.doesNotMatch(liveSmoke, /^import\\b[^\\n]*staging-v2-admin\\.mjs/m,
+  'static staging admin import would fetch a credential even when smoke is disabled');
+const smokeAdminImport = liveSmoke.indexOf("await import('./staging-v2-admin.mjs')");
+assert(smokeAdminImport > liveSmoke.indexOf(legacyStop) && smokeAdminImport < liveSmoke.indexOf('fs.existsSync(configPath)'),
+  'legacy smoke credential initialization must stay behind the stop and before historical config');
+const smokePrelude = liveSmoke.slice(liveSmoke.indexOf('const projectId ='), liveSmoke.lastIndexOf('const { adminDeleteDocument', smokeAdminImport));
+assert(smokePrelude.includes(legacyStop), 'synthetic staging prelude must contain fail-closed stop');
+assert.throws(() => vm.runInNewContext(smokePrelude, { process: { env: {} } }, { timeout: 250 }),
+  /ACCOUNT_ERASURE_STAGING_SMOKE_DISABLED_UNTIL_ATOMIC_ADMISSION_FREEZE/,
+  'legacy smoke must abort before imports, Firebase setup, user creation or cleanup');
+
 assert.match(liveSmoke, /createUserWithEmailAndPassword/);
 assert.match(liveSmoke, /account_deletion_requests/);
 assert.match(liveSmoke, /process-account-erasure\.mjs', '--uid', uid, '--apply'/);
