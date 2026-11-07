@@ -10,6 +10,13 @@ const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const configPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-staging-web-config.json').trim();
 const REQUIRED = 'tutop-beta-vicmdlb-1356585881';
 
+// SAFETY STOP (source-only): legacy end-to-end smoke expects destructive --apply
+// to succeed, but process-account-erasure.mjs correctly rejects ALL --apply
+// until an atomic, server-enforced admission freeze covers both parties.
+// Never seed or clean up Firebase staging data merely to reach a known failure.
+// A future replacement requires independent security review and physical gates.
+throw new Error('ACCOUNT_ERASURE_STAGING_SMOKE_DISABLED_UNTIL_ATOMIC_ADMISSION_FREEZE');
+
 if (projectId !== REQUIRED) throw new Error(`Erasure smoke fijado a ${REQUIRED}.`);
 if (process.env.TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed') throw new Error('Erasure smoke requiere TUTOP_ALLOW_ACCOUNT_ERASURE=staging-reviewed.');
 if (!fs.existsSync(configPath)) {
