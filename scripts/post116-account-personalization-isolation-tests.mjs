@@ -22,10 +22,13 @@ const {
   writeAccountLocalText,
 } = await import('../src/lib/accountLocalState.ts');
 
+const app = fs.readFileSync('src/App.tsx', 'utf8');
 const feed = fs.readFileSync('src/components/Feed.tsx', 'utf8');
 const detail = fs.readFileSync('src/components/ProductDetail.tsx', 'utf8');
 const tour = fs.readFileSync('src/components/WelcomeTour.tsx', 'utf8');
 
+// A mounted Feed keeps React state until effects run; a UID key prevents first-paint leakage.
+assert.match(app, /feed:\s*<Feed key=\{user\.id\}\s*\/>/, 'Feed must remount immediately on account change');
 assert.match(feed, /readAccountLocalList\(ACCOUNT_LOCAL_KEYS\.searchHistory, user\.id, 6\)/);
 assert.match(feed, /readAccountLocalList\(ACCOUNT_LOCAL_KEYS\.recentProducts, user\.id, 12\)/);
 assert.match(feed, /readAccountLocalList\(ACCOUNT_LOCAL_KEYS\.interests, user\.id, 8\)/);

@@ -96,7 +96,8 @@ function MobileApp() {
   };
 
   const content: Record<AppTab, ReactNode> = {
-    feed: <Feed />,
+    // Account switches must remount the Feed before old search/query/location state can render.
+    feed: <Feed key={user.id} />,
     bot: v2 ? <NationalPublishScreen key={user.id} /> : <Chatbot key={user.id} />,
     wallet: <WalletView />,
     inbox: <Inbox />,
