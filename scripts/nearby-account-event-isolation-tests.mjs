@@ -226,7 +226,9 @@ permissionState = 'granted';
 const existingGrant = lib.requestApproxLocation({
   ownerUid: B, requestPermission: false, isOwnerActive: () => currentUid === B,
 });
-await Promise.resolve();
+// Both the Permissions API and nearbyLocationPermission() are async;
+// yield one event-loop turn so the granted branch reaches getCurrentPosition.
+await new Promise(resolve => setImmediate(resolve));
 assert.equal(pendingPositions.length, passiveCount + 1, 'existing grant may support passive location');
 pendingPositions.at(-1)({ coords: { latitude: 19.314, longitude: -98.251 } });
 assert.equal((await existingGrant)?.latitude, 19.31);
