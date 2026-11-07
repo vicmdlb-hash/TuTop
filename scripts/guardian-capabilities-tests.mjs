@@ -84,6 +84,15 @@ assert.equal(check('topi_generative', 'under_13', {
   topi: { approved: true, issuer: 'trusted_server', audience: 'all_ages' },
 }).allowed, true);
 
+// A stale, fractional or untrusted clock must never turn an otherwise valid
+// adult proof into a permitted action. This is client-side synthetic policy only.
+for (const invalidNow of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY,
+  Number.NEGATIVE_INFINITY, '1760000000000', null, undefined, {}]) {
+  denied(check('browse_approved', 'adult', { nowMs: invalidNow }), 'age_unverified');
+  denied(check('direct_chat', 'adult', { nowMs: invalidNow }), 'age_unverified');
+}
+assert.equal(check('browse_approved', 'adult').allowed, true);
+
 // Untrusted runtime JSON must not turn strings, absent fields or unknown
 // capability names into approval. These tests are synthetic only.
 denied(check('not_registered_capability', 'adult'), 'capability_unknown');

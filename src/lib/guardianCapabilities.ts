@@ -102,7 +102,7 @@ export function decideCapability(input: {
 }): CapabilityDecision {
   if (!input || typeof input !== 'object') return DENIED('age_unverified');
   const { uid, capability, nowMs } = input;
-  if (typeof uid !== 'string' || uid.trim().length === 0 || !Number.isFinite(nowMs))
+  if (typeof uid !== 'string' || uid.trim().length === 0 || !Number.isSafeInteger(nowMs) || nowMs <= 0)
     return DENIED('age_unverified');
   // TypeScript types do not validate Firestore/JSON data at runtime.
   if (!KNOWN_CAPABILITIES.has(capability)) return DENIED('capability_unknown');
