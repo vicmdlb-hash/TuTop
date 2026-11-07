@@ -77,6 +77,15 @@ assert.equal(isFreshFcmTargetStillEligible(selected, [
   { ...selected }, { ...selected },
 ], 'synthetic-a'), false, 'duplicate inventory IDs are not trustworthy');
 
+// After a device moves accounts, malformed event order or timestamp fields
+// must never authorize a send even if its cached updateTime is unchanged.
+const oldOwner = { ...selected, owner_uid: 'synthetic-old',
+  updated_at: '2026-10-28T20:00:01.000Z' };
+const malformedNewest = { ...selected, id: 'device-record-new',
+  owner_uid: 'synthetic-a', updated_at: '2026-02-31T20:00:02Z' };
+assert.equal(isFreshFcmTargetStillEligible(oldOwner, [oldOwner, malformedNewest],
+  'synthetic-old'), false, 'malformed newer owner record must quarantine delivery');
+
 const source=fs.readFileSync('scripts/post116-fcm-owner-safe-sender.mjs','utf8');
 const claimIndex=source.indexOf('const claimed = await claimPending(item);');
 const sendIndex=source.indexOf('messages:send');

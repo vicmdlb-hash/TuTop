@@ -110,6 +110,38 @@ assert.equal(isPermanentFcmTokenError(400,
 assert.equal(isPermanentFcmTokenError(500, 'temporary backend outage'), false);
 assert.equal(isPermanentFcmTokenError(400, 'quota exceeded'), false);
 
+// A stale or malformed Firestore record must quarantine the whole token group,
+// never revive the older account or normalize a different recipient.
+for (const inconsistent of [
+  { created_at: '2099-10-23T10:00:00Z', updated_at: '2026-10-24T10:00:00Z' },
+  { created_at: '2026-02-31T10:00:00Z' },
+  { created_at: 1760000000000 },
+  { updated_at: '2026-10-24T10:00:00+00:00' },
+  { token: ' example-record ' },
+]) {
+  const wrong = { ...activeRecord, ...inconsistent };
+  assert.deepEqual(eligibleRecipientTargets([priorRecord, wrong], 'alpha'), [],
+    'ambiguous newer FCM mapping must quarantine old owner');
+  assert.deepEqual(eligibleRecipientTargets([priorRecord, wrong], 'beta'), [],
+    'malformed FCM ownership must not send');
+}
+for (const invalidRecipient of [' beta ', 1234, { toString: () => 'beta' }, null]) {
+  assert.deepEqual(eligibleRecipientTargets([activeRecord], invalidRecipient), [],
+    'never coerce a noncanonical recipient UID into delivery');
+}
+assert.equal(eligibleRecipientTargets([activeRecord], 'beta').length, 1);
+for (const response of [
+  'unexpected: messaging/registration-token-not-registered',
+  JSON.stringify({ error: { status: 'INVALID_ARGUMENT',
+    message: 'not a token error; messaging/registration-token-not-registered' } }),
+]) {
+  assert.equal(isPermanentFcmTokenError(400, response), false,
+    'error messages mentioning token codes are not token revocation proof');
+}
+assert.equal(isPermanentFcmTokenError(400, JSON.stringify({
+  error: { details: [{ errorCode: 'UNREGISTERED' }] },
+})), true, 'structured documented FCM unregistration remains permanent');
+
 // Default authority always rejects the historical disabled candidate.
 assert.throws(() => loadActivePhysicalQaFcmAuthority(), /FCM_ACTIVE_CANDIDATE_REQUIRED/);
 console.log('PASS synthetic exact-SHA/APK/cert/recipient/device FCM authorization; obsolete candidate fails closed');

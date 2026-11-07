@@ -1,14 +1,37 @@
 function asTime(value) {
-  const n = Date.parse(String(value || ''));
-  return Number.isFinite(n) ? n : 0;
+  // Ownership timestamps are trusted ordering inputs, not display dates:
+  // Firestore JSON must supply a canonical UTC ISO timestamp. Never coerce
+  // arbitrary objects/numbers or accept Date.parse's silent date rollover.
+  if (typeof value !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)) return 0;
+  const n = Date.parse(value);
+  if (!Number.isFinite(n) || new Date(n).toISOString().slice(0, 19) !== value.slice(0, 19))
+    return 0;
+  return n;
 }
 
 function tokenKey(target = {}) {
-  return String(target.token || '').trim();
+  return target && typeof target === 'object' && typeof target.token === 'string'
+    ? target.token.trim() : '';
 }
 
 function recordTime(target = {}) {
   return Math.max(asTime(target.updated_at), asTime(target.created_at));
+}
+
+function trustedOwnerRow(row, token) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)
+    || typeof row.token !== 'string' || row.token !== token
+    || !Number.isFinite(recordTime(row)) || recordTime(row) <= 0
+    || typeof row.active !== 'boolean'
+    || typeof row.owner_uid !== 'string' || !row.owner_uid.trim()
+    || row.owner_uid.trim() !== row.owner_uid
+    || typeof row.id !== 'string' || !row.id.trim()
+    || (row.created_at !== undefined && asTime(row.created_at) <= 0)
+    || (row.updated_at !== undefined && asTime(row.updated_at) <= 0)
+    || (row.created_at !== undefined && row.updated_at !== undefined
+      && asTime(row.created_at) > asTime(row.updated_at))) return false;
+  return true;
 }
 
 /**
@@ -31,18 +54,7 @@ export function currentTokenOwnerRecords(records = []) {
   for (const [token, list] of groups) {
     // A malformed row on a device cannot safely prove an older owner is still
     // current. Refuse selection and auto-cleanup instead of reviving that row.
-    if (list.some(row =>
-      recordTime(row) <= 0 || typeof row.active !== 'boolean'
-      || typeof row.owner_uid !== 'string' || !row.owner_uid.trim()
-      || row.owner_uid.trim() !== row.owner_uid
-      || typeof row.id !== 'string' || !row.id.trim()
-      // A present but malformed last-update timestamp cannot fall back to an
-      // old creation date: that could resurrect a revoked prior recipient.
-      || (row.updated_at !== undefined
-        && (typeof row.updated_at !== 'string'
-          || !/^\d{4}-\d{2}-\d{2}T/.test(row.updated_at)
-          || asTime(row.updated_at) <= 0))
-    )) continue;
+    if (list.some(row => !trustedOwnerRow(row, token))) continue;
     const ranked = [...list].sort((a, b) => {
       const byTime = recordTime(b) - recordTime(a);
       if (byTime) return byTime;
@@ -65,9 +77,11 @@ export function currentTokenOwnerRecords(records = []) {
 }
 
 export function eligibleRecipientTargets(records = [], recipientUid = '') {
-  const uid = String(recipientUid || '').trim();
-  if (!uid) return [];
-  return currentTokenOwnerRecords(records).filter((target) => String(target.owner_uid || '') === uid);
+  // A malformed notification recipient must not become someone else's UID
+  // through implicit String(...) coercion or whitespace normalization.
+  if (typeof recipientUid !== 'string' || !recipientUid.trim()
+    || recipientUid.trim() !== recipientUid) return [];
+  return currentTokenOwnerRecords(records).filter((target) => target.owner_uid === recipientUid);
 }
 
 /**
@@ -90,18 +104,7 @@ export function supersededActiveTokenRecords(records = []) {
   for (const [token, list] of groups) {
     // A malformed row on a device cannot safely prove an older owner is still
     // current. Refuse selection and auto-cleanup instead of reviving that row.
-    if (list.some(row =>
-      recordTime(row) <= 0 || typeof row.active !== 'boolean'
-      || typeof row.owner_uid !== 'string' || !row.owner_uid.trim()
-      || row.owner_uid.trim() !== row.owner_uid
-      || typeof row.id !== 'string' || !row.id.trim()
-      // A present but malformed last-update timestamp cannot fall back to an
-      // old creation date: that could resurrect a revoked prior recipient.
-      || (row.updated_at !== undefined
-        && (typeof row.updated_at !== 'string'
-          || !/^\d{4}-\d{2}-\d{2}T/.test(row.updated_at)
-          || asTime(row.updated_at) <= 0))
-    )) continue;
+    if (list.some(row => !trustedOwnerRow(row, token))) continue;
     const ranked = [...list].sort((a, b) => {
       const byTime = recordTime(b) - recordTime(a);
       if (byTime) return byTime;
@@ -140,7 +143,7 @@ export function isPermanentFcmTokenError(status, body = '') {
   const code = Number(status);
   if (code !== 400 && code !== 404) return false;
   const text = typeof body === 'string' ? body.trim() : '';
-  if (/messaging\/registration-token-not-registered/i.test(text)) return true;
+  if (/^messaging\/registration-token-not-registered$/i.test(text)) return true;
   if (code === 404 && text === 'UNREGISTERED') return true;
   try {
     const parsed = JSON.parse(text);
