@@ -155,7 +155,19 @@ export class FirebaseRestClient {
       const raw = scoped || legacy;
       if (!raw) return null;
       const parsed = JSON.parse(raw) as AuthSession;
-      if (!parsed.uid || !parsed.idToken || !parsed.refreshToken) return null;
+      // localStorage is user-editable JSON, not trusted AuthSession typing.
+      // Reject spoofed objects/tokens and malformed expiry before any
+      // rehydrated session may authorize a Firestore or refresh request.
+      const validIdentity = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        && typeof parsed.uid === 'string' && parsed.uid.length > 0
+        && parsed.uid.length <= 256 && parsed.uid.trim() === parsed.uid
+        && typeof parsed.idToken === 'string' && parsed.idToken.length > 0
+        && parsed.idToken.length <= 16384
+        && typeof parsed.refreshToken === 'string' && parsed.refreshToken.length > 0
+        && parsed.refreshToken.length <= 16384
+        && Number.isFinite(parsed.expiresAt) && parsed.expiresAt >= 0
+        && (parsed.phone === undefined || typeof parsed.phone === 'string');
+      if (!validIdentity) return null;
       if (legacy) {
         localStorage.setItem(this.sessionStorageKey, raw);
         localStorage.removeItem(LEGACY_SESSION_KEY);

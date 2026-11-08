@@ -161,4 +161,27 @@ function makeHarness(initial = session('A', 'old')) {
   assert.equal(h.readPersisted()?.uid, 'B');
 }
 
+// Corrupted or client-edited storage must not become an authenticated runtime
+// session. Use synthetic tokens and the real FirebaseRestClient constructor.
+for (const malformed of [
+  { ...session('A', 'x'), uid: {} },
+  { ...session('A', 'x'), uid: ' A ' },
+  { ...session('A', 'x'), uid: 'A'.repeat(257) },
+  { ...session('A', 'x'), idToken: {} },
+  { ...session('A', 'x'), idToken: '' },
+  { ...session('A', 'x'), refreshToken: ['synthetic-token'] },
+  { ...session('A', 'x'), refreshToken: '' },
+  { ...session('A', 'x'), expiresAt: '0' },
+  { ...session('A', 'x'), expiresAt: -1 },
+  { ...session('A', 'x'), phone: {} },
+]) {
+  const h = makeHarness(malformed);
+  const restored = h.client();
+  assert.equal(restored.currentSession, null,
+    'untrusted storage JSON must not be treated as a verified auth identity');
+  await assert.rejects(restored.getIdToken(), /AUTH_REQUIRED/);
+}
+assert.equal(makeHarness(session('A', 'valid')).client().currentSession?.uid, 'A',
+  'valid previously persisted session must continue to restore');
+console.log('PASS malformed Firestore REST persisted sessions rejected before network (synthetic)');
 console.log('PASS 7 synthetic cross-client shared-session scenarios using actual FirebaseRestClient/lifecycle/bridge; no Firebase traffic');
