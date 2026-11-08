@@ -139,7 +139,9 @@ export function writeDurablePublishDraft(
   const safeUid = cleanUid(uid);
   const safeKey = key(uid);
   const target = storageOrNull(storage);
-  if (!safeUid || !safeKey || !target) return false;
+  if (!safeUid || !safeKey || !target
+    || !Number.isSafeInteger(now) || now < 0
+    || !Number.isSafeInteger(now + DURABLE_PUBLISH_DRAFT_TTL_MS)) return false;
   try {
     const envelope: DurableEnvelope = {
       schema_version: 2,
