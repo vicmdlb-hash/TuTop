@@ -33,14 +33,24 @@ rules = rules.replace(original[0], helper + original[0].replace(
   /; \}$/, ' && erasureAdmissionAllows(request.auth.uid); }',
 ));
 
-function scope(start, endMarker, label) {
-  const begin = rules.indexOf(start);
-  if (begin < 0 || rules.indexOf(start, begin + start.length) >= 0) {
-    throw new Error('ERASURE_FREEZE_DEMO_SECTION_DRIFT:' + label);
+// Wrap EVERY alternative of a write verb in the scope. Treat unguarded
+// secondary update rules as a hard error, not as an authorized bypass.
+function guardAllAlternatives(section, verb, guard, label) {
+  const token = 'allow ' + verb + ': if ';
+  let cursor = 0, out = '', count = 0;
+  while (true) {
+    const at = section.indexOf(token, cursor);
+    if (at < 0) break;
+    const predicateAt = at + token.length;
+    const terminator = section.indexOf(';', predicateAt);
+    if (terminator < 0) throw new Error('ERASURE_FREEZE_DEMO_NO_TERMINATOR:' + label);
+    out += section.slice(cursor, predicateAt)
+      + '(' + section.slice(predicateAt, terminator) + ') && (' + guard + ');';
+    cursor = terminator + 1;
+    count += 1;
   }
-  let end = rules.indexOf(endMarker, begin + start.length);
-  if (end < 0) throw new Error('ERASURE_FREEZE_DEMO_END_DRIFT:' + label);
-  return { begin, end, text: rules.slice(begin, end) };
+  if (count < 1 || count > 6) throw new Error('ERASURE_FREEZE_DEMO_WRITE_DRIFT:' + label + ':' + count);
+  return out + section.slice(cursor);
 }
 
 // Parent match rules exclude nested matches; all update/create alternatives
@@ -55,15 +65,7 @@ function guardRoot(collection, verb, guard) {
   const nested = rules.indexOf('\n      match /', begin + start.length);
   const end = nested >= 0 && nested < nextTop ? nested : nextTop;
   const old = rules.slice(begin, end);
-  const prefix = 'allow ' + verb + ': if ';
-  const pos = old.indexOf(prefix);
-  if (pos < 0 || old.indexOf(prefix, pos + prefix.length) >= 0)
-    throw new Error('ERASURE_FREEZE_DEMO_WRITE_DRIFT:' + collection + ':' + verb);
-  const startExpr = pos + prefix.length;
-  const stop = old.indexOf(';', startExpr);
-  if (stop < 0) throw new Error('ERASURE_FREEZE_DEMO_NO_TERMINATOR:' + collection);
-  const predicate = old.slice(startExpr, stop);
-  const updated = old.slice(0, startExpr) + '(' + predicate + ') && (' + guard + ')' + old.slice(stop);
+  const updated = guardAllAlternatives(old, verb, guard, collection + ':' + verb);
   rules = rules.slice(0, begin) + updated + rules.slice(end);
 }
 
@@ -72,15 +74,14 @@ function guardNested(nestedCollection, verb, guard) {
   const begin = rules.indexOf(start);
   if (begin < 0 || rules.indexOf(start, begin + start.length) >= 0)
     throw new Error('ERASURE_FREEZE_DEMO_NESTED_DRIFT:' + nestedCollection);
-  const end = rules.indexOf('\n      match /', begin + start.length);
+  // The last child collection (reads) ends at the next root match.
+  const nextNested = rules.indexOf('\n      match /', begin + start.length);
+  const nextRoot = rules.indexOf('\n    match /', begin + start.length);
+  const end = nextNested >= 0 && (nextRoot < 0 || nextNested < nextRoot)
+    ? nextNested : nextRoot;
   if (end < 0) throw new Error('ERASURE_FREEZE_DEMO_NESTED_END:' + nestedCollection);
-  const old = rules.slice(begin, end), prefix = 'allow ' + verb + ': if ';
-  const pos = old.indexOf(prefix);
-  if (pos < 0 || old.indexOf(prefix, pos + prefix.length) >= 0)
-    throw new Error('ERASURE_FREEZE_DEMO_NESTED_WRITE_DRIFT:' + nestedCollection);
-  const startExpr = pos + prefix.length, stop = old.indexOf(';', startExpr);
-  if (stop < 0) throw new Error('ERASURE_FREEZE_DEMO_NESTED_TERMINATOR:' + nestedCollection);
-  const updated = old.slice(0, startExpr) + '(' + old.slice(startExpr, stop) + ') && (' + guard + ')' + old.slice(stop);
+  const old = rules.slice(begin, end);
+  const updated = guardAllAlternatives(old, verb, guard, nestedCollection + ':' + verb);
   rules = rules.slice(0, begin) + updated + rules.slice(end);
 }
 const pair = (data) => 'erasureAdmissionAllows(' + data + '.buyer_id) && erasureAdmissionAllows(' + data + '.seller_id)';
