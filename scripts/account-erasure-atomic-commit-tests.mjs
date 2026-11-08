@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildAccountErasureFinalCommit, buildSyntheticErasureAdmissionVerifyWrites } from './account-erasure-atomic-commit.mjs';
+import { buildAccountErasureFinalCommit, buildSyntheticErasureAdmissionReadPlan, buildSyntheticErasureAdmissionVerifyWrites } from './account-erasure-atomic-commit.mjs';
 const now = new Date('2026-10-22T22:00:00Z');
 const completed = {
   status:'completed',completed_at:now,updated_at:now,
@@ -80,7 +80,7 @@ assert(!processor.includes("await adminPatchDocument(`account_deletion_requests/
 assert(!processor.includes('await adminPatchDocument(`audit_log/account-erasure-'));
 assert(admin.includes('current?.fields?.status?.stringValue !== \'processing\''));
 assert(admin.includes('request(`${firestoreBase}:commit`'));
-// Admission witnesses are a source-only prototype, not wired to any trusted writer.
+// Admission read plans are SOURCE-ONLY; not Firestore REST Writes and not wired to trusted writers.
 const admission = {
   projectId: 'tutop-beta-vicmdlb-1356585881',
   participants: ['buyer-test-01', 'seller-test-01'],
@@ -89,23 +89,26 @@ const admission = {
     { uid: 'seller-test-01', document: { status: 'rejected', updateTime: '2026-10-22T21:59:00.123456789Z' } },
   ],
 };
-const verifies = buildSyntheticErasureAdmissionVerifyWrites(admission);
-assert.equal(verifies.length, 2);
-assert.equal(verifies[0].verify,
+assert.throws(() => buildSyntheticErasureAdmissionVerifyWrites(admission), /ERASURE_ADMISSION_REST_VERIFY_UNSUPPORTED/,
+  'the obsolete REST verify Write API must fail closed');
+const reads = buildSyntheticErasureAdmissionReadPlan(admission);
+assert.equal(reads.length, 2);
+assert.equal(reads[0].documentPath,
   'projects/tutop-beta-vicmdlb-1356585881/databases/(default)/documents/account_deletion_requests/buyer-test-01');
-assert.deepEqual(verifies[0].currentDocument, { exists: false });
-assert.deepEqual(verifies[1].currentDocument, { updateTime: '2026-10-22T21:59:00.123456789Z' });
-assert(verifies.every(w => !('update' in w) && !('delete' in w)),
-  'an admission witness must not change deletion requests or commerce data');
-// Pure model of Firestore precondition semantics, NOT an emulator or live assertion.
+assert.deepEqual(reads[0].expected, { exists: false });
+assert.deepEqual(reads[1].expected, { updateTime: '2026-10-22T21:59:00.123456789Z' });
+assert(reads.every(w => w.kind === 'transaction_read' && !('update' in w) && !('delete' in w)
+  && !('verify' in w) && !('currentDocument' in w)),
+  'admission reads are model descriptors, NEVER REST writes');
+// Pure model of snapshot comparisons, NOT a Firestore transaction or atomicity proof.
 const syntheticCurrentDocumentMatches = (w, liveDoc) =>
-  'exists' in w.currentDocument ? liveDoc === null :
-    liveDoc?.updateTime === w.currentDocument.updateTime;
-assert(syntheticCurrentDocumentMatches(verifies[0], null));
-assert(!syntheticCurrentDocumentMatches(verifies[0], { status: 'pending', updateTime: '2026-10-22T22:00:00Z' }),
+  'exists' in w.expected ? liveDoc === null :
+    liveDoc?.updateTime === w.expected.updateTime;
+assert(syntheticCurrentDocumentMatches(reads[0], null));
+assert(!syntheticCurrentDocumentMatches(reads[0], { status: 'pending', updateTime: '2026-10-22T22:00:00Z' }),
   'a deletion request inserted before the same commit invalidates exists:false');
-assert(syntheticCurrentDocumentMatches(verifies[1], admission.requestSnapshots[1].document));
-assert(!syntheticCurrentDocumentMatches(verifies[1], { status: 'pending', updateTime: '2026-10-22T22:00:00Z' }),
+assert(syntheticCurrentDocumentMatches(reads[1], admission.requestSnapshots[1].document));
+assert(!syntheticCurrentDocumentMatches(reads[1], { status: 'pending', updateTime: '2026-10-22T22:00:00Z' }),
   'rejected→pending transition before commit must invalidate the stale version');
 for (const altered of [
   { participants: [] },
@@ -118,13 +121,15 @@ for (const altered of [
   { requestSnapshots: [{ uid: 'buyer-test-01', document: { status: 'processing', updateTime: '2026-10-22T21:59:00Z' } }, admission.requestSnapshots[1]] },
   { requestSnapshots: [{ uid: 'buyer-test-01', document: { status: 'completed', updateTime: '2026-10-22T21:59:00Z' } }, admission.requestSnapshots[1]] },
   { requestSnapshots: [{ uid: 'buyer-test-01', document: null }, { uid: 'seller-test-01', document: { status: 'rejected', updateTime: 'invalid' } }] },
-]) assert.throws(() => buildSyntheticErasureAdmissionVerifyWrites({ ...admission, ...altered }), /ERASURE_(ADMISSION|ATOMIC)_/,
+]) assert.throws(() => buildSyntheticErasureAdmissionReadPlan({ ...admission, ...altered }), /ERASURE_(ADMISSION|ATOMIC)_/,
   'malformed or active deletion must never create an allowing witness');
 const writer = fs.readFileSync('scripts/v2-trusted-maintenance.mjs', 'utf8');
 const reconciler = fs.readFileSync('scripts/reconcile-v2-reservations.mjs', 'utf8');
 assert(!writer.includes('buildSyntheticErasureAdmissionVerifyWrites')
-  && !reconciler.includes('buildSyntheticErasureAdmissionVerifyWrites'),
+  && !reconciler.includes('buildSyntheticErasureAdmissionVerifyWrites')
+  && !writer.includes('buildSyntheticErasureAdmissionReadPlan')
+  && !reconciler.includes('buildSyntheticErasureAdmissionReadPlan'),
   'prototype must not be wired into trusted remote writers before integrated safety review');
-console.log('PASS source-only Admin REST atomic admission witness prototype and synthetic deletion-race preconditions; NO apply');
+console.log('PASS non-writable admission read plan, obsolete REST verify API blocked, synthetic race comparisons; NO apply or atomicity proof');
 
 console.log('PASS conditional account-erasure completion + audit are one atomic REST batch; synthetic/no Firebase');
