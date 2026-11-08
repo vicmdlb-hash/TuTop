@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildAccountErasureFinalCommit, buildSyntheticErasureAdmissionReadPlan, buildSyntheticErasureAdmissionVerifyWrites } from './account-erasure-atomic-commit.mjs';
+import { buildAccountErasureFinalCommit, buildSyntheticErasureAdmissionReadPlan, buildSyntheticErasureAdmissionVerifyWrites, buildSyntheticErasureAdmissionBatchGetRequest, inspectSyntheticErasureAdmissionBatchGet } from './account-erasure-atomic-commit.mjs';
 const now = new Date('2026-10-22T22:00:00Z');
 const completed = {
   status:'completed',completed_at:now,updated_at:now,
@@ -133,3 +133,75 @@ assert(!writer.includes('buildSyntheticErasureAdmissionVerifyWrites')
 console.log('PASS non-writable admission read plan, obsolete REST verify API blocked, synthetic race comparisons; NO apply or atomicity proof');
 
 console.log('PASS conditional account-erasure completion + audit are one atomic REST batch; synthetic/no Firebase');
+
+
+// REST v1 transaction batchGet is modelled without credentials or network.
+// Read-write is explicit: default newTransaction is READ-ONLY in Firestore.
+const txRead = buildSyntheticErasureAdmissionBatchGetRequest({
+  projectId: admission.projectId, participants: admission.participants,
+});
+const expectedBuyer = 'projects/tutop-beta-vicmdlb-1356585881/databases/(default)/documents/account_deletion_requests/buyer-test-01';
+const expectedSeller = 'projects/tutop-beta-vicmdlb-1356585881/databases/(default)/documents/account_deletion_requests/seller-test-01';
+assert.deepEqual(txRead, {
+  documents: [expectedBuyer, expectedSeller],
+  newTransaction: { readWrite: {} },
+});
+assert(!('writes' in txRead) && !('transaction' in txRead),
+  'a source-only batchGet is not a Firestore Write or authenticated grant');
+// Transaction IDs are only illustrative. They must never be printed or stored.
+const txRow = { transaction: 'c3ludGhldGlj' };
+const missingBuyer = { missing: expectedBuyer };
+const rejectedSeller = {
+  found: {
+    name: expectedSeller, updateTime: '2026-10-22T21:59:00.123456789Z',
+    fields: { status: { stringValue: 'rejected' } },
+  },
+};
+const assess = rows => inspectSyntheticErasureAdmissionBatchGet({
+  projectId: admission.projectId, participants: admission.participants, rows,
+});
+assert.deepEqual(assess([txRow, missingBuyer, rejectedSeller]), {
+  kind: 'SOURCE_ONLY_NON_AUTHORITATIVE', inspectedDocuments: 2,
+});
+assert.deepEqual(assess([
+  { transaction: txRow.transaction, found: rejectedSeller.found },
+  missingBuyer,
+]), { kind: 'SOURCE_ONLY_NON_AUTHORITATIVE', inspectedDocuments: 2 },
+  'batchGet can return documents out of requested order, and token with a found row');
+assert.deepEqual(assess([txRow, { missing: expectedSeller }, missingBuyer]), {
+  kind: 'SOURCE_ONLY_NON_AUTHORITATIVE', inspectedDocuments: 2,
+}, 'two confirmed missing documents are allowed in a model, not on a network error');
+// Fail-closed against active erasure, ambiguous/duplicate responses, or fake
+// transaction context. These are not emulator or real contention tests.
+for (const invalidRows of [
+  [txRow, missingBuyer],
+  [missingBuyer, rejectedSeller],
+  [txRow, missingBuyer, missingBuyer],
+  [txRow, missingBuyer, { missing: expectedSeller + '-evil' }],
+  [txRow, missingBuyer, { found: { ...rejectedSeller.found, fields: {} } }],
+  [txRow, missingBuyer, { found: { ...rejectedSeller.found, fields: { status: { stringValue: 'pending' } } } }],
+  [txRow, missingBuyer, { found: { ...rejectedSeller.found, fields: { status: { stringValue: 'processing' } } } }],
+  [txRow, missingBuyer, { found: { ...rejectedSeller.found, fields: { status: { stringValue: 'completed' } } } }],
+  [txRow, missingBuyer, { found: { ...rejectedSeller.found, updateTime: 'bogus' } }],
+  [txRow, missingBuyer, { found: rejectedSeller.found, missing: expectedSeller }],
+  [txRow, missingBuyer, { error: { status: 404 } }],
+  [{ transaction: 'bad!!!' }, missingBuyer, rejectedSeller],
+  [txRow, { ...txRow, missing: expectedBuyer }, rejectedSeller],
+]) assert.throws(() => assess(invalidRows), /ERASURE_(ADMISSION|ATOMIC)_/,
+  'a malformed or active Firestore result must never become an admission grant');
+for (const changed of [
+  { projectId: 'production' },
+  { participants: [] },
+  { participants: [admission.participants[0], admission.participants[0]] },
+  { participants: ['../admin'] },
+]) {
+  assert.throws(() => buildSyntheticErasureAdmissionBatchGetRequest({
+    projectId: admission.projectId, participants: admission.participants, ...changed,
+  }), /ERASURE_ADMISSION_/);
+}
+assert(!writer.includes('buildSyntheticErasureAdmissionBatchGetRequest')
+  && !reconciler.includes('buildSyntheticErasureAdmissionBatchGetRequest')
+  && !writer.includes('inspectSyntheticErasureAdmissionBatchGet')
+  && !reconciler.includes('inspectSyntheticErasureAdmissionBatchGet'),
+  'transactional read model is intentionally NOT integrated into trusted writers');
+console.log('PASS REST v1 batchGet read-write transaction shape and negative response matrix (synthetic; NO IO/no apply)');
