@@ -84,4 +84,36 @@ for (const malformed of ['{}', 'null', '"wrong-shape"', '17']) {
 assert.equal(readAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'alice', [])[0].id, 'saved-a',
   'rejecting B malformed state must preserve A owned state');
 
+
+// Defend against invalid runtime session identity values from untyped bridges.
+// Never stringify malformed owners to a shared fallback storage partition.
+for (const invalidOwner of [
+  null, undefined, {}, [], ['alice'], 0, false, ' ', 'bad/name',
+  'a'.repeat(161), 'account with spaces',
+]) {
+  assert.equal(accountLocalKey(ACCOUNT_LOCAL_KEYS.searchHistory, invalidOwner), null);
+  writeAccountLocalText(ACCOUNT_LOCAL_KEYS.searchHistory, invalidOwner, 'PRIVATE_CROSS_ACCOUNT');
+  assert.equal(readAccountLocalText(ACCOUNT_LOCAL_KEYS.searchHistory, invalidOwner), null);
+}
+assert.equal(localStorage.getItem(ACCOUNT_LOCAL_KEYS.searchHistory + ':uid:%5Bobject%20Object%5D'), null,
+  'coerced malformed owner must never create a shared key');
+
+// Malformed list limits and unexpected account cache formats fail closed.
+for (const invalidMax of [-1, 101, NaN, Infinity, 1.5, '12']) {
+  assert.deepEqual(readAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, 'alice', invalidMax), []);
+  writeAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, 'bob', ['leak'], invalidMax);
+}
+assert.deepEqual(readAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, 'bob', 3), ['bike'],
+  'invalid limit must not overwrite a valid owner list');
+const prefsKey = accountLocalKey(ACCOUNT_LOCAL_KEYS.onboarding, 'bob');
+for (const [payload, fallback] of [
+  ['"true"', false], ['"3"', 3], ['"false"', true],
+  ['false', 3], ['null', 'unset'], ['{}', null],
+]) {
+  localStorage.setItem(prefsKey, payload);
+  assert.deepEqual(readAccountLocalJson(ACCOUNT_LOCAL_KEYS.onboarding, 'bob', fallback), fallback);
+}
+assert.deepEqual(readAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, 'alice', 6),
+  ['visa appointment', 'camera'], 'B malformed data must not affect A owned history');
+
 console.log('PASS account-local personalization: legacy rejected, A->B isolated, same UID restores only its own state');
