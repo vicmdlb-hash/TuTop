@@ -7,7 +7,11 @@ export const ACCOUNT_LOCAL_KEYS = {
 } as const;
 
 function normalizedOwner(ownerUid: string) {
-  return String(ownerUid || '').trim();
+  // Runtime bridges can receive untyped JSON despite the TS signature.
+  // Never coerce an object/array into a shared "[object Object]" owner key.
+  if (typeof ownerUid !== 'string') return '';
+  const owner = ownerUid.trim();
+  return /^[A-Za-z0-9:_-]{1,160}$/.test(owner) ? owner : '';
 }
 
 export function accountLocalKey(baseKey: string, ownerUid: string) {
@@ -35,7 +39,7 @@ export function writeAccountLocalText(baseKey: string, ownerUid: string, value: 
 
 export function readAccountLocalList(baseKey: string, ownerUid: string, max = 12) {
   const raw = readAccountLocalText(baseKey, ownerUid);
-  if (!raw) return [] as string[];
+  if (!raw || !Number.isSafeInteger(max) || max < 0 || max > 100) return [] as string[];
   try {
     const value = JSON.parse(raw);
     return Array.isArray(value)
@@ -45,6 +49,7 @@ export function readAccountLocalList(baseKey: string, ownerUid: string, max = 12
 }
 
 export function writeAccountLocalList(baseKey: string, ownerUid: string, values: string[], max = values.length) {
+  if (!Array.isArray(values) || !Number.isSafeInteger(max) || max < 0 || max > 100) return;
   const clean = values.filter((item) => typeof item === 'string').slice(0, max);
   writeAccountLocalText(baseKey, ownerUid, JSON.stringify(clean));
 }
@@ -59,6 +64,10 @@ export function readAccountLocalJson<T>(baseKey: string, ownerUid: string, fallb
     if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
     if (fallback !== null && typeof fallback === 'object' && !Array.isArray(fallback)
       && (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))) return fallback;
+    if (fallback === null && parsed !== null) return fallback;
+    if (typeof fallback === 'string' && typeof parsed !== 'string') return fallback;
+    if (typeof fallback === 'number' && (typeof parsed !== 'number' || !Number.isFinite(parsed))) return fallback;
+    if (typeof fallback === 'boolean' && typeof parsed !== 'boolean') return fallback;
     return parsed as T;
   } catch { return fallback; }
 }
