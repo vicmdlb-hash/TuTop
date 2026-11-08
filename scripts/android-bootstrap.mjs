@@ -62,12 +62,27 @@ if (v2) {
 }
 
 const variables = path.join(root, 'android/variables.gradle');
-if (fs.existsSync(variables)) {
+if (!fs.existsSync(variables)) stop('ANDROID_SDK_DECLARATIONS_MISSING');
+{
   let source = fs.readFileSync(variables, 'utf8');
+  // Capacitor template drift must fail closed instead of silently preserving
+  // an obsolete target SDK or modifying only one of several declarations.
+  const sdkVersions = { compileSdkVersion: 36, targetSdkVersion: 36, minSdkVersion: 24 };
+  for (const key of Object.keys(sdkVersions)) {
+    const declarations = source.match(new RegExp(key + '\\s*=\\s*\\d+', 'g')) || [];
+    if (declarations.length !== 1) stop('ANDROID_SDK_DECLARATION_DRIFT:' + key);
+  }
   source = source.replace(/compileSdkVersion\s*=\s*\d+/, 'compileSdkVersion = 36')
     .replace(/targetSdkVersion\s*=\s*\d+/, 'targetSdkVersion = 36')
     .replace(/minSdkVersion\s*=\s*\d+/, 'minSdkVersion = 24');
+  for (const [key, value] of Object.entries(sdkVersions)) {
+    if (!source.includes(key + ' = ' + value)) stop('ANDROID_SDK_TARGET_MISMATCH:' + key);
+  }
   fs.writeFileSync(variables, source);
+  const persisted = fs.readFileSync(variables, 'utf8');
+  for (const [key, value] of Object.entries(sdkVersions)) {
+    if (!persisted.includes(key + ' = ' + value)) stop('ANDROID_SDK_READBACK_FAILED:' + key);
+  }
 }
 
 const appGradle = path.join(root, 'android/app/build.gradle');
