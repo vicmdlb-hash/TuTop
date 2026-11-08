@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import assert from 'node:assert/strict';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, Timestamp, writeBatch } from 'firebase/firestore';
@@ -115,4 +116,47 @@ test('owner can create own deletion request, then commerce admission closes', as
   await assertSucceeds(setDoc(doc(db,'account_deletion_requests/buyer'),
     { uid:'buyer', status:'pending', requested_at:now(), updated_at:now() }));
   await assertFails(createChat(db));
+});
+
+
+test('demo-only Firestore REST batchGet starts a read-write transaction and preserves missing/rejected identities', async () => {
+  // STRICT DEMO-LOCAL HOST GATE: no credentials, staging, production, or remote IO.
+  if (process.env.GCLOUD_PROJECT !== 'demo-tutop-post120-rules'
+    || !/^(127\.0\.0\.1|localhost):8080$/.test(host)) {
+    throw Error('ERASURE_REST_DEMO_LOCAL_EMULATOR_ONLY');
+  }
+  await deletion('seller', 'rejected');
+  const root = 'projects/demo-tutop-post120-rules/databases/(default)/documents';
+  const prefix = `http://${host}/v1/${root}`;
+  const buyer = `${root}/account_deletion_requests/buyer`;
+  const seller = `${root}/account_deletion_requests/seller`;
+  const response = await fetch(`${prefix}:batchGet`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      documents: [buyer, seller], newTransaction: { readWrite: {} },
+    }),
+  });
+  assert.equal(response.status, 200, 'emulator REST must accept read-write batchGet');
+  const body = (await response.text()).trim();
+  assert(body && body.length < 64 * 1024, 'bounded emulator response required');
+  // Cloud Firestore REST batchGet is streamed as one JSON object per line.
+  const rows = body.split(/\r?\n/).map(row => row.trim()).filter(Boolean).map(JSON.parse);
+  assert(rows.length >= 2 && rows.length <= 3, 'each participant must yield one result');
+  assert.equal(typeof rows[0].transaction, 'string');
+  assert(rows[0].transaction.length > 0);
+  assert(rows.slice(1).every(row => !Object.hasOwn(row, 'transaction')),
+    'new transaction ID must only appear in the first response');
+  const docs = rows.filter(row => row.found || row.missing);
+  assert.equal(docs.length, 2, 'buyer and seller both explicitly returned');
+  assert(docs.some(row => row.missing === buyer), 'missing buyer must not be inferred from transport 404');
+  assert(docs.some(row => row.found?.name === seller
+    && row.found.fields?.status?.stringValue === 'rejected'),
+    'server-origin rejected status must appear for seller');
+  // Release any read locks. Never output or persist a raw transaction ID.
+  const rollback = await fetch(`${prefix}:rollback`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transaction: rows[0].transaction }),
+  });
+  assert.equal(rollback.status, 200, 'demo-only transaction should be rolled back');
+  // No documents:commit, no privileged writer, no destructive erasure here.
 });
