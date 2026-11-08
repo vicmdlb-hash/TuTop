@@ -80,6 +80,38 @@ storage.setItem(`${DURABLE_PUBLISH_DRAFT_PREFIX}${uidA}`, JSON.stringify({
 }));
 assert.equal(readDurablePublishDraft(uidA, storage, now), null, 'owner mismatch must fail closed');
 
+// The local storage envelope is not a retention authority: modified timestamps,
+// corrupted drafts and oversized raw records are discarded, not revived.
+const draftKey = `${DURABLE_PUBLISH_DRAFT_PREFIX}${uidA}`;
+const validEnvelope = {
+  schema_version: 2, uid: uidA, saved_at: now,
+  expires_at: now + DURABLE_PUBLISH_DRAFT_TTL_MS,
+  draft: { title: 'Válido' },
+};
+for (const tampered of [
+  { ...validEnvelope, expires_at: now + 365 * 24 * 60 * 60 * 1000 },
+  { ...validEnvelope, expires_at: validEnvelope.expires_at + 1 },
+  { ...validEnvelope, saved_at: undefined },
+  { ...validEnvelope, saved_at: 'yesterday' },
+  { ...validEnvelope, saved_at: now + 120_000, expires_at: now + 120_000 + DURABLE_PUBLISH_DRAFT_TTL_MS },
+  { ...validEnvelope, draft: null },
+  { ...validEnvelope, draft: [] },
+  { ...validEnvelope, draft: { description: 'X'.repeat(50 * 1024) } },
+]) {
+  const forged = mockStorage();
+  forged.setItem(draftKey, JSON.stringify(tampered));
+  assert.equal(readDurablePublishDraft(uidA, forged, now), null,
+    'tampered durable storage must not bypass schema, TTL or byte limits');
+  assert.equal(forged.getItem(draftKey), null,
+    'invalid durable draft must be removed to avoid repeated private-data reads');
+}
+assert.equal(writeDurablePublishDraft(uidA, { title: 'No timestamp' }, mockStorage(), NaN), false,
+  'invalid clock input must not generate an unreadable or unbounded retention record');
+const intact = mockStorage();
+intact.setItem(draftKey, JSON.stringify(validEnvelope));
+assert.equal(readDurablePublishDraft(uidA, intact, now)?.title, 'Válido',
+  'strict envelope checks must preserve legitimate seven-day drafts');
+
 // Arbitrary attribute keys must not preserve tokens or account information.
 const injectedAttributes = mockStorage();
 assert.equal(writeDurablePublishDraft(uidA, {
