@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import { validateTrustedMaintenanceQueryRows } from './trusted-maintenance-query-validation.mjs';
 
 const read = (file) => fs.readFileSync(file, 'utf8');
 const guard = read('scripts/staging-freeze-guard.mjs');
@@ -7,6 +8,40 @@ const rawApplyGuard = read('scripts/dangerous-script-apply-guard.mjs');
 const capacityGuardSource = read('scripts/trusted-reputation-capacity-guard.mjs');
 assert(capacityGuardSource.includes('detalles remotos omitidos.'), 'capacity guard must redact external error bodies');
 assert(!capacityGuardSource.includes('${text.slice('), 'capacity guard must not print Firestore remote error text in public CI');
+
+// P02/P05/P09: exercise real pure inventory validator with synthetic Firestore
+// pages. Never contact staging or use real user IDs.
+const v2Project = 'tutop-beta-vicmdlb-1356585881';
+const inventoryDoc = (name, fields = {}) => ({ document: {
+  name: 'projects/' + v2Project + '/databases/(default)/documents/reviews/' + name,
+  fields,
+} });
+const validateInventory = (rows, options = {}) =>
+  validateTrustedMaintenanceQueryRows({
+    rows, projectId: v2Project, collectionId: 'reviews',
+    limit: 3, decodeFields: fields => ({ ...fields, id: 'spoofed' }),
+    ...options,
+  });
+assert.deepEqual(validateInventory([inventoryDoc('real1'), inventoryDoc('real2')]).map(x => x.id),
+  ['real1', 'real2'], 'document path must override untrusted id');
+assert.deepEqual(validateInventory([{ readTime: '2026-11-08T00:00:00Z' }]), []);
+for (const rows of [
+  null, {}, [null], [{ error: { code: 403 } }],
+  [inventoryDoc('same'), inventoryDoc('same')],
+  [inventoryDoc('a'), inventoryDoc('b'), inventoryDoc('c')],
+  [inventoryDoc('bad/child')],
+  [inventoryDoc('id1'), { skippedResults: 1 }],
+  [{ document: { name: 'projects/another/databases/(default)/documents/reviews/some' } }],
+  [{ document: { name: 'projects/' + v2Project + '/databases/(default)/documents/users/other' } }],
+  [{ document: { name: 'projects/' + v2Project + '/databases/(default)/documents/reviews/ok', fields: [] } }],
+]) {
+  assert.throws(() => validateInventory(rows), /TRUSTED_MAINTENANCE_INVENTORY_/,
+    'incomplete, duplicate, foreign or malformed inventories must fail closed');
+}
+assert.throws(() => validateInventory([], { projectId: 'production' }), /TRUSTED_MAINTENANCE_INVENTORY_/);
+assert.throws(() => validateInventory([], { limit: 0 }), /TRUSTED_MAINTENANCE_INVENTORY_/);
+assert.match(read('scripts/v2-trusted-maintenance.mjs'), /validateTrustedMaintenanceQueryRows/,
+  'privileged maintenance must use the validated finite query results');
 
 const firebaseAuth = read('scripts/firebase-ci-auth.mjs');
 const firebaseDoctor = read('scripts/firebase-doctor.mjs');

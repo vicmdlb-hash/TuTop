@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { validateTrustedMaintenanceQueryRows } from './trusted-maintenance-query-validation.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
@@ -72,7 +73,7 @@ async function query(collectionId, max = limit) {
     method: 'POST',
     body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], limit: max } }),
   });
-  return (result.data || []).filter((row) => row.document).map((row) => ({ id: row.document.name.split('/').pop(), ...decodeFields(row.document.fields || {}) }));
+  return validateTrustedMaintenanceQueryRows({ rows: result.data, projectId, collectionId, limit: max, decodeFields });
 }
 async function commit(writes) {
   if (!writes.length || !apply) return;
