@@ -85,9 +85,16 @@ function guardNested(nestedCollection, verb, guard) {
   rules = rules.slice(0, begin) + updated + rules.slice(end);
 }
 const pair = (data) => 'erasureAdmissionAllows(' + data + '.buyer_id) && erasureAdmissionAllows(' + data + '.seller_id)';
+// Offers already require notSuspended(), which checks the signed-in actor's
+// own erasure request. Only query the OTHER participant here: this avoids
+// duplicate document lookups in an already expensive atomic offer write.
+// Existing offer predicates restrict both create/update actors to the pair.
+const offerCounterparty = (data) =>
+  'erasureAdmissionAllows(request.auth.uid == ' + data + '.buyer_id ? ' + data + '.seller_id : ' + data + '.buyer_id)';
 for (const collection of ['chats', 'offers', 'transactions_v2']) {
-  guardRoot(collection, 'create', pair('request.resource.data'));
-  guardRoot(collection, 'update', pair('resource.data'));
+  const admission = collection === 'offers' ? offerCounterparty : pair;
+  guardRoot(collection, 'create', admission('request.resource.data'));
+  guardRoot(collection, 'update', admission('resource.data'));
 }
 for (const child of ['messages', 'confirmations', 'reads']) {
   guardNested(child, child === 'reads' ? 'create, update' : 'create', pair('chatDoc(chatId).data'));
