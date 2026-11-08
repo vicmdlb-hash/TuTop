@@ -227,5 +227,13 @@ assert(writer.indexOf(outcomeFreeze) < writer.indexOf('const token = await fireb
 assert(!reconciler.includes('RESERVATION_ADMISSION_ALLOW_APPLY')
   && !writer.includes('TRUSTED_OUTCOMES_ADMISSION_ALLOW_APPLY'),
   'no environment override may silently bypass admission freeze');
+const guardedMaintenanceWrapper = fs.readFileSync('scripts/v2-trusted-maintenance-guarded.mjs', 'utf8');
+const wrapperOutcomeFreeze = "if (sharedArgs.includes('--apply') && task === 'outcomes')";
+assert(guardedMaintenanceWrapper.includes(wrapperOutcomeFreeze), 'wrapper must skip commerce outcomes in apply mode');
+assert(guardedMaintenanceWrapper.indexOf(wrapperOutcomeFreeze) < guardedMaintenanceWrapper.indexOf("run('scripts/trusted-reputation-capacity-guard.mjs'"),
+  'wrapper must block outcomes BEFORE privileged capacity/credential reads');
+assert(guardedMaintenanceWrapper.includes("blocked.push(task)") && guardedMaintenanceWrapper.includes('continue;'),
+  'wrapper must skip outcomes independently without blocking other task lanes');
+console.log('PASS trusted maintenance wrapper blocks commerce before capacity credentials; unrelated tasks remain independent (source only)');
 console.log('PASS privileged commerce apply freezes precede credential access (source only)');
 console.log('PASS REST v1 batchGet read-write transaction shape and negative response matrix (synthetic; NO IO/no apply)');
