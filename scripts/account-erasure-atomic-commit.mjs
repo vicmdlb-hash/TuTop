@@ -63,3 +63,48 @@ export function buildAccountErasureFinalCommit({projectId,uid,processorRunId,req
      currentDocument:{exists:false}}
   ]};
 }
+
+
+/**
+ * SOURCE-ONLY DESIGN PROTOTYPE; NOT connected to trusted writers.
+ * A REST Admin writer bypasses client Rules. To avoid a deletion-request race,
+ * a future guarded commerce commit must include each participant's Firestore
+ * verify write IN THE SAME commit as its business writes, not a stale pre-read.
+ * This does not authorize destructive erasure, staging apply or deployment.
+ *
+ * requestSnapshots are caller-attested results of fresh authenticated admin
+ * reads. null means a confirmed 404, never a network error. A rejected request
+ * is permitted only with its exact updateTime as a compare-and-swap witness.
+ */
+export function buildSyntheticErasureAdmissionVerifyWrites({
+  projectId, participants, requestSnapshots,
+}) {
+  if (projectId !== PROJECT) throw Error('ERASURE_ADMISSION_STAGING_ONLY');
+  if (!Array.isArray(participants) || participants.length < 1
+    || participants.length > 2 || participants.some(uid => !safeId(uid, 8))
+    || new Set(participants).size !== participants.length) {
+    throw Error('ERASURE_ADMISSION_PARTICIPANTS_INVALID');
+  }
+  if (!Array.isArray(requestSnapshots) || requestSnapshots.length !== participants.length) {
+    throw Error('ERASURE_ADMISSION_SNAPSHOTS_INVALID');
+  }
+  const snapshots = new Map();
+  for (const row of requestSnapshots) {
+    if (!row || !safeId(row.uid, 8) || snapshots.has(row.uid)
+      || !Object.hasOwn(row, 'document')) throw Error('ERASURE_ADMISSION_SNAPSHOT_INVALID');
+    snapshots.set(row.uid, row.document);
+  }
+  const root = \`projects/\${projectId}/databases/(default)/documents\`;
+  return participants.map(uid => {
+    if (!snapshots.has(uid)) throw Error('ERASURE_ADMISSION_UID_NOT_READ');
+    const document = snapshots.get(uid);
+    const name = \`\${root}/account_deletion_requests/\${uid}\`;
+    if (document === null) {
+      return { verify: name, currentDocument: { exists: false } };
+    }
+    if (!document || typeof document !== 'object' || Array.isArray(document)
+      || document.status !== 'rejected') throw Error('ERASURE_ADMISSION_NOT_ALLOWED');
+    canonicalUtcNanoKey(document.updateTime);
+    return { verify: name, currentDocument: { updateTime: document.updateTime } };
+  });
+}
