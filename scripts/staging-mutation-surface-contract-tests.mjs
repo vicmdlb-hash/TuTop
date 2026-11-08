@@ -4,6 +4,10 @@ import assert from 'node:assert/strict';
 const read = (file) => fs.readFileSync(file, 'utf8');
 const guard = read('scripts/staging-freeze-guard.mjs');
 const rawApplyGuard = read('scripts/dangerous-script-apply-guard.mjs');
+const capacityGuardSource = read('scripts/trusted-reputation-capacity-guard.mjs');
+assert(capacityGuardSource.includes('detalles remotos omitidos.'), 'capacity guard must redact external error bodies');
+assert(!capacityGuardSource.includes('${text.slice('), 'capacity guard must not print Firestore remote error text in public CI');
+
 const firebaseAuth = read('scripts/firebase-ci-auth.mjs');
 const firebaseDoctor = read('scripts/firebase-doctor.mjs');
 const externalReadiness = read('scripts/external-readiness.mjs');
