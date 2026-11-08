@@ -23,6 +23,23 @@ const helper = String.raw`
     // Idempotent client admission check: an existing request is closed to
     // commerce unless trusted support explicitly marked it rejected.
     // A missing field/status fails closed instead of assuming healthy.
+    // Demo-only lightweight atomic offer-bucket proof. The rate_limits
+    // document rule separately validates owner, action, cap and window;
+    // require a real bucket mutation while avoiding nested cap calculations
+    // during an expensive offer with an erasure counterpart lookup.
+    function erasureDemoOfferRateLimitConsumed() {
+      let bucket = /databases/$(database)/documents/rate_limits/$(request.auth.uid + '-offer_create');
+      return existsAfter(bucket)
+        && (
+          (!exists(bucket) && getAfter(bucket).data.count == 1)
+          ||
+          (exists(bucket) && (
+            getAfter(bucket).data.count == get(bucket).data.count + 1
+            || (getAfter(bucket).data.count == 1 && getAfter(bucket).data.window_start != get(bucket).data.window_start)
+          ))
+        );
+    }
+
     function erasureAdmissionAllows(uid) {
       let target = /databases/$(database)/documents/account_deletion_requests/$(uid);
       return uid is string && uid.size() > 0
@@ -32,6 +49,9 @@ const helper = String.raw`
 rules = rules.replace(original[0], helper + original[0].replace(
   /; \}$/, ' && erasureAdmissionAllows(request.auth.uid); }',
 ));
+// Isolation only: leave canonical/generic runtime limits unchanged.
+requireOnce("rateLimitConsumed('offer_create')", 'offer rate guard');
+rules = rules.replace("rateLimitConsumed('offer_create')", 'erasureDemoOfferRateLimitConsumed()');
 
 // Wrap EVERY alternative of a write verb in the scope. Treat unguarded
 // secondary update rules as a hard error, not as an authorized bypass.
