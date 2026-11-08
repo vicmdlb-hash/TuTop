@@ -215,14 +215,11 @@ test('P01: seller processing deletion blocks reservation by buyer', async () => 
   await assertFails(buyerAcceptSellerCounterBatch(buyer).commit());
 });
 
-test('P01: deleting buyer cannot create a new offer', async () => {
+test('P01: deleting buyer cannot accept seller counteroffer into a transaction', async () => {
   await seed();
-  await seedDeletionRequest('buyer-b', 'pending');
-  const buyer = verifiedContext(env, 'buyer-b').firestore();
-  await assertFails(createOfferBatch(buyer, {
-    offerId: 'buyer-b-after-deletion', buyerId: 'buyer-b',
-    chatId: 'chat-b', amountMxn: 410, rateCount: 1, windowStart: now(),
-  }).commit());
+  await seedDeletionRequest('buyer-a', 'pending');
+  const buyer = verifiedContext(env, 'buyer-a').firestore();
+  await assertFails(buyerAcceptSellerCounterBatch(buyer).commit());
 });
 
 test('P01: rejected deletion request allows a normal reservation', async () => {
