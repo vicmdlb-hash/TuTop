@@ -163,6 +163,9 @@ const assess = rows => inspectSyntheticErasureAdmissionBatchGet({
 assert.deepEqual(assess([txRow, missingBuyer, rejectedSeller]), {
   kind: 'SOURCE_ONLY_NON_AUTHORITATIVE', inspectedDocuments: 2,
 });
+assert.deepEqual(assess([{ ...txRow, readTime: '2026-10-22T22:00:00Z' }, missingBuyer, rejectedSeller]), {
+  kind: 'SOURCE_ONLY_NON_AUTHORITATIVE', inspectedDocuments: 2,
+}, 'valid first-response readTime remains supported without storing transaction token');
 assert.deepEqual(assess([
   { transaction: txRow.transaction, found: rejectedSeller.found },
   missingBuyer,
@@ -176,6 +179,11 @@ assert.deepEqual(assess([txRow, { missing: expectedSeller }, missingBuyer]), {
 for (const invalidRows of [
   [txRow, missingBuyer],
   [missingBuyer, rejectedSeller],
+  [missingBuyer, { ...txRow, found: rejectedSeller.found }],
+  [missingBuyer, { ...txRow, missing: expectedSeller }],
+  [{ ...txRow, readTime: 'invalid' }, missingBuyer, rejectedSeller],
+  [txRow, missingBuyer, { missing: expectedSeller, unexpected: true }],
+  [txRow, missingBuyer, { missing: expectedSeller, error: { status: 404 } }],
   [txRow, missingBuyer, missingBuyer],
   [txRow, missingBuyer, { missing: expectedSeller + '-evil' }],
   [txRow, missingBuyer, { found: { ...rejectedSeller.found, fields: {} } }],
