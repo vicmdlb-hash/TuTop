@@ -63,7 +63,9 @@ function safeLocalSavedSearches(value: unknown): Record<string, unknown>[] {
     typeof value === 'string' && value.length > 0 && value.length <= max
       && !/[\u0000-\u001f\u007f]/.test(value) ? value : null;
   const allowedScopes = new Set(['campus', 'institution', 'university-zone', 'city', 'national']);
-  return value.slice(0, 20).flatMap((raw) => {
+  // Filter untrusted entries before applying the 20 valid-search limit.
+  // Otherwise 20 malformed legacy rows can hide a valid saved search.
+  return value.flatMap((raw) => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
     const src = raw as Record<string, unknown>;
     const query = stringField(src.query, 512);
@@ -84,7 +86,7 @@ function safeLocalSavedSearches(value: unknown): Record<string, unknown>[] {
       && src.max_price_mxn >= 0 && src.max_price_mxn <= 1_000_000_000)
       item.max_price_mxn = src.max_price_mxn;
     return [item];
-  });
+  }).slice(0, 20);
 }
 
 export function readAccountLocalJson<T>(baseKey: string, ownerUid: string, fallback: T): T {
@@ -110,7 +112,9 @@ export function readAccountLocalJson<T>(baseKey: string, ownerUid: string, fallb
 
 export function writeAccountLocalJson(baseKey: string, ownerUid: string, value: unknown) {
   if (baseKey === ACCOUNT_LOCAL_KEYS.savedSearches) {
-    if (!Array.isArray(value)) return;
+    // Do not erase a valid per-owner cache when an untrusted bridge supplies
+    // an oversized array that fails sanitization.
+    if (!Array.isArray(value) || value.length > 100) return;
     writeAccountLocalText(baseKey, ownerUid, JSON.stringify(safeLocalSavedSearches(value)));
     return;
   }

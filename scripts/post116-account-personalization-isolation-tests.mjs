@@ -156,4 +156,21 @@ assert.deepEqual(readAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'alice',
   [{ query: 'laptop', id: 'saved-a' }],
   'corrupt B saved searches must never alter A cached searches');
 
+// Corrupt legacy slots must not consume the 20 valid saved-search quota.
+localStorage.setItem(bobSavedKey, JSON.stringify([
+  ...Array.from({ length: 20 }, () => ({ query: '   ', leaked: 'synthetic-private' })),
+  { id: 'valid-after-corrupt', query: 'science book', visibility_scope: 'campus' },
+]));
+assert.deepEqual(readAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'bob', []), [
+  { query: 'science book', id: 'valid-after-corrupt', visibility_scope: 'campus' },
+], 'valid saved search after malformed legacy entries must remain readable');
+const bobBeforeOversizedWrite = localStorage.getItem(bobSavedKey);
+writeAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'bob',
+  Array.from({ length: 101 }, (_, i) => ({ query: `item-${i}` })));
+assert.equal(localStorage.getItem(bobSavedKey), bobBeforeOversizedWrite,
+  'oversized invalid write must preserve existing owner saved-search cache');
+assert.deepEqual(readAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'alice', []),
+  [{ query: 'laptop', id: 'saved-a' }],
+  'B corrupt and oversized saved-search attempts must not alter A');
+
 console.log('PASS account-local personalization: legacy rejected, A->B isolated, same UID restores only its own state');
