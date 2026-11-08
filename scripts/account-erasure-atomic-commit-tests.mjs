@@ -212,4 +212,20 @@ assert(!writer.includes('buildSyntheticErasureAdmissionBatchGetRequest')
   && !writer.includes('inspectSyntheticErasureAdmissionBatchGet')
   && !reconciler.includes('inspectSyntheticErasureAdmissionBatchGet'),
   'transactional read model is intentionally NOT integrated into trusted writers');
+// P01 regression: trusted commerce mutators must fail closed before acquiring
+// credentials until a server-side buyer+seller admission transaction exists.
+// Source-only: no Firebase calls, credentials, network, or destructive smoke.
+const reconcileFreeze = "if (apply) throw new Error('RESERVATION_COMMERCE_ADMISSION_FREEZE_NOT_VERIFIED');";
+const outcomeFreeze = "if (apply && tasks.has('outcomes')) throw new Error('TRUSTED_OUTCOMES_ADMISSION_FREEZE_NOT_VERIFIED');";
+assert(reconciler.includes(reconcileFreeze), 'reservation reconciliation must reject apply');
+assert(writer.includes(outcomeFreeze), 'trusted commerce outcomes must reject apply');
+assert(reconciler.indexOf(reconcileFreeze) > reconciler.indexOf('assertStagingTarget();')
+  && reconciler.indexOf(reconcileFreeze) < reconciler.indexOf('const token = await accessToken();'),
+  'reservation apply must stop before Firebase token retrieval');
+assert(writer.indexOf(outcomeFreeze) < writer.indexOf('const token = await firebaseCiAccessToken();'),
+  'trusted commerce apply must stop before Firebase token retrieval');
+assert(!reconciler.includes('RESERVATION_ADMISSION_ALLOW_APPLY')
+  && !writer.includes('TRUSTED_OUTCOMES_ADMISSION_ALLOW_APPLY'),
+  'no environment override may silently bypass admission freeze');
+console.log('PASS privileged commerce apply freezes precede credential access (source only)');
 console.log('PASS REST v1 batchGet read-write transaction shape and negative response matrix (synthetic; NO IO/no apply)');

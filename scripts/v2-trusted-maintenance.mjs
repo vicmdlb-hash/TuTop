@@ -15,6 +15,10 @@ if (projectId === historicalProject) stop(`${historicalProject} está bloqueado 
 if (/prod(uction)?/i.test(projectId) && process.env.TUTOP_ALLOW_PRODUCTION_FIREBASE !== '1') stop('el project ID parece producción.');
 if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID !== '1') stop('el project ID no parece staging/beta/dev/test.');
 if (apply && allow !== 'staging-v2') stop('para escribir define TUTOP_ALLOW_V2_MAINTENANCE=staging-v2.');
+// P01: no outcome write, lock deletion or settlement before a shared
+// read-write admission transaction proves buyer and seller are not deleting.
+// Keep non-commerce maintenance lanes independently gated as before.
+if (apply && tasks.has('outcomes')) throw new Error('TRUSTED_OUTCOMES_ADMISSION_FREEZE_NOT_VERIFIED');
 
 const token = await firebaseCiAccessToken();
 const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;

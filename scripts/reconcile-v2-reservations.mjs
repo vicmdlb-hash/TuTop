@@ -126,7 +126,12 @@ async function runCollectionQuery(collectionId) {
   }, { pageSize: maxDocs, maxPages });
 }
 
+// P01 fail closed before any privileged Firebase token or commerce read.
+// A Firestore :commit with version predicates is NOT the required shared
+// buyer/seller account-deletion read-write transaction. Never permit apply
+// until that server-side admission barrier is integrated and proven.
 assertStagingTarget();
+if (apply) throw new Error('RESERVATION_COMMERCE_ADMISSION_FREEZE_NOT_VERIFIED');
 const token = await accessToken();
 const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
 const [transactions, locks] = await Promise.all([
