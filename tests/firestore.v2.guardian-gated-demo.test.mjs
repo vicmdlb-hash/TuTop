@@ -27,7 +27,7 @@ if (ruleset === 'guardian-demo') {
   assert.match(offerCreate, /guardianOfferLinksValid\(request\.resource\.data\)/,
     'demo offer creation must preserve product/chat checks through cached snapshots');
   assert.doesNotMatch(offerCreate,
-    /productDoc\(request\.resource\.data\.listing_id\)\.data\.vendedor_id/,
+    /listingDoc\(request\.resource\.data\.listing_id\)\.data\.seller_id/,
     'demo must not repeat expensive source-linked reads');
 }
 const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';

@@ -103,14 +103,16 @@ const helpers = `
     function guardianChatReady(chatId) {
       return guardianPairReady(chatDoc(chatId).data);
     }
-    // Snapshot both linked documents once: the five repeated get() calls in
-    // the offer-create branch can exceed the emulator's 1000-expression cap
-    // after guardian checks are added. The same five comparisons still apply.
+    // Cache canonical offer listing and chat for the guardian DEMO only.
+    // Keep all moderation, availability, reservation-lock and pairing checks.
     function guardianOfferLinksValid(data) {
-      let product = productDoc(data.listing_id).data;
+      let listing = listingDoc(data.listing_id).data;
       let chat = chatDoc(data.chat_id).data;
-      return product.vendedor_id == data.seller_id
-        && product.estado == 'Activo'
+      return listing.seller_id == data.seller_id
+        && listing.status == 'active'
+        && listing.moderation_status == 'approved'
+        && (!('availability_status' in listing) || listing.availability_status == 'available')
+        && !exists(/databases/$(database)/documents/listing_reservation_locks/$(data.listing_id))
         && data.listing_id == chat.product_id
         && data.buyer_id == chat.buyer_id
         && data.seller_id == chat.seller_id;
@@ -208,7 +210,7 @@ guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_
 
 // Keep authorization identical while reusing product/chat snapshots in the
 // source-only guardian-demo offer-create path (not deployed V2 Rules).
-const originalOfferLinks = "        && productDoc(request.resource.data.listing_id).data.vendedor_id == request.resource.data.seller_id\n        && productDoc(request.resource.data.listing_id).data.estado == 'Activo'\n        && request.resource.data.listing_id == chatDoc(request.resource.data.chat_id).data.product_id\n        && request.resource.data.buyer_id == chatDoc(request.resource.data.chat_id).data.buyer_id\n        && request.resource.data.seller_id == chatDoc(request.resource.data.chat_id).data.seller_id";
+const originalOfferLinks = "        && listingDoc(request.resource.data.listing_id).data.seller_id == request.resource.data.seller_id\n        && listingDoc(request.resource.data.listing_id).data.status == 'active'\n        && listingDoc(request.resource.data.listing_id).data.moderation_status == 'approved'\n        && (!('availability_status' in listingDoc(request.resource.data.listing_id).data) || listingDoc(request.resource.data.listing_id).data.availability_status == 'available')\n        && !exists(/databases/$(database)/documents/listing_reservation_locks/$(request.resource.data.listing_id))\n        && request.resource.data.listing_id == chatDoc(request.resource.data.chat_id).data.product_id\n        && request.resource.data.buyer_id == chatDoc(request.resource.data.chat_id).data.buyer_id\n        && request.resource.data.seller_id == chatDoc(request.resource.data.chat_id).data.seller_id";
 exactlyOne(rules, originalOfferLinks, 'offer create repeated reads');
 rules = rules.replace(originalOfferLinks,
   '        && guardianOfferLinksValid(request.resource.data)');
