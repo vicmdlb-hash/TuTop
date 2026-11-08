@@ -119,3 +119,78 @@ export function buildSyntheticErasureAdmissionReadPlan({
 export function buildSyntheticErasureAdmissionVerifyWrites() {
   throw Error('ERASURE_ADMISSION_REST_VERIFY_UNSUPPORTED');
 }
+
+
+/**
+ * SOURCE-ONLY shape of a Firestore REST batchGet that starts a read-write
+ * transaction. These are request DESCRIPTORS, not executed network requests.
+ * Firestore's actual responses, conflict handling, Rules and commit semantics
+ * MUST be verified independently before any trusted-writer integration.
+ * https://firebase.google.com/docs/firestore/reference/rest/v1/projects.databases.documents/batchGet
+ */
+export function buildSyntheticErasureAdmissionBatchGetRequest({ projectId, participants }) {
+  if (projectId !== PROJECT) throw Error('ERASURE_ADMISSION_STAGING_ONLY');
+  if (!Array.isArray(participants) || participants.length < 1
+    || participants.length > 2 || participants.some(uid => !safeId(uid, 8))
+    || new Set(participants).size !== participants.length) {
+    throw Error('ERASURE_ADMISSION_PARTICIPANTS_INVALID');
+  }
+  const root = `projects/${projectId}/databases/(default)/documents`;
+  return {
+    documents: participants.map(uid => `${root}/account_deletion_requests/${uid}`),
+    newTransaction: { readWrite: {} },
+  };
+}
+
+/**
+ * Check a *synthetic* Firestore batchGet response without authorizing writes.
+ * A found request is eligible in this model ONLY when its status is rejected;
+ * a missing document is eligible only when the server explicitly returns
+ * its exact path. In particular, a 404 transport error and an omitted row
+ * are NOT synonymous with a missing document.
+ *
+ * The return value deliberately carries NO transaction token, NO writes,
+ * and NO "allowed" flag; it cannot be used as a trusted commerce grant.
+ */
+export function inspectSyntheticErasureAdmissionBatchGet({ projectId, participants, rows }) {
+  const { documents } = buildSyntheticErasureAdmissionBatchGetRequest({ projectId, participants });
+  if (!Array.isArray(rows) || rows.length < documents.length
+    || rows.length > documents.length + 1) throw Error('ERASURE_ADMISSION_BATCH_GET_INCOMPLETE');
+  const expected = new Set(documents);
+  const seen = new Set();
+  let transactionCount = 0;
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      throw Error('ERASURE_ADMISSION_BATCH_GET_ROW_INVALID');
+    }
+    if (Object.hasOwn(row, 'transaction')) {
+      if (typeof row.transaction !== 'string'
+        || !/^[A-Za-z0-9+/]+={0,2}$/.test(row.transaction)
+        || transactionCount > 0) throw Error('ERASURE_ADMISSION_TRANSACTION_INVALID');
+      transactionCount += 1;
+    }
+    const hasFound = Object.hasOwn(row, 'found');
+    const hasMissing = Object.hasOwn(row, 'missing');
+    if (hasFound && hasMissing) throw Error('ERASURE_ADMISSION_BATCH_GET_ROW_INVALID');
+    if (!hasFound && !hasMissing) {
+      if (!Object.hasOwn(row, 'transaction')) throw Error('ERASURE_ADMISSION_BATCH_GET_ROW_INVALID');
+      continue; // Firestore can return the transaction ID in an independent row.
+    }
+    const name = hasFound ? row.found?.name : row.missing;
+    if (typeof name !== 'string' || !expected.has(name) || seen.has(name)) {
+      throw Error('ERASURE_ADMISSION_BATCH_GET_PATH_INVALID');
+    }
+    if (hasFound) {
+      if (!row.found || typeof row.found !== 'object'
+        || row.found.fields?.status?.stringValue !== 'rejected') {
+        throw Error('ERASURE_ADMISSION_NOT_ALLOWED');
+      }
+      canonicalUtcNanoKey(row.found.updateTime);
+    }
+    seen.add(name);
+  }
+  if (transactionCount !== 1 || seen.size !== expected.size) {
+    throw Error('ERASURE_ADMISSION_BATCH_GET_INCOMPLETE');
+  }
+  return { kind: 'SOURCE_ONLY_NON_AUTHORITATIVE', inspectedDocuments: seen.size };
+}
