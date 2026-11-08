@@ -1,6 +1,6 @@
 import { appNotificationKindFromOutbox } from '../lib/notificationProjection';
 import { isCurrentPushSession } from '../lib/pushBackendSessionWitness';
-import { createFirstPushTokenDocument } from '../lib/pushTokenCreateFirst';
+import { createFirstPushTokenDocument, normalizePushTokenIdentity, normalizePushAppVersion } from '../lib/pushTokenCreateFirst';
 import type { AppNotification } from '../types';
 import { FirebaseRestClient, type AuthSession } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
@@ -50,17 +50,17 @@ export const pushBackend = {
       if (isOriginalSession && !isOriginalSession()) throw new Error('PUSH_OWNER_SESSION_CHANGED');
     };
     assertOwner();
-    const cleanToken = token.trim();
-    if (cleanToken.length < 20 || cleanToken.length > 4096) throw new Error('INVALID_PUSH_TOKEN');
+    const { token: cleanToken, platform: cleanPlatform } = normalizePushTokenIdentity(token, platform);
+    const cleanAppVersion = normalizePushAppVersion(appVersion);
     const tokenHash = await sha256(cleanToken);
     assertOwner();
-    const id = `${uid}-${platform}-${tokenHash.slice(0, 20)}`;
+    const id = `${uid}-${cleanPlatform}-${tokenHash.slice(0, 20)}`;
     const now = new Date().toISOString();
     const payload = {
       owner_uid: uid,
       token: cleanToken,
-      platform,
-      app_version: appVersion.slice(0, 40),
+      platform: cleanPlatform,
+      app_version: cleanAppVersion,
       active: true,
       created_at: now,
       updated_at: now,
@@ -77,9 +77,11 @@ export const pushBackend = {
     const client = getClient();
     const uid = client.currentSession!.uid;
     const assertOwner = currentPushOwnerGuard(client);
-    const tokenHash = await sha256(token.trim());
     assertOwner();
-    const id = `${uid}-${platform}-${tokenHash.slice(0, 20)}`;
+    const { token: cleanToken, platform: cleanPlatform } = normalizePushTokenIdentity(token, platform);
+    const tokenHash = await sha256(cleanToken);
+    assertOwner();
+    const id = `${uid}-${cleanPlatform}-${tokenHash.slice(0, 20)}`;
     // A missing or unreadable token cannot be distinguished safely by a
     // pre-GET under owner-only Rules: update only an existing owner record.
     // Any 404/403/failed precondition propagates to the sign-out quarantine;
