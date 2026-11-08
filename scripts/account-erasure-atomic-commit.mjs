@@ -66,17 +66,19 @@ export function buildAccountErasureFinalCommit({projectId,uid,processorRunId,req
 
 
 /**
- * SOURCE-ONLY DESIGN PROTOTYPE; NOT connected to trusted writers.
- * A REST Admin writer bypasses client Rules. To avoid a deletion-request race,
- * a future guarded commerce commit must include each participant's Firestore
- * verify write IN THE SAME commit as its business writes, not a stale pre-read.
- * This does not authorize destructive erasure, staging apply or deployment.
+ * SOURCE-ONLY READ PLAN; never a Firestore REST Write or authorization.
+ * Firestore v1 Write supports update/delete/transform, NOT verify.
+ * A future trusted writer must read every participant's deletion request
+ * INSIDE the same read-write transaction that commits commerce changes.
+ * Caller-provided snapshots and this pure model cannot prove atomicity.
+ * No trusted-writer wiring, staging apply, or deployment is authorized.
  *
- * requestSnapshots are caller-attested results of fresh authenticated admin
- * reads. null means a confirmed 404, never a network error. A rejected request
- * is permitted only with its exact updateTime as a compare-and-swap witness.
+ * requestSnapshots are synthetic, caller-attested inputs. null represents
+ * a confirmed missing document (not a network error); a rejected request
+ * includes its exact updateTime for model comparisons.
+ * https://firebase.google.com/docs/firestore/reference/rest/v1/Write
  */
-export function buildSyntheticErasureAdmissionVerifyWrites({
+export function buildSyntheticErasureAdmissionReadPlan({
   projectId, participants, requestSnapshots,
 }) {
   if (projectId !== PROJECT) throw Error('ERASURE_ADMISSION_STAGING_ONLY');
@@ -100,11 +102,20 @@ export function buildSyntheticErasureAdmissionVerifyWrites({
     const document = snapshots.get(uid);
     const name = `${root}/account_deletion_requests/${uid}`;
     if (document === null) {
-      return { verify: name, currentDocument: { exists: false } };
+      return { kind: 'transaction_read', documentPath: name, expected: { exists: false } };
     }
     if (!document || typeof document !== 'object' || Array.isArray(document)
       || document.status !== 'rejected') throw Error('ERASURE_ADMISSION_NOT_ALLOWED');
     canonicalUtcNanoKey(document.updateTime);
-    return { verify: name, currentDocument: { updateTime: document.updateTime } };
+    return { kind: 'transaction_read', documentPath: name, expected: { updateTime: document.updateTime } };
   });
+}
+
+/**
+ * Fail closed for the historical prototype API. Firestore v1 REST Write has
+ * no verify operation, so NEVER hand a fabricated witness to documents:commit.
+ * Kept only to fail loudly if any future caller tries to reuse the old name.
+ */
+export function buildSyntheticErasureAdmissionVerifyWrites() {
+  throw Error('ERASURE_ADMISSION_REST_VERIFY_UNSUPPORTED');
 }
