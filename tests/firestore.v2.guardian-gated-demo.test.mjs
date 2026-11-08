@@ -1,5 +1,6 @@
 import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
+import assert from 'node:assert/strict';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { doc, deleteDoc, getDoc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
@@ -18,6 +19,17 @@ const rulesPath = ruleset === 'baseline'
   ? 'firebase/firestore.v2.generated.rules'
   : 'firebase/firestore.v2.guardian-demo.rules';
 const rules = fs.readFileSync(rulesPath, 'utf8');
+
+if (ruleset === 'guardian-demo') {
+  assert.match(rules, /function guardianOfferLinksValid\(data\)/);
+  const offerCreate = rules.split('    match /offers/{offerId} {')[1]
+    ?.split('    match /transactions_v2/{transactionId} {')[0] || '';
+  assert.match(offerCreate, /guardianOfferLinksValid\(request\.resource\.data\)/,
+    'demo offer creation must preserve product/chat checks through cached snapshots');
+  assert.doesNotMatch(offerCreate,
+    /productDoc\(request\.resource\.data\.listing_id\)\.data\.vendedor_id/,
+    'demo must not repeat expensive source-linked reads');
+}
 const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
 const [hostname, portRaw] = host.split(':');
 const env = await initializeTestEnvironment({
