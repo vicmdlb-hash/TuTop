@@ -66,6 +66,14 @@ test('no active erasure permits normal buyer chat creation (regression)', async 
   await seed();
   await assertSucceeds(createChat(asBuyer()));
 });
+test('baseline active buyer and seller permit an offer to an existing chat (positive control)', async () => {
+  await seed(); await preseedChat();
+  await assertSucceeds(createOffer(asBuyer()));
+});
+test('baseline active buyer and seller permit a message to an existing chat (positive control)', async () => {
+  await seed(); await preseedChat();
+  await assertSucceeds(createMessage(asBuyer()));
+});
 test('pending buyer forbids a new chat, even if authenticated and verified', async () => {
   await seed(); await deletion('buyer');
   await assertFails(createChat(asBuyer()));
