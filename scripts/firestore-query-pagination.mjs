@@ -9,6 +9,12 @@ export function parseFirestoreRunQueryRows(rows) {
         || Object.prototype.hasOwnProperty.call(row, 'error')) {
       throw new Error('QUERY_RESPONSE_ROW_INVALID');
     }
+    // A positive skippedResults means Firestore omitted matching documents.
+    // Such a response must never be used as a complete privileged inventory.
+    if (Object.prototype.hasOwnProperty.call(row, 'skippedResults')
+        && (!Number.isSafeInteger(row.skippedResults) || row.skippedResults !== 0)) {
+      throw new Error('QUERY_SKIPPED_RESULTS_UNSAFE');
+    }
     if (!Object.prototype.hasOwnProperty.call(row, 'document')) {
       if (!('readTime' in row) && !('skippedResults' in row)
           && !('explainMetrics' in row)) throw new Error('QUERY_RESPONSE_ROW_INVALID');

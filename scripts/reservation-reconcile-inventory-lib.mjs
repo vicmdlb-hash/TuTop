@@ -12,6 +12,12 @@ export function validateReconciliationInventoryPage(rows, { projectId, collectio
   const documents = [];
   for (const row of rows) {
     if (!row || typeof row !== 'object' || Array.isArray(row) || row.error) throw new Error('RECONCILE_INVENTORY_ROW_INVALID');
+    // Cursor inventories must refuse Firestore offset omissions, even when
+    // the same response also contains an apparently valid document.
+    if (Object.hasOwn(row, 'skippedResults')
+        && (!Number.isSafeInteger(row.skippedResults) || row.skippedResults !== 0)) {
+      throw new Error('RECONCILE_INVENTORY_SKIPPED_RESULTS_UNSAFE');
+    }
     if (!Object.hasOwn(row, 'document')) {
       if (!('readTime' in row) && !('skippedResults' in row) && !('explainMetrics' in row)) throw new Error('RECONCILE_INVENTORY_METADATA_INVALID');
       continue;

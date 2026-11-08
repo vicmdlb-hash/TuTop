@@ -104,6 +104,18 @@ assert.deepEqual(accepted, [{
   fields: { uid: { stringValue: 'synthetic-user' } },
 }]);
 assert.deepEqual(parseFirestoreRunQueryRows([]), []);
+// A successful HTTP response can still skip results; never treat it as a
+// complete deletion inventory. This test is pure and makes no Firebase calls.
+assert.throws(() => parseFirestoreRunQueryRows([
+  { readTime: '2026-11-08T00:00:00Z', skippedResults: 2 },
+]), /QUERY_SKIPPED_RESULTS_UNSAFE/);
+assert.throws(() => parseFirestoreRunQueryRows([
+  { document: { name: firestoreName, fields: {} }, skippedResults: 1 },
+]), /QUERY_SKIPPED_RESULTS_UNSAFE/);
+assert.deepEqual(parseFirestoreRunQueryRows([
+  { readTime: '2026-11-08T00:00:00Z', skippedResults: 0 },
+]), []);
+
 for (const malformed of [
   null, {}, { error: { code: 403, message: 'denied' } },
   { document: null }, { document: {} },
