@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildAccountErasureFinalCommit } from './account-erasure-atomic-commit.mjs';
+import { buildAccountErasureFinalCommit, buildSyntheticErasureAdmissionVerifyWrites } from './account-erasure-atomic-commit.mjs';
 const now = new Date('2026-10-22T22:00:00Z');
 const completed = {
   status:'completed',completed_at:now,updated_at:now,
@@ -80,4 +80,51 @@ assert(!processor.includes("await adminPatchDocument(`account_deletion_requests/
 assert(!processor.includes('await adminPatchDocument(`audit_log/account-erasure-'));
 assert(admin.includes('current?.fields?.status?.stringValue !== \'processing\''));
 assert(admin.includes('request(`${firestoreBase}:commit`'));
+// Admission witnesses are a source-only prototype, not wired to any trusted writer.
+const admission = {
+  projectId: 'tutop-beta-vicmdlb-1356585881',
+  participants: ['buyer-test-01', 'seller-test-01'],
+  requestSnapshots: [
+    { uid: 'buyer-test-01', document: null },
+    { uid: 'seller-test-01', document: { status: 'rejected', updateTime: '2026-10-22T21:59:00.123456789Z' } },
+  ],
+};
+const verifies = buildSyntheticErasureAdmissionVerifyWrites(admission);
+assert.equal(verifies.length, 2);
+assert.equal(verifies[0].verify,
+  'projects/tutop-beta-vicmdlb-1356585881/databases/(default)/documents/account_deletion_requests/buyer-test-01');
+assert.deepEqual(verifies[0].currentDocument, { exists: false });
+assert.deepEqual(verifies[1].currentDocument, { updateTime: '2026-10-22T21:59:00.123456789Z' });
+assert(verifies.every(w => !('update' in w) && !('delete' in w)),
+  'an admission witness must not change deletion requests or commerce data');
+// Pure model of Firestore precondition semantics, NOT an emulator or live assertion.
+const syntheticCurrentDocumentMatches = (w, liveDoc) =>
+  'exists' in w.currentDocument ? liveDoc === null :
+    liveDoc?.updateTime === w.currentDocument.updateTime;
+assert(syntheticCurrentDocumentMatches(verifies[0], null));
+assert(!syntheticCurrentDocumentMatches(verifies[0], { status: 'pending', updateTime: '2026-10-22T22:00:00Z' }),
+  'a deletion request inserted before the same commit invalidates exists:false');
+assert(syntheticCurrentDocumentMatches(verifies[1], admission.requestSnapshots[1].document));
+assert(!syntheticCurrentDocumentMatches(verifies[1], { status: 'pending', updateTime: '2026-10-22T22:00:00Z' }),
+  'rejected→pending transition before commit must invalidate the stale version');
+for (const altered of [
+  { participants: [] },
+  { participants: ['buyer-test-01', 'buyer-test-01'] },
+  { participants: ['../admin'] },
+  { projectId: 'production' },
+  { requestSnapshots: [] },
+  { requestSnapshots: [{ uid: 'buyer-test-01', document: null }, { uid: 'not-in-pair', document: null }] },
+  { requestSnapshots: [{ uid: 'buyer-test-01', document: { status: 'pending', updateTime: '2026-10-22T21:59:00Z' } }, admission.requestSnapshots[1]] },
+  { requestSnapshots: [{ uid: 'buyer-test-01', document: { status: 'processing', updateTime: '2026-10-22T21:59:00Z' } }, admission.requestSnapshots[1]] },
+  { requestSnapshots: [{ uid: 'buyer-test-01', document: { status: 'completed', updateTime: '2026-10-22T21:59:00Z' } }, admission.requestSnapshots[1]] },
+  { requestSnapshots: [{ uid: 'buyer-test-01', document: null }, { uid: 'seller-test-01', document: { status: 'rejected', updateTime: 'invalid' } }] },
+]) assert.throws(() => buildSyntheticErasureAdmissionVerifyWrites({ ...admission, ...altered }), /ERASURE_(ADMISSION|ATOMIC)_/,
+  'malformed or active deletion must never create an allowing witness');
+const writer = fs.readFileSync('scripts/v2-trusted-maintenance.mjs', 'utf8');
+const reconciler = fs.readFileSync('scripts/reconcile-v2-reservations.mjs', 'utf8');
+assert(!writer.includes('buildSyntheticErasureAdmissionVerifyWrites')
+  && !reconciler.includes('buildSyntheticErasureAdmissionVerifyWrites'),
+  'prototype must not be wired into trusted remote writers before integrated safety review');
+console.log('PASS source-only Admin REST atomic admission witness prototype and synthetic deletion-race preconditions; NO apply');
+
 console.log('PASS conditional account-erasure completion + audit are one atomic REST batch; synthetic/no Firebase');
