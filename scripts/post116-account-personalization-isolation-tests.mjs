@@ -116,4 +116,44 @@ for (const [payload, fallback] of [
 assert.deepEqual(readAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, 'alice', 6),
   ['visa appointment', 'camera'], 'B malformed data must not affect A owned history');
 
+
+// Untrusted offline saved searches must never carry arbitrary keys into the
+// next user's or the same user's persisted cache.
+const bobSavedKey = accountLocalKey(ACCOUNT_LOCAL_KEYS.savedSearches, 'bob');
+localStorage.setItem(bobSavedKey, JSON.stringify([
+  null, 17, { query: '  ' },
+  { id: 'local-1', query: 'textbook', visibility_scope: 'campus',
+    notifications_enabled: true, raw_fcm_token: 'synthetic-private-token',
+    account_owner_secret: 'synthetic-private-account' },
+  { query: 'calculator', max_price_mxn: -3, visibility_scope: 'forged',
+    created_at: '2026-11-08T13:00:00.000Z', unknown: 'synthetic-secret' },
+]));
+assert.deepEqual(
+  readAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'bob', []),
+  [
+    { query: 'textbook', id: 'local-1', visibility_scope: 'campus',
+      notifications_enabled: true },
+    { query: 'calculator', created_at: '2026-11-08T13:00:00.000Z' },
+  ],
+  'malformed/unknown saved-search fields must be stripped without losing valid searches',
+);
+writeAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'bob', [
+  { id: 'local-2', query: 'desk', visibility_scope: 'city',
+    raw_auth_token: 'synthetic-private-auth', notifications_enabled: true },
+]);
+assert.deepEqual(JSON.parse(localStorage.getItem(bobSavedKey)), [
+  { query: 'desk', id: 'local-2', visibility_scope: 'city',
+    notifications_enabled: true },
+], 'saved-search writes must whitelist fields BEFORE storage');
+const validBobBefore = localStorage.getItem(bobSavedKey);
+writeAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'bob', null);
+assert.equal(localStorage.getItem(bobSavedKey), validBobBefore,
+  'invalid saved-search write must not erase owner data');
+localStorage.setItem(bobSavedKey, 'x'.repeat(65 * 1024));
+assert.deepEqual(readAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'bob', []), [],
+  'overlarge saved-search cache must fail closed');
+assert.deepEqual(readAccountLocalJson(ACCOUNT_LOCAL_KEYS.savedSearches, 'alice', []),
+  [{ query: 'laptop', id: 'saved-a' }],
+  'corrupt B saved searches must never alter A cached searches');
+
 console.log('PASS account-local personalization: legacy rejected, A->B isolated, same UID restores only its own state');
