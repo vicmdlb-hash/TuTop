@@ -159,11 +159,17 @@ export function inspectSyntheticErasureAdmissionBatchGet({ projectId, participan
   const expected = new Set(documents);
   const seen = new Set();
   let transactionCount = 0;
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     if (!row || typeof row !== 'object' || Array.isArray(row)) {
       throw Error('ERASURE_ADMISSION_BATCH_GET_ROW_INVALID');
     }
+    // Firestore batchGet returns the new transaction ID in the FIRST response.
+    // A token appearing later is not an authenticated admission witness.
+    if (Object.keys(row).some(key => !['found', 'missing', 'transaction', 'readTime'].includes(key)))
+      throw Error('ERASURE_ADMISSION_BATCH_GET_ROW_INVALID');
+    if (Object.hasOwn(row, 'readTime')) canonicalUtcNanoKey(row.readTime);
     if (Object.hasOwn(row, 'transaction')) {
+      if (index !== 0) throw Error('ERASURE_ADMISSION_TRANSACTION_POSITION_INVALID');
       if (typeof row.transaction !== 'string'
         || !/^[A-Za-z0-9+/]+={0,2}$/.test(row.transaction)
         || transactionCount > 0) throw Error('ERASURE_ADMISSION_TRANSACTION_INVALID');
