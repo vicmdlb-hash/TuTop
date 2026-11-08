@@ -29,7 +29,14 @@ export async function firebaseFetch(
   const controller = new AbortController();
   const upstream = init.signal;
 
-  const relayAbort = () => controller.abort(upstream?.reason);
+  // Caller cancellation must settle even if a transport ignores AbortSignal.
+  // Do not misreport an upstream cancel as a Firebase network timeout.
+  let rejectCallerAbort: ((reason: unknown) => void) | undefined;
+  const callerAbort = new Promise<never>((_, reject) => { rejectCallerAbort = reject; });
+  const relayAbort = () => {
+    controller.abort(upstream?.reason);
+    rejectCallerAbort?.(controller.signal.reason);
+  };
   if (upstream?.aborted) relayAbort();
   else upstream?.addEventListener('abort', relayAbort, { once: true });
 
@@ -47,6 +54,7 @@ export async function firebaseFetch(
     return await Promise.race([
       fetch(input, { ...init, signal: controller.signal }),
       timeout,
+      callerAbort,
     ]);
   } catch (error) {
     if (timedOut && !(error instanceof FirebaseRequestTimeoutError)) {

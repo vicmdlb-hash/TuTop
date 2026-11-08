@@ -68,6 +68,35 @@ try {
   globalThis.fetch = originalFetch;
 }
 
+
+// When the HTTP adapter stalls despite AbortSignal, a user's cancellation
+// must reject immediately with their reason and allow the next call to work.
+const blockedFetch = globalThis.fetch;
+try {
+  globalThis.fetch = async (_url, init) => {
+    assert.ok(init.signal instanceof AbortSignal);
+    return await new Promise(() => {});
+  };
+  const abortController = new AbortController();
+  const cancelledRequest = firebaseFetch(
+    'https://example.test/user-cancelled', { signal: abortController.signal }, 5_000);
+  const cancelStarted = Date.now();
+  abortController.abort(new Error('synthetic caller cancellation'));
+  await assert.rejects(cancelledRequest, /synthetic caller cancellation/);
+  assert.ok(Date.now() - cancelStarted < 500,
+    'upstream cancellation must not wait for the Firebase timeout');
+
+  const preCancelled = new AbortController();
+  preCancelled.abort(new Error('synthetic already aborted'));
+  await assert.rejects(
+    firebaseFetch('https://example.test/already-cancelled',
+      { signal: preCancelled.signal }, 5_000),
+    /synthetic already aborted/,
+  );
+} finally {
+  globalThis.fetch = blockedFetch;
+}
+
 // Headers can complete while the body itself stalls; both clients must fail bounded.
 const responseBodyStarted = Date.now();
 await assert.rejects(
