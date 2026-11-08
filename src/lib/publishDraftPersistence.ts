@@ -109,11 +109,17 @@ export function readDurablePublishDraft(uid: string, storage?: StorageLike, now 
     const raw = target.getItem(safeKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as DurableEnvelope;
-    if (parsed?.schema_version !== 2 || parsed.uid !== cleanUid(uid) || !Number.isFinite(parsed.expires_at)) {
-      target.removeItem(safeKey);
-      return null;
-    }
-    if (parsed.expires_at <= now) {
+    // Browser storage is untrusted: an old or edited envelope must not extend
+    // retention beyond the declared seven days or restore arbitrary payloads.
+    const savedAt = parsed?.saved_at;
+    const expiresAt = parsed?.expires_at;
+    if (parsed?.schema_version !== 2 || parsed.uid !== cleanUid(uid)
+      || !Number.isSafeInteger(now) || !Number.isSafeInteger(savedAt) || savedAt < 0
+      || !Number.isSafeInteger(expiresAt)
+      || expiresAt !== savedAt + DURABLE_PUBLISH_DRAFT_TTL_MS
+      || savedAt > now + 60_000 || expiresAt <= now
+      || !parsed.draft || typeof parsed.draft !== 'object' || Array.isArray(parsed.draft)
+      || new TextEncoder().encode(raw).byteLength > DURABLE_PUBLISH_DRAFT_MAX_BYTES) {
       target.removeItem(safeKey);
       return null;
     }
