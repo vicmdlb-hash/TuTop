@@ -14,6 +14,18 @@ assert.equal(smokeNote, processorNote, 'smoke must expect the processor completi
 
 const smokeWorkflow = fs.readFileSync('.github/workflows/staging-v2-smoke.yml', 'utf8');
 const policy = fs.readFileSync('src/lib/accountErasurePolicy.ts', 'utf8');
+const retentionMatrix = fs.readFileSync('docs/RETENTION_ERASURE_MATRIX_0.9.md', 'utf8');
+for (const unclassified of [
+  'notification_outbox', 'age_proofs_v2', 'guardian_grants_v2',
+  'adult_actions_v2', 'chats/*/messages', 'chats/*/reads',
+  'chats/*/confirmations', 'moderation_cases',
+]) {
+  assert(retentionMatrix.includes('`' + unclassified + '`'),
+    'erasure review matrix must explicitly track residual class: ' + unclassified);
+}
+assert.match(retentionMatrix, /Inventario adicional pendiente de clasificación/);
+assert.match(retentionMatrix, /no marcar el borrado como completado/);
+
 
 for (const collection of ['users','user_private','notification_preferences','device_tokens','notification_receipts','favorites','saved_searches','wallets','wallet_transactions','verificationRequests','publicVerifications','reputation','moderationStatus']) {
   assert.match(policy, new RegExp(`collection: '${collection.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'.*disposition: 'delete'`), `${collection} debe eliminarse`);
