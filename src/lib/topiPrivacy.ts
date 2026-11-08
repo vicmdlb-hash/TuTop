@@ -1,4 +1,4 @@
-export type TopiPrivacyRedaction = 'email' | 'phone' | 'otp' | 'token' | 'credential' | 'address';
+export type TopiPrivacyRedaction = 'email' | 'phone' | 'otp' | 'token' | 'credential' | 'address' | 'card';
 
 export type TopiRemoteText = {
   text?: string;
@@ -10,6 +10,23 @@ function normalize(value: unknown) {
   // Redact the complete input before enforcing the outbound character limit.
   // Truncating first could leave a partial email, address or token in the prompt.
   return value.replace(/\u0000/g, '').replace(/\s+/g, ' ').trim();
+}
+
+
+// Detect likely payment-card numbers (13–19 digits) only when their Luhn check
+// succeeds. This avoids masking ordinary listing quantities and prices.
+function isLikelyPaymentCardNumber(value: string) {
+  const digits = value.replace(/[ -]/g, '');
+  if (digits.length < 13 || digits.length > 19 || /^(\d)\1+$/.test(digits)) return false;
+  let sum = 0;
+  let double = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let digit = Number(digits[i]);
+    if (double) { digit *= 2; if (digit > 9) digit -= 9; }
+    sum += digit;
+    double = !double;
+  }
+  return sum % 10 === 0;
 }
 
 export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText {
@@ -25,6 +42,14 @@ export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText
   };
 
   replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'email', '[correo omitido]');
+
+  // Run before the phone detector: a spaced PAN can otherwise be partially
+  // consumed as a ten-digit phone number, leaking the trailing digits.
+  text = text.replace(/(?<!\d)(?<!\d[ -])(?:\d[ -]?){12,18}\d(?![ -]?\d)/g, (candidate) => {
+    if (!isLikelyPaymentCardNumber(candidate)) return candidate;
+    redactions.add('card');
+    return '[tarjeta omitida]';
+  });
 
   // Phone redaction is deliberately conservative: redact international MX numbers,
   // formatted 10-digit numbers, or plain numbers only when introduced as contact data.

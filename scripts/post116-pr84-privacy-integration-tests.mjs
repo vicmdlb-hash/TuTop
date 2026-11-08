@@ -67,6 +67,23 @@ for (const value of keyExamples) {
   assert.equal(result.text?.includes(value), false, 'raw API key must not survive redaction');
   assert(result.redactions.includes('token'));
 }
+// Synthetic published payment-card test patterns only; never use real card data.
+// Run the full-card detector BEFORE the phone matcher can consume ten digits.
+for (const card of ['4111 1111 1111 1111', '4111111111111111', '4111-1111-1111-1111']) {
+  const sanitized = redactTopiRemoteText('Mi tarjeta para pago es ' + card);
+  assert.equal(sanitized.text?.includes(card), false, 'complete card must not reach remote Topi');
+  assert.ok(sanitized.text?.includes('[tarjeta omitida]'));
+  assert.ok(sanitized.redactions.includes('card'));
+  assert.equal(/4111/.test(sanitized.text || ''), false, 'partial PAN must not survive phone redaction');
+}
+const nonCard = redactTopiRemoteText('Referencia 1234567890123456');
+assert.equal(nonCard.text, 'Referencia 1234567890123456',
+  'a non-Luhn serial must remain intact instead of being treated as a card');
+const nearLimitCard = redactTopiRemoteText('a'.repeat(892) + ' 4111 1111 1111 1111', 900);
+assert.equal(nearLimitCard.text?.includes('4111'), false,
+  'redact the complete card before outbound truncation');
+assert.ok(nearLimitCard.redactions.includes('card'));
+
 const productFacts = redactTopiRemoteText('Vendo iPhone 13 de 128 GB en $12,500, batería 88%');
 assert.equal(productFacts.text, 'Vendo iPhone 13 de 128 GB en $12,500, batería 88%');
 
