@@ -20,4 +20,15 @@ for (const path of paths) {
   assert(!code.includes('${response.status} ${url}'),
     path + ': raw Firestore URL must not be included in thrown error');
 }
-console.log('PASS: six notification projector HTTP errors suppress URLs and response bodies');
+
+// Trusted maintenance must not echo Firestore error payloads, document paths,
+// recipient IDs, device-token IDs or FCM response bodies into CI logs.
+const maintenance = fs.readFileSync('scripts/v2-trusted-maintenance.mjs', 'utf8');
+assert(maintenance.includes('V2_TRUSTED_MAINTENANCE_HTTP_' + '${response.status}'));
+assert(maintenance.includes('V2_TRUSTED_MAINTENANCE_FCM_HTTP_' + '${response.status}'));
+assert(!maintenance.includes('${response.status} ${url}: ${text.slice(0, 800)}'),
+  'maintenance errors must not include raw remote URL/body');
+assert(!maintenance.includes('detail.slice(0, 220)') && !maintenance.includes('${item.id}/${target.id}'),
+  'FCM errors must not leak recipient IDs or provider response bodies');
+
+console.log('PASS: notification projectors and trusted maintenance suppress URLs, IDs and response bodies');

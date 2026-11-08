@@ -59,7 +59,7 @@ async function request(url, options = {}, allowStatuses = []) {
   const text = await response.text();
   let data = null;
   if (text) { try { data = JSON.parse(text); } catch { data = { raw: text }; } }
-  if (!response.ok && !allowStatuses.includes(response.status)) throw new Error(`${response.status} ${url}: ${text.slice(0, 800)}`);
+  if (!response.ok && !allowStatuses.includes(response.status)) throw new Error(`V2_TRUSTED_MAINTENANCE_HTTP_${response.status}`);
   return { status: response.status, data };
 }
 
@@ -258,8 +258,9 @@ async function runPush() {
       });
       if (response.ok) delivered += 1;
       else {
-        const detail = await response.text();
-        console.warn(`FCM ${item.id}/${target.id}: ${response.status} ${detail.slice(0, 220)}`);
+        // FCM errors can echo device tokens and private notification fields.
+        // Report the status only; never log response bodies or recipient IDs.
+        console.warn(`V2_TRUSTED_MAINTENANCE_FCM_HTTP_${response.status}`);
       }
     }
     if (delivered > 0) {
