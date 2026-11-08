@@ -94,11 +94,11 @@ export function buildSyntheticErasureAdmissionVerifyWrites({
       || !Object.hasOwn(row, 'document')) throw Error('ERASURE_ADMISSION_SNAPSHOT_INVALID');
     snapshots.set(row.uid, row.document);
   }
-  const root = \`projects/\${projectId}/databases/(default)/documents\`;
+  const root = `projects/${projectId}/databases/(default)/documents`;
   return participants.map(uid => {
     if (!snapshots.has(uid)) throw Error('ERASURE_ADMISSION_UID_NOT_READ');
     const document = snapshots.get(uid);
-    const name = \`\${root}/account_deletion_requests/\${uid}\`;
+    const name = `${root}/account_deletion_requests/${uid}`;
     if (document === null) {
       return { verify: name, currentDocument: { exists: false } };
     }
