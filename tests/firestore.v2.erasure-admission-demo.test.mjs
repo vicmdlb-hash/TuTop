@@ -130,8 +130,11 @@ test('demo-only Firestore REST batchGet starts a read-write transaction and pres
   const prefix = `http://${host}/v1/${root}`;
   const buyer = `${root}/account_deletion_requests/buyer`;
   const seller = `${root}/account_deletion_requests/seller`;
+  // Literal 'owner' is the Firestore emulator's documented LOCAL admin bypass.
+  // It is NOT an OAuth credential and only goes to the allowlisted loopback host.
+  const emulatorHeaders = { 'Content-Type': 'application/json', Authorization: 'Bearer owner' };
   const response = await fetch(`${prefix}:batchGet`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: emulatorHeaders,
     body: JSON.stringify({
       documents: [buyer, seller], newTransaction: { readWrite: {} },
     }),
@@ -154,7 +157,7 @@ test('demo-only Firestore REST batchGet starts a read-write transaction and pres
     'server-origin rejected status must appear for seller');
   // Release any read locks. Never output or persist a raw transaction ID.
   const rollback = await fetch(`${prefix}:rollback`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: emulatorHeaders,
     body: JSON.stringify({ transaction: rows[0].transaction }),
   });
   assert.equal(rollback.status, 200, 'demo-only transaction should be rolled back');
