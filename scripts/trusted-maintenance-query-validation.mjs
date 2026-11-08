@@ -21,11 +21,22 @@ export function validateTrustedMaintenanceQueryRows({
   for (const row of rows) {
     if (!row || typeof row !== 'object' || Array.isArray(row)
       || Object.hasOwn(row, 'error')) fail('ROW_INVALID');
+    // A nonzero Firestore offset count means this inventory omitted records.
+    // Do not allow it to authorize any privileged maintenance writes.
+    if (Object.hasOwn(row, 'skippedResults')
+      && (!Number.isSafeInteger(row.skippedResults) || row.skippedResults !== 0))
+      fail('SKIPPED_RESULTS');
     if (!Object.hasOwn(row, 'document')) {
-      // A metadata-only readTime row is legitimate for an empty query.
-      // Skipped results, unexpected keys or response errors cannot be ignored.
-      if (Object.keys(row).some(key => !['readTime'].includes(key)))
-        fail('ROW_UNEXPECTED');
+      // Empty queries yield readTime; completed streams may yield done=true.
+      // Never silently interpret {} or malformed metadata as an empty result.
+      const keys = Object.keys(row);
+      const hasReadTime = Object.hasOwn(row, 'readTime')
+        && typeof row.readTime === 'string' && Number.isFinite(Date.parse(row.readTime));
+      const done = row.done === true;
+      if (!keys.length || keys.some(key => !['readTime', 'skippedResults', 'done'].includes(key))
+        || (Object.hasOwn(row, 'readTime') && !hasReadTime)
+        || (Object.hasOwn(row, 'done') && !done)
+        || (!hasReadTime && !done)) fail('ROW_UNEXPECTED');
       continue;
     }
     const doc = row.document;

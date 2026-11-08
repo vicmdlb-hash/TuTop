@@ -25,6 +25,16 @@ const validateInventory = (rows, options = {}) =>
 assert.deepEqual(validateInventory([inventoryDoc('real1'), inventoryDoc('real2')]).map(x => x.id),
   ['real1', 'real2'], 'document path must override untrusted id');
 assert.deepEqual(validateInventory([{ readTime: '2026-11-08T00:00:00Z' }]), []);
+assert.deepEqual(validateInventory([{ done: true }]), [], 'completed empty streams are valid');
+assert.deepEqual(validateInventory([{ readTime: '2026-11-08T00:00:00Z', skippedResults: 0 }]), []);
+for (const rows of [
+  [{}], [{ readTime: null }], [{ readTime: 'bad-date' }], [{ done: false }],
+  [{ ...inventoryDoc('untrusted'), skippedResults: 2 }],
+]) {
+  assert.throws(() => validateInventory(rows), /TRUSTED_MAINTENANCE_INVENTORY_/,
+    'malformed or offset inventory must not silently appear empty or complete');
+}
+
 for (const rows of [
   null, {}, [null], [{ error: { code: 403 } }],
   [inventoryDoc('same'), inventoryDoc('same')],
