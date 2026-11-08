@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { matchesNativePushSession } from '../src/lib/nativePushSessionGuard.ts';
-import { createFirstPushTokenDocument } from '../src/lib/pushTokenCreateFirst.ts';
+import { createFirstPushTokenDocument, normalizePushTokenIdentity, normalizePushAppVersion } from '../src/lib/pushTokenCreateFirst.ts';
 const A={uid:'synthetic-A',refreshToken:'synthetic-session-A',generation:3,epoch:7};
 const same={uid:A.uid,refreshToken:A.refreshToken};
 assert.equal(matchesNativePushSession(A,same,3,7,false),true);
@@ -86,5 +86,31 @@ await assert.rejects(createFirstPushTokenDocument(
   () => { if (!ownerStillCurrent) throw new Error('PUSH_OWNER_SESSION_CHANGED'); },
 ), /PUSH_OWNER_SESSION_CHANGED/);
 assert.equal(attemptedWrites, 1, 'stale A must never update an existing record after B login');
+
+
+// Runtime native callbacks can bypass TS annotations: reject invalid token,
+// platform and appVersion before building Firestore keys or creating writes.
+assert.deepEqual(normalizePushTokenIdentity(
+  '  synthetic-fcm-token-abcdefghijklmnopqrstuvwxyz  ', 'android',
+), { token: 'synthetic-fcm-token-abcdefghijklmnopqrstuvwxyz', platform: 'android' });
+for (const badToken of [null, {}, [], false, 7, '', 'short', 'x'.repeat(4097)]) {
+  assert.throws(() => normalizePushTokenIdentity(badToken, 'android'), /INVALID_PUSH_TOKEN/);
+}
+for (const badPlatform of ['android/../admin', 'Android', 'bluetooth', 1, {}, null, '']) {
+  assert.throws(() => normalizePushTokenIdentity(syntheticRecord.token, badPlatform),
+    /INVALID_PUSH_PLATFORM/);
+}
+assert.equal(normalizePushAppVersion('  0.9.2-beta.0  '), '0.9.2-beta.0');
+for (const badVersion of [null, undefined, {}, [], 1, '', '   ', '\u0000private', 'x'.repeat(129)]) {
+  assert.throws(() => normalizePushAppVersion(badVersion), /INVALID_PUSH_APP_VERSION/);
+}
+assert(register.includes('normalizePushTokenIdentity(token, platform)'),
+  'push register must use runtime validation before hashing/writing');
+assert(register.includes('normalizePushAppVersion(appVersion)'),
+  'push register must reject malformed app versions');
+const unregister=backend.slice(backend.indexOf('async unregisterDeviceToken('),
+  backend.indexOf('async loadTrustedNotifications('));
+assert(unregister.includes('normalizePushTokenIdentity(token, platform)'),
+  'unregister must validate the same token identity before constructing a document ID');
 
 console.log('PASS synthetic native push owner epoch guard, delayed callback and backend CAS pre-write contracts');
