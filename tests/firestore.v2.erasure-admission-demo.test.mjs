@@ -142,8 +142,46 @@ test('demo-only Firestore REST batchGet starts a read-write transaction and pres
   assert.equal(response.status, 200, 'emulator REST must accept read-write batchGet');
   const body = (await response.text()).trim();
   assert(body && body.length < 64 * 1024, 'bounded emulator response required');
-  // Cloud Firestore REST batchGet is streamed as one JSON object per line.
-  const rows = body.split(/\r?\n/).map(row => row.trim()).filter(Boolean).map(JSON.parse);
+  // REST emulator may pretty-print each streaming JSON object across many
+  // lines. Parse complete top-level objects, never assume one JSON per line.
+  const parseStream = (raw) => {
+    try {
+      const entire = JSON.parse(raw);
+      return Array.isArray(entire) ? entire : [entire];
+    } catch { /* may be multiple top-level JSON objects */ }
+    const parsed = [];
+    let depth = 0, quote = false, escaped = false, start = -1, lastEnd = 0;
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i];
+      if (quote) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') quote = false;
+        continue;
+      }
+      if (ch === '"') { quote = true; continue; }
+      if (ch === '{') {
+        if (depth === 0) {
+          if (raw.slice(lastEnd, i).trim()) throw Error('ERASURE_REST_STREAM_SEPARATOR_INVALID');
+          start = i;
+        }
+        depth++;
+      } else if (ch === '}') {
+        if (depth <= 0) throw Error('ERASURE_REST_STREAM_BRACES_INVALID');
+        depth--;
+        if (depth === 0) {
+          parsed.push(JSON.parse(raw.slice(start, i + 1)));
+          lastEnd = i + 1;
+          start = -1;
+        }
+      }
+    }
+    if (depth !== 0 || quote || raw.slice(lastEnd).trim() || !parsed.length) {
+      throw Error('ERASURE_REST_STREAM_INCOMPLETE');
+    }
+    return parsed;
+  };
+  const rows = parseStream(body);
   assert(rows.length >= 2 && rows.length <= 3, 'each participant must yield one result');
   assert.equal(typeof rows[0].transaction, 'string');
   assert(rows[0].transaction.length > 0);
