@@ -74,13 +74,26 @@ test('pending seller forbids a buyer-originated chat (counterparty freeze)', asy
   await seed(); await deletion('seller');
   await assertFails(createChat(asBuyer()));
 });
-test('rejected request may resume normal chat; unknown status cannot', async () => {
+test('rejected request may resume normal chat', async () => {
   await seed(); await deletion('seller', 'rejected');
   await assertSucceeds(createChat(asBuyer()));
 });
-test('pending buyer or seller cannot admit an offer to historical chat', async () => {
+test('unknown deletion status fails closed instead of allowing new commerce', async () => {
+  await seed(); await deletion('seller', 'unexpected');
+  await assertFails(createChat(asBuyer()));
+});
+test('processing buyer blocks a new chat just like pending buyer', async () => {
+  await seed(); await deletion('buyer', 'processing');
+  await assertFails(createChat(asBuyer()));
+});
+test('pending seller cannot admit an offer to historical chat', async () => {
   await seed(); await preseedChat();
   await deletion('seller');
+  await assertFails(createOffer(asBuyer()));
+});
+test('pending buyer cannot admit an offer to historical chat either', async () => {
+  await seed(); await preseedChat();
+  await deletion('buyer');
   await assertFails(createOffer(asBuyer()));
 });
 test('pending counterparty denies new messages but preserves historical chat read', async () => {
