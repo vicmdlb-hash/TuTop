@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import fs from 'node:fs';
-import { trustedFcmQueryRecord, trustedFcmDirectRecord } from './fcm-staging-document-identity-lib.mjs';
+import { trustedFcmQueryRecord, trustedFcmDirectRecord, fcmRecipientErasureAllows } from './fcm-staging-document-identity-lib.mjs';
 import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup, isFreshFcmTargetStillEligible } from './fcm-outbox-attempt-lib.mjs';
 
 assert.deepEqual(fcmDataForNotification({ id: 'synthetic-notice', recipient_uid: 'synthetic_user', kind: 'new_message' }), { notification_id: 'synthetic-notice', recipient_uid: 'synthetic_user', kind: 'new_message' });
@@ -146,3 +146,58 @@ assert(source.includes('trustedFcmDirectRecord(result, path, decodeFields)'));
 assert(!source.includes("id: row.document.name.split('/').pop(),"),
   'a Firestore field must never override the trusted document ID');
 console.log('PASS synthetic FCM outbox CAS claim-before-send and uncertain-delivery quarantine');
+
+
+// FCM_ERASURE_RECIPIENT_TEST: an account deletion must suppress all physical
+// notifications, even if its token remained active. Pure synthetic records;
+// no Firebase credentials, deletion, push request, or real users involved.
+const erasurePath = 'account_deletion_requests/synthetic-a';
+const erasureRecord = (status, uid = 'synthetic-a') => trustedFcmDirectRecord(
+  record(erasurePath, { uid, status }), erasurePath, identityDecode,
+);
+assert.equal(fcmRecipientErasureAllows('synthetic-a', null), true,
+  'confirmed absent erasure request should preserve legitimate delivery');
+assert.equal(fcmRecipientErasureAllows('synthetic-a', erasureRecord('rejected')), true,
+  'explicitly rejected request may resume delivery');
+for (const status of ['pending', 'processing', 'completed', 'unexpected', '', null, undefined]) {
+  assert.equal(fcmRecipientErasureAllows('synthetic-a', erasureRecord(status)), false,
+    'unsafe or unknown account deletion status must quarantine FCM: ' + status);
+}
+assert.equal(fcmRecipientErasureAllows('synthetic-a', erasureRecord('rejected', 'synthetic-b')), false,
+  'forged UID in a rejected request cannot authorize the target account');
+assert.equal(fcmRecipientErasureAllows('synthetic-b', erasureRecord('rejected')), false,
+  'a rejected request from another UID cannot authorize cross-account delivery');
+for (const bad of [undefined, {}, [], { status: 'rejected' },
+  { id: 'synthetic-a', status: 'rejected' },
+  { uid: 'synthetic-a', status: 'rejected' }]) {
+  assert.equal(fcmRecipientErasureAllows('synthetic-a', bad), false,
+    'ambiguous deletion record must never become an allow witness');
+}
+for (const badUid of ['', '../synthetic-a', 'synthetic/a', null, 123, ' '.repeat(2)]) {
+  assert.equal(fcmRecipientErasureAllows(badUid, null), false,
+    'invalid recipient identity must block even if deletion request is absent');
+}
+assert.throws(() => trustedFcmDirectRecord(
+  record('account_deletion_requests/synthetic-b', { uid: 'synthetic-a', status: 'rejected' }),
+  erasurePath, identityDecode,
+), /FCM_DOCUMENT_NAME_MISMATCH/, 'a forged Firestore path cannot substitute recipient evidence');
+assert.throws(() => trustedFcmDirectRecord(
+  record('users/synthetic-a', { uid: 'synthetic-a', status: 'rejected' }),
+  'users/synthetic-a', identityDecode,
+), /FCM_DIRECT_DOCUMENT_PATH_INVALID/);
+
+// An in-flight erasure may appear between the initial recipient check and
+// HTTP send: source MUST re-read after CAS claim and all fresh owner/block
+// checks, without caching this account-deletion decision across sends.
+const preClaimErasureGate = source.indexOf('if (apply && !(await recipientErasureAllows(item)))');
+const postClaimErasureGate = source.indexOf('if (!(await recipientErasureAllows(item)))');
+const erasureReader = source.indexOf('account_deletion_requests/${uid}');
+assert(erasureReader > 0, 'must read exact account deletion request by UID');
+assert(preClaimErasureGate > 0 && preClaimErasureGate < claimIndex,
+  'pending erasure must block before claiming a notification');
+assert(postClaimErasureGate > freshGateIndex && postClaimErasureGate < sendStart,
+  'pending erasure must block again after claim and before FCM HTTP');
+assert.equal((source.match(/await recipientErasureAllows\(item\)/g) || []).length, 2,
+  'physical send should always have preclaim and pre-send erasure gates');
+assert.match(source, /FCM_PHYSICAL_FRESH_ERASURE_DENIED/);
+console.log('PASS FCM deletion-request freeze: missing or rejected allows, active or ambiguous blocks, two pre-send checks');
