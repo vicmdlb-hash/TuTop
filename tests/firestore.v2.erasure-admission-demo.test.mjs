@@ -124,6 +124,21 @@ test('completed seller deletion cannot admit new offers', async () => {
   await assertFails(createOffer(asBuyer()));
 });
 
+test('processing seller cannot receive a new buyer offer (counterparty)', async () => {
+  await seed(); await preseedChat(); await deletion('seller', 'processing');
+  await assertFails(createOffer(asBuyer()));
+});
+
+test('rejected buyer deletion permits buyer to create a new offer', async () => {
+  await seed(); await preseedChat(); await deletion('buyer', 'rejected');
+  await assertSucceeds(createOffer(asBuyer()));
+});
+
+test('unknown buyer deletion status denies buyer offer', async () => {
+  await seed(); await preseedChat(); await deletion('buyer', 'unexpected');
+  await assertFails(createOffer(asBuyer()));
+});
+
 test('pending counterparty denies new messages but preserves historical chat read', async () => {
   await seed(); await preseedChat(); await deletion('seller', 'processing');
   const db = asBuyer();

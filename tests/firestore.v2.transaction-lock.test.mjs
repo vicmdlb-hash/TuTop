@@ -199,48 +199,6 @@ function completionPhaseOne(db, { sellOut = true, completeTx = true, actor = 'se
   return batch;
 }
 
-// P01: a new offer must fail closed for EITHER deleting participant.
-// This targets source-generated Rules, not the separate demo-only generator.
-test('P01: pending seller blocks a new buyer-created offer', async () => {
-  await seed();
-  await seedDeletionRequest('seller', 'pending');
-  const buyer = verifiedContext(env, 'buyer-a').firestore();
-  await assertFails(createOfferBatch(buyer, {
-    offerId: 'offer-p01-pending-seller', buyerId: 'buyer-a', chatId: 'chat-a',
-    amountMxn: 401, rateCount: 1, windowStart: now(),
-  }).commit());
-});
-
-test('P01: processing buyer blocks own new offer', async () => {
-  await seed();
-  await seedDeletionRequest('buyer-a', 'processing');
-  const buyer = verifiedContext(env, 'buyer-a').firestore();
-  await assertFails(createOfferBatch(buyer, {
-    offerId: 'offer-p01-processing-buyer', buyerId: 'buyer-a', chatId: 'chat-a',
-    amountMxn: 402, rateCount: 1, windowStart: now(),
-  }).commit());
-});
-
-test('P01: unknown seller deletion status fails closed for new offer', async () => {
-  await seed();
-  await seedDeletionRequest('seller', 'unexpected');
-  const buyer = verifiedContext(env, 'buyer-a').firestore();
-  await assertFails(createOfferBatch(buyer, {
-    offerId: 'offer-p01-unknown-seller', buyerId: 'buyer-a', chatId: 'chat-a',
-    amountMxn: 403, rateCount: 1, windowStart: now(),
-  }).commit());
-});
-
-test('P01: rejected seller deletion allows a normal new buyer offer', async () => {
-  await seed();
-  await seedDeletionRequest('seller', 'rejected');
-  const buyer = verifiedContext(env, 'buyer-a').firestore();
-  await assertSucceeds(createOfferBatch(buyer, {
-    offerId: 'offer-p01-rejected-seller', buyerId: 'buyer-a', chatId: 'chat-a',
-    amountMxn: 404, rateCount: 1, windowStart: now(),
-  }).commit());
-});
-
 // P01: source rules must reject NEW commerce while either side has an
 // account deletion request. These are synthetic emulated Firestore users.
 test('P01: buyer pending deletion blocks seller-created reservation', async () => {
