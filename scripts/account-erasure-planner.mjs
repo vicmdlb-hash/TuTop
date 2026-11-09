@@ -167,7 +167,8 @@ export function summarizeRetainedOperationalMatches(entries) {
       bucket = { paths: new Set(), fields: new Set() };
       byCollection.set(collection, bucket);
     }
-    bucket.fields.add(field);
+    // A query with zero matches is not evidence that its field referenced this UID.
+    if (entry.docs.length > 0) bucket.fields.add(field);
     for (const doc of entry.docs) {
       const parts = typeof doc?.path === 'string' ? doc.path.split('/') : [];
       if (parts.length !== 2 || parts[0] !== collection || !parts[1]
