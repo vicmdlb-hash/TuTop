@@ -1,10 +1,9 @@
-import { eligibleRecipientTargets, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
+import { eligibleRecipientTargets, fcmTokenCleanupPrecondition, isCanonicalFcmTimestamp } from './fcm-token-ownership-lib.mjs';
 
 // Firestore cannot atomically commit an external HTTP FCM send. Claim first;
 // uncertain outcomes stay dispatching until reviewed, never auto-replayed.
 function validTime(t) {
-  return typeof t === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(t)
-    && Number.isFinite(Date.parse(t));
+  return isCanonicalFcmTimestamp(t);
 }
 export function planFcmOutboxClaim(item, now) {
   if (item?.status !== 'pending') throw new Error('FCM_OUTBOX_NOT_PENDING');
