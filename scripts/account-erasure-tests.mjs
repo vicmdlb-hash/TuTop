@@ -193,7 +193,7 @@ console.log('PASS source-only staging smoke contract exists; no staging smoke or
 console.log('Account erasure safety contract: PASS');
 
 // P01 checks the GENERATED runtime rules, not just an isolated demo Ruleset.
-const accountRuleHardener = fs.readFileSync('scripts/harden-account-operations-rules.mjs','utf8');
+const accountRuleHardener = fs.readFileSync('scripts/harden-user-block-rules.mjs','utf8');
 assert(accountRuleHardener.includes('commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)'),
   'generated offer create must check buyer AND seller active erasure');
 assert(accountRuleHardener.includes('commerceAccountsEligible(resource.data.buyer_id, resource.data.seller_id)'),

@@ -62,5 +62,19 @@ patchSection('    match /offers/{offerId} {', '    match /transactions_v2/{trans
   "        && resource.data.status == 'pending'\n        && (request.resource.data.status in ['withdrawn','rejected'] || usersUnblocked(resource.data.buyer_id, resource.data.seller_id))",
   'offer update retains withdrawals/rejections');
 
+// Apply P01 erasure admission LAST: verified-email generation and user-block
+// policy are already in place, so their exact marker invariants stay intact.
+// This does not authorize trusted/Admin writers or destructive erasure apply.
+replaceOnce(
+  "      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && rateLimitConsumed('offer_create')",
+  "      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && rateLimitConsumed('offer_create')",
+  'offer buyer/seller erasure create admission',
+);
+replaceOnce(
+  "      allow update: if signedIn() && notSuspended() && verifiedIdentity()\n        && resource.data.status == 'pending'",
+  "      allow update: if signedIn() && notSuspended() && verifiedIdentity()\n        && commerceAccountsEligible(resource.data.buyer_id, resource.data.seller_id)\n        && resource.data.status == 'pending'",
+  'offer buyer/seller erasure update admission',
+);
+
 fs.writeFileSync(path, rules);
 console.log('PASS owner-private user blocks and bilateral write denial for chat, messages, offers; existing reads, cancellations and offer withdrawals remain separate.');
