@@ -215,7 +215,7 @@ assert(accountRuleHardener.includes('function offerRateLimitConsumed()'),
 assert(accountRuleHardener.includes("&& offerRateLimitConsumed()"),
   'generated offer create must require an actual rate bucket mutation');
 const demoAdapter=fs.readFileSync('scripts/prepare-firestore-erasure-admission-demo-rules.mjs','utf8');
-assert(demoAdapter.includes("requireOnce('offerRateLimitConsumed()'"),
+assert(demoAdapter.includes("requireOnce('&& offerRateLimitConsumed()'"),
   'demo must recognize the same optimized generated rate contract');
 assert(generatedOfferTests.includes('P01 generated Rules refuse offer without atomic rate bucket'));
 console.log('PASS P01 optimized rate bucket and demo adapter remain fail-closed');

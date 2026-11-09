@@ -52,8 +52,8 @@ rules = rules.replace(original[0], helper + original[0].replace(
 // Isolation only: keep the real optimized offer atomic-rate proof when present.
 // Historical generated Rules used the expensive helper, which demo replaced.
 // Never silently remove the rate guard or mutate the canonical Rules file.
-if (rules.includes('offerRateLimitConsumed()')) {
-  requireOnce('offerRateLimitConsumed()', 'canonical optimized offer rate guard');
+if (rules.includes('&& offerRateLimitConsumed()')) {
+  requireOnce('&& offerRateLimitConsumed()', 'canonical optimized offer rate guard');
 } else {
   requireOnce("rateLimitConsumed('offer_create')", 'legacy offer rate guard');
   rules = rules.replace("rateLimitConsumed('offer_create')", 'erasureDemoOfferRateLimitConsumed()');
