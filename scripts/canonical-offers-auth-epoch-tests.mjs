@@ -78,3 +78,111 @@ session=null;
 await assert.rejects(backend.listOffersForChat('race-room'),/AUTH_REQUIRED/);
 console.log('PASS canonical offers cache and inflight are partitioned by UID and exact Firebase session');
 console.log('PASS same-UID relogin refreshes cache, stale results rejected, guest denied, A-to-B safe');
+
+// P07 regression: even if a listing/parent/offer preflight was started under
+// session A, a subsequent B login must prevent any A-authored offer mutation.
+// The transport already enforces this; these assertions also keep the
+// application-level preflight from preparing writes after an account switch.
+// Synthetic only: no Firebase service, device, or real account is contacted.
+const mutationReads = [];
+const mutationWrites = [];
+let mutationSession = null;
+let syntheticOfferId = 0;
+class MutationFirebaseRestClient {
+  constructor() { this.currentSession = mutationSession ? { ...mutationSession } : null; }
+  getDocument(path) {
+    return new Promise(resolve => mutationReads.push({ path, resolve }));
+  }
+  encodeDocumentForWrite(path, data) { return { path, data }; }
+  async setDocument(path, data) { mutationWrites.push({ path, data }); }
+}
+class MutationWindow {
+  begin() {
+    const id = ++syntheticOfferId;
+    return { key: 'synthetic-offer-' + id, offerId: 'synthetic-offer-' + id };
+  }
+  markSuccess() {}
+  markUncertain() {}
+  forget() {}
+}
+const mutationBackend = fixture(compileTypescriptFixture('src/services/canonicalOffersBackend.ts'), {
+  '../lib/offerIdempotency': { OfferIdempotencyWindow: MutationWindow },
+  '../lib/transactionRetry': { assertFreshOfferExpiry: () => {} },
+  '../lib/firebaseSharedSessionGuard': guard,
+  './firebaseRest': { FirebaseRestClient: MutationFirebaseRestClient },
+  './nationalBackend': { nationalSchemaEnabled: () => true },
+  './rateLimit': {
+    commitWithRateLimit: async (_client, action, writes) => {
+      mutationWrites.push({ action, writes });
+    },
+  },
+  './runtimeConfig': { getFirebaseConfig: () => ({}) },
+}).canonicalOffersBackend;
+const nextMutationRead = path => {
+  const pendingRead = mutationReads.shift();
+  assert(pendingRead, 'missing deferred mutation preflight: ' + path);
+  assert.equal(pendingRead.path, path);
+  return pendingRead;
+};
+const eligibleListing = {
+  id: 'listing-1',
+  data: {
+    seller_id: 'seller-B', status: 'active',
+    moderation_status: 'approved', availability_status: 'available',
+  },
+};
+mutationSession = identity('buyer-A', 'offer-preflight-A');
+const staleCreate = mutationBackend.createOffer({
+  listingId: 'listing-1', chatId: 'chat-1', sellerId: 'seller-B', amountMxn: 25,
+});
+const createPreflight = nextMutationRead('listings_v2/listing-1');
+mutationSession = identity('buyer-B', 'offer-preflight-B');
+createPreflight.resolve(eligibleListing);
+await assert.rejects(staleCreate, /AUTH_SESSION_CHANGED/,
+  'A offer must not proceed after B becomes the active account');
+assert.equal(mutationWrites.length, 0,
+  'stale A offer must not reach setDocument or commitWithRateLimit');
+
+mutationSession = identity('buyer-A', 'same-uid-first');
+const staleUpdate = mutationBackend.updateOffer('offer-old', 'rejected');
+const updatePreflight = nextMutationRead('offers/offer-old');
+mutationSession = identity('buyer-A', 'same-uid-second');
+updatePreflight.resolve({
+  id: 'offer-old',
+  data: {
+    id: 'offer-old', buyer_id: 'buyer-A', seller_id: 'seller-B',
+    created_by: 'seller-B', status: 'pending', chat_id: 'chat-1',
+  },
+});
+await assert.rejects(staleUpdate, /AUTH_SESSION_CHANGED/,
+  'same-UID re-login must invalidate offer update preparation');
+assert.equal(mutationWrites.length, 0);
+
+const parent = {
+  id: 'parent-offer', listing_id: 'listing-1', chat_id: 'chat-1',
+  buyer_id: 'seller-B', seller_id: 'buyer-A', created_by: 'seller-B',
+  status: 'pending',
+};
+mutationSession = identity('buyer-A', 'counter-preflight-A');
+const staleCounter = mutationBackend.createCounterOffer(parent, 30);
+const parentPreflight = nextMutationRead('offers/parent-offer');
+mutationSession = identity('buyer-B', 'counter-preflight-B');
+parentPreflight.resolve({ id: 'parent-offer', data: { ...parent } });
+await assert.rejects(staleCounter, /AUTH_SESSION_CHANGED/,
+  'A counteroffer must stop before a second read or any write after B login');
+assert.equal(mutationReads.length, 0);
+assert.equal(mutationWrites.length, 0);
+
+mutationSession = identity('buyer-A', 'current-offer-A');
+const currentCreate = mutationBackend.createOffer({
+  listingId: 'listing-1', chatId: 'chat-1', sellerId: 'seller-B', amountMxn: 25,
+});
+nextMutationRead('listings_v2/listing-1').resolve(eligibleListing);
+const created = await currentCreate;
+assert.equal(created.buyer_id, 'buyer-A');
+assert.equal(created.status, 'pending');
+assert.equal(mutationWrites.length, 1,
+  'unchanged authenticated session must still be able to prepare a legitimate offer');
+assert.equal(mutationWrites[0].action, 'offer_create');
+console.log('PASS offer create/update/counter guards reject stale A→B and same-UID re-login after async reads');
+console.log('PASS legitimate offer create remains possible in a stable authenticated session');
