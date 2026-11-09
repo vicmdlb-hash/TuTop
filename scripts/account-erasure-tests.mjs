@@ -191,31 +191,3 @@ console.log('PASS Auth deletion occurs only after Firestore withdrawal/deletion'
 console.log('PASS transaction/lock/chat/report evidence is not blindly deleted');
 console.log('PASS source-only staging smoke contract exists; no staging smoke or destructive erasure executed');
 console.log('Account erasure safety contract: PASS');
-
-// P01 checks the GENERATED runtime rules, not just an isolated demo Ruleset.
-const accountRuleHardener = fs.readFileSync('scripts/harden-user-block-rules.mjs','utf8');
-assert(accountRuleHardener.includes('commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)'),
-  'generated offer create must check buyer AND seller active erasure');
-assert(accountRuleHardener.includes('commerceAccountsEligible(resource.data.buyer_id, resource.data.seller_id)'),
-  'generated offer update must check buyer AND seller active erasure');
-const generatedOfferTests = fs.readFileSync('tests/firestore.v2.account-operations.test.mjs','utf8');
-for (const phrase of [
-  'P01 generated Rules accept an eligible offer without erasure',
-  'P01 generated Rules refuse offers while buyer deletion is pending',
-  'P01 generated Rules refuse offers while seller deletion is processing',
-  'P01 generated Rules accept rejected seller deletion only',
-  'P01 generated Rules fail closed on unknown seller erasure state',
-]) assert(generatedOfferTests.includes(phrase),'missing generated Rules regression: '+phrase);
-console.log('PASS generated offer Rules include both-party erasure guards and emulator regressions');
-
-// Heavy offered rules + erasure lookups must not regress guardian positive-path
-// by exceeding Firestore's 1,000-expression evaluation cap.
-assert(accountRuleHardener.includes('function offerRateLimitConsumed()'),
-  'offer atomic rate check must use bounded helper');
-assert(accountRuleHardener.includes("&& offerRateLimitConsumed()"),
-  'generated offer create must require an actual rate bucket mutation');
-const demoAdapter=fs.readFileSync('scripts/prepare-firestore-erasure-admission-demo-rules.mjs','utf8');
-assert(demoAdapter.includes("requireOnce('&& offerRateLimitConsumed()'"),
-  'demo must recognize the same optimized generated rate contract');
-assert(generatedOfferTests.includes('P01 generated Rules refuse offer without atomic rate bucket'));
-console.log('PASS P01 optimized rate bucket and demo adapter remain fail-closed');

@@ -49,15 +49,9 @@ const helper = String.raw`
 rules = rules.replace(original[0], helper + original[0].replace(
   /; \}$/, ' && erasureAdmissionAllows(request.auth.uid); }',
 ));
-// Isolation only: keep the real optimized offer atomic-rate proof when present.
-// Historical generated Rules used the expensive helper, which demo replaced.
-// Never silently remove the rate guard or mutate the canonical Rules file.
-if (rules.includes('&& offerRateLimitConsumed()')) {
-  requireOnce('&& offerRateLimitConsumed()', 'canonical optimized offer rate guard');
-} else {
-  requireOnce("rateLimitConsumed('offer_create')", 'legacy offer rate guard');
-  rules = rules.replace("rateLimitConsumed('offer_create')", 'erasureDemoOfferRateLimitConsumed()');
-}
+// Isolation only: leave canonical/generic runtime limits unchanged.
+requireOnce("rateLimitConsumed('offer_create')", 'offer rate guard');
+rules = rules.replace("rateLimitConsumed('offer_create')", 'erasureDemoOfferRateLimitConsumed()');
 
 // Wrap EVERY alternative of a write verb in the scope. Treat unguarded
 // secondary update rules as a hard error, not as an authorized bypass.

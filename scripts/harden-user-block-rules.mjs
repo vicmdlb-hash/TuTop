@@ -62,48 +62,5 @@ patchSection('    match /offers/{offerId} {', '    match /transactions_v2/{trans
   "        && resource.data.status == 'pending'\n        && (request.resource.data.status in ['withdrawn','rejected'] || usersUnblocked(resource.data.buyer_id, resource.data.seller_id))",
   'offer update retains withdrawals/rejections');
 
-// Apply P01 erasure admission LAST: verified-email generation and user-block
-// policy are already in place, so their exact marker invariants stay intact.
-// This does not authorize trusted/Admin writers or destructive erasure apply.
-replaceOnce(
-  "      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && rateLimitConsumed('offer_create')",
-  "      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && rateLimitConsumed('offer_create')",
-  'offer buyer/seller erasure create admission',
-);
-replaceOnce(
-  "      allow update: if signedIn() && notSuspended() && verifiedIdentity()\n        && resource.data.status == 'pending'",
-  "      allow update: if signedIn() && notSuspended() && verifiedIdentity()\n        && commerceAccountsEligible(resource.data.buyer_id, resource.data.seller_id)\n        && resource.data.status == 'pending'",
-  'offer buyer/seller erasure update admission',
-);
-
-// Firestore evaluates the expensive canonical offer predicate and erasure
-// lookups against a 1,000-expression cap. The rate_limits document's own Rules
-// enforce owner, action, cap, timing and increment; here prove that this atomic
-// offer commit changed its deterministic bucket. Mirrors the existing listing
-// lightweight rate-limit proof without weakening that bucket's own Rules.
-replaceOnce(
-  '    match /users/{uid} {',
-  `    function offerRateLimitConsumed() {
-      let bucket = /databases/$(database)/documents/rate_limits/$(request.auth.uid + '-offer_create');
-      return existsAfter(bucket)
-        && (
-          (!exists(bucket) && getAfter(bucket).data.count == 1)
-          ||
-          (exists(bucket) && (
-            getAfter(bucket).data.count == get(bucket).data.count + 1
-            || (getAfter(bucket).data.count == 1 && getAfter(bucket).data.window_start != get(bucket).data.window_start)
-          ))
-        );
-    }
-
-    match /users/{uid} {`,
-  'offer lightweight atomic rate helper',
-);
-replaceOnce(
-  "        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && rateLimitConsumed('offer_create')",
-  "        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && offerRateLimitConsumed()",
-  'offer create lightweight rate helper',
-);
-
 fs.writeFileSync(path, rules);
 console.log('PASS owner-private user blocks and bilateral write denial for chat, messages, offers; existing reads, cancellations and offer withdrawals remain separate.');
