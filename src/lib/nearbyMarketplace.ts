@@ -244,7 +244,10 @@ export function validListingApproxLocationAttributes(attributes: unknown): boole
   const data = attributes as Record<string, unknown>;
   const hasLatitude = Object.prototype.hasOwnProperty.call(data, 'approx_latitude');
   const hasLongitude = Object.prototype.hasOwnProperty.call(data, 'approx_longitude');
-  if (!hasLatitude && !hasLongitude) return true;
+  // A geo_cell alone still reveals a location even without coordinates.
+  // No location consent means none of the three location fields may be set.
+  if (!hasLatitude && !hasLongitude)
+    return !Object.prototype.hasOwnProperty.call(data, 'geo_cell');
   if (!hasLatitude || !hasLongitude
     || typeof data.approx_latitude !== 'number'
     || typeof data.approx_longitude !== 'number'
