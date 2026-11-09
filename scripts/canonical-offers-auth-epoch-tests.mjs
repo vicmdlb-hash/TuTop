@@ -173,6 +173,26 @@ await assert.rejects(staleCounter, /AUTH_SESSION_CHANGED/,
 assert.equal(mutationReads.length, 0);
 assert.equal(mutationWrites.length, 0);
 
+// Independently test the second async boundary: A may switch accounts after
+// the current parent is loaded but before the listing re-check completes.
+const validParent = {
+  ...parent, buyer_id: 'buyer-A', seller_id: 'seller-B',
+};
+mutationSession = identity('buyer-A', 'counter-second-preflight-A');
+const staleAfterListing = mutationBackend.createCounterOffer(validParent, 31);
+nextMutationRead('offers/parent-offer').resolve({
+  id: 'parent-offer', data: { ...validParent },
+});
+await Promise.resolve();
+const listingPreflight = nextMutationRead('listings_v2/listing-1');
+mutationSession = identity('buyer-B', 'counter-second-preflight-B');
+listingPreflight.resolve(eligibleListing);
+await assert.rejects(staleAfterListing, /AUTH_SESSION_CHANGED/,
+  'counteroffer must reject account switch while its listing read is pending');
+assert.equal(mutationReads.length, 0);
+assert.equal(mutationWrites.length, 0,
+  'second-read session switch must never reach a write');
+
 mutationSession = identity('buyer-A', 'current-offer-A');
 const currentCreate = mutationBackend.createOffer({
   listingId: 'listing-1', chatId: 'chat-1', sellerId: 'seller-B', amountMxn: 25,
