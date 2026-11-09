@@ -191,3 +191,11 @@ console.log('PASS Auth deletion occurs only after Firestore withdrawal/deletion'
 console.log('PASS transaction/lock/chat/report evidence is not blindly deleted');
 console.log('PASS source-only staging smoke contract exists; no staging smoke or destructive erasure executed');
 console.log('Account erasure safety contract: PASS');
+
+const retainedMatcher = fs.readFileSync('scripts/account-erasure-planner.mjs', 'utf8');
+assert.match(retainedMatcher, /export function summarizeRetainedOperationalMatches\(/);
+assert.match(processor, /\['reports', 'created_by'\], \['reports', 'target_id'\]/);
+assert.match(processor, /retained\.push\(\.\.\.summarizeRetainedOperationalMatches\(retainedOperationalMatches\)\)/);
+assert.match(retainedMatcher, /ERASURE_RETAINED_MATCH_PATH_INVALID/);
+assert.match(processor, /ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED/);
+console.log('PASS P02 retained report targets inventoried and multi-field duplicates cannot inflate count');

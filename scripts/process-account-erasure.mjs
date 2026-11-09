@@ -1,4 +1,4 @@
-import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary } from './account-erasure-planner.mjs';
+import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary, summarizeRetainedOperationalMatches } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const REQUIRED = 'tutop-beta-vicmdlb-1356585881';
@@ -60,7 +60,7 @@ const retainedOperational = [
   ['offers', 'buyer_id'], ['offers', 'seller_id'],
   ['chats', 'buyer_id'], ['chats', 'seller_id'],
   ['reviews', 'evaluador_id'], ['reviews', 'evaluado_id'],
-  ['reports', 'created_by'],
+  ['reports', 'created_by'], ['reports', 'target_id'],
   // Additional residual data is inventory-only until a reviewed retention policy exists.
   ['notification_outbox', 'recipient_uid'],
   ['moderation_cases', 'target_id'],
@@ -97,11 +97,12 @@ for (const [collection, field] of withdrawals) {
 }
 
 const retained = [];
+const retainedOperationalMatches = [];
 const retainedChatPaths = new Set();
 const reservationLocks = new Map();
 for (const [collection, field] of retainedOperational) {
   const docs = await adminRunQueryAll(collection, [{ field, value: uid }], 500);
-  if (docs.length) retained.push({ collection, field, count: docs.length });
+  retainedOperationalMatches.push({ collection, field, docs });
   if (collection === 'chats') {
     for (const document of docs) retainedChatPaths.add(document.path);
   }
@@ -109,6 +110,11 @@ for (const [collection, field] of retainedOperational) {
     for (const document of docs) reservationLocks.set(document.path, document);
   }
 }
+
+// Count each retained document ONCE per collection even if it is found through
+// several subject/author fields. The original field sources remain in the
+// inventory metadata, without logging any path or private content.
+retained.push(...summarizeRetainedOperationalMatches(retainedOperationalMatches));
 
 // Subject-keyed guardian proof/consent records must not be invisible in a
 // dry-run. Read only existence, never print their contents or delete them.

@@ -149,3 +149,39 @@ export function residualRiskSummary(plan) {
     safe_to_execute_in_staging: false,
   };
 }
+
+// Inventory-only grouping: two fields can reference the SAME retained
+// document. Never report one retained record twice or silently discard a
+// malformed query result. This is not legal authorization for its retention.
+export function summarizeRetainedOperationalMatches(entries) {
+  if (!Array.isArray(entries)) throw new Error('ERASURE_RETAINED_MATCHES_INVALID');
+  const byCollection = new Map();
+  for (const entry of entries) {
+    const collection = entry?.collection;
+    const field = entry?.field;
+    if (typeof collection !== 'string' || !/^[A-Za-z0-9_]+$/.test(collection)
+      || typeof field !== 'string' || !/^[A-Za-z0-9_]+$/.test(field)
+      || !Array.isArray(entry.docs)) throw new Error('ERASURE_RETAINED_MATCH_INVALID');
+    let bucket = byCollection.get(collection);
+    if (!bucket) {
+      bucket = { paths: new Set(), fields: new Set() };
+      byCollection.set(collection, bucket);
+    }
+    bucket.fields.add(field);
+    for (const doc of entry.docs) {
+      const parts = typeof doc?.path === 'string' ? doc.path.split('/') : [];
+      if (parts.length !== 2 || parts[0] !== collection || !parts[1]
+        || parts[1] === '.' || parts[1] === '..') {
+        throw new Error('ERASURE_RETAINED_MATCH_PATH_INVALID');
+      }
+      bucket.paths.add(doc.path);
+    }
+  }
+  return [...byCollection.entries()].filter(([, info]) => info.paths.size > 0)
+    .map(([collection, info]) => ({
+      collection,
+      field: [...info.fields].sort().join('|'),
+      count: info.paths.size,
+    }))
+    .sort((a, b) => a.collection.localeCompare(b.collection));
+}

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary } from './account-erasure-planner.mjs';
+import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary, summarizeRetainedOperationalMatches } from './account-erasure-planner.mjs';
 
 const projectId = 'tutop-beta-vicmdlb-1356585881';
 const uid = 'synthetic-user-001';
@@ -210,3 +210,26 @@ console.log('PASS apply mode remains explicit');
 console.log('PASS closed deletion requests cannot be processed');
 console.log('PASS transaction/audit collections cannot be injected as withdrawals');
 console.log('Synthetic account erasure scenarios: PASS');
+
+const uniqueRetained = summarizeRetainedOperationalMatches([
+  { collection: 'reports', field: 'created_by', docs: [{path:'reports/a'},{path:'reports/b'}] },
+  { collection: 'reports', field: 'target_id', docs: [{path:'reports/b'},{path:'reports/c'}] },
+  { collection: 'notification_outbox', field: 'recipient_uid', docs: [{path:'notification_outbox/n1'}] },
+  { collection: 'reports', field: 'target_id', docs: [{path:'reports/c'}] },
+]);
+assert.deepEqual(uniqueRetained, [
+  {collection:'notification_outbox',field:'recipient_uid',count:1},
+  {collection:'reports',field:'created_by|target_id',count:3},
+], 'report records found through author and target references must be counted once');
+const uniquePlan = buildAccountErasurePlan({
+  projectId, uid, status:'pending', retained: uniqueRetained,
+});
+assert.equal(uniquePlan.retained_count,4,'a multi-field match cannot overstate retained record count');
+for (const invalid of [
+  [{collection:'reports',field:'target_id',docs:[{path:'users/victim'}]}],
+  [{collection:'reports',field:'target_id',docs:[{path:'reports/a/child/b'}]}],
+  [{collection:'reports',field:'target_id',docs:[{}]}],
+  [{collection:'reports',field:'target_id',docs:null}],
+]) assert.throws(()=>summarizeRetainedOperationalMatches(invalid),
+  /ERASURE_RETAINED_MATCH/, 'malformed retained source must fail closed');
+console.log('PASS retained operational report author+target references are unique by document path');
