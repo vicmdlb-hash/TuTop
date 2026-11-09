@@ -1,6 +1,6 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
-import { trustedFcmQueryRecord, trustedFcmDirectRecord } from './fcm-staging-document-identity-lib.mjs';
+import { trustedFcmQueryRecord, trustedFcmDirectRecord, fcmRecipientErasureAllows } from './fcm-staging-document-identity-lib.mjs';
 import { shouldSuppressBlockedDirectNotification } from './user-block-notification-lib.mjs';
 import { eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 import { validatePhysicalQaFcmApplyGate, selectExactPhysicalNotification, selectExactPhysicalTarget } from './physical-qa-fcm-gate-lib.mjs';
@@ -128,6 +128,17 @@ async function blockedDirectOutbox(item, { freshChat = false } = {}) {
   return shouldSuppressBlockedDirectNotification(item, blockChatCache.get(chatId), hasUserBlockEdge);
 }
 
+// Re-read before the CAS claim and again immediately before the external HTTP
+// boundary. Firestore errors are never interpreted as an absent request.
+// No long-lived cache: a newly pending erasure must stop this physical send.
+async function recipientErasureAllows(item) {
+  const uid = item?.recipient_uid;
+  if (typeof uid !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(uid))
+    return false;
+  const requestDocument = await documentOrNull(`account_deletion_requests/${uid}`);
+  return fcmRecipientErasureAllows(uid, requestDocument);
+}
+
 async function claimPending(item) {
   const planned = planFcmOutboxClaim(item, new Date().toISOString());
   const name = 'projects/' + projectId + '/databases/(default)/documents/notification_outbox/' + item.id;
@@ -194,9 +205,15 @@ let planned = 0;
 let delivered = 0;
 let waitingForToken = 0;
 let blockedSuppressed = 0;
+let erasureSuppressed = 0;
 let supersededOwnershipDeactivated = 0;
 
 for (const item of scopedPending) {
+  if (apply && !(await recipientErasureAllows(item))) {
+    erasureSuppressed += 1;
+    console.warn('FCM_PHYSICAL_ERASURE_RECIPIENT_DENIED; send quarantined');
+    continue;
+  }
   if (await blockedDirectOutbox(item)) {
     blockedSuppressed += 1;
     continue;
@@ -255,6 +272,11 @@ for (const item of scopedPending) {
       console.warn('FCM_PHYSICAL_FRESH_DIRECT_BLOCKED; send quarantined');
       continue;
     }
+    if (!(await recipientErasureAllows(item))) {
+      erasureSuppressed += 1;
+      console.warn('FCM_PHYSICAL_FRESH_ERASURE_DENIED; send quarantined');
+      continue;
+    }
 
     const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`, {
       method: 'POST',
@@ -291,6 +313,7 @@ console.log(JSON.stringify({
   delivered,
   waiting_for_device_token: waitingForToken,
   suppressed_by_user_blocks: blockedSuppressed,
+  suppressed_by_erasure_request: erasureSuppressed,
   current_owner_filter: true,
   superseded_active_token_records_detected: supersededActiveTokens.length,
   superseded_active_token_records_deactivated: apply ? supersededOwnershipDeactivated : 0,
