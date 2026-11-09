@@ -37,7 +37,14 @@ function hasOwnedChat(chatId: string, uid: string) {
 function route(intent: NativeNotificationIntent, markRead = true) {
   if (!recipientMatchesActiveSession(intent)) return false;
   const state = useAppStore.getState();
-  if (markRead && intent.notification_id) state.markNotificationRead(intent.notification_id);
+  if (markRead && intent.notification_id) {
+    // The store can still contain an A-owned message notification after B
+    // becomes the authenticated user. Never mark that foreign chat as read.
+    const cached = state.notifications.find((item) => item.id === intent.notification_id);
+    if (!cached?.chat_id || hasOwnedChat(cached.chat_id, state.user.id)) {
+      state.markNotificationRead(intent.notification_id);
+    }
+  }
   if (intent.source !== 'action') return true;
 
   if (intent.chat_id) {

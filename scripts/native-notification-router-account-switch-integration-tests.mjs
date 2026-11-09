@@ -34,7 +34,7 @@ function harness(initialUid = 'B') {
       { id: 'chat-a', comprador_id: 'A', vendedor_id: 'seller' },
       { id: 'chat-b', comprador_id: 'B', vendedor_id: 'seller' },
     ],
-    products: [],
+    products: [], notifications: [],
     markNotificationRead: (id) => operations.push('read:' + id),
     openChat: (id) => operations.push('chat:' + id),
     setActiveTab: (tab) => operations.push('tab:' + tab),
@@ -213,4 +213,29 @@ function harness(initialUid = 'B') {
     'foreign transaction target cannot navigate to A-owned chat from B');
 }
 
-console.log('PASS 14 native notification router integration scenarios with mock Auth/store/snapshots, no Firebase');
+{
+  const h = harness('B');
+  // A's cached message notification must not be marked read by a B-addressed
+  // push even if the attacker reuses the stale notification identifier.
+  h.state.notifications.push({ id: 'A-stale-notice', chat_id: 'chat-a', kind: 'message' });
+  h.send({
+    source: 'action', recipient_uid: 'B', chat_id: 'chat-a',
+    notification_id: 'A-stale-notice',
+  });
+  await h.flush();
+  assert.deepEqual(h.operations, ['tab:inbox', 'hydrate:B', 'tab:inbox'],
+    'foreign cached notification cannot mark A chat read while B is signed in');
+}
+{
+  const h = harness('B');
+  h.state.notifications.push({ id: 'B-owned-notice', chat_id: 'chat-b', kind: 'message' });
+  h.send({
+    source: 'action', recipient_uid: 'B', chat_id: 'chat-b',
+    notification_id: 'B-owned-notice',
+  });
+  await h.flush();
+  assert.deepEqual(h.operations, ['read:B-owned-notice', 'chat:chat-b', 'hydrate:B'],
+    'legitimate B notification must still mark as read and route to B chat');
+}
+
+console.log('PASS 16 native notification router integration scenarios with mock Auth/store/snapshots, no Firebase');
