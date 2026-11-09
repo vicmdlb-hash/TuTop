@@ -183,7 +183,9 @@ const staleAfterListing = mutationBackend.createCounterOffer(validParent, 31);
 nextMutationRead('offers/parent-offer').resolve({
   id: 'parent-offer', data: { ...validParent },
 });
-await Promise.resolve();
+// Both assertCurrentPendingParent and createCounterOffer resume from awaits.
+// Wait for that complete microtask chain before inspecting the second read.
+await new Promise(resolve => setImmediate(resolve));
 const listingPreflight = nextMutationRead('listings_v2/listing-1');
 mutationSession = identity('buyer-B', 'counter-second-preflight-B');
 listingPreflight.resolve(eligibleListing);
