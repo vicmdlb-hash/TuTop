@@ -84,6 +84,23 @@ assert.equal(nearLimitCard.text?.includes('4111'), false,
   'redact the complete card before outbound truncation');
 assert.ok(nearLimitCard.redactions.includes('card'));
 
+// Synthetic Mexican identity examples, never real taxpayer data. Labels are
+// required so ordinary product model codes remain available to the assistant.
+for (const [kind, value] of [
+  ['CURP', 'ABCD990101HDFXXX01'],
+  ['RFC', 'XAXX010101000'],
+]) {
+  const masked = redactTopiRemoteText(kind + ': ' + value);
+  assert.equal(masked.text?.includes(value), false, 'identity numbers must not enter remote prompts');
+  assert.ok(masked.text?.includes('[identificador omitido]'));
+  assert.ok(masked.redactions.includes('identity'));
+}
+const serialUntouched = redactTopiRemoteText('Modelo XAXX010101000 sin identificador personal');
+assert.equal(serialUntouched.text, 'Modelo XAXX010101000 sin identificador personal');
+const limitedIdentity = redactTopiRemoteText('a'.repeat(895) + ' CURP: ABCD990101HDFXXX01', 900);
+assert.equal(limitedIdentity.text?.includes('ABCD990101HDFXXX01'), false,
+  'identity masking must run before outbound text truncation');
+
 const productFacts = redactTopiRemoteText('Vendo iPhone 13 de 128 GB en $12,500, batería 88%');
 assert.equal(productFacts.text, 'Vendo iPhone 13 de 128 GB en $12,500, batería 88%');
 
