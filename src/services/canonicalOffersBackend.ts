@@ -41,6 +41,18 @@ function getClient() {
   return client;
 }
 
+// Defense in depth: reads used to prepare a commercial mutation may outlive
+// logout, A→B switching, or same-UID re-login. Do not proceed from that stale
+// snapshot. firebaseRest's network guard remains the authoritative last gate.
+function assertOfferMutationSessionCurrent(
+  client: FirebaseRestClient,
+  requestSession: FirebaseSessionIdentity | null,
+) {
+  assertFirebaseRequestSessionCurrent(
+    requestSession, client.currentSession, new FirebaseRestClient(getFirebaseConfig()).currentSession,
+  );
+}
+
 async function assertOfferableListing(client: FirebaseRestClient, listingId: string, sellerId: string) {
   const listing = await client.getDocument<any>(`listings_v2/${listingId}`);
   if (!listing) throw new Error('LISTING_NOT_FOUND');
@@ -178,8 +190,10 @@ export const canonicalOffersBackend = {
 
   async updateOffer(offerId: string, status: Extract<OfferStatus, 'accepted' | 'rejected' | 'countered' | 'withdrawn'>, counterOfferId?: string) {
     const client = getClient();
-    const actor = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const actor = requestSession!.uid;
     const current = await loadCurrentOffer(client, offerId);
+    assertOfferMutationSessionCurrent(client, requestSession);
     if (actor !== current.buyer_id && actor !== current.seller_id) throw new Error('PARTICIPANT_REQUIRED');
     if (current.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
     assertOfferNotExpired(current);
@@ -202,10 +216,12 @@ export const canonicalOffersBackend = {
   async createOffer(input: { listingId: string; chatId: string; sellerId: string; amountMxn: number; expiresAt?: string }) {
     assertFreshOfferExpiry(input.expiresAt);
     const client = getClient();
-    const buyerId = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const buyerId = requestSession!.uid;
     if (buyerId === input.sellerId) throw new Error('SELF_OFFER_DENIED');
     if (!Number.isFinite(input.amountMxn) || input.amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
     await assertOfferableListing(client, input.listingId, input.sellerId);
+    assertOfferMutationSessionCurrent(client, requestSession);
     const amountMxn = Math.round(input.amountMxn * 100) / 100;
     const operation = operations.begin({
       actorId: buyerId,
@@ -238,11 +254,14 @@ export const canonicalOffersBackend = {
   async createCounterOffer(parent: Offer, amountMxn: number, expiresAt?: string) {
     assertFreshOfferExpiry(expiresAt);
     const client = getClient();
-    const actor = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const actor = requestSession!.uid;
     if (actor !== parent.buyer_id && actor !== parent.seller_id) throw new Error('PARTICIPANT_REQUIRED');
     if (!Number.isFinite(amountMxn) || amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
     const currentParent = await assertCurrentPendingParent(client, parent, actor);
+    assertOfferMutationSessionCurrent(client, requestSession);
     await assertOfferableListing(client, currentParent.listing_id, currentParent.seller_id);
+    assertOfferMutationSessionCurrent(client, requestSession);
     const normalizedAmount = Math.round(amountMxn * 100) / 100;
     const operation = operations.begin({
       actorId: actor,
