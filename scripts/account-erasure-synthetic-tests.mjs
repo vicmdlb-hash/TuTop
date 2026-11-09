@@ -215,16 +215,19 @@ const uniqueRetained = summarizeRetainedOperationalMatches([
   { collection: 'reports', field: 'created_by', docs: [{path:'reports/a'},{path:'reports/b'}] },
   { collection: 'reports', field: 'target_id', docs: [{path:'reports/b'},{path:'reports/c'}] },
   { collection: 'notification_outbox', field: 'recipient_uid', docs: [{path:'notification_outbox/n1'}] },
+  { collection: 'audit_log', field: 'target_id', docs: [{path:'audit_log/log1'},{path:'audit_log/log2'}] },
+  { collection: 'audit_log', field: 'admin_uid', docs: [{path:'audit_log/log2'}] },
   { collection: 'reports', field: 'target_id', docs: [{path:'reports/c'}] },
 ]);
 assert.deepEqual(uniqueRetained, [
+  {collection:'audit_log',field:'admin_uid|target_id',count:2},
   {collection:'notification_outbox',field:'recipient_uid',count:1},
   {collection:'reports',field:'created_by|target_id',count:3},
 ], 'report records found through author and target references must be counted once');
 const uniquePlan = buildAccountErasurePlan({
   projectId, uid, status:'pending', retained: uniqueRetained,
 });
-assert.equal(uniquePlan.retained_count,4,'a multi-field match cannot overstate retained record count');
+assert.equal(uniquePlan.retained_count,6,'multi-field audit and report matches must not overcount retained records');
 for (const invalid of [
   [{collection:'reports',field:'target_id',docs:[{path:'users/victim'}]}],
   [{collection:'reports',field:'target_id',docs:[{path:'reports/a/child/b'}]}],
@@ -232,4 +235,4 @@ for (const invalid of [
   [{collection:'reports',field:'target_id',docs:null}],
 ]) assert.throws(()=>summarizeRetainedOperationalMatches(invalid),
   /ERASURE_RETAINED_MATCH/, 'malformed retained source must fail closed');
-console.log('PASS retained operational report author+target references are unique by document path');
+console.log('PASS retained audit target/admin and report author/target references are unique by document path');

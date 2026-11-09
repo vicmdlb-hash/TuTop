@@ -126,6 +126,7 @@ assert.doesNotMatch(processor, /adminDeleteDocument\(`transactions_v2/);
 assert.doesNotMatch(processor, /adminDeleteDocument\(`listing_reservation_locks/);
 assert.doesNotMatch(processor, /adminDeleteDocument\(`chats/);
 assert.doesNotMatch(processor, /adminDeleteDocument\(`reports/);
+assert.doesNotMatch(processor, /adminDeleteDocument\(`audit_log/);
 
 // Legacy staging destructive smoke is deliberately disabled before ANY config
 // preparation, test-user creation or remote Firebase IO. Source-only contract.
@@ -163,6 +164,7 @@ assert.match(smokeWorkflow, /node scripts\/staging-account-erasure-smoke\.mjs/);
 // Expanded dry-run residual inventory must remain read-only and fail-closed.
 for (const [collection, field] of [
   ['notification_outbox', 'recipient_uid'], ['moderation_cases', 'target_id'],
+  ['audit_log', 'target_id'], ['audit_log', 'admin_uid'],
 ]) {
   assert(processor.includes(`['${collection}', '${field}']`),
     `missing read-only residual inventory: ${collection}.${field}`);
@@ -198,4 +200,6 @@ assert.match(processor, /\['reports', 'created_by'\], \['reports', 'target_id'\]
 assert.match(processor, /retained\.push\(\.\.\.summarizeRetainedOperationalMatches\(retainedOperationalMatches\)\)/);
 assert.match(retainedMatcher, /ERASURE_RETAINED_MATCH_PATH_INVALID/);
 assert.match(processor, /ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED/);
+assert.match(processor, /\['audit_log', 'target_id'\], \['audit_log', 'admin_uid'\]/);
+console.log('PASS P02 retained audit subject/admin references are inventoried without disposal authority');
 console.log('PASS P02 retained report targets inventoried and multi-field duplicates cannot inflate count');

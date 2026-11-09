@@ -64,6 +64,9 @@ const retainedOperational = [
   // Additional residual data is inventory-only until a reviewed retention policy exists.
   ['notification_outbox', 'recipient_uid'],
   ['moderation_cases', 'target_id'],
+  // Retained admin audit may identify an erasure subject as target or administrator.
+  // Inventory-only: no deletion, and no assumption that retention is approved.
+  ['audit_log', 'target_id'], ['audit_log', 'admin_uid'],
 ];
 
 const queryDeletePaths = [];
