@@ -207,3 +207,15 @@ for (const phrase of [
   'P01 generated Rules fail closed on unknown seller erasure state',
 ]) assert(generatedOfferTests.includes(phrase),'missing generated Rules regression: '+phrase);
 console.log('PASS generated offer Rules include both-party erasure guards and emulator regressions');
+
+// Heavy offered rules + erasure lookups must not regress guardian positive-path
+// by exceeding Firestore's 1,000-expression evaluation cap.
+assert(accountRuleHardener.includes('function offerRateLimitConsumed()'),
+  'offer atomic rate check must use bounded helper');
+assert(accountRuleHardener.includes("&& offerRateLimitConsumed()"),
+  'generated offer create must require an actual rate bucket mutation');
+const demoAdapter=fs.readFileSync('scripts/prepare-firestore-erasure-admission-demo-rules.mjs','utf8');
+assert(demoAdapter.includes("requireOnce('offerRateLimitConsumed()'"),
+  'demo must recognize the same optimized generated rate contract');
+assert(generatedOfferTests.includes('P01 generated Rules refuse offer without atomic rate bucket'));
+console.log('PASS P01 optimized rate bucket and demo adapter remain fail-closed');

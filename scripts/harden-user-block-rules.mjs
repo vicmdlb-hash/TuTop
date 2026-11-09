@@ -76,5 +76,34 @@ replaceOnce(
   'offer buyer/seller erasure update admission',
 );
 
+// Firestore evaluates the expensive canonical offer predicate and erasure
+// lookups against a 1,000-expression cap. The rate_limits document's own Rules
+// enforce owner, action, cap, timing and increment; here prove that this atomic
+// offer commit changed its deterministic bucket. Mirrors the existing listing
+// lightweight rate-limit proof without weakening that bucket's own Rules.
+replaceOnce(
+  '    match /users/{uid} {',
+  `    function offerRateLimitConsumed() {
+      let bucket = /databases/$(database)/documents/rate_limits/$(request.auth.uid + '-offer_create');
+      return existsAfter(bucket)
+        && (
+          (!exists(bucket) && getAfter(bucket).data.count == 1)
+          ||
+          (exists(bucket) && (
+            getAfter(bucket).data.count == get(bucket).data.count + 1
+            || (getAfter(bucket).data.count == 1 && getAfter(bucket).data.window_start != get(bucket).data.window_start)
+          ))
+        );
+    }
+
+    match /users/{uid} {`,
+  'offer lightweight atomic rate helper',
+);
+replaceOnce(
+  "        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && rateLimitConsumed('offer_create')",
+  "        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && offerRateLimitConsumed()",
+  'offer create lightweight rate helper',
+);
+
 fs.writeFileSync(path, rules);
 console.log('PASS owner-private user blocks and bilateral write denial for chat, messages, offers; existing reads, cancellations and offer withdrawals remain separate.');

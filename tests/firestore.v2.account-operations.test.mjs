@@ -162,3 +162,14 @@ test('P01 generated Rules fail closed on unknown seller erasure state',async()=>
   await assertFails(submitInitialOffer());
 });
 
+
+test('P01 generated Rules refuse offer without atomic rate bucket',async()=>{
+  await seedOfferAdmissionFixture();
+  const db=verifiedContext(env,'buyer').firestore();
+  await assertFails(setDoc(doc(db,'offers/fixture-initial'),{
+    listing_id:'item',chat_id:'room',buyer_id:'buyer',seller_id:'seller',
+    created_by:'buyer',amount_mxn:120,status:'pending',
+    expires_at:Timestamp.fromMillis(Date.now()+3600000),
+    created_at:now(),updated_at:now(),
+  }));
+});
