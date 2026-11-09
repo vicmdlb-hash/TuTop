@@ -313,15 +313,28 @@ const strictModerationAndPrivacy = `    match /moderation_cases/{caseId} {
         && request.resource.data.status == 'pending'
         && fresh(request.resource.data.requested_at)
         && fresh(request.resource.data.updated_at);
-      allow update: if canSupportAppeals()
-        && request.resource.data.uid == uid
-        && request.resource.data.requested_at == resource.data.requested_at
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
-        && (
-          (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
-          || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
-        )
-        && fresh(request.resource.data.updated_at);
+      // Owner may repeat a rejected request but cannot process or complete it.
+      allow update: if (
+        (owner(uid)
+          && resource.data.status == 'rejected'
+          && request.resource.data.uid == uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','requested_at','updated_at'])
+          && request.resource.data.requested_at is timestamp
+          && request.resource.data.requested_at >= resource.data.requested_at
+          && fresh(request.resource.data.requested_at)
+          && fresh(request.resource.data.updated_at))
+        ||
+        (canSupportAppeals()
+          && request.resource.data.uid == uid
+          && request.resource.data.requested_at == resource.data.requested_at
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+          && (
+            (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
+            || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
+          )
+          && fresh(request.resource.data.updated_at))
+      );
       allow delete: if false;
     }
 

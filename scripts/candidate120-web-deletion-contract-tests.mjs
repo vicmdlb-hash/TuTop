@@ -28,6 +28,11 @@ assert.match(client,/account_deletion_requests/);
 assert.match(client,/status: \{ stringValue: 'pending' \}/);
 assert.match(client,/setToServerValue: 'REQUEST_TIME'/);
 assert.match(client,/currentDocument: \{ exists: false \}/);
+assert.match(client,/async function renewRejectedDeletionRequest\(existing\)/);
+assert.match(client,/currentDocument: \{ updateTime: existing.updateTime \}/);
+assert.match(client,/updateMask: \{ fieldPaths: \['status'\] \}/);
+assert.match(client,/decodeStatus\(existing\) === 'rejected'/);
+
 assert.doesNotMatch(client,/localStorage|sessionStorage/);
 assert.doesNotMatch(client,/accounts:delete|batchDelete|deleteDocument/);
 assert.doesNotMatch(client,/refreshToken/);

@@ -163,12 +163,47 @@ async function createDeletionRequest() {
   return readDeletionRequest();
 }
 
+// Keep the rejected audit entry; a new owner request is version-guarded.
+// Ambiguous timeouts get a fresh status read, never an automatic replay.
+async function renewRejectedDeletionRequest(existing) {
+  const uid = state.session?.uid;
+  const projectId = state.config?.projectId;
+  if (!uid || !projectId) throw new Error('REQUEST_CONTEXT_MISSING');
+  const name = `projects/${projectId}/databases/(default)/documents/account_deletion_requests/${uid}`;
+  if (decodeStatus(existing) !== 'rejected'
+    || existing?.name !== name
+    || typeof existing.updateTime !== 'string') throw new Error('REQUEST_NOT_RENEWABLE');
+  try {
+    await deletionJsonRequest(
+      `${FIRESTORE_BASE}/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:commit`,
+      {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ writes: [{
+          update: { name, fields: { status: { stringValue: 'pending' } } },
+          updateMask: { fieldPaths: ['status'] },
+          updateTransforms: [
+            { fieldPath: 'requested_at', setToServerValue: 'REQUEST_TIME' },
+            { fieldPath: 'updated_at', setToServerValue: 'REQUEST_TIME' },
+          ],
+          currentDocument: { updateTime: existing.updateTime },
+        }] }),
+      },
+    );
+  } catch (error) {
+    const latest = await readDeletionRequest().catch(() => null);
+    if (latest && decodeStatus(latest) !== 'rejected') return latest;
+    throw error;
+  }
+  return readDeletionRequest();
+}
+
 function statusMessage(status) {
   if (status === 'pending') return 'Solicitud registrada. Estado: pendiente. Solicitar no significa que la cuenta ya esté eliminada.';
   if (status === 'processing') return 'Tu solicitud está en procesamiento. La eliminación todavía no se declara completada.';
   if (status === 'completed') return 'El registro contiene evidencia de finalización del proceso confiable. Esto no sustituye la comprobación independiente de Firebase Authentication.';
   if (status === 'completion-unverified') return 'El registro indica completada, pero faltan evidencias verificables del procesamiento. La eliminación no puede darse por confirmada desde este recurso.';
-  if (status === 'rejected') return 'La solicitud aparece como rechazada. No se ha declarado una eliminación completada.';
+  if (status === 'rejected') return 'La solicitud fue rechazada. Si todavía deseas eliminar tu cuenta, confirma nuevamente para presentar otra solicitud; el rechazo anterior permanece registrado.';
   return 'Existe una solicitud, pero su estado no puede mostrarse de forma confiable. No se ha declarado una eliminación completada.';
 }
 
@@ -218,7 +253,9 @@ requestButton.addEventListener('click', async () => {
   setStatus('Registrando tu solicitud…');
   try {
     const existing = await readDeletionRequest();
-    const document = existing || await createDeletionRequest();
+    const document = existing && decodeStatus(existing) === 'rejected'
+      ? await renewRejectedDeletionRequest(existing)
+      : existing || await createDeletionRequest();
     const status = decodeStatus(document);
     // A recorded request is successful, but unknown/unverified completion is not.
     const tone = status === 'completion-unverified' ? 'error'

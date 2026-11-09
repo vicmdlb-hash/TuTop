@@ -32,6 +32,27 @@ test('owner crea solicitud pending y terceros no pueden leerla ni modificarla', 
   await assertFails(updateDoc(ref, { status: 'processing', updated_at: now() }));
 });
 
+test('owner puede re-solicitar tras rechazo sin alterar identidad ni completar desde cliente', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'account_deletion_requests/alice'), {
+      uid: 'alice', status: 'rejected', requested_at: now(), updated_at: now(),
+    });
+  });
+  const owner = verifiedContext(env, 'alice').firestore();
+  const stranger = verifiedContext(env, 'bob').firestore();
+  const path = 'account_deletion_requests/alice';
+  const ref = doc(owner, path);
+  const reRequest = { status: 'pending', requested_at: now(), updated_at: now() };
+  await assertFails(updateDoc(doc(stranger, path), reRequest));
+  await assertFails(updateDoc(ref, { status: 'processing', requested_at: now(), updated_at: now() }));
+  await assertFails(updateDoc(ref, { status: 'completed', requested_at: now(), updated_at: now() }));
+  await assertFails(updateDoc(ref, { uid: 'bob', ...reRequest }));
+  await assertSucceeds(updateDoc(ref, reRequest));
+  const after = await getDoc(ref);
+  if (after.data()?.status !== 'pending') throw new Error('OWNER_RE_REQUEST_STATUS_INVALID');
+  await assertFails(updateDoc(ref, reRequest));
+});
+
 test('support puede iniciar procesamiento pero no declarar completed desde cliente', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'account_deletion_requests/alice'), { uid: 'alice', status: 'pending', requested_at: now(), updated_at: now() });
