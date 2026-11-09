@@ -160,6 +160,28 @@ assert.match(smokeWorkflow, /if:\s*github\.ref_name == 'feat\/tutop-0\.9\.1-near
 assert.match(smokeWorkflow, /TUTOP_ALLOW_ACCOUNT_ERASURE: staging-reviewed/);
 assert.match(smokeWorkflow, /node scripts\/staging-account-erasure-smoke\.mjs/);
 
+// Expanded dry-run residual inventory must remain read-only and fail-closed.
+for (const [collection, field] of [
+  ['notification_outbox', 'recipient_uid'], ['moderation_cases', 'target_id'],
+]) {
+  assert(processor.includes(`['${collection}', '${field}']`),
+    `missing read-only residual inventory: ${collection}.${field}`);
+}
+for (const collection of ['age_proofs_v2', 'guardian_grants_v2', 'adult_actions_v2']) {
+  assert(processor.includes(`'${collection}'`), `missing subject-keyed residual: ${collection}`);
+}
+assert.match(processor, /await adminGetDocument\(`\$\{collection\}\/\$\{uid\}`\)/);
+assert.match(processor, /retained\.push\(\{ collection, field: 'subject_uid', count: 1 \}\)/);
+for (const collection of [
+  'notification_outbox', 'moderation_cases', 'age_proofs_v2',
+  'guardian_grants_v2', 'adult_actions_v2',
+]) {
+  assert(!policy.includes(`collection: '${collection}'`),
+    `unreviewed source must not silently receive a disposal decision: ${collection}`);
+}
+assert.match(processor, /if \(apply\) throw new Error\('ACCOUNT_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED'\)/);
+console.log('PASS outbox, moderation and guardian residuals inventoried without disposal authority');
+
 console.log('PASS erasure policy distinguishes delete, withdraw and operational retention');
 console.log('PASS shared planner owns dry-run/apply mode and auth-delete-last contract');
 console.log('PASS active marketplace transactions block destructive erasure');

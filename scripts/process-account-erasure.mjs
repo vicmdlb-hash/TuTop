@@ -61,6 +61,9 @@ const retainedOperational = [
   ['chats', 'buyer_id'], ['chats', 'seller_id'],
   ['reviews', 'evaluador_id'], ['reviews', 'evaluado_id'],
   ['reports', 'created_by'],
+  // Additional residual data is inventory-only until a reviewed retention policy exists.
+  ['notification_outbox', 'recipient_uid'],
+  ['moderation_cases', 'target_id'],
 ];
 
 const queryDeletePaths = [];
@@ -104,6 +107,15 @@ for (const [collection, field] of retainedOperational) {
   }
   if (collection === 'listing_reservation_locks') {
     for (const document of docs) reservationLocks.set(document.path, document);
+  }
+}
+
+// Subject-keyed guardian proof/consent records must not be invisible in a
+// dry-run. Read only existence, never print their contents or delete them.
+// These synthetic/offline-preflight sources have no approved disposition.
+for (const collection of ['age_proofs_v2', 'guardian_grants_v2', 'adult_actions_v2']) {
+  if (await adminGetDocument(`${collection}/${uid}`)) {
+    retained.push({ collection, field: 'subject_uid', count: 1 });
   }
 }
 
