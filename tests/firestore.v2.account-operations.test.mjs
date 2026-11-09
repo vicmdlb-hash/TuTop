@@ -2,7 +2,7 @@ import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
 
 const projectId = process.env.GCLOUD_PROJECT || 'demo-tutop-v2-rules';
 const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
@@ -99,3 +99,66 @@ test('moderator general no hereda permisos de privacidad de soporte', async () =
   await assertFails(getDoc(doc(moderator, 'account_deletion_requests/alice')));
   await assertFails(updateDoc(doc(moderator, 'account_deletion_requests/alice'), { status: 'processing', updated_at: now() }));
 });
+
+async function seedOfferAdmissionFixture() {
+  await env.withSecurityRulesDisabled(async ctx => {
+    const db = ctx.firestore();
+    for (const uid of ['buyer','seller']) {
+      await setDoc(doc(db, 'users/' + uid), {
+        uid, institution_id: 'uatx', campus_id: 'u', nombre: uid,
+      });
+    }
+    await setDoc(doc(db, 'listings_v2/item'), {
+      schema_version: 2, seller_id: 'seller', status: 'active', moderation_status: 'approved',
+    });
+    await setDoc(doc(db, 'chats/room'), {
+      product_id: 'item', producto_id: 'item', buyer_id: 'buyer', comprador_id: 'buyer',
+      seller_id: 'seller', vendedor_id: 'seller', participants: ['buyer','seller'],
+      nombre_otro_usuario: 'seller', last_message: '',
+      last_message_at: now(), created_at: now(), updated_at: now(),
+    });
+  });
+}
+async function setSyntheticDeletion(uid, status) {
+  await env.withSecurityRulesDisabled(async ctx => {
+    await setDoc(doc(ctx.firestore(), 'account_deletion_requests/' + uid), {
+      uid, status, requested_at: now(), updated_at: now(),
+    });
+  });
+}
+function submitInitialOffer() {
+  const db=verifiedContext(env,'buyer').firestore();
+  const batch=writeBatch(db);
+  batch.set(doc(db,'offers/fixture-initial'),{
+    listing_id:'item',chat_id:'room',buyer_id:'buyer',seller_id:'seller',
+    created_by:'buyer',amount_mxn:120,status:'pending',
+    expires_at:Timestamp.fromMillis(Date.now()+3600000),
+    created_at:now(),updated_at:now(),
+  });
+  batch.set(doc(db,'rate_limits/buyer-offer_create'), {
+    uid:'buyer',action:'offer_create',window_start:now(),count:1,updated_at:now(),
+  });
+  return batch.commit();
+}
+
+test('P01 generated Rules accept an eligible offer without erasure (positive)',async()=>{
+  await seedOfferAdmissionFixture();
+  await assertSucceeds(submitInitialOffer());
+});
+test('P01 generated Rules refuse offers while buyer deletion is pending',async()=>{
+  await seedOfferAdmissionFixture();await setSyntheticDeletion('buyer','pending');
+  await assertFails(submitInitialOffer());
+});
+test('P01 generated Rules refuse offers while seller deletion is processing',async()=>{
+  await seedOfferAdmissionFixture();await setSyntheticDeletion('seller','processing');
+  await assertFails(submitInitialOffer());
+});
+test('P01 generated Rules accept rejected seller deletion only',async()=>{
+  await seedOfferAdmissionFixture();await setSyntheticDeletion('seller','rejected');
+  await assertSucceeds(submitInitialOffer());
+});
+test('P01 generated Rules fail closed on unknown seller erasure state',async()=>{
+  await seedOfferAdmissionFixture();await setSyntheticDeletion('seller','unknown');
+  await assertFails(submitInitialOffer());
+});
+

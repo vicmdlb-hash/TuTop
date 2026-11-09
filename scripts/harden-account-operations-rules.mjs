@@ -66,5 +66,19 @@ replaceOnce(
   'support deletion audit create scope',
 );
 
+// P01: an offer/counteroffer must not start or change while EITHER party has
+// an active erasure request. A rejected request is the only resumable state.
+// This is a client Rules admission guard, NOT privileged-server transaction proof.
+replaceOnce(
+  "      allow create: if signedIn() && notSuspended()\n        && rateLimitConsumed('offer_create')",
+  "      allow create: if signedIn() && notSuspended()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && rateLimitConsumed('offer_create')",
+  'offers create buyer+seller erasure admission',
+);
+replaceOnce(
+  "      allow update: if signedIn() && notSuspended()\n        && resource.data.status == 'pending'",
+  "      allow update: if signedIn() && notSuspended()\n        && commerceAccountsEligible(resource.data.buyer_id, resource.data.seller_id)\n        && resource.data.status == 'pending'",
+  'offers update buyer+seller erasure admission',
+);
+
 fs.writeFileSync(path, rules);
 console.log('✅ Account operations rules: completion reservada al trusted runner + auditoría limitada a solicitudes de eliminación.');
