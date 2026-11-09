@@ -235,4 +235,16 @@ for (const invalid of [
   [{collection:'reports',field:'target_id',docs:null}],
 ]) assert.throws(()=>summarizeRetainedOperationalMatches(invalid),
   /ERASURE_RETAINED_MATCH/, 'malformed retained source must fail closed');
+const onlyObservedField = summarizeRetainedOperationalMatches([
+  { collection: 'audit_log', field: 'target_id', docs: [{ path: 'audit_log/one' }] },
+  { collection: 'audit_log', field: 'admin_uid', docs: [] },
+]);
+assert.deepEqual(onlyObservedField, [
+  { collection: 'audit_log', field: 'target_id', count: 1 },
+], 'an empty query must not be reported as an observed retention reference');
+assert.deepEqual(summarizeRetainedOperationalMatches([
+  { collection: 'audit_log', field: 'target_id', docs: [] },
+  { collection: 'audit_log', field: 'admin_uid', docs: [] },
+]), [], 'empty retained sources must not become false matches');
+console.log('PASS retained provenance reports only fields with observed matching documents');
 console.log('PASS retained audit target/admin and report author/target references are unique by document path');
