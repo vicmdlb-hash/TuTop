@@ -1,4 +1,4 @@
-export type TopiPrivacyRedaction = 'email' | 'phone' | 'otp' | 'token' | 'credential' | 'address' | 'card';
+export type TopiPrivacyRedaction = 'email' | 'phone' | 'otp' | 'token' | 'credential' | 'address' | 'card' | 'identity';
 
 export type TopiRemoteText = {
   text?: string;
@@ -56,6 +56,14 @@ export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText
   replace(/\+?52[\s.-]?(?:\d[\s().-]?){10}(?!\d)/g, 'phone', '[teléfono omitido]');
   replace(/(?<!\d)(?:\d[\s().-]?){9}\d(?!\d)/g, 'phone', '[teléfono omitido]');
   replace(/\b(?:tel(?:e|é)fono|celular|m[oó]vil|whatsapp|contacto)\s*[:=-]?\s*\d{10,14}\b/gi, 'phone', '[teléfono omitido]');
+
+  // Mexican personal identification numbers must not enter a remote prompt
+  // when pasted with explicit CURP/RFC labels. Keep this narrow to avoid
+  // confusing product serial numbers with government identity fields.
+  replace(/\bCURP\s*(?:(?:[:=-]|\bes\b)\s*)?[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]{2}\b/giu,
+    'identity', '[identificador omitido]');
+  replace(/\bRFC\s*(?:(?:[:=-]|\bes\b)\s*)?[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}\b/giu,
+    'identity', '[identificador omitido]');
 
   replace(/\b(?:otp|c[oó]digo(?:\s+de)?\s+verificaci[oó]n|verification\s+code)\s*(?:(?:[:=-]|\bes\b)\s*)?[A-Z0-9._-]{4,32}\b/gi, 'otp', '[código omitido]');
   replace(/\b(?:bearer|token|access[_ -]?token|id[_ -]?token|refresh[_ -]?token)\s*(?:(?:[:=-]|\bes\b)\s*)?[A-Z0-9._~+\/-]{8,}\b/gi, 'token', '[token omitido]');
