@@ -12,7 +12,10 @@ assert.equal(clean.mode, 'dry-run');
 assert.equal(clean.auth_delete_last, true);
 assert.equal(clean.blocked, false);
 assert.deepEqual(clean.delete_paths, [`user_private/${uid}`, `users/${uid}`, `wallets/${uid}`].sort());
-assert.equal(residualRiskSummary(clean).requires_retention_review, false);
+assert.equal(residualRiskSummary(clean).requires_retention_review, true,
+  'zero observed retained records is not legal retention approval');
+assert.equal(residualRiskSummary(clean).legal_review_approved, false);
+assert.equal(residualRiskSummary(clean).residual_inventory_exhaustive, false);
 assert.equal(residualRiskSummary(clean).safe_to_execute_in_staging, false);
 assert.equal(residualRiskSummary(clean).admission_freeze_verified, false);
 

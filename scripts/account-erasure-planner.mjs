@@ -138,7 +138,11 @@ export function residualRiskSummary(plan) {
     withdraw_count: plan.withdraw_paths.length,
     retained_count: plan.retained_count,
     blocker_count: plan.blockers?.length || 0,
-    requires_retention_review: plan.retained_count > 0,
+    // An empty observed snapshot does not approve unresolved legal periods or
+    // prove that every indirect reference has been inventoried.
+    requires_retention_review: true,
+    legal_review_approved: false,
+    residual_inventory_exhaustive: false,
     // A clean inventory snapshot does not atomically prevent new marketplace operations.
     // Until a trusted admission freeze is enforced, dry-run safety cannot authorize apply.
     admission_freeze_verified: false,

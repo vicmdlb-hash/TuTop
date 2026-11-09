@@ -105,6 +105,25 @@ test('pending buyer cannot admit an offer to historical chat either', async () =
   await deletion('buyer');
   await assertFails(createOffer(asBuyer()));
 });
+test('seller rejected deletion permits a new offer (positive control)', async () => {
+  await seed(); await preseedChat(); await deletion('seller', 'rejected');
+  await assertSucceeds(createOffer(asBuyer()));
+});
+test('reopened seller deletion rejects fresh offers to historical chat', async () => {
+  await seed(); await preseedChat();
+  await deletion('seller', 'rejected');
+  await deletion('seller', 'pending');
+  await assertFails(createOffer(asBuyer()));
+});
+test('unrecognized seller deletion state fails closed on offers', async () => {
+  await seed(); await preseedChat(); await deletion('seller', 'unexpected');
+  await assertFails(createOffer(asBuyer()));
+});
+test('completed seller deletion cannot admit new offers', async () => {
+  await seed(); await preseedChat(); await deletion('seller', 'completed');
+  await assertFails(createOffer(asBuyer()));
+});
+
 test('pending counterparty denies new messages but preserves historical chat read', async () => {
   await seed(); await preseedChat(); await deletion('seller', 'processing');
   const db = asBuyer();
