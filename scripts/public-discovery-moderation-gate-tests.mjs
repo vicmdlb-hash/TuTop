@@ -66,4 +66,19 @@ const canonical=fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8
 const models=fs.readFileSync('src/types/index.ts','utf8');
 assert(models.includes("'rejected' | 'flagged'"));
 assert(canonical.includes("data.moderation_status === 'flagged' ? 'flagged'"));
+// #35/#62: seller status updates must not skip owner/session/version checks.
+// Firestore Rules remain the authoritative control; this proves client defense
+// without using Firebase or impersonating a real user.
+const statusMethod = canonical.slice(canonical.indexOf('  async setStatus('));
+assert.match(statusMethod, /const uid = client\.currentSession!\.uid/);
+assert.match(statusMethod, /await client\.getDocument<CanonicalListingV2>/);
+assert.match(statusMethod, /existing\.data\.seller_id !== uid/);
+assert.match(statusMethod, /AUTH_SESSION_CHANGED/);
+assert.match(statusMethod, /LISTING_VERSION_REQUIRED/);
+assert.match(statusMethod, /updateTime: existing\.updateTime/);
+assert(statusMethod.indexOf('SELLER_REQUIRED') < statusMethod.indexOf('await client.setDocument'),
+  'wrong seller must be rejected before status write');
+assert(statusMethod.indexOf('AUTH_SESSION_CHANGED') < statusMethod.indexOf('await client.setDocument'),
+  'changed account must be rejected before status write');
 console.log('PASS V2 moderation and lifecycle buyer guards; seller-owned private access remains');
+
