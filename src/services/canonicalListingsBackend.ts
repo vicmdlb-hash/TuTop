@@ -345,7 +345,17 @@ export const canonicalListingsBackend = {
 
   async setStatus(listingId: string, status: CanonicalListingV2['status']) {
     const client = getClient();
-    await client.setDocument(`listings_v2/${listingId}`, { status, updated_at: new Date() }, { merge: true });
+    const uid = client.currentSession!.uid;
+    // A stale or wrong-owner UI action must never prepare a status write.
+    const existing = await client.getDocument<CanonicalListingV2>(`listings_v2/${listingId}`);
+    if (!existing) throw new Error('LISTING_NOT_FOUND');
+    if (existing.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
+    if (client.currentSession?.uid !== uid
+      || new FirebaseRestClient(getFirebaseConfig()).currentSession?.uid !== uid)
+      throw new Error('AUTH_SESSION_CHANGED');
+    if (!existing.updateTime) throw new Error('LISTING_VERSION_REQUIRED');
+    await client.setDocument(`listings_v2/${listingId}`, { status, updated_at: new Date() },
+      { merge: true, updateTime: existing.updateTime });
     nearbyCache.clear();
   },
 };
