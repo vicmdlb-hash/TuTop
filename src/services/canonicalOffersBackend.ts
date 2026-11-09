@@ -63,7 +63,10 @@ async function assertOfferableListing(client: FirebaseRestClient, listingId: str
   if (listing.data.availability_status === 'reserved') throw new Error('LISTING_ALREADY_RESERVED');
   // Unknown or absent availability is not positive proof of an offerable
   // listing. A stale/partial listing must fail closed, not invite new offers.
-  if (listing.data.availability_status !== 'available') throw new Error('LISTING_AVAILABILITY_UNVERIFIED');
+  // Historical canonical records may omit this optional field. Preserve that
+  // supported legacy case; explicit unknown/null states still fail closed.
+  if (listing.data.availability_status !== undefined
+    && listing.data.availability_status !== 'available') throw new Error('LISTING_AVAILABILITY_UNVERIFIED');
 }
 
 function assertOfferNotExpired(offer: Offer) {
