@@ -48,6 +48,12 @@ for(const id of ['g1:180:0','g1:0:360','g1:999:999','g1:-1:0','g1:01:0',
 // independent of the UI or browser permission. No real GPS/Firebase call.
 assert.equal(lib.validListingApproxLocationAttributes({}), true,
   'a privacy-first listing without location remains supported');
+assert.equal(lib.validListingApproxLocationAttributes({ geo_cell: 'g1:109:81' }), false,
+  'a geo cell alone must not reveal a hidden approximate location without consent');
+assert.equal(lib.validListingApproxLocationAttributes({
+  category: 'books', title: 'Demo sin ubicación',
+}), true, 'non-location listing attributes remain supported');
+
 const safeListingLocation = lib.locationAttributes({
   latitude: 19.314, longitude: -98.251,
   captured_at: new Date().toISOString(), source: 'device',
