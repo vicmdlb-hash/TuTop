@@ -95,7 +95,7 @@ export default function ProductCard({ product }: { product: Product }) {
 
         <div className="mt-3 flex items-center gap-2">
           <button disabled={reservedForViewer} onClick={() => { feedbackTap(); ownProduct ? openProduct(product.id) : contactProduct(product.id); }} className="contact-button disabled:cursor-not-allowed disabled:opacity-45"><MessageCircle className="h-4 w-4" />{ownProduct ? 'Ver publicación' : reservedForViewer ? 'Reservado' : existingBuyerChat ? 'Volver al chat' : 'Contactar'}</button>
-          <button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`favorite-button ${favorite ? 'favorite-button-active' : ''}`} aria-label="Guardar producto">
+          <button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`favorite-button ${favorite ? 'favorite-button-active' : ''}`} aria-label={favorite ? "Quitar de guardados" : "Guardar producto"} aria-pressed={favorite}>
             <Heart className="h-5 w-5" fill={favorite ? 'currentColor' : 'none'} />
             <span>{favorite ? 'Guardado' : 'Guardar'}</span>
           </button>
