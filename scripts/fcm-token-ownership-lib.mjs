@@ -10,6 +10,12 @@ function asTime(value) {
   return n;
 }
 
+// Firestore CAS and outbound claim times must be canonical UTC timestamps.
+// Date.parse alone can silently normalize impossible calendar dates.
+export function isCanonicalFcmTimestamp(value) {
+  return asTime(value) > 0;
+}
+
 function tokenKey(target = {}) {
   return target && typeof target === 'object' && typeof target.token === 'string'
     ? target.token.trim() : '';
@@ -189,9 +195,7 @@ export function assertCompleteFcmInventory(rows, maxDocuments, collectionId) {
  */
 export function fcmTokenCleanupPrecondition(record) {
   const stamp = record?._document_update_time;
-  if (typeof stamp !== 'string'
-      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(stamp)
-      || !Number.isFinite(Date.parse(stamp)))
+  if (!isCanonicalFcmTimestamp(stamp))
     throw new Error('FCM_STALE_TOKEN_UPDATE_TIME_REQUIRED');
   return { updateTime: stamp };
 }
