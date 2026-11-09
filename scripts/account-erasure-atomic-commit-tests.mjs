@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import { buildAccountErasureFinalCommit, buildSyntheticErasureAdmissionReadPlan, buildSyntheticErasureAdmissionVerifyWrites, buildSyntheticErasureAdmissionBatchGetRequest, inspectSyntheticErasureAdmissionBatchGet } from './account-erasure-atomic-commit.mjs';
 const now = new Date('2026-10-22T22:00:00Z');
 const completed = {
@@ -236,4 +237,35 @@ assert(guardedMaintenanceWrapper.includes("blocked.push(task)") && guardedMainte
   'wrapper must skip outcomes independently without blocking other task lanes');
 console.log('PASS trusted maintenance wrapper blocks commerce before capacity credentials; unrelated tasks remain independent (source only)');
 console.log('PASS privileged commerce apply freezes precede credential access (source only)');
+// Synthetic CLI preflight of the actual privileged runner: no module imports,
+// tokens, provider calls or mutable credentials are evaluated by this VM.
+const trustedPrelude = writer.slice(writer.indexOf('const projectId ='),
+  writer.indexOf('const token = await firebaseCiAccessToken();'));
+assert(trustedPrelude.includes('TRUSTED_MAINTENANCE_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED'));
+assert(!trustedPrelude.includes('await firebaseCiAccessToken'));
+function simulateTrustedTask(task, apply = true) {
+  return () => vm.runInNewContext(trustedPrelude, {
+    process: {
+      env: { TUTOP_FIREBASE_PROJECT_ID: 'tutop-beta-vicmdlb-1356585881',
+        TUTOP_ALLOW_V2_MAINTENANCE: 'staging-v2' },
+      argv: ['node', 'scripts/v2-trusted-maintenance.mjs',
+        ...(apply ? ['--apply'] : []), '--tasks=' + task],
+    },
+  }, { timeout: 250 });
+}
+for (const task of ['reputation', 'saved-searches', 'push']) {
+  assert.throws(simulateTrustedTask(task), /TRUSTED_MAINTENANCE_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED/,
+    'unproven maintenance apply must stop before credentials: ' + task);
+  assert.doesNotThrow(simulateTrustedTask(task, false),
+    'safe dry-run path must remain available for ' + task);
+}
+assert.doesNotThrow(simulateTrustedTask('credentials'),
+  'independent expired-credential cleanup may reach its existing staging guard');
+const wrapperFreeze = "['reputation', 'saved-searches', 'push'].includes(task)";
+assert(guardedMaintenanceWrapper.includes(wrapperFreeze));
+assert(guardedMaintenanceWrapper.indexOf(wrapperFreeze) <
+  guardedMaintenanceWrapper.indexOf("run('scripts/trusted-reputation-capacity-guard.mjs'"),
+  'guarded wrapper must skip unsafe lanes before capacity/token reads');
+console.log('PASS erasure-aware reputation/alert/push maintenance apply denied before credential acquisition; independent dry-run/credentials preserved');
+
 console.log('PASS REST v1 batchGet read-write transaction shape and negative response matrix (synthetic; NO IO/no apply)');

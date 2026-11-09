@@ -20,6 +20,16 @@ if (apply && allow !== 'staging-v2') stop('para escribir define TUTOP_ALLOW_V2_M
 // read-write admission transaction proves buyer and seller are not deleting.
 // Keep non-commerce maintenance lanes independently gated as before.
 if (apply && tasks.has('outcomes')) throw new Error('TRUSTED_OUTCOMES_ADMISSION_FREEZE_NOT_VERIFIED');
+// P02/P05: rebuilding reputation, creating saved-search alerts or sending push
+// can recreate state or contact a user whose erasure is in progress. A global
+// snapshot cannot establish recipient eligibility under concurrent deletion.
+// Freeze ONLY these unproven apply lanes until all recipients are checked by
+// a trusted transactional admission barrier. Credential retention is separate.
+for (const task of ['reputation', 'saved-searches', 'push']) {
+  if (apply && tasks.has(task))
+    throw new Error('TRUSTED_MAINTENANCE_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED:' + task);
+}
+
 
 const token = await firebaseCiAccessToken();
 const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
