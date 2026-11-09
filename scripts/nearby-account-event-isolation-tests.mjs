@@ -44,7 +44,29 @@ for(const id of ['g1:180:0','g1:0:360','g1:999:999','g1:-1:0','g1:01:0',
   '',null,0,{},'g1:0:359.5']) {
   assert.equal(validCell(id),false,'invalid geo fanout must be rejected without reads');
 }
+// #44/#56: tests exercise the production listing-write location policy,
+// independent of the UI or browser permission. No real GPS/Firebase call.
+assert.equal(lib.validListingApproxLocationAttributes({}), true,
+  'a privacy-first listing without location remains supported');
+const safeListingLocation = lib.locationAttributes({
+  latitude: 19.314, longitude: -98.251,
+  captured_at: new Date().toISOString(), source: 'device',
+});
+assert.equal(lib.validListingApproxLocationAttributes(safeListingLocation), true);
+for (const bad of [
+  { approx_latitude: 19.314, approx_longitude: -98.25 },
+  { approx_latitude: 19.31, approx_longitude: -98.251 },
+  { approx_latitude: 19.31 },
+  { approx_longitude: -98.25 },
+  { approx_latitude: '19.31', approx_longitude: -98.25 },
+  { approx_latitude: 91, approx_longitude: 0 },
+  { approx_latitude: 19.31, approx_longitude: -98.25, geo_cell: 'g1:0:0' },
+]) assert.equal(lib.validListingApproxLocationAttributes(bad), false,
+  'raw/partial/inconsistent location must not cross the listing write boundary');
 const geoBackend = fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8');
+assert.match(geoBackend, /if \(!validListingApproxLocationAttributes\(listing\.attributes\)\)/,
+  'create and seller update must enforce the shared location privacy policy');
+
 assert(geoBackend.includes('input.geoCells.filter(validNearbyGeoCell)'),
   'Firestore nearby query layer must reuse exact canonical cell bounds');
 
