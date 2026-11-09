@@ -27,7 +27,14 @@ function harness(initialUid = 'B') {
   let authIdentity = initialUid ? { uid: initialUid, refreshToken: 'synthetic-refresh-' + initialUid + '-0' } : null;
   let phoneSessionSerial = 0;
   const state = {
-    user: { id: initialUid }, chats: [], products: [],
+    user: { id: initialUid },
+    // Deliberately keep an A-owned stale chat next to B's cache to prove
+    // payload recipient_uid alone cannot navigate to the wrong account.
+    chats: [
+      { id: 'chat-a', comprador_id: 'A', vendedor_id: 'seller' },
+      { id: 'chat-b', comprador_id: 'B', vendedor_id: 'seller' },
+    ],
+    products: [],
     markNotificationRead: (id) => operations.push('read:' + id),
     openChat: (id) => operations.push('chat:' + id),
     setActiveTab: (tab) => operations.push('tab:' + tab),
@@ -35,6 +42,7 @@ function harness(initialUid = 'B') {
     hydrateOnline: (snapshot) => {
       operations.push('hydrate:' + snapshot.user.id);
       state.user = snapshot.user;
+      if (Array.isArray(snapshot.chats)) state.chats = snapshot.chats;
     },
   };
   const store = { getState: () => state };
@@ -171,4 +179,38 @@ function harness(initialUid = 'B') {
   assert.deepEqual(h.operations, [], 'cached A identity cannot route after canonical B login');
 }
 
-console.log('PASS 11 native notification router integration scenarios with mock Auth/store/snapshots, no Firebase');
+
+{
+  const h = harness('B');
+  // A malicious/misrouted B-addressed notification points at A's cached chat.
+  h.send({ source: 'action', recipient_uid: 'B', chat_id: 'chat-a', notification_id: 'n-cross' });
+  await h.flush();
+  assert.deepEqual(h.operations, ['read:n-cross', 'tab:inbox', 'hydrate:B', 'tab:inbox'],
+    'B cannot navigate into cached A chat even when push recipient is B');
+}
+{
+  const h = harness('B');
+  // A legitimate new B chat may arrive before the Inbox snapshot; retry only
+  // after hydration has established membership in B's online chat list.
+  h.backend.loadSnapshot = async () => ({
+    user: { id: 'B' },
+    chats: [{ id: 'chat-new-b', comprador_id: 'B', vendedor_id: 'seller' }],
+  });
+  h.send({ source: 'action', recipient_uid: 'B', chat_id: 'chat-new-b', notification_id: 'n-new' });
+  await h.flush();
+  assert.deepEqual(h.operations, ['read:n-new', 'tab:inbox', 'hydrate:B', 'chat:chat-new-b'],
+    'cold-chat tap must wait for owner-scoped snapshot before opening');
+}
+{
+  const h = harness('B');
+  h.state.chats.push({
+    id: 'chat-foreign-transaction', transaction_id: 'tx-foreign',
+    comprador_id: 'A', vendedor_id: 'seller',
+  });
+  h.send({ source: 'action', recipient_uid: 'B', transaction_id: 'tx-foreign' });
+  await h.flush();
+  assert.deepEqual(h.operations, ['tab:inbox', 'hydrate:B', 'tab:inbox'],
+    'foreign transaction target cannot navigate to A-owned chat from B');
+}
+
+console.log('PASS 14 native notification router integration scenarios with mock Auth/store/snapshots, no Firebase');

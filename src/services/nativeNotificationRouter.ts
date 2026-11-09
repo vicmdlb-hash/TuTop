@@ -26,6 +26,14 @@ function recipientMatchesActiveSession(intent: NativeNotificationIntent) {
   );
 }
 
+// A recipient UID in a push payload does not authorize its chat target.
+// Account switches can leave a stale chat object in memory until hydration.
+function hasOwnedChat(chatId: string, uid: string) {
+  if (!chatId || !uid) return false;
+  return useAppStore.getState().chats.some((chat) =>
+    chat.id === chatId && (chat.comprador_id === uid || chat.vendedor_id === uid));
+}
+
 function route(intent: NativeNotificationIntent, markRead = true) {
   if (!recipientMatchesActiveSession(intent)) return false;
   const state = useAppStore.getState();
@@ -33,6 +41,11 @@ function route(intent: NativeNotificationIntent, markRead = true) {
   if (intent.source !== 'action') return true;
 
   if (intent.chat_id) {
+    if (!hasOwnedChat(intent.chat_id, state.user.id)) {
+      // Only show the Inbox until the online snapshot proves membership.
+      state.setActiveTab('inbox');
+      return false;
+    }
     state.openChat(intent.chat_id);
     return true;
   }
@@ -43,7 +56,7 @@ function route(intent: NativeNotificationIntent, markRead = true) {
   }
   if (intent.transaction_id) {
     const chat = state.chats.find((item: any) => item.transaction_id === intent.transaction_id);
-    if (chat) {
+    if (chat && hasOwnedChat(chat.id, state.user.id)) {
       state.openChat(chat.id);
       return true;
     }
@@ -88,7 +101,8 @@ export function installNativeNotificationRouter() {
         expectedUid, activeRecipientUid(), store.user.id, snapshot.user.id,
       )) return;
       store.hydrateOnline(snapshot);
-      if (!exactTargetResolved && intent.source === 'action' && intent.transaction_id) route(intent, false);
+      if (!exactTargetResolved && intent.source === 'action'
+        && (intent.chat_id || intent.transaction_id)) route(intent, false);
     }).catch(() => undefined);
   }) as EventListener);
 }
