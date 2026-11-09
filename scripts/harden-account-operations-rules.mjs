@@ -12,19 +12,45 @@ function replaceOnce(from, to, label) {
   rules = rules.replace(from, to);
 }
 
-const trustedProcessorOnlyCompletion = `      allow update: if canSupportAppeals()
-        && request.resource.data.uid == uid
-        && request.resource.data.requested_at == resource.data.requested_at
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
-        && (
-          (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
-          || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
-        )
-        && fresh(request.resource.data.updated_at);`;
-
-const accountTransitionCount = rules.split(trustedProcessorOnlyCompletion).length - 1;
-if (accountTransitionCount !== 1) {
-  console.error(`DETENIDO: account deletion trusted-completion esperaba 1 coincidencia y encontró ${accountTransitionCount}.`);
+// Generated account-deletion Rules must retain BOTH narrow flows:
+// 1. the owner may only re-open a previously rejected request;
+// 2. support may process/reject, never mark completed from a client.
+const ownerReRequest = `        (owner(uid)
+          && resource.data.status == 'rejected'
+          && request.resource.data.uid == uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','requested_at','updated_at'])
+          && request.resource.data.requested_at is timestamp
+          && request.resource.data.requested_at >= resource.data.requested_at
+          && fresh(request.resource.data.requested_at)
+          && fresh(request.resource.data.updated_at))`;
+const trustedProcessorOnlyCompletion = `        (canSupportAppeals()
+          && request.resource.data.uid == uid
+          && request.resource.data.requested_at == resource.data.requested_at
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+          && (
+            (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
+            || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
+          )
+          && fresh(request.resource.data.updated_at))`;
+for (const [needle, label] of [
+  [ownerReRequest, 'owner rejected-only renewal'],
+  [trustedProcessorOnlyCompletion, 'account deletion trusted-completion'],
+]) {
+  const count = rules.split(needle).length - 1;
+  if (count !== 1) {
+    console.error(`DETENIDO: ${label} esperaba 1 coincidencia y encontró ${count}.`);
+    process.exit(2);
+  }
+}
+const deletionStart = rules.indexOf('    match /account_deletion_requests/{uid} {');
+const deletionEnd = rules.indexOf('    match /feature_flags/{flagId} {', deletionStart);
+const deletionRule = rules.slice(deletionStart, deletionEnd);
+if (deletionStart < 0 || deletionEnd < deletionStart
+  || !deletionRule.includes('allow update: if (')
+  || !deletionRule.includes('allow delete: if false;')
+  || /request\.resource\.data\.status\s*==\s*'completed'/.test(deletionRule)) {
+  console.error('DETENIDO: client account deletion cannot be completed via Rules.');
   process.exit(2);
 }
 
