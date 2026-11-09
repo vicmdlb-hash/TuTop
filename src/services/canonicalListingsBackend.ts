@@ -3,6 +3,7 @@ import { listingV2HasNoLegacyDescriptionPacking, validCanonicalVideoUri, type Ca
 import { CAMPUSES, FACULTIES, INSTITUTIONS } from '../lib/universityNetwork.ts';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant.ts';
 import { validNearbyGeoCell, validListingApproxLocationAttributes } from '../lib/nearbyMarketplace.ts';
+import { assertFirebaseRequestSessionCurrent } from '../lib/firebaseSharedSessionGuard';
 import type { DeliveryMethod, MeetingPoint, Product, ProductCategory, ProductStatus } from '../types/index.ts';
 import { FirebaseRestClient, type FirestoreDocument, type QueryFilter } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
@@ -345,14 +346,15 @@ export const canonicalListingsBackend = {
 
   async setStatus(listingId: string, status: CanonicalListingV2['status']) {
     const client = getClient();
-    const uid = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
     // A stale or wrong-owner UI action must never prepare a status write.
     const existing = await client.getDocument<CanonicalListingV2>(`listings_v2/${listingId}`);
     if (!existing) throw new Error('LISTING_NOT_FOUND');
     if (existing.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
-    if (client.currentSession?.uid !== uid
-      || new FirebaseRestClient(getFirebaseConfig()).currentSession?.uid !== uid)
-      throw new Error('AUTH_SESSION_CHANGED');
+    // Same UID is insufficient: A -> logout -> A is a new session.
+    assertFirebaseRequestSessionCurrent(requestSession, client.currentSession,
+      new FirebaseRestClient(getFirebaseConfig()).currentSession);
     if (!existing.updateTime) throw new Error('LISTING_VERSION_REQUIRED');
     await client.setDocument(`listings_v2/${listingId}`, { status, updated_at: new Date() },
       { merge: true, updateTime: existing.updateTime });
