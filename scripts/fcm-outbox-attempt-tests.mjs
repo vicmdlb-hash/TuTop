@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
+import { isCanonicalFcmTimestamp, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 import fs from 'node:fs';
 import { trustedFcmQueryRecord, trustedFcmDirectRecord, fcmRecipientErasureAllows } from './fcm-staging-document-identity-lib.mjs';
 import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup, isFreshFcmTargetStillEligible } from './fcm-outbox-attempt-lib.mjs';
@@ -38,6 +39,29 @@ for (const invalidAttempt of ['2', '', null, true, false]) {
 }
 assert.throws(()=>planFcmOutboxCompletion(pending,sentTime),/FCM_OUTBOX_NOT_DISPATCHING/);
 assert.throws(()=>planFcmOutboxCompletion(claimed,'bad'),/FCM_OUTBOX_SENT_TIME_INVALID/);
+
+// Firestore compare-and-swap versions and audit times must be real, canonical
+// UTC instants: Date.parse may otherwise normalize impossible calendar dates.
+for (const badStamp of [
+  '2026-02-31T20:00:00Z',
+  '2026-10-28T20:00:00+00:00',
+  '2026-10-28T20:00:00',
+  '2026-13-28T20:00:00Z',
+  '2026-10-28T25:00:00Z',
+]) {
+  assert.equal(isCanonicalFcmTimestamp(badStamp), false);
+  assert.throws(() => fcmTokenCleanupPrecondition({
+    _document_update_time: badStamp,
+  }), /FCM_STALE_TOKEN_UPDATE_TIME_REQUIRED/);
+  assert.throws(() => planFcmOutboxClaim(pending, badStamp), /FCM_OUTBOX_CLAIM_TIME_INVALID/);
+  assert.throws(() => attachCommittedFcmClaim(pending, planned, {
+    writeResults: [{ updateTime: badStamp }],
+  }), /FCM_STALE_TOKEN_UPDATE_TIME_REQUIRED/);
+  assert.throws(() => planFcmOutboxCompletion(claimed, badStamp), /FCM_OUTBOX_SENT_TIME_INVALID/);
+}
+assert.equal(isCanonicalFcmTimestamp(newTime), true);
+console.log('PASS FCM outbox requires canonical UTC stamps and rejects rolled-over dates');
+
 
 assert.equal(canSendAfterStaleOwnerCleanup(0, 0), true);
 assert.equal(canSendAfterStaleOwnerCleanup(2, 2), true);
