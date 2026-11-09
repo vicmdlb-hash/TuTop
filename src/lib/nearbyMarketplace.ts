@@ -235,6 +235,27 @@ export function locationAttributes(location: ApproxLocation | null) {
   };
 }
 
+/** Defense at the listing-write boundary: never store raw GPS precision,
+ * one-sided coordinates or a geo-cell inconsistent with the coarse location.
+ * No coordinates at all remains a supported privacy-first listing.
+ */
+export function validListingApproxLocationAttributes(attributes: unknown): boolean {
+  if (!attributes || typeof attributes !== 'object' || Array.isArray(attributes)) return false;
+  const data = attributes as Record<string, unknown>;
+  const hasLatitude = Object.prototype.hasOwnProperty.call(data, 'approx_latitude');
+  const hasLongitude = Object.prototype.hasOwnProperty.call(data, 'approx_longitude');
+  if (!hasLatitude && !hasLongitude) return true;
+  if (!hasLatitude || !hasLongitude
+    || typeof data.approx_latitude !== 'number'
+    || typeof data.approx_longitude !== 'number'
+    || !validCoordinate(data.approx_latitude, data.approx_longitude)
+    || data.approx_latitude !== coarseCoordinate(data.approx_latitude)
+    || data.approx_longitude !== coarseCoordinate(data.approx_longitude)) return false;
+  const cell = geoCellForLocation({ latitude: data.approx_latitude, longitude: data.approx_longitude });
+  return cell !== null && (!Object.prototype.hasOwnProperty.call(data, 'geo_cell')
+    || data.geo_cell === cell);
+}
+
 function productCoordinates(product: Pick<Product, 'attributes'>) {
   const latitude = product.attributes?.approx_latitude;
   const longitude = product.attributes?.approx_longitude;
