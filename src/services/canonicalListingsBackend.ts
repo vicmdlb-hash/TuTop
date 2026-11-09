@@ -2,7 +2,7 @@ import { categorySafetyRequirements, classifyMarketplaceItem } from '../lib/mark
 import { listingV2HasNoLegacyDescriptionPacking, validCanonicalVideoUri, type CanonicalListingV2, type ListingDeliveryMethod } from '../lib/listingSchemaV2.ts';
 import { CAMPUSES, FACULTIES, INSTITUTIONS } from '../lib/universityNetwork.ts';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant.ts';
-import { validNearbyGeoCell } from '../lib/nearbyMarketplace.ts';
+import { validNearbyGeoCell, validListingApproxLocationAttributes } from '../lib/nearbyMarketplace.ts';
 import type { DeliveryMethod, MeetingPoint, Product, ProductCategory, ProductStatus } from '../types/index.ts';
 import { FirebaseRestClient, type FirestoreDocument, type QueryFilter } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
@@ -140,6 +140,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
 
 export function validateCanonicalListingPolicy(listing: CanonicalListingV2, category: ProductCategory) {
   if (!listingV2HasNoLegacyDescriptionPacking(listing)) throw new Error('LISTING_V2_SCHEMA_INCOMPLETE');
+  if (!validListingApproxLocationAttributes(listing.attributes)) throw new Error('LISTING_APPROX_LOCATION_UNSAFE');
   if (listing.title.trim().length < 2 || listing.title.length > 120) throw new Error('LISTING_TITLE_INVALID');
   if (!Number.isFinite(listing.price_mxn) || listing.price_mxn < 0.01 || listing.price_mxn > 1_000_000) throw new Error('LISTING_PRICE_INVALID');
   if (!Number.isInteger(listing.quantity) || listing.quantity < 1 || listing.quantity > 99) throw new Error('LISTING_QUANTITY_INVALID');
