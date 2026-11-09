@@ -208,3 +208,36 @@ assert.equal(mutationWrites.length, 1,
 assert.equal(mutationWrites[0].action, 'offer_create');
 console.log('PASS offer create/update/counter guards reject stale A→B and same-UID re-login after async reads');
 console.log('PASS legitimate offer create remains possible in a stable authenticated session');
+
+// P01/#50 guard: an explicit "available" witness is required. A reserved,
+// malformed or missing availability status may never prepare a new offer.
+// This preflight is defense in depth, not an atomic trusted-server guarantee.
+for (const [availability_status, error] of [
+  ['reserved', /LISTING_ALREADY_RESERVED/],
+  ['unknown', /LISTING_AVAILABILITY_UNVERIFIED/],
+  [undefined, /LISTING_AVAILABILITY_UNVERIFIED/],
+]) {
+  const attempted = mutationBackend.createOffer({
+    listingId: 'listing-1', chatId: 'chat-1',
+    sellerId: 'seller-B', amountMxn: 25,
+  });
+  nextMutationRead('listings_v2/listing-1').resolve({
+    ...eligibleListing,
+    data: { ...eligibleListing.data, availability_status },
+  });
+  await assert.rejects(attempted, error);
+  assert.equal(mutationWrites.length, 1,
+    'non-available listing must not prepare an additional offer write');
+}
+for (const amountMxn of [-1, 0, 1_000_000.01, Infinity, Number.NaN]) {
+  await assert.rejects(mutationBackend.createOffer({
+    listingId: 'listing-1', chatId: 'chat-1',
+    sellerId: 'seller-B', amountMxn,
+  }), /INVALID_OFFER_AMOUNT/);
+  await assert.rejects(mutationBackend.createCounterOffer(validParent, amountMxn),
+    /INVALID_OFFER_AMOUNT/);
+}
+assert.equal(mutationReads.length, 0, 'invalid amounts must be refused before network reads');
+assert.equal(mutationWrites.length, 1);
+console.log('PASS offer admission rejects unknown availability and out-of-bounds amounts without writes');
+
