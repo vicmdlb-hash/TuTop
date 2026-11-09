@@ -163,7 +163,9 @@ async function createDeletionRequest() {
   return readDeletionRequest();
 }
 
-// Keep the rejected audit entry; a new owner request is version-guarded.
+// Reopening a rejected request updates the same record under a version guard.
+// Prior rejection audit/history is NOT proven by this client path; separate
+// trusted audit retention must be verified before declaring compliance.
 // Ambiguous timeouts get a fresh status read, never an automatic replay.
 async function renewRejectedDeletionRequest(existing) {
   const uid = state.session?.uid;
@@ -203,7 +205,7 @@ function statusMessage(status) {
   if (status === 'processing') return 'Tu solicitud está en procesamiento. La eliminación todavía no se declara completada.';
   if (status === 'completed') return 'El registro contiene evidencia de finalización del proceso confiable. Esto no sustituye la comprobación independiente de Firebase Authentication.';
   if (status === 'completion-unverified') return 'El registro indica completada, pero faltan evidencias verificables del procesamiento. La eliminación no puede darse por confirmada desde este recurso.';
-  if (status === 'rejected') return 'La solicitud fue rechazada. Si todavía deseas eliminar tu cuenta, confirma nuevamente para presentar otra solicitud; el rechazo anterior permanece registrado.';
+  if (status === 'rejected') return 'La solicitud fue rechazada. Si todavía deseas eliminar tu cuenta, confirma nuevamente para presentar otra solicitud. La eliminación no se ha realizado.';
   return 'Existe una solicitud, pero su estado no puede mostrarse de forma confiable. No se ha declarado una eliminación completada.';
 }
 
