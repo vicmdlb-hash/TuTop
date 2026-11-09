@@ -53,4 +53,10 @@ assert.match(indexCss, /\.publish-input \{ height:48px; min-height:48px;/);
 assert.match(indexCss, /\.meeting-option \{ min-height:48px;/);
 assert.match(indexCss, /\.assist-button \{ min-height:48px;/);
 assert.match(indexCss, /\.topi-button \{[^\n]*min-height:48px;/);
+// A favorite is a toggle, not a static "save" action. Both screen reader
+// name and pressed state must change with the actual favorite value.
+const productCard = fs.readFileSync('src/components/ProductCard.tsx', 'utf8');
+assert.match(productCard, /aria-label=\{favorite \? "Quitar de guardados" : "Guardar producto"\}/);
+assert.match(productCard, /aria-pressed=\{favorite\}/);
+assert.match(productCard, /const favorite = favorites\.includes\(product\.id\)/);
 console.log('PASS accessibility semantics: password toggles named/stateful, preferences expose switch state, disclosures expose expansion, publish live status preserved');
