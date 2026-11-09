@@ -61,6 +61,9 @@ async function assertOfferableListing(client: FirebaseRestClient, listingId: str
   if (listing.data.moderation_status !== 'approved') throw new Error('LISTING_NOT_APPROVED');
   // Client-side defense: a reserved listing is not offerable. Server rules and atomic race tests remain separate gates.
   if (listing.data.availability_status === 'reserved') throw new Error('LISTING_ALREADY_RESERVED');
+  // Unknown or absent availability is not positive proof of an offerable
+  // listing. A stale/partial listing must fail closed, not invite new offers.
+  if (listing.data.availability_status !== 'available') throw new Error('LISTING_AVAILABILITY_UNVERIFIED');
 }
 
 function assertOfferNotExpired(offer: Offer) {
@@ -219,7 +222,7 @@ export const canonicalOffersBackend = {
     const requestSession = client.currentSession;
     const buyerId = requestSession!.uid;
     if (buyerId === input.sellerId) throw new Error('SELF_OFFER_DENIED');
-    if (!Number.isFinite(input.amountMxn) || input.amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
+    if (!Number.isFinite(input.amountMxn) || input.amountMxn < 1 || input.amountMxn > 1_000_000) throw new Error('INVALID_OFFER_AMOUNT');
     await assertOfferableListing(client, input.listingId, input.sellerId);
     assertOfferMutationSessionCurrent(client, requestSession);
     const amountMxn = Math.round(input.amountMxn * 100) / 100;
@@ -257,7 +260,7 @@ export const canonicalOffersBackend = {
     const requestSession = client.currentSession;
     const actor = requestSession!.uid;
     if (actor !== parent.buyer_id && actor !== parent.seller_id) throw new Error('PARTICIPANT_REQUIRED');
-    if (!Number.isFinite(amountMxn) || amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
+    if (!Number.isFinite(amountMxn) || amountMxn < 1 || amountMxn > 1_000_000) throw new Error('INVALID_OFFER_AMOUNT');
     const currentParent = await assertCurrentPendingParent(client, parent, actor);
     assertOfferMutationSessionCurrent(client, requestSession);
     await assertOfferableListing(client, currentParent.listing_id, currentParent.seller_id);
