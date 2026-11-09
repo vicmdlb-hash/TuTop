@@ -209,13 +209,13 @@ assert.equal(mutationWrites[0].action, 'offer_create');
 console.log('PASS offer create/update/counter guards reject stale A→B and same-UID re-login after async reads');
 console.log('PASS legitimate offer create remains possible in a stable authenticated session');
 
-// P01/#50 guard: an explicit "available" witness is required. A reserved,
-// malformed or missing availability status may never prepare a new offer.
+// P01/#50 guard: reserved and explicitly malformed availability must be
+// denied. An absent optional field preserves legitimate historical listings.
 // This preflight is defense in depth, not an atomic trusted-server guarantee.
 for (const [availability_status, error] of [
   ['reserved', /LISTING_ALREADY_RESERVED/],
   ['unknown', /LISTING_AVAILABILITY_UNVERIFIED/],
-  [undefined, /LISTING_AVAILABILITY_UNVERIFIED/],
+  [null, /LISTING_AVAILABILITY_UNVERIFIED/],
 ]) {
   const attempted = mutationBackend.createOffer({
     listingId: 'listing-1', chatId: 'chat-1',
