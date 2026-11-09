@@ -70,7 +70,8 @@ assert(canonical.includes("data.moderation_status === 'flagged' ? 'flagged'"));
 // Firestore Rules remain the authoritative control; this proves client defense
 // without using Firebase or impersonating a real user.
 const statusMethod = canonical.slice(canonical.indexOf('  async setStatus('));
-assert.match(statusMethod, /const uid = client\.currentSession!\.uid/);
+assert.match(statusMethod, /const requestSession = client\.currentSession/);
+assert.match(statusMethod, /const uid = requestSession!\.uid/);
 assert.match(statusMethod, /await client\.getDocument<CanonicalListingV2>/);
 assert.match(statusMethod, /existing\.data\.seller_id !== uid/);
 assert.match(statusMethod, /assertFirebaseRequestSessionCurrent\(requestSession, client\.currentSession/);
