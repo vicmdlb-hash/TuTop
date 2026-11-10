@@ -100,6 +100,8 @@ assert.equal(pending[1].route, 'security');
 pending[1].resolve({ source: 'guided', route: 'security', text: 'RESPUESTA_CORRECTA' });
 await Promise.resolve();
 await Promise.resolve();
+assert.equal(hooks[3]?.text, 'RESPUESTA_CORRECTA',
+  'synthetic React answer state must accept the latest same-route response');
 assert(content(render()).includes('RESPUESTA_CORRECTA'), 'latest same-route reply should appear');
 
 // Closing during a pending call must not resurrect its answer on reopening.
