@@ -44,6 +44,12 @@ assert.doesNotMatch(ui, /Ruta guiada/);
 assert.doesNotMatch(ui, /tokens ni domicilio exacto/);
 assert.match(voice, /TuTopVoice/);
 assert.match(app, /TopiSupportAssistant/);
-assert.match(app, /!activeChatId && <TopiSupportAssistant \/>/);
+assert.match(app, /!activeChatId && <TopiSupportAssistant key=\{user\.id\} \/>/);
+assert.match(ui, /const requestSerial = useRef\(0\)/);
+assert.match(ui, /const serial = \+\+requestSerial\.current/);
+assert.match(ui, /if \(serial !== requestSerial\.current\) return/);
+assert.match(ui, /if \(serial === requestSerial\.current\) setBusy\(false\)/);
+assert.match(ui, /invalidatePendingAnswer\(\)/);
+assert.match(ui, /onClick=\{close\}/);
 
 console.log('✅ TuTop 0.9.1 consumer Topi support + native voice + AI fallback contracts PASS');
