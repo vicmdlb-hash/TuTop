@@ -32,6 +32,13 @@ assert.match(detail, /Reservado temporalmente/);
 assert.match(detail, /disabled=\{reserved\}/);
 assert.match(detail, /const reserved = product\.availability_status === 'reserved'/);
 assert.match(detail, /if \(ownProduct \|\| reserved\) return;/);
+const topiQuickReply = detail.split("['¿Sigue disponible?'")[1]?.split("</button>)}</div>", 1)[0];
+assert(topiQuickReply, 'Topi suggested-question buttons must exist in ProductDetail');
+assert.match(topiQuickReply, /disabled=\{reservedForViewer\}/,
+  'Topi shortcut must not create a new chat for a buyer who does not own a reserved listing');
+assert.match(topiQuickReply, /onClick=\{\(\) => \{ if \(reservedForViewer\) return; const chatId = contactProduct\(product\.id\)/,
+  'Topi shortcut handler must independently enforce reservation gate before contact');
+
 assert.match(store, /product\.availability_status === 'reserved' && !existing/);
 
 console.log('PASS reservation availability truth is public-safe, atomic with lock lifecycle and blocks new buyer actions while reserved');
