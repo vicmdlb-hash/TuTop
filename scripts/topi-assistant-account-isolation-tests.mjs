@@ -27,6 +27,7 @@ const useRef = (initial) => {
 };
 const jsx = (type, props) => ({ type, props: props || {} });
 const pending = [];
+const dictations = [];
 const mockSupport = {
   answerConsumerSupport: (question, route) => new Promise((resolve) => pending.push({ question, route, resolve })),
 };
@@ -37,7 +38,7 @@ vm.runInNewContext(js, {
     if (name === 'react') return { useState, useRef, useMemo: (compute) => compute() };
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
     if (name === 'lucide-react') return {};
-    if (name === '../lib/topiVoice') return { startTopiDictation: () => undefined };
+    if (name === '../lib/topiVoice') return { startTopiDictation: (callbacks) => { dictations.push(callbacks); } };
     if (name === '../lib/supportDecisionTree') return {
       supportNode: (route) => ({ title: route, prompt: 'Ayuda', choices: route === 'root'
         ? [{ id: 'security', next: 'security', label: 'Seguridad' }] : [] }),
@@ -109,6 +110,30 @@ await Promise.resolve();
 await Promise.resolve();
 button(render(), 'Abrir Topi').props.onClick();
 assert(!content(render()).includes('RESPUESTA_TRAS_CIERRE'), 'closing must invalidate pending response');
+
+// Late speech recognition must not append to a different route after reset.
+dialog = render();
+button(dialog, 'Dictar pregunta').props.onClick();
+assert.equal(dictations.length, 1);
+button(render(), 'Inicio').props.onClick();
+dictations[0].onText('DICTADO_DE_LA_RUTA_ANTERIOR');
+dictations[0].onStatus('listening');
+assert(!input(render()).props.value.includes('DICTADO_DE_LA_RUTA_ANTERIOR'),
+  'old route voice callback must be ignored');
+
+// Late speech recognition must not mutate a submitted question.
+dialog = render();
+button(dialog, 'Dictar pregunta').props.onClick();
+assert.equal(dictations.length, 2);
+input(dialog).props.onChange({ target: { value: 'Consulta recién enviada' } });
+button(render(), 'Preguntar a Topi').props.onClick();
+assert.equal(pending.length, 4);
+dictations[1].onText('TEXTO_TARDIO_DESPUES_DE_ENVIAR');
+assert(!input(render()).props.value.includes('TEXTO_TARDIO_DESPUES_DE_ENVIAR'),
+  'speech completion after submit must not append to the question');
+pending[3].resolve({ source: 'guided', route: 'root', text: 'Respuesta final sin mezcla' });
+await Promise.resolve();
+await Promise.resolve();
 
 // Code-level contract: React remount by UID drops all state when A switches to B.
 assert.match(app, /<Feed key=\{user\.id\}/);
