@@ -155,6 +155,7 @@ const milestoneSteps = packageVersion === '0.9.1-beta.0'
   ? [
       [process.execPath, ['scripts/nearby-topi-091-contract-tests.mjs']],
       [process.execPath, ['scripts/topi-consumer-support-091-contract-tests.mjs']],
+      [process.execPath, ['scripts/topi-assistant-account-isolation-tests.mjs']],
       [process.execPath, ['scripts/topi-app-check-091-contract-tests.mjs']],
       [process.execPath, ['scripts/release-091-contract-tests.mjs']],
       [process.execPath, ['scripts/runtime-freeze-promotion-contract-tests.mjs']],
