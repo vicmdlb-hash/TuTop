@@ -62,7 +62,6 @@ jobs:
     if: ${{ false }}
     name: October → Staging → Android → verified APK
     needs: normalize-version
-    if: needs.normalize-version.outputs.mutated == 'false'
     runs-on: [self-hosted, linux, x64, tutop-zero-cost-controller]
     timeout-minutes: 150
     env:
