@@ -162,6 +162,33 @@ const tests = [
    assert.equal(h.session,null);
    assert.equal(h.calls.some(c=>c.kind==='commit'),false,'stale signup must not start marketplace writes');
  }],
+ ['signup response after independent Firebase client logs B cannot replace that session',async()=>{
+   const h=harness(); let release;
+   h.signupWait=new Promise(r=>release=r);
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'accounts:signUp');
+   h.session={...replacementSession}; // Another FirebaseRestClient persisted B without changing authGeneration.
+   release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2');
+   assert.equal(h.session.idToken,'newer-B-token');
+   assert.equal(h.calls.some(c=>c.kind==='commit'),false,'stale signup must not write a profile after B logs in');
+   assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:delete')),false);
+ }],
+ ['signup response after independent same-UID re-login cannot replace newer tokens',async()=>{
+   const h=harness(); let release;
+   h.session={uid:'u1',idToken:'earlier-A-token',refreshToken:'earlier-A-refresh',expiresAt:Date.now()+600000,phone:''};
+   h.signupWait=new Promise(r=>release=r);
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'accounts:signUp');
+   h.session={uid:'u1',idToken:'newer-A-token',refreshToken:'newer-A-refresh',expiresAt:Date.now()+600000,phone:''};
+   release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.idToken,'newer-A-token');
+   assert.equal(h.session.refreshToken,'newer-A-refresh');
+   assert.equal(h.calls.some(c=>c.kind==='commit'),false,'stale signup must not write a profile after A re-logs in');
+   assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:delete')),false);
+ }],
  ['failed profile commit cannot clear a newer signed-in account',async()=>{
    const h=harness(); let release;
    h.commitWait=new Promise(r=>release=r); h.commitError='PERMISSION_DENIED';
