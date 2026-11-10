@@ -3,7 +3,7 @@ import { listingV2HasNoLegacyDescriptionPacking, validCanonicalVideoUri, type Ca
 import { CAMPUSES, FACULTIES, INSTITUTIONS } from '../lib/universityNetwork.ts';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant.ts';
 import { validNearbyGeoCell, validListingApproxLocationAttributes } from '../lib/nearbyMarketplace.ts';
-import { assertFirebaseRequestSessionCurrent } from '../lib/firebaseSharedSessionGuard';
+import { assertFirebaseRequestSessionCurrent, type FirebaseSessionIdentity } from '../lib/firebaseSharedSessionGuard';
 import type { DeliveryMethod, MeetingPoint, Product, ProductCategory, ProductStatus } from '../types/index.ts';
 import { FirebaseRestClient, type FirestoreDocument, type QueryFilter } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
@@ -31,6 +31,13 @@ function getClient() {
   const client = new FirebaseRestClient(getFirebaseConfig());
   if (!client.currentSession?.uid) throw new Error('AUTH_REQUIRED');
   return client;
+}
+
+// A read can outlive logout, A→B, or A→logout→A even when individual
+// Firestore calls were authenticated. Never return/cache old private listings.
+function assertListingReadSessionCurrent(client: FirebaseRestClient, requestSession: FirebaseSessionIdentity | null) {
+  assertFirebaseRequestSessionCurrent(requestSession, client.currentSession,
+    new FirebaseRestClient(getFirebaseConfig()).currentSession);
 }
 
 function hasValue(value: unknown) {
@@ -257,12 +264,16 @@ export const canonicalListingsBackend = {
 
   async loadMine(limit = 50) {
     const client = getClient();
-    const uid = client.currentSession!.uid;
-    return client.runQuery<CanonicalListingV2>('listings_v2', [{ field: 'seller_id', op: 'EQUAL', value: uid }], [{ field: 'updated_at', direction: 'DESCENDING' }], Math.max(1, Math.min(100, limit)));
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
+    const documents = await client.runQuery<CanonicalListingV2>('listings_v2', [{ field: 'seller_id', op: 'EQUAL', value: uid }], [{ field: 'updated_at', direction: 'DESCENDING' }], Math.max(1, Math.min(100, limit)));
+    assertListingReadSessionCurrent(client, requestSession);
+    return documents;
   },
 
   async loadMarketplaceProducts(input: { campusId?: string; institutionId?: string; cityId?: string; limitPerScope?: number } = {}) {
     const client = getClient();
+    const requestSession = client.currentSession;
     const limit = Math.max(5, Math.min(50, input.limitPerScope || 30));
     const queries: Array<Promise<FirestoreDocument<CanonicalListingV2>[]>> = [];
     if (input.campusId) queries.push(queryApproved(client, 'campus_id', input.campusId, limit));
@@ -273,7 +284,9 @@ export const canonicalListingsBackend = {
     const [sets, mine] = await Promise.all([Promise.all(queries), minePromise]);
     const byId = new Map<string, FirestoreDocument<CanonicalListingV2>>();
     for (const doc of [...sets.flat(), ...mine]) byId.set(doc.id, doc);
-    return productsForDocuments(client, [...byId.values()]);
+    const products = await productsForDocuments(client, [...byId.values()]);
+    assertListingReadSessionCurrent(client, requestSession);
+    return products;
   },
 
   async loadNearbyProducts(input: { geoCells: string[]; limitPerCell?: number; force?: boolean }) {
@@ -281,7 +294,8 @@ export const canonicalListingsBackend = {
     if (!cells.length) return [] as Product[];
     const limit = Math.max(4, Math.min(15, input.limitPerCell || 10));
     const client = getClient();
-    const uid = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
     const cacheKey = `${uid}#${cells.join('|')}#${limit}`;
     const cached = nearbyCache.get(cacheKey);
     if (!input.force && cached && cached.expiresAt > Date.now()) return cached.products;
@@ -297,6 +311,7 @@ export const canonicalListingsBackend = {
     const byId = new Map<string, FirestoreDocument<CanonicalListingV2>>();
     for (const doc of [...sets.flat(), ...ownNearby]) byId.set(doc.id, doc);
     const products = await productsForDocuments(client, [...byId.values()]);
+    assertListingReadSessionCurrent(client, requestSession);
     nearbyCache.set(cacheKey, { products, expiresAt: Date.now() + NEARBY_CACHE_TTL_MS });
     return products;
   },
