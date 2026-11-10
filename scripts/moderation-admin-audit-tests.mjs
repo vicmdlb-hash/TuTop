@@ -43,6 +43,8 @@ assert.equal(badInstitution.structurally_valid_active_admin_present, false);
 assert.throws(() => summarizeModerationAdminInventory({ admins: [] }), /MODERATION_ADMIN_INVENTORY_INVALID/);
 assert.throws(() => summarizeModerationAdminInventory([{ error: { code: 403 } }]), /MODERATION_ADMIN_INVENTORY_ERROR/);
 assert.throws(() => summarizeModerationAdminInventory([{ document: { fields: null } }]), /MODERATION_ADMIN_DOCUMENT_INVALID/);
+assert.throws(() => summarizeModerationAdminInventory([{ document: { fields: { role: { stringValue: 'moderator' } } } }]), /MODERATION_ADMIN_ACTIVE_FLAG_UNVERIFIED/);
+assert.throws(() => summarizeModerationAdminInventory([{ document: { fields: { active: { stringValue: 'true' } } } }]), /MODERATION_ADMIN_ACTIVE_FLAG_UNVERIFIED/);
 assert.equal(summarizeModerationAdminInventory(Array.from({ length: 999 }, () => admin({ active: false }))).admins_total, 999);
 assert.throws(
   () => summarizeModerationAdminInventory(Array.from({ length: 1000 }, () => admin())),
