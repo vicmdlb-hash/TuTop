@@ -135,6 +135,8 @@ const commonSteps = [
   [process.execPath, ['--experimental-strip-types', 'scripts/national-listing-boundary-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/national-verification-evidence-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/topi-address-privacy-tests.mjs']],
+  [process.execPath, ['scripts/topi-consumer-support-091-contract-tests.mjs']],
+  [process.execPath, ['scripts/topi-assistant-account-isolation-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/photo-decode-cleanup-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/topi-all-ages-provider-gate-tests.mjs']],
   [process.execPath, ['scripts/guardian-revocation-preflight-tests.mjs']],
@@ -154,8 +156,6 @@ const commonSteps = [
 const milestoneSteps = packageVersion === '0.9.1-beta.0'
   ? [
       [process.execPath, ['scripts/nearby-topi-091-contract-tests.mjs']],
-      [process.execPath, ['scripts/topi-consumer-support-091-contract-tests.mjs']],
-      [process.execPath, ['scripts/topi-assistant-account-isolation-tests.mjs']],
       [process.execPath, ['scripts/topi-app-check-091-contract-tests.mjs']],
       [process.execPath, ['scripts/release-091-contract-tests.mjs']],
       [process.execPath, ['scripts/runtime-freeze-promotion-contract-tests.mjs']],
