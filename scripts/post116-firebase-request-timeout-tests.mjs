@@ -22,7 +22,9 @@ assert.doesNotMatch(auth, /\bfetch\s*\(/);
 assert.match(gate, /FIREBASE_REQUEST_TIMEOUT/);
 assert.match(auth, /if \(isFirebaseRequestTimeout\(error\)\) throw error;[\s\S]*accounts:delete/);
 
-assert.match(listings, /finally \{\s*inFlight = false;\s*\}/);
+assert.match(listings, /finally \\{\\s*inFlight = false;[\\s\\S]*?if \\(replay\\) void sync\\(true\\);\\s*\\}/);
+assert.match(listings, /if \\(inFlight\\) \\{ queuedRefresh = true; return; \\}/);
+assert.match(listings, /ownerEpoch === expectedEpoch && useAppStore\\.getState\\(\\)\\.user\\.id === expectedUid/);
 assert.match(listings, /window\.addEventListener\('online', online\)/);
 assert.match(listings, /document\.addEventListener\('visibilitychange', visible\)/);
 assert.match(nearby, /const serial = \+\+requestSerial/);
