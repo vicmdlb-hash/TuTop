@@ -7,6 +7,7 @@ import { missingRequiredNationalFields, nationalFieldsFor, normalizeNationalAttr
 import type { CanonicalListingV2, ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import { smartPriceFromTuTop } from '../lib/smartPricing';
 import { startTopiDictation } from '../lib/topiVoice';
+import { topiDraftResultIsCurrent } from '../lib/topiDraftResultGate';
 import { isForbiddenProductText, MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
 import { withPublicationSessionRecovery } from '../lib/publicationRecovery';
 import { clearDurablePublishDraft, readDurablePublishDraft, writeDurablePublishDraft } from '../lib/publishDraftPersistence';
@@ -125,6 +126,7 @@ export default function NationalPublishScreen() {
   const videoRef = useRef<HTMLInputElement>(null);
   const locationRequestSerial = useRef(0);
   const locationPublicationRevocationEpoch = useRef(0);
+  const topiRequestSerial = useRef(0);
   const nativeDevice = isNativeDeviceRuntime();
   const videoInfraEnabled = mediaStorageEnabled();
   const initialDraft = useMemo(() => readPublishDraft(user.id), [user.id]);
@@ -153,6 +155,17 @@ export default function NationalPublishScreen() {
   const [voiceStatus, setVoiceStatus] = useState<'idle' | 'listening'>('idle');
   const [approxLocation, setApproxLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
   const [locationOptIn, setLocationOptIn] = useState(Boolean(initialDraft?.locationOptIn));
+
+  // Compare the CURRENT editor values, not the old async closure. Suggestions
+  // may not overwrite user edits made while Topi was composing a draft.
+  const topiDraftVersion = useMemo(() => JSON.stringify([
+    assistantText, title, description, price, quantity, category, condition,
+    negotiable, scope, deliveryMethods, meetingPointId, attributes, locationOptIn,
+  ]), [assistantText, title, description, price, quantity, category, condition,
+    negotiable, scope, deliveryMethods, meetingPointId, attributes, locationOptIn]);
+  const topiDraftVersionRef = useRef(topiDraftVersion);
+  topiDraftVersionRef.current = topiDraftVersion;
+  useEffect(() => () => { topiRequestSerial.current += 1; }, [user.id]);
 
   // Invalidate in-flight geolocation when the form unmounts or its UID changes.
   // The App keys Publish by UID, but a pending browser/native callback can outlive it.
@@ -260,6 +273,14 @@ export default function NationalPublishScreen() {
     if (text.length < 3) return setMessage('Cuéntale a Topi qué quieres vender en una frase.');
     if (isForbiddenProductText(text)) return setMessage('Ese tipo de artículo o servicio no está permitido en TuTop. No se creó ningún borrador.');
 
+    const requestUid = user.id;
+    const requestSerial = ++topiRequestSerial.current;
+    const requestDraftVersion = topiDraftVersionRef.current;
+    const isCurrentRequest = () => topiDraftResultIsCurrent(
+      { uid: requestUid, serial: requestSerial, draftVersion: requestDraftVersion },
+      { uid: useAppStore.getState().user.id, serial: topiRequestSerial.current,
+        draftVersion: topiDraftVersionRef.current },
+    );
     setTopiBusy(true);
     setMessage(null);
     try {
@@ -275,6 +296,7 @@ export default function NationalPublishScreen() {
           visibility_scope: scope,
         },
       });
+      if (!isCurrentRequest()) return;
       const suggestion = result.compose;
       if (!suggestion) return setMessage('Topi no encontró datos seguros para completar. Puedes seguir manualmente.');
 
@@ -320,6 +342,7 @@ export default function NationalPublishScreen() {
       else if (result.provider === 'private-endpoint') setMessage(`Topi conectado completó el borrador mediante el endpoint privado. Revisa los datos antes de publicar.${privacyNote}${structuredNote}`);
       else setMessage('Topi usó la guía local. Esta respuesta no se presenta como Firebase AI.');
     } catch (error) {
+      if (!isCurrentRequest()) return;
       setTopiSource(null);
       setTopiProvider(null);
       const status = nativeTopiAIStatus();
@@ -330,7 +353,8 @@ export default function NationalPublishScreen() {
         setMessage(`Topi no pudo completar el borrador: ${aiFailureLabel(status.reason)}.`);
       }
     } finally {
-      setTopiBusy(false);
+      if (topiRequestSerial.current === requestSerial &&
+          useAppStore.getState().user.id === requestUid) setTopiBusy(false);
     }
   };
 
