@@ -119,7 +119,10 @@ function MobileApp() {
   const transitionKey = surface || activeTab;
 
   return (
-    <div className="app-shell">
+    // A UID switch must discard ALL account-local component state immediately:
+    // WelcomeTour, profile edit fields, Wallet lazy history, Inbox search and Topi.
+    // Keying only the animated tab would preserve stale account A exit frames.
+    <div key={user.id} className="app-shell">
       <OfflineBanner />
       <WelcomeTour />
       {showFeedUtilities && (
