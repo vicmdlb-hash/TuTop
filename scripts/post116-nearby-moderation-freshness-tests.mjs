@@ -61,7 +61,7 @@ const events = {
     for (const callback of uiListeners.get(event.type) || []) callback(event);
   },
 };
-const backend = {
+const syntheticCatalogBackend = {
   loadMarketplaceProducts: () => new Promise((resolve) => deferredReads.push(resolve)),
 };
 const vmModule = { exports: {} };
@@ -69,7 +69,7 @@ runInNewContext(rendered, {
   module: vmModule, exports: vmModule.exports,
   require(name) {
     if (name === 'react') return { useEffect(effect) { cleanup = effect(); } };
-    if (name === '../services/canonicalListingsBackend') return { canonicalListingsBackend: backend };
+    if (name === '../services/canonicalListingsBackend') return { canonicalListingsBackend: syntheticCatalogBackend };
     if (name === '../services/nationalBackend') return { nationalSchemaEnabled: () => true };
     if (name === '../store/useAppStore') return { useAppStore: fakeStore };
     throw new Error('Unexpected base hydrator dependency ' + name);
