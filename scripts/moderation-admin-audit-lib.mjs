@@ -27,7 +27,11 @@ export function summarizeModerationAdminInventory(rows) {
     // A capped query must never be mistaken for a complete inventory.
     if (adminsTotal >= PAGE_CAP) throw new Error('MODERATION_ADMIN_INVENTORY_TRUNCATED');
     const fields = doc.fields;
-    if (fields.active?.booleanValue !== true) continue;
+    // Missing/malformed active status cannot justify saying there is no admin.
+    if (typeof fields.active?.booleanValue !== 'boolean') {
+      throw new Error('MODERATION_ADMIN_ACTIVE_FLAG_UNVERIFIED');
+    }
+    if (!fields.active.booleanValue) continue;
     activeAdmins += 1;
     const role = typeof fields.role?.stringValue === 'string' ? fields.role.stringValue.trim() : '';
     const institutionId = typeof fields.institution_id?.stringValue === 'string'
