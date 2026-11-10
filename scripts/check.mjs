@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 const packageVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
 const commonSteps = [
   [process.execPath, ['scripts/verified-email-runtime-tests.mjs']],
+  [process.execPath, ['scripts/publication-fresh-identity-contract-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/account-recovery-tests.mjs']],
   [process.execPath, ['scripts/post120-admin-account-status-contract-tests.mjs']],
   [process.execPath, ['scripts/post120-device-health-panel-tests.mjs']],
