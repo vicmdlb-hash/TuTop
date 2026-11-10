@@ -21,6 +21,7 @@ const commonSteps = [
   [process.execPath, ['scripts/post120-accessibility-hardening-tests.mjs']],
   [process.execPath, ['scripts/post116-nearby-moderation-freshness-tests.mjs']],
   [process.execPath, ['scripts/post116-seller-moderation-truth-tests.mjs']],
+  [process.execPath, ['scripts/moderation-admin-audit-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/institutional-moderation-tests.mjs']],
   [process.execPath, ['scripts/post116-pr88-moderation-privacy-integration-tests.mjs']],
   [process.execPath, ['scripts/post116-listing-moderation-race-tests.mjs']],
