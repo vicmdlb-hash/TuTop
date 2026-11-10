@@ -65,6 +65,12 @@ export default function TopiSupportAssistant() {
   };
   const close = () => {
     invalidatePendingAnswer();
+    // Closing a private support dialog must discard questions and answers,
+    // not just hide them for the next person who opens the floating assistant.
+    setQuestion('');
+    setAnswer(null);
+    setVoiceNote(null);
+    setRoute(['root']);
     setOpen(false);
   };
 
