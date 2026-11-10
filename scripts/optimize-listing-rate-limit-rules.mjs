@@ -32,10 +32,28 @@ const helper = `    function listingRateLimitConsumed() {
           ))
         );
     }
+    // Offer-create uses the same atomic counter contract as listing-create.
+    // The rate_limits document's own create/update Rules validate identity,
+    // deterministic action ID, count cap, timestamps and one-hour rollover.
+    // This helper only proves that the matching offer bucket changed in
+    // the same atomic request; it does not authorize the bucket write.
+    function offerRateLimitConsumed() {
+      let bucket = /databases/$(database)/documents/rate_limits/$(request.auth.uid + '-offer_create');
+      return existsAfter(bucket)
+        && (
+          (!exists(bucket) && getAfter(bucket).data.count == 1)
+          ||
+          (exists(bucket) && (
+            getAfter(bucket).data.count == get(bucket).data.count + 1
+            || (getAfter(bucket).data.count == 1 && getAfter(bucket).data.window_start != get(bucket).data.window_start)
+          ))
+        );
+    }
 
 ${usersMarker}`;
-replaceOnce(usersMarker, helper, 'listing lightweight rate helper');
+replaceOnce(usersMarker, helper, 'listing and offer lightweight rate helpers');
 replaceOnce("rateLimitConsumed('listing_create')", 'listingRateLimitConsumed()', 'listing rate helper call');
+replaceOnce("rateLimitConsumed('offer_create')", 'offerRateLimitConsumed()', 'offer rate helper call');
 
 fs.writeFileSync(path, rules);
 console.log('✅ listings_v2 conserva rate limit atómico dentro del presupuesto de expresiones de Firestore.');
