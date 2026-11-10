@@ -75,6 +75,16 @@ const content = (tree) => collect(tree).filter((n) => typeof n === 'string').joi
 
 button(render(), 'Abrir Topi').props.onClick();
 let dialog = render();
+// Source focus guard + rendered touch-target contract, not physical TalkBack proof.
+assert.match(fs.readFileSync('src/components/TopiSupportAssistant.tsx', 'utf8'),
+  /if \(open\) inputRef\.current\?\.focus\(\)/,
+  'the support dialog must focus its input when opened');
+for (const label of ['Cerrar', 'Dictar pregunta', 'Preguntar a Topi']) {
+  assert.match(String(button(dialog, label)?.props.className), /h-12 w-12/,
+    label + ' must provide a 48px touch target');
+}
+assert.match(String(input(dialog)?.props.className), /min-h-12/,
+  'support input must provide a 48px minimum touch target');
 input(dialog).props.onChange({ target: { value: 'Primera pregunta privada' } });
 dialog = render();
 button(dialog, 'Preguntar a Topi').props.onClick();
