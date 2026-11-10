@@ -6,7 +6,9 @@ const hydrator = fs.readFileSync('src/components/V2NearbyListingsHydrator.tsx','
 const explore = fs.readFileSync('src/components/ExploreScreen.tsx','utf8');
 
 assert.match(backend, /force\?: boolean/);
-assert.match(backend, /if \(!input\.force && cached && cached\.expiresAt > Date\.now\(\)\) return cached\.products/);
+assert.match(backend, /if \(!input\.force && cached && cached\.expiresAt > Date\.now\(\)\s*&& sameFirebaseSession\(cached\.session, requestSession\)\) return cached\.products/);
+assert.match(backend, /nearbyCache = new Map<string, \{ products: Product\[\]; expiresAt: number; session: FirebaseSessionIdentity \}>\(\)/);
+assert.match(backend, /nearbyCache\.set\(cacheKey, \{ products, expiresAt: Date\.now\(\) \+ NEARBY_CACHE_TTL_MS, session: requestSession! \}\)/);
 
 assert.match(hydrator, /const hydrate = async \(location: ApproxLocation, force = false\)/);
 assert.match(hydrator, /loadNearbyProducts\(\{ geoCells: cells, limitPerCell: 10, force \}\)/);
