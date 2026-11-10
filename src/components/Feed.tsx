@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Bell, BookmarkPlus, Building2, Clock3, Globe2, Heart, ListFilter, LocateFixed, MapPin, PlusCircle, Search, SlidersHorizontal, Sparkles, Store, X } from 'lucide-react';
 import { ACCOUNT_LOCAL_KEYS, readAccountLocalJson, readAccountLocalList, writeAccountLocalJson, writeAccountLocalList } from '../lib/accountLocalState';
-import { NEARBY_RADIUS_OPTIONS, getCachedApproxLocation, productDistanceKm, requestApproxLocation, withinRadius, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { NEARBY_LOCATION_EVENT, NEARBY_LOCATION_CLEARED_EVENT, NEARBY_RADIUS_OPTIONS, getCachedApproxLocation, productDistanceKm, requestApproxLocation, withinRadius, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant';
 import { parseListingDescription } from '../lib/listingDetails';
 import { isPublicDiscoveryProduct } from '../lib/publicDiscovery';
@@ -103,6 +103,24 @@ export default function Feed() {
     setViewerLocation(scoped);
     setLocationStatus(scoped ? 'ready' : 'fallback');
     setSearchHistory(readAccountLocalList(ACCOUNT_LOCAL_KEYS.searchHistory, user.id, 6));
+    const onLocation = (event: Event) => {
+      const location = (event as CustomEvent<ScopedApproxLocationEvent>).detail;
+      if (location?.owner_uid !== user.id) return;
+      setViewerLocation(location);
+      setLocationStatus('ready');
+    };
+    const onLocationCleared = (event: Event) => {
+      const clearedUid = (event as CustomEvent<{ owner_uid: string | null }>).detail?.owner_uid;
+      if (clearedUid && clearedUid !== user.id) return;
+      setViewerLocation(null);
+      setLocationStatus('fallback');
+    };
+    window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
+    window.addEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
+    return () => {
+      window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
+      window.removeEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
+    };
   }, [user.id]);
 
   const requestLocationAgain = async () => {

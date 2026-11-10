@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Compass, Heart, Loader2, MapPin, Search, SlidersHorizontal, TriangleAlert } from 'lucide-react';
 import { MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
 import { isPublicDiscoveryProduct } from '../lib/publicDiscovery';
-import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, nearbyGeoCells, nearbyLocationPermission, productDistanceKm, requestApproxLocation, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
+import { NEARBY_LOCATION_EVENT, NEARBY_LOCATION_CLEARED_EVENT, getCachedApproxLocation, nearbyGeoCells, nearbyLocationPermission, productDistanceKm, requestApproxLocation, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { useAppStore } from '../store/useAppStore';
@@ -32,6 +32,8 @@ export default function ExploreScreen() {
   const [nearbyBusy, setNearbyBusy] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [nearbyRefreshKey, setNearbyRefreshKey] = useState(0);
+  // A revoked location must invalidate pending responses before React effect cleanup.
+  const nearbyRequestEpoch = useRef(0);
 
   useEffect(() => {
     setLocation(getCachedApproxLocation(user.id));
@@ -45,13 +47,28 @@ export default function ExploreScreen() {
       setLocation(detail);
       setLocationMessage(null);
     };
+    const onLocationCleared = (event: Event) => {
+      const clearedUid = (event as CustomEvent<{ owner_uid: string | null }>).detail?.owner_uid;
+      if (clearedUid && clearedUid !== user.id) return;
+      nearbyRequestEpoch.current += 1;
+      setLocation(null);
+      setNearbyProducts([]);
+      setNearbyBusy(false);
+      setNearbyError(null);
+      setLocationMessage('Ubicación aproximada desactivada. Puedes seguir explorando por campus o ciudad.');
+    };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
-    return () => window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
+    window.addEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
+    return () => {
+      window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
+      window.removeEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
+    };
   }, [user.id]);
 
   useEffect(() => {
     const onBaseHydrated = () => {
       if (scope !== 'nearby') return;
+      nearbyRequestEpoch.current += 1;
       setNearbyProducts([]);
       setNearbyError(null);
       setNearbyRefreshKey((current) => current + 1);
@@ -69,6 +86,7 @@ export default function ExploreScreen() {
       if (document.visibilityState !== 'visible') return;
       if (Date.now() - lastRequested < 60_000) return;
       lastRequested = Date.now();
+      nearbyRequestEpoch.current += 1;
       setNearbyProducts([]);
       setNearbyError(null);
       setNearbyRefreshKey((current) => current + 1);
@@ -84,17 +102,21 @@ export default function ExploreScreen() {
   useEffect(() => {
     if (scope !== 'nearby' || !location) return;
     let active = true;
+    const requestEpoch = ++nearbyRequestEpoch.current;
+    const requestUid = user.id;
+    const stillCurrent = () => active && requestEpoch === nearbyRequestEpoch.current
+      && useAppStore.getState().user.id === requestUid;
     setNearbyBusy(true);
     setNearbyError(null);
     const cells = nearbyGeoCells(location);
     canonicalListingsBackend.loadNearbyProducts({ geoCells: cells, limitPerCell: 15, force: true })
-      .then((items) => { if (active) setNearbyProducts(items); })
+      .then((items) => { if (stillCurrent()) setNearbyProducts(items); })
       .catch(() => {
-        if (!active) return;
+        if (!stillCurrent()) return;
         setNearbyProducts([]);
         setNearbyError('No pudimos actualizar las publicaciones cercanas. Revisa tu conexión o vuelve a intentarlo.');
       })
-      .finally(() => { if (active) setNearbyBusy(false); });
+      .finally(() => { if (stillCurrent()) setNearbyBusy(false); });
     return () => { active = false; };
   }, [scope, location?.latitude, location?.longitude, location?.captured_at, nearbyRefreshKey, user.id]);
 
@@ -165,6 +187,7 @@ export default function ExploreScreen() {
   };
 
   const refreshNearby = () => {
+    nearbyRequestEpoch.current += 1;
     setNearbyError(null);
     setNearbyProducts([]);
     setNearbyRefreshKey((current) => current + 1);

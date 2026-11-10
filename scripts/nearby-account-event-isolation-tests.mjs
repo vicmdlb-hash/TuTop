@@ -493,7 +493,29 @@ assert.equal(hydrationSubscriptions.size, 1);
 hydrationCleanup();
 assert.equal(hydrationSubscriptions.size, 0, 'cleanup must remove the owner subscription');
 
-console.log('PASS real Nearby cache/events isolate A/B and stale A async callbacks; no device or Firebase usage');
+// All mounted consumer views must honor scoped revocation, not only the global
+// Nearby listings hydrator. Prohibit late Explore responses after a revoke.
+const feedLocationView = fs.readFileSync('src/components/Feed.tsx', 'utf8');
+const exploreLocationView = fs.readFileSync('src/components/ExploreScreen.tsx', 'utf8');
+for (const [name, view] of [['Feed', feedLocationView], ['Explore', exploreLocationView]]) {
+  assert.match(view, /NEARBY_LOCATION_CLEARED_EVENT/, name + ' must import location revocation');
+  assert.match(view, /window\.addEventListener\(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared\)/,
+    name + ' must react to live location revocation');
+  assert.match(view, /window\.removeEventListener\(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared\)/,
+    name + ' must unsubscribe on cleanup');
+  assert.match(view, /if \(clearedUid && clearedUid !== user\.id\) return;/,
+    name + ' must isolate revocation by current account');
+}
+assert.match(feedLocationView, /setViewerLocation\(null\);\s*setLocationStatus\('fallback'\)/,
+  'Feed must immediately clear current coordinates on revocation');
+assert.match(exploreLocationView, /nearbyRequestEpoch\.current \+= 1;\s*setLocation\(null\);\s*setNearbyProducts\(\[\]\)/,
+  'Explore must cancel pending Nearby reads and clear local discovery state');
+assert.match(exploreLocationView, /requestEpoch === nearbyRequestEpoch\.current/,
+  'late Nearby responses must not return after revocation or refresh');
+assert.match(exploreLocationView, /if \(stillCurrent\(\)\) setNearbyProducts\(items\)/,
+  'Nearby results must be committed only for the same active request/owner');
+
+console.log('PASS real Nearby cache/events isolate A/B and stale A async callbacks; mounted Feed/Explore location revocation contracts verified; no device or Firebase usage');
 
 
 // Execute the actual base V2 hydrator (not just a source regex) with simulated
