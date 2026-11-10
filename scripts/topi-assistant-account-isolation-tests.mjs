@@ -30,6 +30,8 @@ const useRef = (initial) => {
 const jsx = (type, props) => ({ type, props: props || {} });
 const pending = [];
 const dictations = [];
+let dictationStops = 0;
+let unmount = () => {};
 const mockSupport = {
   answerConsumerSupport: (question, route) => new Promise((resolve) => pending.push({ question, route, resolve })),
 };
@@ -37,10 +39,10 @@ const module = { exports: {} };
 vm.runInNewContext(js, {
   module, exports: module.exports,
   require(name) {
-    if (name === 'react') return { useState, useRef, useMemo: (compute) => compute() };
+    if (name === 'react') return { useState, useRef, useMemo: (compute) => compute(), useEffect: (effect) => { unmount = effect() || (() => {}); } };
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
     if (name === 'lucide-react') return {};
-    if (name === '../lib/topiVoice') return { startTopiDictation: (callbacks) => { dictations.push(callbacks); } };
+    if (name === '../lib/topiVoice') return { startTopiDictation: (callbacks) => { dictations.push(callbacks); return () => { dictationStops += 1; }; } };
     if (name === '../lib/supportDecisionTree') return {
       supportNode: (route) => ({ title: route, prompt: 'Ayuda', choices: route === 'root'
         ? [{ id: 'security', next: 'security', label: 'Seguridad' }] : [] }),
@@ -118,6 +120,7 @@ dialog = render();
 button(dialog, 'Dictar pregunta').props.onClick();
 assert.equal(dictations.length, 1);
 button(render(), 'Inicio').props.onClick();
+assert.equal(dictationStops, 1, 'route navigation must actually STOP the microphone');
 dictations[0].onText('DICTADO_DE_LA_RUTA_ANTERIOR');
 dictations[0].onStatus('listening');
 assert(!input(render()).props.value.includes('DICTADO_DE_LA_RUTA_ANTERIOR'),
@@ -129,6 +132,7 @@ button(dialog, 'Dictar pregunta').props.onClick();
 assert.equal(dictations.length, 2);
 input(dialog).props.onChange({ target: { value: 'Consulta recién enviada' } });
 button(render(), 'Preguntar a Topi').props.onClick();
+assert.equal(dictationStops, 2, 'send must STOP the microphone');
 assert.equal(pending.length, 4);
 dictations[1].onText('TEXTO_TARDIO_DESPUES_DE_ENVIAR');
 assert(!input(render()).props.value.includes('TEXTO_TARDIO_DESPUES_DE_ENVIAR'),
@@ -136,6 +140,16 @@ assert(!input(render()).props.value.includes('TEXTO_TARDIO_DESPUES_DE_ENVIAR'),
 pending[3].resolve({ source: 'guided', route: 'root', text: 'Respuesta final sin mezcla' });
 await Promise.resolve();
 await Promise.resolve();
+
+// Logout/UID remount must also stop active native/Web Speech capture.
+dialog = render();
+button(dialog, 'Dictar pregunta').props.onClick();
+assert.equal(dictations.length, 3);
+unmount();
+assert.equal(dictationStops, 3, 'unmount must STOP the microphone');
+dictations[2].onText('MALICIOUS_POST_UNMOUNT');
+assert(!input(render()).props.value.includes('MALICIOUS_POST_UNMOUNT'),
+  'post-unmount speech callback must be ignored');
 
 // Code-level contract: React remount by UID drops all state when A switches to B.
 assert.match(app, /<Feed key=\{user\.id\}/);
