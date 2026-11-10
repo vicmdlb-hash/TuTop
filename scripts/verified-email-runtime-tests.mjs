@@ -25,13 +25,13 @@ function harness() {
   let session = null;
   let privateEmail = '';
   const calls = [];
-  let commitError, sendError, lookupWait, signInWait, updateWait, profileWait, lookupVerified=true, lookupEmail='a@example.test';
+  let commitError, sendError, commitWait, deleteWait, signupWait, sendWait, lookupWait, signInWait, updateWait, profileWait, lookupVerified=true, lookupEmail='a@example.test';
   class Client {
     get currentSession() { return session && {...session}; }
     persistSession(value) { session = value; }
     signOut() { session = null; }
     encodeDocumentForWrite(path, data) { return {path,data}; }
-    async commit(writes) { calls.push({kind:'commit',writes}); if(commitError) throw new Error(commitError); }
+    async commit(writes) { calls.push({kind:'commit',writes}); if(commitWait) await commitWait; if(commitError) throw new Error(commitError); }
     async getDocument(path) {
       if(profileWait) await profileWait;
       if(String(path).startsWith('user_private/')) return {data:{uid:'u1',telefono:'+522461234567',auth_mode:'phone_password_beta',...(privateEmail?{institutional_email:privateEmail}:{})}};
@@ -50,6 +50,9 @@ function harness() {
   const fetch = async (url, options) => {
     const body = options.body instanceof URLSearchParams ? Object.fromEntries(options.body) : JSON.parse(options.body);
     calls.push({kind:url,body});
+    if(url.includes('accounts:signUp') && signupWait) await signupWait;
+    if(url.includes('accounts:delete') && deleteWait) await deleteWait;
+    if(url.includes('sendOobCode') && sendWait) await sendWait;
     if(url.includes('accounts:lookup') && lookupWait) await lookupWait;
     if(url.includes('accounts:signInWithPassword') && signInWait) await signInWait;
     if(url.includes('accounts:update') && updateWait) await updateWait;
@@ -65,9 +68,17 @@ function harness() {
   const isFirebaseRequestTimeout = (error) => error?.message === 'FIREBASE_REQUEST_TIMEOUT' || error?.code === 'FIREBASE_REQUEST_TIMEOUT';
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
   const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','readFirebaseResponseText','isFirebaseRequestTimeout','nationalVerificationIndicators','nationalAcademicMetadata','validateBetaAcademicCatalog','INSTITUTIONS','CAMPUSES',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,readFirebaseResponseText,isFirebaseRequestTimeout,nationalVerificationIndicators,nationalAcademicMetadata,validateBetaAcademicCatalog,INSTITUTIONS,CAMPUSES);
-  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set updateWait(v){updateWait=v;},set profileWait(v){profileWait=v;}};
+  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set commitWait(v){commitWait=v;},set deleteWait(v){deleteWait=v;},set signupWait(v){signupWait=v;},set sendWait(v){sendWait=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set updateWait(v){updateWait=v;},set profileWait(v){profileWait=v;}};
 }
 const profile={nombre:'Tester',facultad:'Campus',institution_id:'uatx',institution_name:'Universidad Autónoma de Tlaxcala',campus_id:'uatx-riberena',campus_name:'Campus Ribereña'};
+const replacementSession={uid:'u2',idToken:'newer-B-token',refreshToken:'newer-B-refresh',expiresAt:Date.now()+600000,phone:''};
+async function waitForCall(h, fragment) {
+  for(let i=0;i<30;i++) {
+    if(h.calls.some(c=>String(c.kind).includes(fragment))) return;
+    await new Promise(r=>setImmediate(r));
+  }
+  assert.fail('synthetic request was not reached: '+fragment);
+}
 const tests = [
  ['optional Mexican phone is normalized before profile commit',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',{...profile,phone:'246 123 4567'});
@@ -140,6 +151,47 @@ const tests = [
  ['ambiguous profile commit timeout preserves Auth session and avoids destructive rollback',async()=>{
    const h=harness(); h.commitError='FIREBASE_REQUEST_TIMEOUT'; await assert.rejects(h.auth.register('a@example.test','password123',profile),/FIREBASE_REQUEST_TIMEOUT/);
    assert.equal(h.session.uid,'u1'); assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,0);
+ }],
+ ['signup response after sign-out cannot restore or commit an old account',async()=>{
+   const h=harness(); let release;
+   h.signupWait=new Promise(r=>release=r);
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'accounts:signUp');
+   h.auth.signOut(); release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session,null);
+   assert.equal(h.calls.some(c=>c.kind==='commit'),false,'stale signup must not start marketplace writes');
+ }],
+ ['failed profile commit cannot clear a newer signed-in account',async()=>{
+   const h=harness(); let release;
+   h.commitWait=new Promise(r=>release=r); h.commitError='PERMISSION_DENIED';
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'commit');
+   h.session={...replacementSession}; release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2');
+   assert.equal(h.calls.filter(c=>String(c.kind).includes('accounts:delete')).length,0,
+     'stale signup must not delete an identity after an account switch');
+ }],
+ ['rollback response cannot clear a newer login',async()=>{
+   const h=harness(); let release;
+   h.commitError='PERMISSION_DENIED';
+   h.deleteWait=new Promise(r=>release=r);
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'accounts:delete');
+   h.session={...replacementSession}; release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2','late Auth rollback must preserve newer login');
+ }],
+ ['verification email response cannot complete a stale signup',async()=>{
+   const h=harness(); let release;
+   h.sendWait=new Promise(r=>release=r);
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'accounts:sendOobCode');
+   h.session={...replacementSession}; release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2');
+   assert.equal(h.calls.filter(c=>String(c.kind).includes('accounts:delete')).length,0);
  }],
  ['lookup response after sign-out cannot restore session',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',profile);
