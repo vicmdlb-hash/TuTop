@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, HelpCircle, Loader2, Mic, RotateCcw, Send, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { startTopiDictation } from '../lib/topiVoice';
 import { supportNode, type SupportRouteId } from '../lib/supportDecisionTree';
@@ -17,15 +17,31 @@ export default function TopiSupportAssistant() {
   // A delayed AI/support reply must never hydrate another decision-tree route.
   const requestSerial = useRef(0);
   const dictationSerial = useRef(0);
+  const stopDictation = useRef<(() => void) | null>(null);
   const guidedBeta = String(import.meta.env.VITE_TUTOP_TOPI_GUIDED_BETA || '').toLowerCase() === 'true'
     && String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').toLowerCase() === 'staging';
   const currentId = route[route.length - 1] || 'root';
   const node = useMemo(() => supportNode(currentId), [currentId]);
 
-  const invalidatePendingAnswer = () => {
+  const cancelDictation = () => {
+    dictationSerial.current += 1;
+    const stop = stopDictation.current;
+    stopDictation.current = null;
+    // The native/Web Speech recognizer may still be listening; stopping it is
+    // a privacy requirement, not merely a UI-state reset.
+    stop?.();
+    setListening(false);
+  };
+  useEffect(() => () => {
     requestSerial.current += 1;
     dictationSerial.current += 1;
-    setListening(false);
+    stopDictation.current?.();
+    stopDictation.current = null;
+  }, []);
+
+  const invalidatePendingAnswer = () => {
+    requestSerial.current += 1;
+    cancelDictation();
     setBusy(false);
   };
   const choose = (next: SupportRouteId) => {
@@ -56,9 +72,8 @@ export default function TopiSupportAssistant() {
     const clean = question.trim();
     if (clean.length < 3 || busy) return;
     const serial = ++requestSerial.current;
-    // A late speech callback must not append words after the question was submitted.
-    dictationSerial.current += 1;
-    setListening(false);
+    // A submitted question must also terminate native microphone listening.
+    cancelDictation();
     setBusy(true);
     try {
       const result = await answerConsumerSupport(clean, currentId);
@@ -72,9 +87,10 @@ export default function TopiSupportAssistant() {
   };
 
   const dictate = () => {
+    cancelDictation();
     setVoiceNote(null);
     const serial = ++dictationSerial.current;
-    startTopiDictation({
+    stopDictation.current = startTopiDictation({
       onText: (text) => {
         if (serial !== dictationSerial.current) return;
         setQuestion((current) => `${current}${current ? ' ' : ''}${text}`.slice(0, 900));
