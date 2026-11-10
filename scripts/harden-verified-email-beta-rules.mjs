@@ -101,8 +101,8 @@ const gates = [
     'legacy delivery confirmation',
   ],
   [
-    `      allow create: if signedIn() && notSuspended()\n        && rateLimitConsumed('offer_create')`,
-    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && rateLimitConsumed('offer_create')`,
+    `      allow create: if signedIn() && notSuspended()\n        && offerRateLimitConsumed()`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && offerRateLimitConsumed()`,
     'offer create',
   ],
   [
