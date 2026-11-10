@@ -14,37 +14,55 @@ export default function TopiSupportAssistant() {
   const [listening, setListening] = useState(false);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // A delayed AI/support reply must never hydrate another decision-tree route.
+  const requestSerial = useRef(0);
   const guidedBeta = String(import.meta.env.VITE_TUTOP_TOPI_GUIDED_BETA || '').toLowerCase() === 'true'
     && String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').toLowerCase() === 'staging';
   const currentId = route[route.length - 1] || 'root';
   const node = useMemo(() => supportNode(currentId), [currentId]);
 
+  const invalidatePendingAnswer = () => {
+    requestSerial.current += 1;
+    setBusy(false);
+  };
   const choose = (next: SupportRouteId) => {
+    invalidatePendingAnswer();
     setRoute((current) => [...current, next]);
     setAnswer(null);
     setQuestion('');
   };
   const back = () => {
     if (route.length <= 1) return;
+    invalidatePendingAnswer();
     setRoute((current) => current.slice(0, -1));
     setAnswer(null);
     setQuestion('');
   };
   const reset = () => {
+    invalidatePendingAnswer();
     setRoute(['root']);
     setAnswer(null);
     setQuestion('');
+  };
+  const close = () => {
+    invalidatePendingAnswer();
+    setOpen(false);
   };
 
   const ask = async () => {
     const clean = question.trim();
     if (clean.length < 3 || busy) return;
+    const serial = ++requestSerial.current;
     setBusy(true);
     try {
       const result = await answerConsumerSupport(clean, currentId);
+      // Route changed or dialog closed before the network/AI response arrived.
+      if (serial !== requestSerial.current) return;
       setAnswer(result);
       if (result.route !== 'root' && result.route !== currentId) setRoute((current) => [...current, result.route]);
-    } finally { setBusy(false); }
+    } finally {
+      if (serial === requestSerial.current) setBusy(false);
+    }
   };
 
   const dictate = () => {
@@ -85,7 +103,7 @@ export default function TopiSupportAssistant() {
             <h2 className="text-sm font-black">Topi</h2>
             <p className="mt-0.5 text-[9px] text-slate-500">{guidedBeta ? "Guía local de reglas. No es IA generativa ni consulta a proveedores externos de IA." : "Tu amigo para resolver dudas y usar TuTop · guía segura e IA real claramente identificada."}</p>
           </div>
-          <button type="button" onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-xl bg-white/[0.05] text-slate-400" aria-label="Cerrar"><X className="h-4 w-4" /></button>
+          <button type="button" onClick={close} className="grid h-9 w-9 place-items-center rounded-xl bg-white/[0.05] text-slate-400" aria-label="Cerrar"><X className="h-4 w-4" /></button>
         </header>
 
         <div className="max-h-[calc(78vh-72px)] overflow-y-auto p-4">
@@ -103,7 +121,7 @@ export default function TopiSupportAssistant() {
           {node.choices?.length ? (
             <div className="mt-3 grid gap-2">{node.choices.map((choice) => <button key={choice.id} type="button" onClick={() => choose(choice.next)} className="rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-3 text-left text-[10px] font-bold text-slate-200 transition active:scale-[0.99]">{choice.label}</button>)}</div>
           ) : (
-            <div className="mt-3 flex gap-2"><button type="button" onClick={() => setOpen(false)} className="flex-1 rounded-xl bg-emerald-500/10 px-3 py-2.5 text-[9px] font-black text-emerald-200">Ya quedó</button><button type="button" onClick={() => inputRef.current?.focus()} className="flex-1 rounded-xl bg-violet-500/10 px-3 py-2.5 text-[9px] font-black text-violet-200">Preguntar otra cosa</button></div>
+            <div className="mt-3 flex gap-2"><button type="button" onClick={close} className="flex-1 rounded-xl bg-emerald-500/10 px-3 py-2.5 text-[9px] font-black text-emerald-200">Ya quedó</button><button type="button" onClick={() => inputRef.current?.focus()} className="flex-1 rounded-xl bg-violet-500/10 px-3 py-2.5 text-[9px] font-black text-violet-200">Preguntar otra cosa</button></div>
           )}
 
           {answer && (
