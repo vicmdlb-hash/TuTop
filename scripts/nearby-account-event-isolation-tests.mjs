@@ -171,6 +171,8 @@ assert((await active)?.latitude===19.32);
 assert.equal(events.at(-1).detail.owner_uid,B);
 assert.equal(acceptedForB,2);
 lib.clearApproxLocation(A);
+assert.equal(events.at(-1)?.type, 'tutop:approx-location-cleared', 'clear emits a cancellation signal');
+assert.equal(events.at(-1)?.detail.owner_uid, A, 'clear signal cannot disclose coordinates');
 assert.equal(lib.getCachedApproxLocation(B)?.longitude,-98.26,'A cleanup cannot erase B location');
 lib.clearApproxLocation(B);
 assert.equal(lib.getCachedApproxLocation(B),null);
@@ -386,6 +388,7 @@ vm.runInNewContext(hydratorJs, {
       getCachedApproxLocation: (uid) => uid && hydrationCacheAvailable ? loc : null,
       nearbyGeoCells: () => ['g1:1:1'],
       NEARBY_LOCATION_EVENT: 'tutop:approx-location',
+      NEARBY_LOCATION_CLEARED_EVENT: 'tutop:approx-location-cleared',
     };
     if (name === '../services/canonicalListingsBackend') return {
       canonicalListingsBackend: {
@@ -463,6 +466,29 @@ await Promise.resolve();
 await new Promise((resolve) => setImmediate(resolve));
 assert.equal(hydrationState.products.map((product) => product.id).join(','), 'fresh-base-only',
   'in-flight Nearby result cannot reintroduce a listing removed by base refresh');
+// Clearing a location must withdraw Nearby-only results without touching the base.
+mockHydrationWindow.dispatchEvent({ type: 'tutop:approx-location', detail: { ...loc, owner_uid: B } });
+assert.equal(hydrationRequests.length, 7);
+hydrationRequests[6]([{ id: 'B-previously-nearby', updated_at: '2026-10-23T00:00:06Z' }]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(hydrationState.products.length, 2);
+mockHydrationWindow.dispatchEvent({ type: 'tutop:approx-location-cleared', detail: { owner_uid: A } });
+assert.equal(hydrationState.products.length, 2, 'clearing A must not withdraw current B Nearby');
+mockHydrationWindow.dispatchEvent({ type: 'tutop:approx-location-cleared', detail: { owner_uid: B } });
+assert.equal(hydrationState.products.map(product => product.id).join(','), 'fresh-base-only',
+  'clearing B must withdraw its Nearby-only products but preserve base');
+// Clearing while a Nearby request is pending must reject a late response.
+mockHydrationWindow.dispatchEvent({ type: 'tutop:approx-location', detail: { ...loc, owner_uid: B } });
+assert.equal(hydrationRequests.length, 8);
+mockHydrationWindow.dispatchEvent({ type: 'tutop:approx-location-cleared', detail: { owner_uid: B } });
+hydrationRequests[7]([{ id: 'stale-after-location-revocation', updated_at: '2026-10-23T00:00:07Z' }]);
+await Promise.resolve();
+await Promise.resolve();
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(hydrationState.products.map(product => product.id).join(','), 'fresh-base-only',
+  'late Nearby response must not repopulate listings after location revocation');
 assert.equal(hydrationSubscriptions.size, 1);
 hydrationCleanup();
 assert.equal(hydrationSubscriptions.size, 0, 'cleanup must remove the owner subscription');

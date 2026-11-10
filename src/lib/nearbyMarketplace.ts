@@ -11,6 +11,7 @@ export type ApproxLocation = {
 
 const LOCATION_KEY = 'tutop.approx-location.v1';
 export const NEARBY_LOCATION_EVENT = 'tutop:approx-location';
+export const NEARBY_LOCATION_CLEARED_EVENT = 'tutop:approx-location-cleared';
 export const NEARBY_RADIUS_OPTIONS = [5, 10, 25, 50] as const;
 const GEO_CELL_DEGREES = 1;
 // Increment even when no cache exists: pending native/browser location must
@@ -119,6 +120,14 @@ export function clearApproxLocation(ownerUid?: string) {
     if (!parsed.owner_uid || parsed.owner_uid === ownerUid) localStorage.removeItem(LOCATION_KEY);
   } catch {
     try { localStorage.removeItem(LOCATION_KEY); } catch { /* optional cache */ }
+  } finally {
+    // Cancel Nearby reads even when the location cache was already empty.
+    // The event carries only the scoped owner, never precise coordinates.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(NEARBY_LOCATION_CLEARED_EVENT, {
+        detail: { owner_uid: ownerUid || null },
+      }));
+    }
   }
 }
 

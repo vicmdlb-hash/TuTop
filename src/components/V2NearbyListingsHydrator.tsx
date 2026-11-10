@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { getCachedApproxLocation, nearbyGeoCells, NEARBY_LOCATION_EVENT, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
+import { getCachedApproxLocation, nearbyGeoCells, NEARBY_LOCATION_EVENT, NEARBY_LOCATION_CLEARED_EVENT, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { useAppStore } from '../store/useAppStore';
 import type { Product } from '../types';
@@ -73,6 +73,20 @@ export default function V2NearbyListingsHydrator() {
       void hydrate(location);
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
+    const onLocationCleared = (event: Event) => {
+      const clearedOwnerUid = (event as CustomEvent<{ owner_uid: string | null }>).detail?.owner_uid;
+      if (clearedOwnerUid && clearedOwnerUid !== useAppStore.getState().user.id) return;
+      // A location revocation invalidates a pending Nearby response, even
+      // when no products were injected yet. Preserve authoritative base data.
+      requestSerial += 1;
+      if (!nearbyInjectedIds.size) return;
+      const retained = useAppStore.getState().products.filter((product) =>
+        !nearbyInjectedIds.has(product.id) || baseProductIds.has(product.id)
+      );
+      nearbyInjectedIds.clear();
+      useAppStore.setState({ products: retained });
+    };
+    window.addEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
     const onBaseHydrated = () => {
       // A fresh authoritative base snapshot invalidates outstanding Nearby
       // responses even when location consent/cache is absent and no refetch runs.
@@ -87,6 +101,7 @@ export default function V2NearbyListingsHydrator() {
       requestSerial += 1;
       unsubscribeOwner();
       window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
+      window.removeEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
       window.removeEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, onBaseHydrated);
     };
   }, []);
