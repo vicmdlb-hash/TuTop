@@ -6,6 +6,8 @@ import { compileTypescriptFixture } from './typescript-fixture-compiler.mjs';
 // Run the ACTUAL Topi UI with deferred responses and a synthetic React tree.
 // No account, Android hardware, remote model or Firebase is used.
 const app = fs.readFileSync('src/App.tsx', 'utf8');
+assert.match(app, /<div key=\{user\.id\} className="app-shell">/,
+  'all child screens must remount immediately on A→B, including profile, wallet and welcome tour');
 assert.match(app, /<TopiSupportAssistant key=\{user\.id\} \/>/,
   'floating Topi must remount on account change, dropping A private questions/answers');
 
