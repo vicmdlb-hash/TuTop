@@ -38,6 +38,15 @@ assert.match(ui, /startTopiDictation/);
 assert.match(ui, /Firebase AI real, tu pregunta se procesa remotamente/);
 assert.match(ui, /omitió datos de contacto o códigos sensibles detectados/);
 assert.match(ui, /answerConsumerSupport/);
+
+assert.match(ui, /role="dialog" aria-modal="true" aria-labelledby="tutop-topi-dialog-title"/);
+assert.match(ui, /id="tutop-topi-dialog-title"/);
+assert.match(ui, /htmlFor="tutop-topi-support-question"/);
+assert.match(ui, /id="tutop-topi-support-question"/);
+assert.match(ui, /event.key === 'Escape'/);
+assert.match(ui, /source: 'unavailable'/);
+assert.match(ui, /No pudimos responder en este momento/);
+
 assert.doesNotMatch(ui, /Árbol de decisiones \+ IA/);
 assert.doesNotMatch(ui, /Soporte guiado/);
 assert.doesNotMatch(ui, /Ruta guiada/);
