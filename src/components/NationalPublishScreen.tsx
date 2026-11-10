@@ -493,15 +493,25 @@ export default function NationalPublishScreen() {
       let verification;
       try {
         verification = await verifiedEmailBetaAuth.refreshVerificationStatus();
-      } catch (error) {
+      } catch {
         recordDiagnostic('publication', 'publish_identity_refresh_failed');
-        const reason = error instanceof Error ? error.message : String(error);
-        setMessage(`No pudimos actualizar tu sesión de verificación (${reason}). Cierra sesión, vuelve a entrar y reintenta.`);
+        // Auth provider errors can contain URLs or sensitive identifiers.
+        setMessage('No pudimos actualizar tu verificación. Cierra sesión, vuelve a entrar y vuelve a intentarlo.');
+        return;
+      }
+      if (verification.uid !== user.id) {
+        setMessage('La sesión cambió mientras verificábamos tu cuenta. Cierra sesión y vuelve a entrar antes de publicar.');
         return;
       }
       if (!verification.emailVerified) {
         recordDiagnostic('publication', 'publish_email_not_verified');
         setMessage('Esta beta necesita que confirmes el correo de la cuenta antes de publicar. Abre el enlace de verificación y vuelve a tocar Publicar; TuTop actualizará la sesión automáticamente.');
+        return;
+      }
+      // Account gate requires BOTH fresh Firebase Auth claims. Check again
+      // before uploading video or attempting a new listing write.
+      if (verification.phoneVerified !== true) {
+        setMessage('Tu número todavía no aparece verificado en Firebase. Completa la verificación de tu cuenta antes de publicar.');
         return;
       }
 
