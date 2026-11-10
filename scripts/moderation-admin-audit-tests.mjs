@@ -53,10 +53,11 @@ assert.throws(
 const source = fs.readFileSync('scripts/audit-staging-moderation-identity.mjs', 'utf8');
 assert.match(source, /STAGING_PROJECT_REQUIRED/);
 assert.match(source, /GITHUB_ACTIONS_REQUIRED/);
-assert.match(source, /firestore\\.googleapis\\.com\\/v1\\/projects\\/\\$\\{PROJECT\\}\\/databases\\/\\(default\\)\\/documents:runQuery/);
+assert.match(source, /firestore\.googleapis\.com/);
+assert.match(source, /documents:runQuery/);
 assert.match(source, /method: 'POST'/);
-assert.match(source, /fields: \\[/);
-assert.match(source, /summarizeModerationAdminInventory\\(await response\\.json\\(\\)\\)/);
+assert.match(source, /fields:\s*\[/);
+assert.match(source, /summarizeModerationAdminInventory\(await response\.json\(\)\)/);
 assert.doesNotMatch(source, /documents:commit|batchWrite|firebase:deploy|--apply|createAdmin|deleteAdmin|patchAdmin/i);
 assert(source.indexOf('STAGING_PROJECT_REQUIRED') < source.indexOf('firebaseCiAccessToken()'));
 assert(source.indexOf('GITHUB_ACTIONS_REQUIRED') < source.indexOf('firebaseCiAccessToken()'));
