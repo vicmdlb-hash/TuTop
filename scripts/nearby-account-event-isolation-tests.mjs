@@ -284,7 +284,30 @@ assert.match(publish,/ownerUid: requestUid, isOwnerActive: stillCurrent/);
 // Permission or a cached coordinate is not per-listing consent. Require an
 // explicit opt-in at the listing-write call site and sanitize the final payload.
 assert.match(publish,/const location = locationOptIn \? approxLocation : null;/);
-assert.match(publish,/attributes: \{ \.\.\.normalizedAttributes, \.\.\.locationAttributes\(location\) \}/);
+assert.match(publish,/attributes: \{ \.\.\.normalizedAttributes, \.\.\.locationAttributes\(\s*locationPublicationRevocationEpoch\.current === locationEpochAtPublish \? location : null/);
+assert.match(publish,/const locationEpochAtPublish = locationPublicationRevocationEpoch\.current;/,
+  'capture consent epoch before the first publication await');
+assert.match(publish,/locationPublicationRevocationEpoch\.current \+= 1;\s*setLocationOptIn\(false\)/,
+  'explicit listing opt-out must invalidate a pending publish snapshot');
+assert.match(publish,/NEARBY_LOCATION_CLEARED_EVENT/,
+  'Publish must receive location revocation');
+assert.match(publish,/window\.addEventListener\(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared\)/,
+  'Publish must subscribe to location revocation');
+assert.match(publish,/window\.removeEventListener\(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared\)/,
+  'Publish must clean up location revocation listener');
+assert.match(publish,/if \(clearedUid && clearedUid !== user\.id\) return;/,
+  'Publish must not revoke a different account on a shared device');
+assert.match(publish,/locationPublicationRevocationEpoch\.current \+= 1;\s*setApproxLocation\(null\);\s*setLocationOptIn\(false\)/,
+  'global revocation must clear current location and per-listing consent');
+
+const sourceOnlyLocation = { latitude: 19.31, longitude: -98.26 };
+const publicationLocationIfCurrent = (consented, location, generationAtStart, generationNow) =>
+  consented && generationAtStart === generationNow ? location : null;
+assert.deepEqual(publicationLocationIfCurrent(true, sourceOnlyLocation, 0, 0), sourceOnlyLocation);
+assert.equal(publicationLocationIfCurrent(true, sourceOnlyLocation, 0, 1), null,
+  'revocation during upload must drop the captured publication location');
+assert.equal(publicationLocationIfCurrent(false, sourceOnlyLocation, 0, 0), null,
+  'location availability without per-listing opt-in must not publish coordinates');
 const fineLocation = { ...loc, latitude: 19.314159265, longitude: -98.251234567 };
 const optedOutPayload = lib.locationAttributes(null);
 assert.equal(Object.keys(optedOutPayload).length, 0, 'no consent must attach zero location attributes');

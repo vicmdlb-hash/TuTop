@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Camera, CheckCircle2, ChevronDown, Images, Loader2, MapPin, Mic, Plus, ShieldCheck, Sparkles, Video, X } from 'lucide-react';
 import { compressImageForFirestore } from '../lib/imageCompression';
 import { categorySafetyRequirements } from '../lib/marketplaceGovernance';
-import { getCachedApproxLocation, locationAttributes, nearbyLocationPermission, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { NEARBY_LOCATION_CLEARED_EVENT, getCachedApproxLocation, locationAttributes, nearbyLocationPermission, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
 import { missingRequiredNationalFields, nationalFieldsFor, normalizeNationalAttributes } from '../lib/nationalListingFields';
 import type { CanonicalListingV2, ListingDeliveryMethod } from '../lib/listingSchemaV2';
 import { smartPriceFromTuTop } from '../lib/smartPricing';
@@ -124,6 +124,7 @@ export default function NationalPublishScreen() {
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
   const locationRequestSerial = useRef(0);
+  const locationPublicationRevocationEpoch = useRef(0);
   const nativeDevice = isNativeDeviceRuntime();
   const videoInfraEnabled = mediaStorageEnabled();
   const initialDraft = useMemo(() => readPublishDraft(user.id), [user.id]);
@@ -156,6 +157,20 @@ export default function NationalPublishScreen() {
   // Invalidate in-flight geolocation when the form unmounts or its UID changes.
   // The App keys Publish by UID, but a pending browser/native callback can outlive it.
   useEffect(() => () => { locationRequestSerial.current += 1; }, [user.id]);
+  useEffect(() => {
+    const onLocationCleared = (event: Event) => {
+      const clearedUid = (event as CustomEvent<{ owner_uid: string | null }>).detail?.owner_uid;
+      if (clearedUid && clearedUid !== user.id) return;
+      // Invalidate both GPS callbacks and any location snapshot already held
+      // by an in-flight publication (including a slow video upload).
+      locationRequestSerial.current += 1;
+      locationPublicationRevocationEpoch.current += 1;
+      setApproxLocation(null);
+      setLocationOptIn(false);
+    };
+    window.addEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
+    return () => window.removeEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
+  }, [user.id]);
 
   const institutionId = user.institution_id || user.university?.institution_id || '';
   const campusId = user.campus_id || user.university?.campus_id || '';
@@ -361,6 +376,7 @@ export default function NationalPublishScreen() {
 
   const removeListingLocation = () => {
     locationRequestSerial.current += 1;
+    locationPublicationRevocationEpoch.current += 1;
     setLocationOptIn(false);
     recordDiagnostic('location', 'listing_location_opt_in_removed');
     setMessage('Este anuncio no incluirá ubicación aproximada. TuTop puede seguir usando una ubicación cacheada para explorar cerca de ti, pero no la publicará aquí.');
@@ -433,6 +449,7 @@ export default function NationalPublishScreen() {
   };
 
   const publish = async () => {
+    const locationEpochAtPublish = locationPublicationRevocationEpoch.current;
     setMessage(null);
     if (!institutionId || !campusId) return setMessage('Primero selecciona tu universidad y campus.');
     if (!hasValidTitle) return setMessage('El título debe tener al menos 2 caracteres.');
@@ -484,7 +501,11 @@ export default function NationalPublishScreen() {
         category_id: slug(category),
         title: title.trim().slice(0, 120),
         description: description.trim().slice(0, 3000),
-        attributes: { ...normalizedAttributes, ...locationAttributes(location) },
+        // A mid-flight revocation or explicit Quitar must override the
+        // earlier render's opt-in, even after identity/media awaits.
+        attributes: { ...normalizedAttributes, ...locationAttributes(
+          locationPublicationRevocationEpoch.current === locationEpochAtPublish ? location : null
+        ) },
         price_mxn: Math.round(parsedPrice * 100) / 100,
         negotiable,
         quantity: parsedQuantity,
