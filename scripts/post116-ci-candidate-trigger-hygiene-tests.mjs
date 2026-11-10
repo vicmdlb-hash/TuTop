@@ -58,4 +58,22 @@ assert.match(budget, /assertManualOnly\('Firestore V2'/);
 assert.match(budget, /assertManualOnly\('Trusted maintenance'/);
 assert.match(budget, /assertManualOnly\('October consolidated gate'/);
 
+// The 0.9.1 closeout can auto-dispatch staging and Android when the old
+// feature branch is pushed. On this source PR, quarantine it fail-closed.
+// This contract does NOT change the copy on that old feature branch.
+const closeout091 = read('.github/workflows/closeout-091.yml');
+assert.match(closeout091, /^# RETIRED:/, 'legacy closeout must be visibly retired');
+assert.match(closeout091, /\non:\n\s+workflow_dispatch:\n\npermissions:/,
+  'legacy closeout must retain an explicit manual-only trigger');
+assert.doesNotMatch(closeout091, /\n\s+push:/,
+  'legacy closeout in PR123 must not trigger staging via feature-branch push');
+assert.doesNotMatch(closeout091, /\n\s+schedule:|\n\s+pull_request:/,
+  'legacy closeout must not auto-dispatch by schedule or PR');
+assert.match(closeout091, /permissions:\n\s+contents: read\n\s+actions: read\n\s+issues: read/,
+  'legacy closeout must not possess write scopes');
+assert.match(closeout091, /  normalize-version:\n    #[^\n]+\n    if: \$\{\{ false \}\}/,
+  'legacy self-mutating normalizer must be impossible to run');
+assert.match(closeout091, /  release-chain:\n    #[^\n]+\n    if: \$\{\{ false \}\}/,
+  'legacy privileged staging and Android chain must be impossible to run');
+
 console.log('PASS historical Build115/116/118/120 candidate workflows are manual-only and hard-disabled');
