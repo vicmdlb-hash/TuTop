@@ -16,6 +16,7 @@ export default function TopiSupportAssistant() {
   const inputRef = useRef<HTMLInputElement>(null);
   // A delayed AI/support reply must never hydrate another decision-tree route.
   const requestSerial = useRef(0);
+  const dictationSerial = useRef(0);
   const guidedBeta = String(import.meta.env.VITE_TUTOP_TOPI_GUIDED_BETA || '').toLowerCase() === 'true'
     && String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').toLowerCase() === 'staging';
   const currentId = route[route.length - 1] || 'root';
@@ -23,6 +24,8 @@ export default function TopiSupportAssistant() {
 
   const invalidatePendingAnswer = () => {
     requestSerial.current += 1;
+    dictationSerial.current += 1;
+    setListening(false);
     setBusy(false);
   };
   const choose = (next: SupportRouteId) => {
@@ -53,6 +56,9 @@ export default function TopiSupportAssistant() {
     const clean = question.trim();
     if (clean.length < 3 || busy) return;
     const serial = ++requestSerial.current;
+    // A late speech callback must not append words after the question was submitted.
+    dictationSerial.current += 1;
+    setListening(false);
     setBusy(true);
     try {
       const result = await answerConsumerSupport(clean, currentId);
@@ -67,12 +73,15 @@ export default function TopiSupportAssistant() {
 
   const dictate = () => {
     setVoiceNote(null);
+    const serial = ++dictationSerial.current;
     startTopiDictation({
       onText: (text) => {
+        if (serial !== dictationSerial.current) return;
         setQuestion((current) => `${current}${current ? ' ' : ''}${text}`.slice(0, 900));
         setVoiceNote('Dictado agregado. Revísalo antes de enviar.');
       },
       onStatus: (status) => {
+        if (serial !== dictationSerial.current) return;
         setListening(status === 'listening');
         if (status === 'unsupported') setVoiceNote('El dictado no está disponible en este dispositivo. Puedes seguir escribiendo.');
         if (status === 'error') setVoiceNote('No pudimos reconocer la voz. Habla después de que se active el micrófono y vuelve a intentarlo.');
