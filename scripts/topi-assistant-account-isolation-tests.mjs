@@ -106,6 +106,14 @@ assert.equal(hooks[3]?.text, 'RESPUESTA_CORRECTA',
   'synthetic React answer state must accept the latest same-route response');
 assert(content(render()).includes('RESPUESTA_CORRECTA'), 'latest same-route reply should appear');
 
+// A closed support dialog must not preserve previously rendered private content.
+button(render(), 'Cerrar').props.onClick();
+button(render(), 'Abrir Topi').props.onClick();
+assert(!content(render()).includes('RESPUESTA_CORRECTA'),
+  'previous private reply must disappear after close and reopen');
+assert.equal(input(render()).props.value, '',
+  'previous typed private question must disappear after close and reopen');
+
 // Closing during a pending call must not resurrect its answer on reopening.
 dialog = render();
 input(dialog).props.onChange({ target: { value: 'No reabrir esta respuesta' } });
