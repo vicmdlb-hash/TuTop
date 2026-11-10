@@ -50,8 +50,8 @@ rules = rules.replace(original[0], helper + original[0].replace(
   /; \}$/, ' && erasureAdmissionAllows(request.auth.uid); }',
 ));
 // Isolation only: leave canonical/generic runtime limits unchanged.
-requireOnce("offerRateLimitConsumed()", 'offer rate guard');
-rules = rules.replace("offerRateLimitConsumed()", 'erasureDemoOfferRateLimitConsumed()');
+requireOnce("&& offerRateLimitConsumed()", 'offer rate guard');
+rules = rules.replace("&& offerRateLimitConsumed()", '&& erasureDemoOfferRateLimitConsumed()');
 
 // Wrap EVERY alternative of a write verb in the scope. Treat unguarded
 // secondary update rules as a hard error, not as an authorized bypass.
