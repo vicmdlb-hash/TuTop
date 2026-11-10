@@ -151,4 +151,82 @@ for (const [start, end, awaited, completion] of readSections) {
 }
 
 console.log('PASS stale Firebase snapshot A cannot hydrate UI for B or after logout; queued B retry is not silently dropped');
+
+
+// SYNTHETIC LISTING READ-SESSION INTEGRATION. Execute actual compiled backend
+// against deferred Firestore reads, without Firebase network or real identities.
+const { compileTypescriptFixture } = await import('./typescript-fixture-compiler.mjs');
+const { runInNewContext } = await import('node:vm');
+const { assertFirebaseRequestSessionCurrent, sameFirebaseSession } =
+  await import('../src/lib/firebaseSharedSessionGuard.ts');
+const compiledListings = compileTypescriptFixture('src/services/canonicalListingsBackend.ts');
+const fakeA = { uid: 'synthetic-a', idToken: 'synthetic-a-token', refreshToken: 'synthetic-a-refresh' };
+const fakeB = { uid: 'synthetic-b', idToken: 'synthetic-b-token', refreshToken: 'synthetic-b-refresh' };
+const fakeRelogin = { ...fakeA, idToken: 'synthetic-a-token-new', refreshToken: 'synthetic-a-refresh-new' };
+let liveSession = fakeA;
+const pendingListingReads = [];
+class SyntheticFirestoreClient {
+  constructor() { this.currentSession = liveSession; }
+  runQuery() { return new Promise((resolve) => pendingListingReads.push(resolve)); }
+}
+const deps = {
+  '../lib/marketplaceGovernance.ts': {
+    categorySafetyRequirements: () => ({ required: [], forbiddenPublic: [] }),
+    classifyMarketplaceItem: () => ({ classification: 'allowed', reasons: [] }),
+  },
+  '../lib/listingSchemaV2.ts': { listingV2HasNoLegacyDescriptionPacking: () => true, validCanonicalVideoUri: () => true },
+  '../lib/universityNetwork.ts': { CAMPUSES: [], FACULTIES: [], INSTITUTIONS: [] },
+  '../lib/productAssistant.ts': { MARKETPLACE_CATEGORIES: [], normalizeCategory: (v) => v },
+  '../lib/nearbyMarketplace.ts': { validNearbyGeoCell: () => true, validListingApproxLocationAttributes: () => true },
+  '../lib/firebaseSharedSessionGuard': { assertFirebaseRequestSessionCurrent, sameFirebaseSession },
+  '../lib/firebaseSharedSessionGuard.ts': { assertFirebaseRequestSessionCurrent, sameFirebaseSession },
+  './firebaseRest.ts': { FirebaseRestClient: SyntheticFirestoreClient },
+  './nationalBackend.ts': { nationalSchemaEnabled: () => true },
+  './rateLimit.ts': { commitWithRateLimit: async () => {} },
+  './runtimeConfig.ts': { getFirebaseConfig: () => ({}) },
+};
+const exportsForListing = {};
+runInNewContext(compiledListings, {
+  exports: exportsForListing, module: { exports: exportsForListing },
+  require(specifier) {
+    assert(Object.hasOwn(deps, specifier), 'unexpected real I/O import: ' + specifier);
+    return deps[specifier];
+  },
+  Date, Math, Promise, Map, Set, Number, String, JSON, console,
+}, { timeout: 3500 });
+const syntheticListings = exportsForListing.canonicalListingsBackend;
+assert(syntheticListings, 'compiled canonical listings methods must be available');
+function resolveListingReads(expected) {
+  assert.equal(pendingListingReads.length, expected, 'fixture should query only expected Firestore reads');
+  pendingListingReads.splice(0).forEach((resolve) => resolve([]));
+}
+const staleMine = syntheticListings.loadMine();
+resolveListingReads(1);
+liveSession = fakeB;
+await assert.rejects(staleMine, /AUTH_SESSION_CHANGED/, 'A private listings cannot return after B signs in');
+
+liveSession = fakeA;
+const staleMarket = syntheticListings.loadMarketplaceProducts();
+resolveListingReads(2); // national approved query and current seller's private listings
+liveSession = fakeRelogin; // same UID does not make the old request valid
+await assert.rejects(staleMarket, /AUTH_SESSION_CHANGED/, 'A re-login must reject an old market snapshot');
+
+liveSession = fakeA;
+const staleNearby = syntheticListings.loadNearbyProducts({geoCells:['g1:90:81']});
+resolveListingReads(2); // approved listings and own private listings
+liveSession = fakeB;
+await assert.rejects(staleNearby, /AUTH_SESSION_CHANGED/, 'stale nearby results must not populate the cache');
+liveSession = fakeRelogin;
+const newNearby = syntheticListings.loadNearbyProducts({geoCells:['g1:90:81']});
+resolveListingReads(2); // stale A result was not cached
+assert.equal((await newNearby).length, 0);
+const sameSessionCacheHit = await syntheticListings.loadNearbyProducts({geoCells:['g1:90:81']});
+assert.equal(sameSessionCacheHit.length, 0);
+assert.equal(pendingListingReads.length,0,'same authenticated session may reuse its Nearby cache');
+liveSession = fakeA;
+const freshSessionMiss = syntheticListings.loadNearbyProducts({geoCells:['g1:90:81']});
+resolveListingReads(2); // same UID, different credentials: cache must miss
+assert.equal((await freshSessionMiss).length,0);
+
 console.log('PASS listing backend read results fail closed before returning/caching after A→B or A→logout→A');
+console.log('PASS synthetic deferred Firestore reads reject old A sessions and Nearby cache is session-scoped');
