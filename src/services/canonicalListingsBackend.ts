@@ -3,7 +3,7 @@ import { listingV2HasNoLegacyDescriptionPacking, validCanonicalVideoUri, type Ca
 import { CAMPUSES, FACULTIES, INSTITUTIONS } from '../lib/universityNetwork.ts';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant.ts';
 import { validNearbyGeoCell, validListingApproxLocationAttributes } from '../lib/nearbyMarketplace.ts';
-import { assertFirebaseRequestSessionCurrent, type FirebaseSessionIdentity } from '../lib/firebaseSharedSessionGuard';
+import { assertFirebaseRequestSessionCurrent, sameFirebaseSession, type FirebaseSessionIdentity } from '../lib/firebaseSharedSessionGuard';
 import type { DeliveryMethod, MeetingPoint, Product, ProductCategory, ProductStatus } from '../types/index.ts';
 import { FirebaseRestClient, type FirestoreDocument, type QueryFilter } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
@@ -14,7 +14,8 @@ const SELLER_NAME_CACHE_TTL_MS = 10 * 60_000;
 const NEARBY_CACHE_TTL_MS = 60_000;
 const sellerNameCache = new Map<string, { name: string; expiresAt: number }>();
 const sellerNameInflight = new Map<string, Promise<string>>();
-const nearbyCache = new Map<string, { products: Product[]; expiresAt: number }>();
+// Only reuse a private Nearby snapshot within the exact authenticated session.
+const nearbyCache = new Map<string, { products: Product[]; expiresAt: number; session: FirebaseSessionIdentity }>();
 
 function localId() {
   const random = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -298,7 +299,8 @@ export const canonicalListingsBackend = {
     const uid = requestSession!.uid;
     const cacheKey = `${uid}#${cells.join('|')}#${limit}`;
     const cached = nearbyCache.get(cacheKey);
-    if (!input.force && cached && cached.expiresAt > Date.now()) return cached.products;
+    if (!input.force && cached && cached.expiresAt > Date.now()
+      && sameFirebaseSession(cached.session, requestSession)) return cached.products;
 
     const approvedPromise = Promise.all(cells.map((cell) => queryApproved(client, 'attributes.geo_cell', cell, limit)));
     const minePromise = this.loadMine(Math.min(50, Math.max(limit * 3, 20)));
@@ -312,7 +314,7 @@ export const canonicalListingsBackend = {
     for (const doc of [...sets.flat(), ...ownNearby]) byId.set(doc.id, doc);
     const products = await productsForDocuments(client, [...byId.values()]);
     assertListingReadSessionCurrent(client, requestSession);
-    nearbyCache.set(cacheKey, { products, expiresAt: Date.now() + NEARBY_CACHE_TTL_MS });
+    nearbyCache.set(cacheKey, { products, expiresAt: Date.now() + NEARBY_CACHE_TTL_MS, session: requestSession! });
     return products;
   },
 
