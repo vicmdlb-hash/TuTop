@@ -33,7 +33,7 @@ const dictations = [];
 let dictationStops = 0;
 let unmount = () => {};
 const mockSupport = {
-  answerConsumerSupport: (question, route) => new Promise((resolve) => pending.push({ question, route, resolve })),
+  answerConsumerSupport: (question, route) => new Promise((resolve, reject) => pending.push({ question, route, resolve, reject })),
 };
 const module = { exports: {} };
 vm.runInNewContext(js, {
@@ -146,6 +146,36 @@ pending[3].resolve({ source: 'guided', route: 'root', text: 'Respuesta final sin
 await Promise.resolve();
 await Promise.resolve();
 await new Promise((resolve) => setImmediate(resolve));
+
+// Failed remote support must settle without unhandled rejection or raw error leakage.
+dialog = render();
+input(dialog).props.onChange({ target: { value: 'Pregunta que falla por red' } });
+button(render(), 'Preguntar a Topi').props.onClick();
+assert.equal(pending.length, 5);
+pending[4].reject(new Error('TOPI_SECRET_SUPERPRIVATE_TOKEN_DO_NOT_SHOW'));
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hooks[3]?.source, 'unavailable',
+  'a rejected remote answer must be unavailable rather than pretend a successful AI response');
+assert(content(render()).includes('No pudimos responder en este momento'),
+  'show a generic actionable message after a rejected request');
+assert(!content(render()).includes('TOPI_SECRET_SUPERPRIVATE_TOKEN_DO_NOT_SHOW'),
+  'raw provider exception text must never render');
+
+// Closing before a rejected response settles must not overwrite another answer.
+dialog = render();
+input(dialog).props.onChange({ target: { value: 'Pregunta obsoleta después de cerrar' } });
+button(render(), 'Preguntar a Topi').props.onClick();
+assert.equal(pending.length, 6);
+button(render(), 'Cerrar').props.onClick();
+pending[5].reject(new Error('SENSITIVE_URI_OR_TOKEN'));
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+button(render(), 'Abrir Topi').props.onClick();
+assert(!content(render()).includes('SENSITIVE_URI_OR_TOKEN'),
+  'late rejected answer must not leak a provider error after dialog closure');
 
 // Logout/UID remount must also stop active native/Web Speech capture.
 dialog = render();
