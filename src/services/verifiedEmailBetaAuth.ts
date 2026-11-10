@@ -287,24 +287,41 @@ export const verifiedEmailBetaAuth = {
       ...profile,
       ...(normalizedPhone ? { phone: normalizedPhone } : { phone: undefined }),
     };
+    // A signup response can arrive after a newer login or sign-out. A stale
+    // signup must not commit a profile or take ownership of another session.
+    const requestGeneration = ++authGeneration;
     const data = await identityRequest('accounts:signUp', { email, password, returnSecureToken: true }) as AuthPayload;
+    if (authGeneration !== requestGeneration) throw new Error('AUTH_SESSION_CHANGED');
+    // createMarketplaceAccount persists this signup and increments the generation.
+    const registrationGeneration = requestGeneration + 1;
+    const assertCurrentRegistration = () => {
+      const current = assertSessionUnchanged(registrationGeneration, data.localId, data.refreshToken);
+      if (current.idToken !== data.idToken) throw new Error('AUTH_SESSION_CHANGED');
+    };
     try {
       await createMarketplaceAccount(data, email, normalizedProfile);
     } catch (error) {
+      // A different login may complete while the profile commit is pending.
+      // Never delete the old signup or clear the newer account in that case.
+      assertCurrentRegistration();
       // A network timeout is ambiguous: the atomic Firestore commit may already
       // have reached Firebase. Never delete Auth or clear the session merely
       // because the client did not receive the response.
       if (isFirebaseRequestTimeout(error)) throw error;
       try { await identityRequest('accounts:delete', { idToken: data.idToken }); } catch { /* best effort rollback */ }
+      // Even a best-effort rollback may outlive a new login. Preserve its session.
+      assertCurrentRegistration();
       clearCanonicalSession();
       throw error;
     }
+    assertCurrentRegistration();
     // Mail failure after a successful atomic commit keeps a recoverable pending
     // identity. Resend retries delivery without deleting its profile or wallet.
     let verificationEmailSent = true;
     try {
       await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: data.idToken });
     } catch { verificationEmailSent = false; }
+    assertCurrentRegistration();
     return { uid: data.localId, email, emailVerified: false, verificationEmailSent } satisfies VerifiedEmailBetaStatus;
   },
 
