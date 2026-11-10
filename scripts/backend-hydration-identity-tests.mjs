@@ -125,4 +125,30 @@ assert.match(source,/const verified = await verifiedEmailBetaAuth\.refreshVerifi
 assert.match(source,/authEpoch\.current \+= 1;[\s\S]*const currentUid/);
 assert.match(source,/syncQueued\.current = true/);
 assert.match(source,/syncQueued\.current = false;[\s\S]*Promise\.resolve\(\)\.then\(\(\) => sync\(true\)\)/);
+
+// Backend-level account isolation, independent from mounted React hydrators.
+// All Firestore read results and seller-name lookups may outlive logout,
+// A→B, and same UID re-login with a new credential witness.
+const listingBackend = fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8');
+const sessionHelper = listingBackend.split('function assertListingReadSessionCurrent(')[1]?.split('function hasValue(',1)[0];
+assert(sessionHelper?.includes('assertFirebaseRequestSessionCurrent(requestSession, client.currentSession,'),
+  'listing read helper must check the original and current request session');
+assert(sessionHelper.includes('new FirebaseRestClient(getFirebaseConfig()).currentSession'),
+  'listing read helper must also check persisted current session');
+const readSections = [
+  ['loadMine(', 'loadMarketplaceProducts(', 'const documents = await client.runQuery', 'return documents;'],
+  ['loadMarketplaceProducts(', 'loadNearbyProducts(', 'const products = await productsForDocuments', 'return products;'],
+  ['loadNearbyProducts(', 'updateProduct(', 'const products = await productsForDocuments', 'nearbyCache.set(cacheKey'],
+];
+for (const [start, end, awaited, completion] of readSections) {
+  const section = listingBackend.split('  async ' + start)[1]?.split('  async ' + end)[0];
+  assert(section?.includes('const requestSession = client.currentSession;'), 'missing read session witness: ' + start);
+  const awaitIndex = section.indexOf(awaited);
+  const checkIndex = section.indexOf('assertListingReadSessionCurrent(client, requestSession);');
+  const completeIndex = section.indexOf(completion);
+  assert(awaitIndex >= 0 && checkIndex > awaitIndex && completeIndex > checkIndex,
+    'stale listing data must be rejected after the final await and before return/cache: ' + start);
+}
+
 console.log('PASS stale Firebase snapshot A cannot hydrate UI for B or after logout; queued B retry is not silently dropped');
+console.log('PASS listing backend read results fail closed before returning/caching after A→B or A→logout→A');
