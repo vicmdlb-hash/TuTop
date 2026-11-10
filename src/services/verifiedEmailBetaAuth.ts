@@ -287,11 +287,20 @@ export const verifiedEmailBetaAuth = {
       ...profile,
       ...(normalizedPhone ? { phone: normalizedPhone } : { phone: undefined }),
     };
-    // A signup response can arrive after a newer login or sign-out. A stale
-    // signup must not commit a profile or take ownership of another session.
+    // A signup response can arrive after another account replaces the shared
+    // canonical session through FirebaseRestClient (without authGeneration moving).
+    // Capture the full identity before the await; UID alone misses A -> A re-login.
+    const expectedCanonicalSession = readCompatibleSession();
     const requestGeneration = ++authGeneration;
     const data = await identityRequest('accounts:signUp', { email, password, returnSecureToken: true }) as AuthPayload;
-    if (authGeneration !== requestGeneration) throw new Error('AUTH_SESSION_CHANGED');
+    const currentCanonicalSession = readCompatibleSession();
+    const sameCanonical = expectedCanonicalSession
+      ? Boolean(currentCanonicalSession
+        && currentCanonicalSession.uid === expectedCanonicalSession.uid
+        && currentCanonicalSession.idToken === expectedCanonicalSession.idToken
+        && currentCanonicalSession.refreshToken === expectedCanonicalSession.refreshToken)
+      : currentCanonicalSession === null;
+    if (authGeneration !== requestGeneration || !sameCanonical) throw new Error('AUTH_SESSION_CHANGED');
     // createMarketplaceAccount persists this signup and increments the generation.
     const registrationGeneration = requestGeneration + 1;
     const assertCurrentRegistration = () => {
