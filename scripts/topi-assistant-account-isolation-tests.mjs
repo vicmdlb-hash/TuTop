@@ -88,6 +88,7 @@ dialog = render();
 pending[0].resolve({ source: 'guided', route: 'security', text: 'RESULTADO_VIEJO' });
 await Promise.resolve();
 await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
 assert(!content(render()).includes('RESULTADO_VIEJO'), 'old route response must not appear');
 
 // A later question on the new route must still work (busy is not wedged).
@@ -100,6 +101,7 @@ assert.equal(pending[1].route, 'security');
 pending[1].resolve({ source: 'guided', route: 'security', text: 'RESPUESTA_CORRECTA' });
 await Promise.resolve();
 await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
 assert.equal(hooks[3]?.text, 'RESPUESTA_CORRECTA',
   'synthetic React answer state must accept the latest same-route response');
 assert(content(render()).includes('RESPUESTA_CORRECTA'), 'latest same-route reply should appear');
@@ -114,6 +116,7 @@ button(render(), 'Cerrar').props.onClick();
 pending[2].resolve({ source: 'guided', route: 'security', text: 'RESPUESTA_TRAS_CIERRE' });
 await Promise.resolve();
 await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
 button(render(), 'Abrir Topi').props.onClick();
 assert(!content(render()).includes('RESPUESTA_TRAS_CIERRE'), 'closing must invalidate pending response');
 
@@ -142,6 +145,7 @@ assert(!input(render()).props.value.includes('TEXTO_TARDIO_DESPUES_DE_ENVIAR'),
 pending[3].resolve({ source: 'guided', route: 'root', text: 'Respuesta final sin mezcla' });
 await Promise.resolve();
 await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
 
 // Logout/UID remount must also stop active native/Web Speech capture.
 dialog = render();
