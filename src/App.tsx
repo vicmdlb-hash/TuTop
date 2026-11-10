@@ -146,7 +146,8 @@ function MobileApp() {
 
       {!v2 && activeTab === 'bot' && surface === null && !activeChatId && !selectedProductId && <DraftShelf />}
       {activeTab === 'profile' && surface === null && !activeChatId && !selectedProductId && <><SellerTools /><NationalAccountControls />{v2 && <OwnTrustedReputationCard />}</>}
-      {!activeChatId && <TopiSupportAssistant />}
+      {/* Remount Topi's free-text, draft answer and dictation state on every UID switch. */}
+      {!activeChatId && <TopiSupportAssistant key={user.id} />}
 
       {!activeChatId && (
         <nav className="bottom-nav" aria-label="Navegación principal">
