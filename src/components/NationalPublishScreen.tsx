@@ -8,6 +8,7 @@ import type { CanonicalListingV2, ListingDeliveryMethod } from '../lib/listingSc
 import { smartPriceFromTuTop } from '../lib/smartPricing';
 import { startTopiDictation } from '../lib/topiVoice';
 import { topiDraftResultIsCurrent } from '../lib/topiDraftResultGate';
+import { isCurrentBackendHydration } from '../lib/backendHydrationIdentity';
 import { isForbiddenProductText, MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
 import { withPublicationSessionRecovery } from '../lib/publicationRecovery';
 import { clearDurablePublishDraft, readDurablePublishDraft, writeDurablePublishDraft } from '../lib/publishDraftPersistence';
@@ -474,6 +475,15 @@ export default function NationalPublishScreen() {
 
   const publish = async () => {
     const locationEpochAtPublish = locationPublicationRevocationEpoch.current;
+    const publishAuthEpoch = verifiedEmailBetaAuth.sessionGeneration();
+    // Guard every async completion against A→B and A→B→A transitions.
+    const publisherStillCurrent = () => isCurrentBackendHydration(
+      user.id,
+      useAppStore.getState().user.id,
+      verifiedEmailBetaAuth.readSessionIdentity()?.uid,
+      publishAuthEpoch,
+      verifiedEmailBetaAuth.sessionGeneration(),
+    );
     setMessage(null);
     if (!institutionId || !campusId) return setMessage('Primero selecciona tu universidad y campus.');
     if (!hasValidTitle) return setMessage('El título debe tener al menos 2 caracteres.');
@@ -499,6 +509,10 @@ export default function NationalPublishScreen() {
         setMessage('No pudimos actualizar tu verificación. Cierra sesión, vuelve a entrar y vuelve a intentarlo.');
         return;
       }
+      if (!publisherStillCurrent()) {
+        setMessage('La sesión cambió durante la verificación. Vuelve a iniciar sesión antes de publicar.');
+        return;
+      }
       if (verification.uid !== user.id) {
         setMessage('La sesión cambió mientras verificábamos tu cuenta. Cierra sesión y vuelve a entrar antes de publicar.');
         return;
@@ -522,6 +536,7 @@ export default function NationalPublishScreen() {
         const uploaded = await firebaseMediaStorage.uploadListingVideo(videoFile, user.id);
         uploadedVideoUri = uploaded.uri;
       }
+      if (!publisherStillCurrent()) throw new Error('PUBLISH_OWNER_CHANGED');
 
       const now = new Date().toISOString();
       const listing: CanonicalListingV2 = {
@@ -562,29 +577,48 @@ export default function NationalPublishScreen() {
       // institution/campus documents, their relationship, reconciles the profile,
       // re-reads it, then writes listings_v2. No UI catch-and-continue path remains.
       const created = await withPublicationSessionRecovery({
-        attempt: () => canonicalListingsBackend.create(listing, category, publishOperationId),
-        refreshVerification: () => verifiedEmailBetaAuth.refreshVerificationStatus(),
+        attempt: () => {
+          if (!publisherStillCurrent()) throw new Error('PUBLISH_OWNER_CHANGED');
+          return canonicalListingsBackend.create(listing, category, publishOperationId);
+        },
+        refreshVerification: async () => {
+          const refreshed = await verifiedEmailBetaAuth.refreshVerificationStatus();
+          if (!publisherStillCurrent() || refreshed.uid !== user.id
+            || !refreshed.emailVerified || refreshed.phoneVerified !== true) {
+            throw new Error('PUBLISH_OWNER_CHANGED');
+          }
+          return refreshed;
+        },
         diagnostic: (code) => recordDiagnostic('publication', code),
       });
       uploadedVideoUri = null;
+      if (!publisherStillCurrent()) return;
       clearPublishDraft(user.id);
 
       let refreshedFeed = true;
       try {
         const refreshed = await canonicalListingsBackend.loadMarketplaceProducts({ campusId, institutionId, cityId, limitPerScope: 30 });
+        // A late A feed must never replace B's store after a shared-device switch.
+        if (!publisherStillCurrent()) return;
         useAppStore.setState({ products: refreshed });
       } catch {
         refreshedFeed = false;
       }
 
+      if (!publisherStillCurrent()) return;
       setMessage(created.recovered
         ? 'TuTop confirmó que este mismo anuncio ya se había creado. Recuperamos la publicación sin duplicarla y la enviamos a revisión.'
         : refreshedFeed
           ? 'Publicación creada y enviada a revisión. TuTop no gestiona envíos; cualquier entrega se acuerda directamente entre las personas.'
           : 'Publicación creada y enviada a revisión. El feed tardará en refrescarse; no vuelvas a publicarla para evitar duplicados.');
-      window.setTimeout(() => setActiveTab('feed'), refreshedFeed ? 850 : 1500);
+      window.setTimeout(() => {
+        if (publisherStillCurrent()) setActiveTab('feed');
+      }, refreshedFeed ? 850 : 1500);
     } catch (error) {
-      if (uploadedVideoUri) await firebaseMediaStorage.delete(uploadedVideoUri).catch(() => undefined);
+      if (uploadedVideoUri && publisherStillCurrent()) {
+        await firebaseMediaStorage.delete(uploadedVideoUri).catch(() => undefined);
+      }
+      if (!publisherStillCurrent()) return;
       const raw = error instanceof Error ? error.message : String(error);
       const failureCode = publicationFailureCode(raw);
       recordDiagnostic('publication', failureCode);
@@ -612,7 +646,7 @@ export default function NationalPublishScreen() {
         setMessage('No pudimos publicar el anuncio en este momento. Revisa tu conexión e inténtalo de nuevo.');
       }
     } finally {
-      setBusy(false);
+      if (publisherStillCurrent()) setBusy(false);
     }
   };
 
