@@ -51,4 +51,21 @@ assert.match(deletion, /if \(!stillCurrent\(\) \|\| request\.uid !== ownerUid\) 
 const password = ui.slice(startOf('rotatePassword'), startOf('requestDeletion'));
 assert.match(password, /await nationalUserSettings\.changePassword\(nextPassword\);\s*if \(!stillCurrent\(\)\) return;/,
   'do not show a stale password-change result or retain the former input');
+// The permission granted by Android does not imply token registration or FCM delivery.
+// Deleting a token must never fabricate an OS permission downgrade to "prompt".
+const push = ui.slice(startOf('toggleDevicePush'), startOf('rotatePassword'));
+assert.match(push, /toggleDevicePush = async \(action: 'register' \| 'remove'\)/);
+assert.match(push, /if \(action === 'remove'\)/);
+assert.match(push, /const disabled = await disableNativePushNotifications\(\);/);
+assert.match(push, /const permission = await nativePushPermission\(\);/);
+assert.doesNotMatch(push, /disabled \? 'prompt' :/);
+assert.match(push, /Token push registrado para esta sesión\. La entrega real sigue pendiente/);
+assert.match(push, /esto no demuestra una baja permanente del servidor/);
+assert.match(ui, /toggleDevicePush\('register'\)/);
+assert.match(ui, /toggleDevicePush\('remove'\)/);
+assert.match(ui, /Permiso Android concedido; token y entrega aún no comprobados aquí/);
+assert.match(ui, /Permiso Android, token FCM registrado y entrega real son estados diferentes/);
+assert.doesNotMatch(ui, /Activadas en este teléfono|Notificaciones del dispositivo activadas/);
+console.log('PASS push OS-permission truth: explicit register/remove actions, no fabricated permission revocation or delivery success');
+
 console.log('PASS account controls synthetic A->B/A->B->A isolation; owned async UI callbacks fail closed (not device E2E)');
