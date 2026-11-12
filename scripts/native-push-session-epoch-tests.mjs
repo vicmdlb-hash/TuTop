@@ -253,7 +253,7 @@ console.log('PASS synthetic native push per-owner opt-out persistence, fail-clos
 // The marker must be durable before getToken awaits, including when the native
 // plugin is temporarily missing. Never access Firebase or a physical device.
 const signOutCode = native.slice(native.indexOf('export async function prepareNativePushForAccountSignOut()'))
-  .replace(/^export /, '');
+  .replace(/^export /, '').replace('null as any', 'null');
 assert(signOutCode.startsWith('async function prepareNativePushForAccountSignOut()'));
 const makeSyntheticResetStorage = (failRemoval = false) => {
   const entries = new Map();
