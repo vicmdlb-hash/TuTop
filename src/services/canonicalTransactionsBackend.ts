@@ -105,6 +105,28 @@ async function loadCurrentTransaction(client: FirebaseRestClient, expected: Mark
   return current;
 }
 
+// A status-changing client action must not overwrite a competing cancellation,
+ // confirmation, dispute, or meeting update after its canonical preflight.
+async function commitCurrentTransactionPatch(
+  client: FirebaseRestClient,
+  transaction: MarketplaceTransaction,
+  patch: Record<string, unknown>,
+) {
+  const stored = await client.getDocument<any>(`transactions_v2/${transaction.id}`);
+  if (!stored?.updateTime) throw new Error('TRANSACTION_VERSION_UNKNOWN');
+  const observed = { id: stored.id, ...stored.data } as MarketplaceTransaction;
+  if (!sameTransactionIdentity(observed, transaction)
+    || observed.status !== transaction.status
+    || observed.updated_at !== transaction.updated_at
+    || observed.buyer_confirmed_at !== transaction.buyer_confirmed_at
+    || observed.seller_confirmed_at !== transaction.seller_confirmed_at
+    || observed.meetup_at !== transaction.meetup_at) throw new Error('TRANSACTION_CHANGED');
+  await client.commit([{
+    ...patchWrite(client, `transactions_v2/${transaction.id}`, patch),
+    currentDocument: { updateTime: stored.updateTime },
+  }]);
+}
+
 function actorConfirmationField(transaction: MarketplaceTransaction, actor: string) {
   if (actor === transaction.buyer_id) return 'buyer_confirmed_at' as const;
   if (actor === transaction.seller_id) return 'seller_confirmed_at' as const;
@@ -238,7 +260,7 @@ export const canonicalTransactionsBackend = {
     if (!meetingPointId || !Number.isFinite(meetupMs) || meetupMs <= Date.now() || meetupMs > Date.now() + 30 * 86400000) throw new Error('INVALID_MEETUP');
     const at = nowIso();
     const next = { ...current, status: 'meetup_scheduled' as const, meeting_point_id: meetingPointId, meetup_at: new Date(meetupMs).toISOString(), updated_at: at };
-    await client.setDocument(`transactions_v2/${current.id}`, { status: next.status, meeting_point_id: meetingPointId, meetup_at: next.meetup_at, updated_at: at }, { merge: true });
+    await commitCurrentTransactionPatch(client, current, { status: next.status, meeting_point_id: meetingPointId, meetup_at: next.meetup_at, updated_at: at });
     return next;
   },
 
@@ -286,7 +308,7 @@ export const canonicalTransactionsBackend = {
     const current = await loadCurrentTransaction(client, transaction);
     if (!canActOnTransaction(current, actor, 'dispute')) throw new Error('TRANSACTION_ACTION_DENIED');
     const at = nowIso();
-    await client.setDocument(`transactions_v2/${current.id}`, { status: 'disputed', updated_at: at }, { merge: true });
+    await commitCurrentTransactionPatch(client, current, { status: 'disputed', updated_at: at });
     return { ...current, status: 'disputed' as const, updated_at: at };
   },
 
