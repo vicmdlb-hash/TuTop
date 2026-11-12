@@ -57,7 +57,7 @@ const terminalHelper = backend.slice(terminalStart, terminalEnd)
   .replace('client: FirebaseRestClient, transaction: MarketplaceTransaction, patch: Record<string, unknown>', 'client, transaction, patch')
   .replace('getDocument<any>', 'getDocument');
 assert(terminalHelper.includes('currentDocument: { updateTime: lock.updateTime }'));
-const terminalWriteTest = vm.runInNewContext(terminalHelper + '\\nterminalTransactionWrites', {
+const terminalWriteTest = vm.runInNewContext(terminalHelper + '\nterminalTransactionWrites', {
   reservationLockPath: listing => `listing_reservation_locks/${listing}`,
   patchWrite: (_client, path, data) => ({ update: path, data }),
   reservationAvailabilityWrite: (_client, id, availability) => ({ listing: id, availability }),
