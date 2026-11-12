@@ -1,6 +1,6 @@
 import { pushBackend } from './pushBackend';
 import { verifiedEmailBetaAuth } from './verifiedEmailBetaAuth';
-import { matchesNativePushSession, type PushSessionWitness } from '../lib/nativePushSessionGuard';
+import { matchesNativePushSession, needsNativePushOwnershipReset, type PushSessionWitness } from '../lib/nativePushSessionGuard';
 import { isNativePushOptedOut, setNativePushOptOut } from '../lib/nativePushOptOut';
 import { initializeNativeAppCheck, isNativeFirebaseRuntime } from './nativeAppCheckToken';
 
@@ -402,7 +402,9 @@ export async function prepareNativePushForAccountSignOut() {
     );
   }
 
-  const ownershipResetQueued = !serverDeactivated && !tokenDeleted
+  // A successful server unregister does not invalidate a native token. If
+  // deleteToken failed, keep the quarantine before a different UID logs in.
+  const ownershipResetQueued = needsNativePushOwnershipReset(tokenDeleted)
     ? setPendingPushOwnershipReset(true)
     : (setPendingPushOwnershipReset(false), false);
 

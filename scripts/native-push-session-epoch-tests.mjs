@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { matchesNativePushSession } from '../src/lib/nativePushSessionGuard.ts';
+import { matchesNativePushSession, needsNativePushOwnershipReset } from '../src/lib/nativePushSessionGuard.ts';
 import { isNativePushOptedOut, setNativePushOptOut, NATIVE_PUSH_OPT_OUT_PREFIX } from '../src/lib/nativePushOptOut.ts';
 import { createFirstPushTokenDocument, normalizePushTokenIdentity, normalizePushAppVersion } from '../src/lib/pushTokenCreateFirst.ts';
 const A={uid:'synthetic-A',refreshToken:'synthetic-session-A',generation:3,epoch:7};
@@ -12,6 +12,9 @@ for(const [identity,generation,epoch,pending] of [
   [{uid:'synthetic-A',refreshToken:'rotated'},3,7,false],
 ]) assert.equal(matchesNativePushSession(A,identity,generation,epoch,pending),false);
 assert.equal(matchesNativePushSession(null,same,3,7,false),false);
+// Native deleteToken is the decisive ownership boundary, regardless of server cleanup.
+assert.equal(needsNativePushOwnershipReset(false), true, 'native deletion failure requires reset even when server unregister succeeded');
+assert.equal(needsNativePushOwnershipReset(true), false, 'successful native deletion need not quarantine a new account');
 const native=fs.readFileSync('src/services/nativeFirebaseSecurity.ts','utf8').replace(/\r\n/g, '\n');
 const backend=fs.readFileSync('src/services/pushBackend.ts','utf8').replace(/\r\n/g, '\n');
 const callback=native.slice(native.indexOf("await messaging.addListener('tokenReceived'"),native.indexOf("await messaging.addListener('notificationReceived'"));
@@ -26,6 +29,11 @@ assert(
   /pushRegistrationEpoch \+= 1;\r?\n\s*initialization = null;/.test(native),
   'sign-out preparation must revoke the push epoch before clearing initialization',
 );
+const signout = native.slice(native.indexOf('export async function prepareNativePushForAccountSignOut()'));
+assert(signout.includes('needsNativePushOwnershipReset(tokenDeleted)'),
+  'signout must quarantine native token failures independent of serverDeactivated');
+assert(!signout.includes('!serverDeactivated && !tokenDeleted'),
+  'server unregister alone must never bypass pending native token reset');
 const register=backend.slice(backend.indexOf('async registerDeviceToken('),backend.indexOf('async unregisterDeviceToken('));
 assert(register.includes('const assertOwner = () => {'));
 assert(register.includes('const tokenHash = await sha256(cleanToken);\n    assertOwner();'));

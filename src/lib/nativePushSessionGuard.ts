@@ -10,3 +10,8 @@ export function matchesNativePushSession(
     && witness.uid === current.uid && witness.refreshToken === current.refreshToken
     && witness.generation === generation && witness.epoch === epoch);
 }
+
+/** Native token deletion, not server unregister, gates cross-account reuse. */
+export function needsNativePushOwnershipReset(tokenDeleted: boolean): boolean {
+  return !tokenDeleted;
+}
