@@ -15,6 +15,10 @@ function fakeStorage() {
     map,
   };
 }
+// Both modern and legacy drafts must detect storage that silently ignores writes.
+const refuseWrite = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+assert.equal(writeLegacyPublishDraft('owner-A-123456789',
+  { titulo: 'Not durable' }, {}, refuseWrite), false);
 const A = 'owner-A-123456789';
 const B = 'owner-B-987654321';
 const now = 1_800_000_000_000;

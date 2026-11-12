@@ -115,7 +115,8 @@ export function writeLegacyPublishDraft(
     });
     if (new TextEncoder().encode(record).length > 24 * 1024) return false;
     target.setItem(scopedKey, record);
-    return true;
+    // Legacy publisher must not report a durable save when storage dropped it.
+    return target.getItem(scopedKey) === record;
   } catch { return false; }
 }
 

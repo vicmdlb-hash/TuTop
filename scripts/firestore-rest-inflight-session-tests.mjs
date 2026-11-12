@@ -201,5 +201,48 @@ for (const [label, uid] of [['stale404-AtoB', 'B'], ['stale404-AtoA', 'A']]) {
   h.settleHttpError(h.requests[0], 403);
   await assert.rejects(pending, /AUTH_SESSION_CHANGED/);
 }
+
+// RunQuery consumes a stream of row envelopes even when HTTP itself succeeds.
+// Validate actual FirebaseRestClient behavior with synthetic responses only.
+const queryDoc = {
+  name: `projects/${projectId}/databases/(default)/documents/listings_v2/synthetic-one`,
+  fields: { status: { stringValue: 'active' } },
+};
+{
+  const h = makeHarness();
+  const pending = h.clientA.runQuery('listings_v2');
+  await until(() => h.requests.length === 1, 'runQuery valid response');
+  h.settle(h.requests[0], [{ readTime: '2026-11-12T00:00:00Z' },
+    { document: queryDoc }, { skippedResults: 0, readTime: '2026-11-12T00:00:00Z' }]);
+  const docs = await pending;
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].id, 'synthetic-one');
+  assert.equal(docs[0].data.status, 'active');
+}
+{
+  const h = makeHarness();
+  const pending = h.clientA.runQuery('listings_v2');
+  await until(() => h.requests.length === 1, 'runQuery empty response');
+  h.settle(h.requests[0], [{ readTime: '2026-11-12T00:00:00Z' }]);
+  assert.equal((await pending).length, 0);
+}
+for (const [label, rows] of [
+  ['in-band error', [{ document: queryDoc }, { error: { code: 403 } }]],
+  ['skipped documents', [{ document: queryDoc, skippedResults: 1 }]],
+  ['malformed skipped count', [{ readTime: '2026-11-12T00:00:00Z', skippedResults: '1' }]],
+  ['unknown row', [{}]],
+  ['null document', [{ document: null }]],
+  ['foreign project document', [{ document: { name: 'projects/other/databases/(default)/documents/listings_v2/x' } }]],
+  ['malformed fields', [{ document: { name: queryDoc.name, fields: [] } }]],
+  ['no row stream', null],
+]) {
+  const h = makeHarness();
+  const pending = h.clientA.runQuery('listings_v2');
+  await until(() => h.requests.length === 1, 'runQuery ' + label);
+  h.settle(h.requests[0], rows);
+  await assert.rejects(pending, /FIRESTORE_QUERY_(?:RESPONSE|ROW|DOCUMENT)_INVALID|FIRESTORE_QUERY_SKIPPED_RESULTS_UNSAFE/, label);
+}
+console.log('PASS Firestore client query stream rejects in-band errors, omitted rows and foreign documents without live Firebase');
+
 console.log('PASS Firestore response/error paths: unchanged 404 and network errors preserve semantics; stale 404 A->B/A->A, 403 and network rejection fail closed');
 console.log('PASS real client synthetic A/B in-flight races, no Firebase traffic');

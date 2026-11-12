@@ -347,7 +347,36 @@ export class FirebaseRestClient {
     else if (filters.length > 1) structuredQuery.where = { compositeFilter: { op: 'AND', filters: filters.map((filter) => this.toFieldFilter(filter)) } };
     if (orders.length) structuredQuery.orderBy = orders.map((order) => ({ field: { fieldPath: order.field }, direction: order.direction || 'ASCENDING' }));
     const raw = await this.firestoreFetch(`${parent}:runQuery`, { method: 'POST', body: JSON.stringify({ structuredQuery }) });
-    return (raw || []).filter((row: any) => row.document).map((row: any) => this.decodeDocument<T>(row.document));
+    // HTTP 200 is not proof that every Firestore streaming row succeeded.
+    // Never silently discard an in-band error, skipped result, or malformed
+    // envelope and present an incomplete marketplace/moderation read as truth.
+    if (!Array.isArray(raw)) throw new Error('FIRESTORE_QUERY_RESPONSE_INVALID');
+    const documents: FirestoreDocument<T>[] = [];
+    for (const row of raw) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)
+          || Object.prototype.hasOwnProperty.call(row, 'error')) {
+        throw new Error('FIRESTORE_QUERY_ROW_INVALID');
+      }
+      if (Object.prototype.hasOwnProperty.call(row, 'skippedResults')
+          && (!Number.isSafeInteger(row.skippedResults) || row.skippedResults !== 0)) {
+        throw new Error('FIRESTORE_QUERY_SKIPPED_RESULTS_UNSAFE');
+      }
+      if (!Object.prototype.hasOwnProperty.call(row, 'document')) {
+        if (!('readTime' in row) && !('skippedResults' in row) && !('explainMetrics' in row))
+          throw new Error('FIRESTORE_QUERY_ROW_INVALID');
+        continue;
+      }
+      const doc = row.document;
+      if (!doc || typeof doc !== 'object' || Array.isArray(doc)
+          || typeof doc.name !== 'string'
+          || !doc.name.startsWith(this.firestoreBase() + '/')
+          || (doc.fields !== undefined
+            && (!doc.fields || typeof doc.fields !== 'object' || Array.isArray(doc.fields)))) {
+        throw new Error('FIRESTORE_QUERY_DOCUMENT_INVALID');
+      }
+      documents.push(this.decodeDocument<T>(doc));
+    }
+    return documents;
   }
 
   private toFieldFilter(filter: QueryFilter) {

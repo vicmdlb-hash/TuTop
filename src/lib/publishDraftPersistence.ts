@@ -153,7 +153,9 @@ export function writeDurablePublishDraft(
     const serialized = JSON.stringify(envelope);
     if (new TextEncoder().encode(serialized).byteLength > DURABLE_PUBLISH_DRAFT_MAX_BYTES) return false;
     target.setItem(safeKey, serialized);
-    return true;
+    // A storage adapter can silently refuse or truncate writes. Never tell the
+    // publisher their private draft was saved without an exact local readback.
+    return target.getItem(safeKey) === serialized;
   } catch {
     return false;
   }

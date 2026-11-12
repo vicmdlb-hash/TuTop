@@ -18,6 +18,11 @@ function mockStorage() {
   };
 }
 
+// A silent localStorage failure must never be reported to the user as saved.
+const noWrite = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+assert.equal(writeDurablePublishDraft('uid-A-123456789', { title: 'Not durable' }, noWrite), false);
+const truncated = { getItem: () => '{"partial":true}', setItem: () => {}, removeItem: () => {} };
+assert.equal(writeDurablePublishDraft('uid-A-123456789', { title: 'Truncated' }, truncated), false);
 const storage = mockStorage();
 const now = 1_800_000_000_000;
 const uidA = 'uid-A-123456789';
