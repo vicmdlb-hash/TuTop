@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { matchesNativePushSession, needsNativePushOwnershipReset } from '../src/lib/nativePushSessionGuard.ts';
+import { matchesNativePushSession, needsNativePushOwnershipReset, nativePushReconciliationStillPending } from '../src/lib/nativePushSessionGuard.ts';
 import { isNativePushOptedOut, setNativePushOptOut, NATIVE_PUSH_OPT_OUT_PREFIX } from '../src/lib/nativePushOptOut.ts';
 import { createFirstPushTokenDocument, normalizePushTokenIdentity, normalizePushAppVersion } from '../src/lib/pushTokenCreateFirst.ts';
 const A={uid:'synthetic-A',refreshToken:'synthetic-session-A',generation:3,epoch:7};
@@ -16,6 +16,13 @@ assert.equal(matchesNativePushSession(null,same,3,7,false),false);
 // Native deleteToken is the decisive ownership boundary, regardless of server cleanup.
 assert.equal(needsNativePushOwnershipReset(false), true, 'native deletion failure requires reset even when server unregister succeeded');
 assert.equal(needsNativePushOwnershipReset(true), false, 'successful native deletion need not quarantine a new account');
+for (const [deleted, cleared, pending] of [
+  [false, false, true],
+  [false, true, true],
+  [true, false, true],
+  [true, true, false],
+]) assert.equal(nativePushReconciliationStillPending(deleted, cleared), pending,
+  'native reset state requires BOTH token deletion and persistent quarantine removal');
 const native=fs.readFileSync('src/services/nativeFirebaseSecurity.ts','utf8').replace(/\r\n/g, '\n');
 const backend=fs.readFileSync('src/services/pushBackend.ts','utf8').replace(/\r\n/g, '\n');
 const callback=native.slice(native.indexOf("await messaging.addListener('tokenReceived'"),native.indexOf("await messaging.addListener('notificationReceived'"));
@@ -35,6 +42,14 @@ assert(signout.includes('needsNativePushOwnershipReset(tokenDeleted)'),
   'signout must quarantine native token failures independent of serverDeactivated');
 assert(!signout.includes('!serverDeactivated && !tokenDeleted'),
   'server unregister alone must never bypass pending native token reset');
+const reconcileReset = native.slice(native.indexOf('async function reconcilePendingPushOwnershipReset()'),
+  native.indexOf('export async function initializeNativeFirebaseSecurity()'));
+assert(reconcileReset.includes('const resetCleared = tokenDeleted ? setPendingPushOwnershipReset(false) : false;'),
+  'native token cleanup must confirm the persistent marker was cleared');
+assert(reconcileReset.includes('nativePushReconciliationStillPending(tokenDeleted, resetCleared) || pendingPushOwnershipReset()'),
+  'reported pending state must fail closed if persistence or marker readback fails');
+assert(!reconcileReset.includes('return { pending: !tokenDeleted, tokenDeleted }'),
+  'native deleteToken success must no longer imply reconciliation success');
 const register=backend.slice(backend.indexOf('async registerDeviceToken('),backend.indexOf('async unregisterDeviceToken('));
 assert(register.includes('const assertOwner = () => {'));
 assert(register.includes('const tokenHash = await sha256(cleanToken);\n    assertOwner();'));
@@ -177,6 +192,17 @@ assert.equal(normalGuard.setPendingPushOwnershipReset(true), true);
 assert.equal(normalGuard.pendingPushOwnershipReset(), true);
 assert.equal(normalGuard.setPendingPushOwnershipReset(false), true);
 assert.equal(normalGuard.pendingPushOwnershipReset(), false);
+// A native deleteToken success cannot clear the gate when localStorage removal fails.
+const unclearedMarker = new Map([['tutop.synthetic-push-reset', '1']]);
+const failingRemoval = makeResetGuard({
+  getItem: key => unclearedMarker.get(key) ?? null,
+  setItem: (key, value) => { unclearedMarker.set(key, value); },
+  removeItem: () => { throw new Error('storage blocked'); },
+});
+assert.equal(failingRemoval.pendingPushOwnershipReset(), true);
+assert.equal(failingRemoval.setPendingPushOwnershipReset(false), false);
+assert.equal(failingRemoval.pendingPushOwnershipReset(), true);
+assert.equal(nativePushReconciliationStillPending(true, false), true);
 let writeAllowed = false;
 const failingWriteStore = {
   getItem: () => null,

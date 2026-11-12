@@ -15,3 +15,8 @@ export function matchesNativePushSession(
 export function needsNativePushOwnershipReset(tokenDeleted: boolean): boolean {
   return !tokenDeleted;
 }
+
+/** A successful native deletion is insufficient if the reset marker cannot be cleared. */
+export function nativePushReconciliationStillPending(tokenDeleted: boolean, resetCleared: boolean): boolean {
+  return !tokenDeleted || !resetCleared;
+}

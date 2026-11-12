@@ -1,6 +1,6 @@
 import { pushBackend } from './pushBackend';
 import { verifiedEmailBetaAuth } from './verifiedEmailBetaAuth';
-import { matchesNativePushSession, needsNativePushOwnershipReset, type PushSessionWitness } from '../lib/nativePushSessionGuard';
+import { matchesNativePushSession, needsNativePushOwnershipReset, nativePushReconciliationStillPending, type PushSessionWitness } from '../lib/nativePushSessionGuard';
 import { isNativePushOptedOut, setNativePushOptOut } from '../lib/nativePushOptOut';
 import { initializeNativeAppCheck, isNativeFirebaseRuntime } from './nativeAppCheckToken';
 
@@ -232,8 +232,10 @@ async function reconcilePendingPushOwnershipReset() {
     1_500,
     false,
   );
-  if (tokenDeleted) setPendingPushOwnershipReset(false);
-  return { pending: !tokenDeleted, tokenDeleted };
+  // Do not report reconciliation as complete when storage cannot clear/read back
+  // the quarantine marker. A later native registration must remain blocked.
+  const resetCleared = tokenDeleted ? setPendingPushOwnershipReset(false) : false;
+  return { pending: nativePushReconciliationStillPending(tokenDeleted, resetCleared) || pendingPushOwnershipReset(), tokenDeleted };
 }
 
 export async function initializeNativeFirebaseSecurity() {
