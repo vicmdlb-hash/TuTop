@@ -109,6 +109,34 @@ for (const [field, nested] of [
     `raw ${field} field should be identified in the report`);
 }
 
+// Physical R6 evidence must reject sensitive identifiers even when embedded in
+// free-text notes or diagnostic events under otherwise permitted field names.
+for (const [field, rawValue] of [
+  ['device_serial', 'synthetic-short'],
+  ['imei', '123456789012345'],
+  ['emailAddress', 'tester@example.invalid'],
+  ['mac_address', 'A1:B2:C3:D4:E5:F6'],
+]) {
+  const leakedField = structuredClone(good);
+  leakedField.diagnostic_report[field] = rawValue;
+  const verdict = validatePhysicalQaEvidence(leakedField, now, candidateManifest);
+  assert.equal(verdict.overall, 'fail', field);
+  assert.equal(verdict.release_blocked, true, field);
+  assert(verdict.errors.some((error) => error.includes(field)), field);
+}
+for (const [where, rawValue] of [
+  ['imei-like numeric', 'Device test: 123456789012345'],
+  ['MAC-like address', 'Device MAC A1:B2:C3:D4:E5:F6'],
+  ['email address', 'Used tester@example.invalid'],
+]) {
+  const leakedValue = structuredClone(good);
+  leakedValue.notes = rawValue;
+  const verdict = validatePhysicalQaEvidence(leakedValue, now, candidateManifest);
+  assert.equal(verdict.overall, 'fail', where);
+  assert.equal(verdict.release_blocked, true, where);
+  assert(verdict.errors.some((error) => error.includes('sin redactar')), where);
+}
+
 const explanatory = structuredClone(good);
 explanatory.notes = 'No incluir password, idToken, refreshToken ni otros secretos en evidencia.';
 assert.equal(validatePhysicalQaEvidence(explanatory, now, candidateManifest).overall, 'pass');

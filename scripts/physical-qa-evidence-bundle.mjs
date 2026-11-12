@@ -19,6 +19,8 @@ const forbiddenKeys = new Set([
   'fcm_token', 'fcmToken', 'appCheckToken', 'app_check_token',
   'accessToken', 'access_token', 'authorization', 'authorizationHeader',
   'apiKey', 'api_key', 'notification_id', 'raw_notification_id', 'phone',
+  'imei', 'device_serial', 'serial_number', 'mac_address', 'android_id',
+  'advertising_id', 'email', 'email_address', 'emailAddress',
 ].map((key) => key.toLowerCase()));
 const requiredDeviceFields = ['label','manufacturer','model','android_version','viewport','installation'];
 const requiredCandidateFields = [
@@ -54,7 +56,9 @@ function scanSensitive(value, errors, pathParts = []) {
     return;
   }
   if (typeof value !== 'string') return;
-  if (/\b\d{10,13}\b/.test(value)) errors.push(`posible número telefónico/identificador sensible sin redactar en ${pathParts.join('.') || 'root'}`);
+  if (/\b\d{10,17}\b/.test(value)) errors.push(`posible número telefónico/identificador sensible sin redactar en ${pathParts.join('.') || 'root'}`);
+  if (/(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)) errors.push(`posible dirección MAC sin redactar en ${pathParts.join('.') || 'root'}`);
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)) errors.push(`posible correo electrónico sin redactar en ${pathParts.join('.') || 'root'}`);
   if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push(`posible token/identificador largo sin redactar en ${pathParts.join('.') || 'root'}`);
 }
 
