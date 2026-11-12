@@ -65,6 +65,17 @@ const upload = encryptedQa.split('      - name: Upload only encrypted APK and no
 assert(upload);
 assert.match(upload, /TuTop-Private-QA\.apk\.age/);
 assert.match(upload, /TuTop-Private-QA\.provenance\.txt/);
+// Prevent a later workflow edit from uploading plaintext APKs, a wildcard, or a whole temp directory.
+// Checking only that the encrypted path is present would not catch an additional artifact.
+const artifactPathsBlock = upload.match(/^          path: \|\r?\n((?:^            [^\r\n]+\r?\n)+)/m)?.[1];
+assert(artifactPathsBlock, 'private QA artifact path block must be explicit');
+const artifactPaths = artifactPathsBlock.trim().split(/\r?\n/).map(line => line.trim());
+assert.deepEqual(artifactPaths, [
+  '${{ runner.temp }}/TuTop-Private-QA.apk.age',
+  '${{ runner.temp }}/TuTop-Private-QA.provenance.txt',
+], 'encrypted QA artifact allowlist must remain exact: no plaintext APKs, wildcard, or extra uploads');
+assert.equal((encryptedQa.match(/uses:\s*actions\/upload-artifact@/g) || []).length, 1,
+  'private QA workflow must have exactly one artifact-upload action');
 assert.doesNotMatch(upload, /(?:^|\n)\s+\$\{\{ runner\.temp \}\}\/TuTop-Private-QA\.apk(?:\n|$)/);
 assert.match(encryptedQa, /rm -f "\$RUNNER_TEMP\/TuTop-Private-QA\.apk"/);
 assert.match(encryptedQa, /retention-days: 1/);
