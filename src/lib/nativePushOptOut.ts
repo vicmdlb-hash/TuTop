@@ -28,7 +28,7 @@ export function isNativePushOptedOut(uid: string, storage?: StorageLike): boolea
   if (!key || !target) return true;
   try {
     const value = target.getItem(key);
-    return value === null ? false : value !== '0';
+    return value !== null;
   } catch { return true; }
 }
 
