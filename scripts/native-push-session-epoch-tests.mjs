@@ -152,7 +152,12 @@ assert.equal(setNativePushOptOut('synthetic-A', true, inaccessible), false);
 
 
 const resetHelpers = native.slice(native.indexOf('function pendingPushOwnershipReset()'),
-  native.indexOf('function installPushOwnershipRetryListener()'));
+  native.indexOf('function installPushOwnershipRetryListener()'))
+  // The source module is TypeScript; node:vm evaluates JavaScript, not TS annotations.
+  .replace('function setPendingPushOwnershipReset(pending: boolean)',
+    'function setPendingPushOwnershipReset(pending)');
+assert(resetHelpers.includes('function setPendingPushOwnershipReset(pending)'),
+  'synthetic VM must execute the actual reset helper after removing its one TS annotation');
 const makeResetGuard = (localStorage) => vm.runInNewContext(
   `let pendingPushOwnershipResetVolatile = false;
 const PENDING_PUSH_OWNERSHIP_RESET_KEY = 'tutop.synthetic-push-reset';
