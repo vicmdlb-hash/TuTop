@@ -119,7 +119,21 @@ async function commitDeliveryConfirmation(client: FirebaseRestClient, transactio
   const at = nowIso();
   const status = transactionStatusForAction(transaction, actor, 'confirm_delivery') || transaction.status;
   const next = { ...transaction, [field]: at, status, updated_at: at } as MarketplaceTransaction;
-  const confirmationWrite = patchWrite(client, `transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at });
+  // Both participants can confirm concurrently. Read the same canonical
+  // transaction generation we based the status decision on, then require its
+  // Firestore updateTime in the atomic commit (including sold_out).
+  const canonical = await client.getDocument<any>(`transactions_v2/${transaction.id}`);
+  if (!canonical?.updateTime) throw new Error('TRANSACTION_VERSION_UNKNOWN');
+  const observed = { id: canonical.id, ...canonical.data } as MarketplaceTransaction;
+  if (!sameTransactionIdentity(observed, transaction)
+    || observed.status !== transaction.status
+    || observed.updated_at !== transaction.updated_at
+    || observed.buyer_confirmed_at !== transaction.buyer_confirmed_at
+    || observed.seller_confirmed_at !== transaction.seller_confirmed_at) throw new Error('TRANSACTION_CHANGED');
+  const confirmationWrite = {
+    ...patchWrite(client, `transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at }),
+    currentDocument: { updateTime: canonical.updateTime },
+  };
 
   if (status === 'completed') {
     await assertReservationLockConsistent(client, transaction);
