@@ -351,6 +351,9 @@ export class FirebaseRestClient {
     // Never silently discard an in-band error, skipped result, or malformed
     // envelope and present an incomplete marketplace/moderation read as truth.
     if (!Array.isArray(raw)) throw new Error('FIRESTORE_QUERY_RESPONSE_INVALID');
+    // Firestore document.name is a resource name, never the REST HTTP URL.
+    // Limit this response to the queried collection, not just the project.
+    const expectedDocumentPrefix = `${this.documentName(parentPath ? `${parentPath}/${collectionId}` : collectionId)}/`;
     const documents: FirestoreDocument<T>[] = [];
     for (const row of raw) {
       if (!row || typeof row !== 'object' || Array.isArray(row)
@@ -369,7 +372,9 @@ export class FirebaseRestClient {
       const doc = row.document;
       if (!doc || typeof doc !== 'object' || Array.isArray(doc)
           || typeof doc.name !== 'string'
-          || !doc.name.startsWith(this.firestoreBase() + '/')
+          || !doc.name.startsWith(expectedDocumentPrefix)
+          || !doc.name.slice(expectedDocumentPrefix.length)
+          || doc.name.slice(expectedDocumentPrefix.length).includes('/')
           || (doc.fields !== undefined
             && (!doc.fields || typeof doc.fields !== 'object' || Array.isArray(doc.fields)))) {
         throw new Error('FIRESTORE_QUERY_DOCUMENT_INVALID');
