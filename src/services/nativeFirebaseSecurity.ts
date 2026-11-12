@@ -45,16 +45,24 @@ function nativePushOptedOut() {
   return isNativePushOptedOut(uid);
 }
 
+// Keep a process-local quarantine when browser storage writes/readbacks fail.
+// This is NOT proof of persistence across Android process death.
+let pendingPushOwnershipResetVolatile = false;
+
 function pendingPushOwnershipReset() {
-  try { return typeof localStorage !== 'undefined' && localStorage.getItem(PENDING_PUSH_OWNERSHIP_RESET_KEY) === '1'; }
-  catch { return false; }
+  if (pendingPushOwnershipResetVolatile) return true;
+  try { return typeof localStorage === 'undefined' || localStorage.getItem(PENDING_PUSH_OWNERSHIP_RESET_KEY) === '1'; }
+  catch { return true; }
 }
 
 function setPendingPushOwnershipReset(pending: boolean) {
+  if (pending) pendingPushOwnershipResetVolatile = true;
   try {
     if (typeof localStorage === 'undefined') return false;
     if (pending) localStorage.setItem(PENDING_PUSH_OWNERSHIP_RESET_KEY, '1');
     else localStorage.removeItem(PENDING_PUSH_OWNERSHIP_RESET_KEY);
+    if (localStorage.getItem(PENDING_PUSH_OWNERSHIP_RESET_KEY) !== (pending ? '1' : null)) return false;
+    pendingPushOwnershipResetVolatile = false;
     return true;
   } catch { return false; }
 }

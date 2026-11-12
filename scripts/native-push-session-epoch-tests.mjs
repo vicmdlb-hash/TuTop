@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import { matchesNativePushSession, needsNativePushOwnershipReset } from '../src/lib/nativePushSessionGuard.ts';
 import { isNativePushOptedOut, setNativePushOptOut, NATIVE_PUSH_OPT_OUT_PREFIX } from '../src/lib/nativePushOptOut.ts';
 import { createFirstPushTokenDocument, normalizePushTokenIdentity, normalizePushAppVersion } from '../src/lib/pushTokenCreateFirst.ts';
@@ -148,6 +149,51 @@ const inaccessible = {
 assert.equal(isNativePushOptedOut('synthetic-A', inaccessible), true);
 assert.equal(setNativePushOptOut('synthetic-A', false, inaccessible), false);
 assert.equal(setNativePushOptOut('synthetic-A', true, inaccessible), false);
+
+
+const resetHelpers = native.slice(native.indexOf('function pendingPushOwnershipReset()'),
+  native.indexOf('function installPushOwnershipRetryListener()'));
+const makeResetGuard = (localStorage) => vm.runInNewContext(
+  `let pendingPushOwnershipResetVolatile = false;
+const PENDING_PUSH_OWNERSHIP_RESET_KEY = 'tutop.synthetic-push-reset';
+${resetHelpers}
+({ pendingPushOwnershipReset, setPendingPushOwnershipReset });`,
+  { localStorage },
+);
+const storedReset = new Map();
+const normalResetStore = {
+  getItem: key => storedReset.get(key) ?? null,
+  setItem: (key, value) => { storedReset.set(key, value); },
+  removeItem: key => { storedReset.delete(key); },
+};
+const normalGuard = makeResetGuard(normalResetStore);
+assert.equal(normalGuard.pendingPushOwnershipReset(), false);
+assert.equal(normalGuard.setPendingPushOwnershipReset(true), true);
+assert.equal(normalGuard.pendingPushOwnershipReset(), true);
+assert.equal(normalGuard.setPendingPushOwnershipReset(false), true);
+assert.equal(normalGuard.pendingPushOwnershipReset(), false);
+let writeAllowed = false;
+const failingWriteStore = {
+  getItem: () => null,
+  setItem: () => { if (!writeAllowed) throw new Error('quota exceeded'); },
+  removeItem: () => {},
+};
+const quotaGuard = makeResetGuard(failingWriteStore);
+assert.equal(quotaGuard.setPendingPushOwnershipReset(true), false);
+assert.equal(quotaGuard.pendingPushOwnershipReset(), true,
+  'push ownership reset persistence failure must quarantine within this process');
+writeAllowed = true;
+assert.equal(quotaGuard.pendingPushOwnershipReset(), true,
+  'later storage availability alone must not silently clear quarantine');
+assert.equal(quotaGuard.setPendingPushOwnershipReset(false), true);
+assert.equal(quotaGuard.pendingPushOwnershipReset(), false);
+const readFailureGuard = makeResetGuard({
+  getItem: () => { throw new Error('blocked'); },
+  setItem: () => {},
+  removeItem: () => {},
+});
+assert.equal(readFailureGuard.pendingPushOwnershipReset(), true,
+  'failed storage read must never authorize reusing a token under another owner');
 
 const emit = native.slice(native.indexOf('function emitNotificationIntent('), native.indexOf('function currentPushSessionWitness()'));
 const init = native.slice(native.indexOf('export async function initializeNativeFirebaseSecurity()'), native.indexOf('export async function nativePushRegistrationHealth()'));
