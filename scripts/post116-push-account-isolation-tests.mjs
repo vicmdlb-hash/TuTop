@@ -172,7 +172,8 @@ assert(!sender.includes('detail.slice(0, 220)'), 'provider error body must be re
 assert.match(native, /recipient_uid\?: string/);
 assert.match(native, /recipient_uid: String\(data\.recipient_uid \|\| ''\)/);
 assert.match(native, /PENDING_PUSH_OWNERSHIP_RESET_KEY/);
-assert.match(native, /if \(pendingPushOwnershipReset\(\)\) return;/);
+assert.match(native, /if \(pendingPushOwnershipReset\(\) \|\| nativePushOptedOut\(\)\) return;/,
+  'stale FCM events must be blocked by pending owner reset OR user opt-out');
 assert.match(native, /pushBackend\.unregisterDeviceToken\(token, 'android'\)/);
 assert.match(native, /messaging\.deleteToken\(\)/);
 
