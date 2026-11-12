@@ -80,6 +80,19 @@ export default function BackendGate({ children }: { children: ReactNode }) {
         setSuspended({ active: false });
         return;
       }
+      // A cached A view must be discarded before any B-owned Auth flow,
+      // including silent account replacement without the normal logout UI.
+      // Otherwise hydrateOnline refuses B's valid snapshot while old A data
+      // remains mounted and BackendGate may display B as authenticated.
+      const renderedUid = useAppStore.getState().user.id;
+      if (renderedUid && renderedUid !== expectedUid) {
+        clearOnline();
+        setLoading(true);
+        setAuthenticated(false);
+        setVerificationPending(null);
+        setLegacyIdentity(false);
+        setSuspended({ active: false });
+      }
 
       const localIdentity = verifiedEmailBetaAuth.readLocalStatus();
       if (!localIdentity) {
