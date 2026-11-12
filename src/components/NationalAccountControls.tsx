@@ -100,23 +100,30 @@ function AccountControlsForOwner({ ownerUid }: { ownerUid: string }) {
     } finally { if (stillCurrent()) setBusyKey(null); }
   };
 
-  const toggleDevicePush = async () => {
+  const toggleDevicePush = async (action: 'register' | 'remove') => {
     if (!stillCurrent() || pushBusy || pushPermission === 'unavailable') return;
     setPushBusy(true);
     setMessage(null);
     try {
-      if (pushPermission === 'granted') {
+      if (action === 'remove') {
         const disabled = await disableNativePushNotifications();
         if (!stillCurrent()) return;
-        const permission = disabled ? 'prompt' : await nativePushPermission();
+        // Deleting a registration token does NOT revoke Android's OS permission.
+        const permission = await nativePushPermission();
         if (!stillCurrent()) return;
         setPushPermission(permission as DevicePushPermission);
-        setMessage(disabled ? 'Notificaciones push desactivadas en este dispositivo.' : 'No pudimos desactivar el token del dispositivo.');
+        setMessage(disabled
+          ? 'Se eliminó el token push local. El permiso de Android sigue bajo control del sistema; esto no demuestra una baja permanente del servidor.'
+          : 'No pudimos eliminar el token push localmente.');
       } else {
         const result = await enableNativePushNotifications();
         if (!stillCurrent()) return;
         setPushPermission(result.permission as DevicePushPermission);
-        setMessage(result.enabled ? 'Notificaciones del dispositivo activadas.' : result.permission === 'denied' ? 'Android no concedió permiso para notificaciones. Puedes cambiarlo desde los ajustes del sistema.' : 'No pudimos activar las notificaciones del dispositivo.');
+        setMessage(result.enabled
+          ? 'Token push registrado para esta sesión. La entrega real sigue pendiente de una prueba en el teléfono.'
+          : result.permission === 'denied'
+            ? 'Android no concedió permiso para notificaciones. Puedes cambiarlo desde los ajustes del sistema.'
+            : 'No pudimos registrar el token push. Revisa el diagnóstico del dispositivo.');
       }
     } catch {
       if (!stillCurrent()) return;
@@ -179,8 +186,12 @@ function AccountControlsForOwner({ ownerUid }: { ownerUid: string }) {
 
       {open && <div className="mt-3 space-y-2">
         {pushPermission !== 'unavailable' && <div className="rounded-xl border border-violet-400/10 bg-violet-500/[0.04] p-3">
-          <div className="flex items-center gap-2"><BellRing className="h-4 w-4 text-violet-300" /><div className="flex-1"><strong className="block text-[10px] text-slate-200">Notificaciones del dispositivo</strong><small className="text-[8px] text-slate-500">{pushPermission === 'granted' ? 'Activadas en este teléfono' : pushPermission === 'denied' ? 'Bloqueadas por Android' : 'Aún no autorizadas'}</small></div></div>
-          <button type="button" onClick={() => void toggleDevicePush()} disabled={pushBusy} className={`mt-3 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl text-[9px] font-black disabled:opacity-50 ${pushPermission === 'granted' ? 'bg-white/[0.05] text-slate-300' : 'bg-violet-500/15 text-violet-200'}`}>{pushBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{pushPermission === 'granted' ? 'Desactivar push en este dispositivo' : 'Activar notificaciones del dispositivo'}</button>
+          <div className="flex items-center gap-2"><BellRing className="h-4 w-4 text-violet-300" /><div className="flex-1"><strong className="block text-[10px] text-slate-200">Notificaciones del dispositivo</strong><small className="text-[8px] text-slate-500">{pushPermission === 'granted' ? 'Permiso Android concedido; token y entrega aún no comprobados aquí' : pushPermission === 'denied' ? 'Bloqueadas por Android' : 'Permiso Android pendiente'}</small></div></div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => void toggleDevicePush('register')} disabled={pushBusy} className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl bg-violet-500/15 px-2 text-center text-[9px] font-black text-violet-200 disabled:opacity-50">{pushBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Registrar token</button>
+            <button type="button" onClick={() => void toggleDevicePush('remove')} disabled={pushBusy} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-white/[0.05] px-2 text-center text-[9px] font-black text-slate-300 disabled:opacity-50">Eliminar token local</button>
+          </div>
+          <p className="mt-2 text-[9px] leading-4 text-slate-500">Permiso Android, token FCM registrado y entrega real son estados diferentes. Eliminar el token no revoca el permiso ni demuestra una baja duradera del servidor.</p>
         </div>}
 
         <div className="rounded-xl border border-sky-400/10 bg-sky-500/[0.035] p-3">
