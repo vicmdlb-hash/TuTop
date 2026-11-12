@@ -61,3 +61,31 @@ https://firebase.google.com/docs/app-check/android/play-integrity-provider
 Until all applicable gates are evidenced and explicitly authorized, the next
 candidate is **BLOCKED**: never report Build120 as an active APK, never dispatch
 legacy 0.9.1 closeout or staging/Android builders just to obtain a green badge.
+
+
+## Private QA ciphertext custody and real owner recovery — 12 Nov 2026 (CDMX)
+<!-- TUTOP_QA_CUSTODY_R36_151_20261112 -->
+
+**Status: DOCUMENTED ONLY / NOT EXECUTED.** This section does not authorize an Android build, GitHub secret upload, App Check change, deployment, Play release, or a physical QA PASS. The current PR's encrypted APK workflow `.github/workflows/tutop-private-qa-encrypted-apk.yml` is trigger-gated; its artifact has `retention-days: 1`.
+
+### Distinct authority boundaries
+
+- **GitHub source/CI:** a green exact-SHA source or emulator job does *not* produce a connected Android APK.
+- **Android QA signing:** the workflow requires `TUTOP_QA_JKS_BASE64` and three signing parameters as **GitHub Actions secrets**. Using that workflow therefore requires deliberately entrusting the QA private keystore to GitHub Secrets; it is *not* a strictly local-only signing path. This trust boundary and the exact certificate require separate explicit owner approval. Never send private keystore bytes, passwords, recovery files, tokens, or logs containing them to a chat, repository, issue or Drive.
+- **age recipient:** `TUTOP_QA_AGE_RECIPIENT` is a **public** recipient; its paired private identity must remain under the owner's custody. Presence and syntactic validation of the public recipient in a workflow is not proof that the owner still has its private identity.
+- **App Check:** Firebase Console previously showed `mx.tutop.app` registered with Play Integrity, but the exact *future QA signing certificate* and off-Play policy require fresh read-only verification. Registration is not enforcement and neither proves successful native attestation.
+
+### Owner-only reversible preflight (no APK or Firebase)
+
+1. On the owner's trusted computer, create or recover an **age identity** using the official age utility; keep the private identity outside the repository, cloud snippets and messaging, with a tested secure backup. Derive its public recipient locally with `age-keygen -y <identity-file>`; compare it character-for-character with the intended `TUTOP_QA_AGE_RECIPIENT` before authorizing workflow configuration. Do not paste the private file into GitHub, Drive or ChatGPT.
+2. Before encrypting any real APK, encrypt a harmless text fixture locally to that public recipient, decrypt with the locally held private identity, and compare the recovered bytes/hash with the original. An ephemeral or synthetic key round-trip tests the tool only; it does **not** prove the actual owner's recipient is recoverable.
+3. Choose and approve the QA keystore custody model **separately**. If the owner requires keys never to leave the computer, **do not use the existing GitHub-signing workflow** without first designing and reviewing a local-only signing path. Never reuse historical `debug.keystore`.
+4. Only with explicit owner permission and valid key custody should the existing one-file trigger be considered. Recheck PR HEAD, exact source/test CI, App Check, signing/certificate provenance, no remote AI, and the intended **private** recipient. Do not create the trigger simply to test the workflow.
+
+### After a future authorized encrypted build (also owner-only)
+
+1. Retrieve `TuTop-Private-QA.apk.age` and its accompanying `TuTop-Private-QA.provenance.txt` **before the one-day artifact expiry**; a workflow SUCCESS alone does not prove the owner retained an installable APK.
+2. Decrypt privately with the owner-held identity (`age -d -i <identity-file> -o <local-output.apk> <encrypted-artifact.age>`). Confirm successful restoration and compare the **decrypted APK's SHA-256** against `qa_signed_apk_sha256` in the provenance file. Separately verify package `mx.tutop.app`, version, and signing-certificate fingerprint using Android SDK tooling. Do not upload the plaintext APK or owner identity to this repository or chat.
+3. The existing workflow does **not** include this owner-end decrypt-and-compare proof; mark recovery as `UNVERIFIED` until the owner actually performs it. Keep physical R6 Device A+B at `0/2` until distinct, recorded real-device sessions pass. Do not equate encryption integrity, emulator success, or code quality with live Auth, FCM, moderation, erasure, App Check or Play approval.
+
+**Hard stop:** if the age identity is lost, the encrypted artifact expires, signer/certificate/source hashes disagree, a secret cannot be safely custodied, or authorization is absent, do not build, distribute, install, or claim beta readiness.
