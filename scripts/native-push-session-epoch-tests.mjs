@@ -44,7 +44,9 @@ assert(!signout.includes('!serverDeactivated && !tokenDeleted'),
   'server unregister alone must never bypass pending native token reset');
 const reconcileReset = native.slice(native.indexOf('async function reconcilePendingPushOwnershipReset()'),
   native.indexOf('export async function initializeNativeFirebaseSecurity()'));
-assert(reconcileReset.includes('const resetCleared = tokenDeleted ? setPendingPushOwnershipReset(false) : false;'),
+assert(reconcileReset.includes('const resetCleared = tokenDeleted && cleanupEpoch === pushRegistrationEpoch'),
+  'a stale async reconciliation must not clear a newer token quarantine');
+assert(reconcileReset.includes('? setPendingPushOwnershipReset(false)'),
   'native token cleanup must confirm the persistent marker was cleared');
 assert(reconcileReset.includes('nativePushReconciliationStillPending(tokenDeleted, resetCleared) || pendingPushOwnershipReset()'),
   'reported pending state must fail closed if persistence or marker readback fails');
@@ -365,6 +367,43 @@ const currentCleanup = await newLogout;
 assert.equal(currentCleanup.ownershipResetQueued, false);
 assert.equal(overlappingReset.pendingPushOwnershipReset(), false);
 console.log('PASS overlapping native push signouts: stale cleanup cannot release new owner quarantine');
+
+// Reconciliation can race with sign-out too: a late deleteToken() success must
+// not erase the new owner's marker, and a current retry may clear it safely.
+const reconcileStorage = makeSyntheticResetStorage();
+const reconcileGuard = makeResetGuard(reconcileStorage.storage);
+assert.equal(reconcileGuard.setPendingPushOwnershipReset(true), true);
+let resolveOldReconcileDelete;
+let currentReconcilePlugin = {
+  deleteToken: () => new Promise(resolve => { resolveOldReconcileDelete = resolve; }),
+};
+const reconcileContext = {
+  pushRegistrationEpoch: 0,
+  pendingPushOwnershipReset: reconcileGuard.pendingPushOwnershipReset,
+  setPendingPushOwnershipReset: reconcileGuard.setPendingPushOwnershipReset,
+  capacitorPlugin: () => currentReconcilePlugin,
+  nativePushReconciliationStillPending,
+  bounded: (promise, _ms, fallback) => Promise.resolve(promise).catch(() => fallback),
+};
+const runReconcile = vm.runInNewContext(
+  reconcileReset + '\nreconcilePendingPushOwnershipReset', reconcileContext,
+);
+const obsoleteReconcile = runReconcile();
+assert.equal(typeof resolveOldReconcileDelete, 'function');
+reconcileContext.pushRegistrationEpoch += 1;
+reconcileGuard.setPendingPushOwnershipReset(true);
+resolveOldReconcileDelete();
+const obsoleteResult = await obsoleteReconcile;
+assert.equal(obsoleteResult.tokenDeleted, true);
+assert.equal(obsoleteResult.pending, true, 'obsolete reconciliation cannot clear a new sign-out gate');
+assert.equal(reconcileStorage.entries.get('tutop.synthetic-push-reset'), '1');
+currentReconcilePlugin = { deleteToken: async () => undefined };
+const currentReconcile = await runReconcile();
+assert.equal(currentReconcile.pending, false, 'current epoch may clear after native deletion');
+assert.equal(reconcileGuard.pendingPushOwnershipReset(), false);
+console.log('PASS native token reconciliation epoch: outdated cleanup preserves new quarantine');
+
+
 
 console.log('PASS synthetic native logout: pre-await quarantine, absent plugin, deletion failure, marker readback failure');
 

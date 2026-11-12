@@ -224,6 +224,8 @@ async function syncGrantedPushToken() {
 async function reconcilePendingPushOwnershipReset() {
   const pending = pendingPushOwnershipReset();
   if (!pending) return { pending: false, tokenDeleted: false };
+  // An older asynchronous reconciliation cannot release a newer sign-out's gate.
+  const cleanupEpoch = pushRegistrationEpoch;
   const messaging = capacitorPlugin('FirebaseMessaging');
   if (!messaging?.deleteToken) return { pending: true, tokenDeleted: false };
 
@@ -234,7 +236,9 @@ async function reconcilePendingPushOwnershipReset() {
   );
   // Do not report reconciliation as complete when storage cannot clear/read back
   // the quarantine marker. A later native registration must remain blocked.
-  const resetCleared = tokenDeleted ? setPendingPushOwnershipReset(false) : false;
+  const resetCleared = tokenDeleted && cleanupEpoch === pushRegistrationEpoch
+    ? setPendingPushOwnershipReset(false)
+    : false;
   return { pending: nativePushReconciliationStillPending(tokenDeleted, resetCleared) || pendingPushOwnershipReset(), tokenDeleted };
 }
 
