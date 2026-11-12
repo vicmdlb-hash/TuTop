@@ -34,7 +34,7 @@ function exactKeys(x, allowed, where, errors) {
 }
 function validModel(x) {
   return typeof x === 'string' && x.length >= 2 && x.length <= 80
-    && !/@|\r|\n|\b\d{10,13}\b|PENDIENTE|TODO|TBD/i.test(x);
+    && !/@|\r|\n|\b\d{10,17}\b|(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}|PENDIENTE|TODO|TBD/i.test(x);
 }
 export function parseQaProvenance(raw) {
   if (typeof raw !== 'string' || raw.length > 16384) throw Error('INVALID_PROVENANCE_SIZE');
