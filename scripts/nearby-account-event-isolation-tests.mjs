@@ -331,7 +331,10 @@ const publicFilter = filterModule.exports.isPublicDiscoveryProduct;
 for (const status of ['pending', 'review', 'rejected', undefined]) {
   assert.equal(publicFilter({ moderation_status: status }, true), false, 'V2 discovery rejects nonapproved status');
 }
-assert.equal(publicFilter({ moderation_status: 'approved' }, true), true);
+assert.equal(publicFilter({ moderation_status: 'approved', estado: 'Activo' }, true), true,
+  'approved and active V2 listing remains publicly visible');
+assert.equal(publicFilter({ moderation_status: 'approved' }, true), false,
+  'approved but missing lifecycle must not become a public V2 listing');
 assert.equal(publicFilter({ moderation_status: undefined }, false), true, 'legacy catalog remains compatible');
 const feedDiscovery = fs.readFileSync('src/components/Feed.tsx', 'utf8');
 const exploreDiscovery = fs.readFileSync('src/components/ExploreScreen.tsx', 'utf8');
