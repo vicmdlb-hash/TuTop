@@ -41,4 +41,33 @@ assert.match(topiQuickReply, /onClick=\{\(\) => \{ if \(reservedForViewer\) retu
 
 assert.match(store, /product\.availability_status === 'reserved' && !existing/);
 
+// A stale UI transaction snapshot must never authorize new outcome records or
+// a sold-out listing. Each action re-reads the canonical transaction first.
+// This is a source contract; Firebase Rules and real concurrent E2E remain gates.
+function actionSource(name, nextName) {
+  const start = tx.indexOf('  async ' + name + '(');
+  const end = tx.indexOf('  async ' + nextName + '(', start);
+  assert(start >= 0 && end > start, 'missing canonical action: ' + name);
+  return tx.slice(start, end);
+}
+const finalize = actionSource('finalizeCompletedListing', 'disputeTransaction');
+const mutual = actionSource('requestMutualCancellation', 'claimNoShow');
+const noShow = actionSource('claimNoShow', 'releaseExpiredReservation');
+for (const [label, source] of [['finalizeCompletedListing', finalize], ['requestMutualCancellation', mutual], ['claimNoShow', noShow]]) {
+  const readIndex = source.indexOf('const current = await loadCurrentTransaction(client, transaction);');
+  assert(readIndex >= 0, label + ' must fetch canonical transaction state');
+  const checksIndex = source.indexOf('if (actor !== current.');
+  const mutualChecksIndex = source.indexOf('assertCancelable(current, actor);');
+  assert((checksIndex > readIndex || mutualChecksIndex > readIndex),
+    label + ' must validate authoritative state before acting');
+}
+assert.match(finalize, /current\.status !== 'completed'/);
+assert.match(finalize, /listings_v2\/\$\{current\.listing_id\}/);
+assert.match(mutual, /assertCancelable\(current, actor\)/);
+assert.match(mutual, /transaction_id: current\.id/);
+assert.match(noShow, /current\.status !== 'meetup_scheduled'/);
+assert.match(noShow, /const meetupMs = Date\.parse\(current\.meetup_at\)/);
+assert.match(noShow, /transaction_id: current\.id/);
+console.log('PASS seller finalization, mutual cancellation and no-show use current server transaction, not stale UI state');
+
 console.log('PASS reservation availability truth is public-safe, atomic with lock lifecycle and blocks new buyer actions while reserved');
