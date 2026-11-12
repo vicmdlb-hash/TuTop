@@ -249,4 +249,76 @@ assert(permissionUI.includes("return 'Ver estado'"), 'opt-out must not be presen
 assert(deviceHealthUI.includes("reason === 'user-opted-out'"));
 console.log('PASS synthetic native push per-owner opt-out persistence, fail-closed storage, no automatic re-register or stale routing');
 
+// Exercise the actual (TypeScript-free) sign-out function in a synthetic VM.
+// The marker must be durable before getToken awaits, including when the native
+// plugin is temporarily missing. Never access Firebase or a physical device.
+const signOutCode = native.slice(native.indexOf('export async function prepareNativePushForAccountSignOut()'))
+  .replace(/^export /, '');
+assert(signOutCode.startsWith('async function prepareNativePushForAccountSignOut()'));
+const makeSyntheticResetStorage = (failRemoval = false) => {
+  const entries = new Map();
+  return { entries, storage: {
+    getItem: key => entries.get(key) ?? null,
+    setItem: (key, value) => { entries.set(key, value); },
+    removeItem: key => { if (failRemoval) throw new Error('synthetic-blocked-remove'); entries.delete(key); },
+  } };
+};
+const syntheticSignOut = (plugin, resetGuard) => {
+  const context = {
+    pushRegistrationEpoch: 0, initialization: null,
+    isNativeFirebaseRuntime: () => true,
+    capacitorPlugin: () => plugin,
+    setPendingPushOwnershipReset: resetGuard.setPendingPushOwnershipReset,
+    needsNativePushOwnershipReset,
+    pushBackend: { unregisterDeviceToken: async () => undefined },
+    bounded: (promise, _ms, fallback) => Promise.resolve(promise).catch(() => fallback),
+  };
+  return vm.runInNewContext(signOutCode + '\nprepareNativePushForAccountSignOut', context)();
+};
+const offlinePluginStorage = makeSyntheticResetStorage();
+const offlinePluginReset = makeResetGuard(offlinePluginStorage.storage);
+const pluginMissing = await syntheticSignOut(null, offlinePluginReset);
+assert.equal(pluginMissing.tokenDeleted, false);
+assert.equal(pluginMissing.ownershipResetQueued, true);
+assert.equal(offlinePluginReset.pendingPushOwnershipReset(), true,
+  'missing native plugin during logout must quarantine previous owner');
+assert.equal(offlinePluginStorage.entries.get('tutop.synthetic-push-reset'), '1');
+
+const interruptedStorage = makeSyntheticResetStorage();
+const interruptedReset = makeResetGuard(interruptedStorage.storage);
+let resolveNativeToken;
+const delayedToken = new Promise(resolve => { resolveNativeToken = resolve; });
+const pendingLogout = syntheticSignOut({
+  getToken: () => delayedToken, deleteToken: async () => undefined,
+}, interruptedReset);
+assert.equal(interruptedStorage.entries.get('tutop.synthetic-push-reset'), '1',
+  'owner reset marker MUST persist synchronously before getToken resolves');
+resolveNativeToken({ token: 'synthetic-token-abcdefghijklmnopqrstuvwxyz' });
+const completedLogout = await pendingLogout;
+assert.equal(completedLogout.tokenDeleted, true);
+assert.equal(completedLogout.ownershipResetQueued, false);
+assert.equal(interruptedReset.pendingPushOwnershipReset(), false,
+  'clear marker only after native token deletion and successful readback');
+
+const failedNativeStorage = makeSyntheticResetStorage();
+const failedNativeReset = makeResetGuard(failedNativeStorage.storage);
+const failedNativeLogout = await syntheticSignOut({
+  getToken: async () => ({ token: 'synthetic-token-abcdefghijklmnopqrstuvwxyz' }),
+  deleteToken: async () => { throw new Error('synthetic-native-delete-failure'); },
+}, failedNativeReset);
+assert.equal(failedNativeLogout.ownershipResetQueued, true);
+assert.equal(failedNativeReset.pendingPushOwnershipReset(), true,
+  'native deletion failure must preserve quarantine');
+
+const failedRemovalStorage = makeSyntheticResetStorage(true);
+const failedRemovalReset = makeResetGuard(failedRemovalStorage.storage);
+const failedRemovalLogout = await syntheticSignOut({
+  getToken: async () => ({ token: 'synthetic-token-abcdefghijklmnopqrstuvwxyz' }),
+  deleteToken: async () => undefined,
+}, failedRemovalReset);
+assert.equal(failedRemovalLogout.ownershipResetQueued, true,
+  'successful native delete is insufficient without durable marker removal');
+assert.equal(failedRemovalReset.pendingPushOwnershipReset(), true);
+console.log('PASS synthetic native logout: pre-await quarantine, absent plugin, deletion failure, marker readback failure');
+
 console.log('PASS synthetic native push owner epoch guard, delayed callback and backend CAS pre-write contracts');
