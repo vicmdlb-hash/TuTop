@@ -383,8 +383,12 @@ export async function prepareNativePushForAccountSignOut() {
   initialization = null;
   if (!isNativeFirebaseRuntime()) return { serverDeactivated: false, tokenDeleted: false };
 
+  // Persist the previous owner's token quarantine BEFORE any async work.
+  // Missing native plugins or process interruption must not silently permit
+  // registration of a still-owned token under the next signed-in UID.
+  setPendingPushOwnershipReset(true);
   const messaging = capacitorPlugin('FirebaseMessaging');
-  if (!messaging?.getToken) return { serverDeactivated: false, tokenDeleted: false };
+  if (!messaging?.getToken) return { serverDeactivated: false, tokenDeleted: false, ownershipResetQueued: true };
 
   let token = '';
   try {
@@ -415,8 +419,8 @@ export async function prepareNativePushForAccountSignOut() {
   // A successful server unregister does not invalidate a native token. If
   // deleteToken failed, keep the quarantine before a different UID logs in.
   const ownershipResetQueued = needsNativePushOwnershipReset(tokenDeleted)
-    ? setPendingPushOwnershipReset(true)
-    : (setPendingPushOwnershipReset(false), false);
+    ? true
+    : !setPendingPushOwnershipReset(false);
 
   initialization = null;
   return { serverDeactivated, tokenDeleted, ownershipResetQueued };
