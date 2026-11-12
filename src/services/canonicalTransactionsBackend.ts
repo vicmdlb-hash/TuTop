@@ -246,12 +246,13 @@ export const canonicalTransactionsBackend = {
   async finalizeCompletedListing(transaction: MarketplaceTransaction) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (actor !== transaction.seller_id) throw new Error('SELLER_REQUIRED');
-    if (transaction.status !== 'completed' || !transaction.buyer_confirmed_at || !transaction.seller_confirmed_at) throw new Error('TRANSACTION_NOT_COMPLETED');
+    const current = await loadCurrentTransaction(client, transaction);
+    if (actor !== current.seller_id) throw new Error('SELLER_REQUIRED');
+    if (current.status !== 'completed' || !current.buyer_confirmed_at || !current.seller_confirmed_at) throw new Error('TRANSACTION_NOT_COMPLETED');
     const at = nowIso();
-    await assertReservationLockConsistent(client, transaction);
+    await assertReservationLockConsistent(client, current);
     await client.commit([
-      patchWrite(client, `listings_v2/${transaction.listing_id}`, { status: 'sold_out', updated_at: at }),
+      patchWrite(client, `listings_v2/${current.listing_id}`, { status: 'sold_out', updated_at: at }),
     ]);
   },
 
@@ -280,13 +281,14 @@ export const canonicalTransactionsBackend = {
   async requestMutualCancellation(transaction: MarketplaceTransaction, institutionId: string) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    assertCancelable(transaction, actor);
-    const listing = await client.getDocument<any>(`listings_v2/${transaction.listing_id}`);
+    const current = await loadCurrentTransaction(client, transaction);
+    assertCancelable(current, actor);
+    const listing = await client.getDocument<any>(`listings_v2/${current.listing_id}`);
     if (!listing || listing.data.institution_id !== institutionId) throw new Error('INSTITUTION_MISMATCH');
     const at = nowIso();
-    const requestId = `${transaction.id}-${actor}`;
+    const requestId = `${current.id}-${actor}`;
     await client.setDocument(`transaction_cancellation_requests/${requestId}`, {
-      transaction_id: transaction.id,
+      transaction_id: current.id,
       requester_uid: actor,
       kind: 'mutual_cancel',
       institution_id: institutionId,
@@ -300,20 +302,21 @@ export const canonicalTransactionsBackend = {
   async claimNoShow(transaction: MarketplaceTransaction, institutionId: string, reason = '') {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (actor !== transaction.buyer_id && actor !== transaction.seller_id) throw new Error('PARTICIPANT_REQUIRED');
-    if (transaction.status !== 'meetup_scheduled' || !transaction.meetup_at) throw new Error('NO_SHOW_NOT_AVAILABLE');
-    const meetupMs = Date.parse(transaction.meetup_at);
+    const current = await loadCurrentTransaction(client, transaction);
+    if (actor !== current.buyer_id && actor !== current.seller_id) throw new Error('PARTICIPANT_REQUIRED');
+    if (current.status !== 'meetup_scheduled' || !current.meetup_at) throw new Error('NO_SHOW_NOT_AVAILABLE');
+    const meetupMs = Date.parse(current.meetup_at);
     if (!Number.isFinite(meetupMs) || Date.now() < meetupMs + 30 * 60_000) throw new Error('NO_SHOW_TOO_EARLY');
-    const listing = await client.getDocument<any>(`listings_v2/${transaction.listing_id}`);
+    const listing = await client.getDocument<any>(`listings_v2/${current.listing_id}`);
     if (!listing || listing.data.institution_id !== institutionId) throw new Error('INSTITUTION_MISMATCH');
-    const accused = actor === transaction.buyer_id ? transaction.seller_id : transaction.buyer_id;
-    const kind: TransactionOutcomeCode = accused === transaction.buyer_id ? 'buyer_no_show' : 'seller_no_show';
+    const accused = actor === current.buyer_id ? current.seller_id : current.buyer_id;
+    const kind: TransactionOutcomeCode = accused === current.buyer_id ? 'buyer_no_show' : 'seller_no_show';
     const at = nowIso();
-    const claimId = `${transaction.id}-${actor}`;
+    const claimId = `${current.id}-${actor}`;
     await commitWithRateLimit(client, 'report_create', [
       {
         update: client.encodeDocumentForWrite(`transaction_outcome_claims/${claimId}`, {
-          transaction_id: transaction.id,
+          transaction_id: current.id,
           claimant_uid: actor,
           accused_uid: accused,
           kind,
