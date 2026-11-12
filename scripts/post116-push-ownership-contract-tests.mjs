@@ -14,7 +14,10 @@ assert.match(native, /PENDING_PUSH_OWNERSHIP_RESET_KEY/);
 assert.match(native, /reconcilePendingPushOwnershipReset/);
 assert.match(native, /if \(ownership\.pending\) \{[\s\S]*initialization = null;[\s\S]*return;/);
 assert.match(native, /if \(ownership\.pending\) \{[\s\S]*tokenRegistered: false,[\s\S]*ownershipReconciliationPending: true,[\s\S]*reason: 'ownership-reconciliation-pending'[\s\S]*\}/);
-assert.match(native, /!serverDeactivated && !tokenDeleted/);
+assert.match(native, /needsNativePushOwnershipReset\(tokenDeleted\)/,
+  'native token deletion failure must quarantine token reuse regardless of server unregister');
+assert.doesNotMatch(native, /!serverDeactivated && !tokenDeleted/,
+  'old server-only gate must not bypass failed Android token deletion');
 assert.match(native, /setPendingPushOwnershipReset\(true\)/);
 assert.match(native, /window\.addEventListener\('online'/);
 assert.match(native, /if \(pendingPushOwnershipReset\(\) \|\| nativePushOptedOut\(\)\) return;/,
@@ -30,4 +33,4 @@ assert.match(permissions, /pushOwnershipPending/);
 assert.match(permissions, /Reconciliando cuenta/);
 assert.match(permissions, /reconciliando cuenta anterior/);
 
-console.log('PASS post-build116 push ownership: online logout cleans before auth clear; fully-offline failure quarantines token reuse until reconciliation');
+console.log('PASS post-build116 push ownership: online logout cleans before auth clear; failed native token deletion quarantines token reuse until reconciliation');
