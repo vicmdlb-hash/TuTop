@@ -144,6 +144,27 @@ nestedSensitiveHeader.scenarios[1].events[0].metadata = {
   headers: { 'X-Api-Key': 'synthetic-not-a-real-credential' },
 };
 assert.equal(validateFcmPhysicalFixture(nestedSensitiveHeader, candidate, now).pass, false);
+// FCM evidence value privacy regressions: a legal metadata key may still hide
+// sensitive string contents, and correlation IDs may be a copied device ID.
+for (const [label, payload] of [
+  ['IMEI', '123456789012345'], ['MAC', 'AA:BB:CC:DD:EE:FF'],
+  ['email', 'tester@example.invalid'],
+]) {
+  const leaked = structuredClone(valid);
+  leaked.scenarios[0].events[0].metadata = { note: payload };
+  const result = validateFcmPhysicalFixture(leaked, candidate, now);
+  assert.equal(result.pass, false, label);
+  assert(result.errors.some((msg) => msg.includes('valor sensible')), label);
+}
+const copiedImeiSession = structuredClone(valid);
+copiedImeiSession.evidence_session_id = '123456789012345';
+assert.equal(validateFcmPhysicalFixture(copiedImeiSession, candidate, now).pass, false);
+const copiedImeiCorrelation = structuredClone(valid);
+copiedImeiCorrelation.scenarios[0].events[1].correlation = '123456789012345';
+assert.equal(validateFcmPhysicalFixture(copiedImeiCorrelation, candidate, now).pass, false);
+const leakedAndroidId = structuredClone(valid);
+leakedAndroidId.scenarios[0].events[0].metadata = { androidId: 'synthetic' };
+assert.equal(validateFcmPhysicalFixture(leakedAndroidId, candidate, now).pass, false);
 const safeMetadata = structuredClone(valid);
 safeMetadata.scenarios[0].events[0].metadata = { device_slot: 'A', event_count: 2 };
 assert.equal(validateFcmPhysicalFixture(safeMetadata, candidate, now).pass, true);

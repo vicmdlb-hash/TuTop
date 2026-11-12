@@ -13,6 +13,8 @@ const FORBIDDEN_KEYS = new Set([
   'authorization', 'authorizationHeader', 'apiKey', 'x-api-key', 'clientSecret',
   'privateKey', 'password', 'cookie', 'setCookie', 'notification_id',
   'raw_notification_id', 'phone', 'phoneNumber', 'email', 'otp',
+  'imei', 'serialNumber', 'deviceSerial', 'macAddress', 'androidId',
+  'advertisingId', 'emailAddress',
 ].map(normalizeEvidenceKey));
 const SAFE_CORRELATION = /^[a-z0-9_-]{6,80}$/i;
 // A logical navigation target is a category, not a raw URL, user ID,
@@ -24,6 +26,16 @@ const MAX_EVIDENCE_AGE_MS = 24 * 60 * 60_000;
 const CLOCK_SKEW_MS = 5 * 60_000;
 
 function scan(value, errors, pathParts = []) {
+  if (typeof value === 'string') {
+    // Check values too: sensitive IDs can hide in notes or opaque fields.
+    // Never echo raw values in diagnostics.
+    if (/\b\d{10,17}\b/.test(value)
+      || /(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)
+      || /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)) {
+      errors.push(`valor sensible sin redactar: ${pathParts.join('.') || 'root'}`);
+    }
+    return;
+  }
   if (Array.isArray(value)) return value.forEach((item, index) => scan(item, errors, [...pathParts, String(index)]));
   if (!value || typeof value !== 'object') return;
   for (const [key, child] of Object.entries(value)) {
