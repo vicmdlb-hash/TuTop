@@ -114,6 +114,7 @@ const commonSteps = [
   [process.execPath, ['--experimental-strip-types', 'scripts/reservation-reconciliation-tests.mjs']],
   [process.execPath, ['scripts/recovery-local-provider-simulation-tests.mjs']],
   [process.execPath, ['scripts/recovery-local-provider-abuse-tests.mjs']],
+  [process.execPath, ['scripts/private-qa-no-ai-smoke-gate-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/physical-qa-evidence-bundle-tests.mjs']],
   [process.execPath, ['--experimental-strip-types', 'scripts/physical-qa-two-device-gate-tests.mjs']],
   [process.execPath, ['scripts/physical-qa-readiness-pack-tests.mjs']],

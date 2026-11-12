@@ -89,3 +89,18 @@ legacy 0.9.1 closeout or staging/Android builders just to obtain a green badge.
 3. The existing workflow does **not** include this owner-end decrypt-and-compare proof; mark recovery as `UNVERIFIED` until the owner actually performs it. Keep physical R6 Device A+B at `0/2` until distinct, recorded real-device sessions pass. Do not equate encryption integrity, emulator success, or code quality with live Auth, FCM, moderation, erasure, App Check or Play approval.
 
 **Hard stop:** if the age identity is lost, the encrypted artifact expires, signer/certificate/source hashes disagree, a secret cannot be safely custodied, or authorization is absent, do not build, distribute, install, or claim beta readiness.
+ 
+## Private NO-AI smoke vs full R6 — 12 Nov 2026 (CDMX)
+<!-- TUTOP_PRIVATE_NO_AI_SMOKE_SCOPED_R36_190_20261112 -->
+
+Status: CODE CONTRACT ONLY, NO SIGNED CURRENT APK, NO DEVICE TEST. This is a LIMITED, SELF-REPORTED Android smoke, NOT public release readiness. The existing encrypted workflow disables remote Topi AI. The authoritative scripts/physical-qa-evidence-bundle.mjs still demands topi_real_ai PASS and blocks not_applicable; it remains UNCHANGED. Do not alter full R6 acceptance or claim Android Device A+B PASS.
+
+The independent scripts/private-qa-no-ai-smoke-gate.mjs accepts the original encrypted private QA provenance text plus one sanitised JSON from a future physically observed Android. It validates source SHA, exact decrypted APK SHA-256, QA signing SHA-256, staging package, one physical device, fresh observations, real age owner recovery, App Check token observation without recording raw token, and nine limited checks: install_boot; auth_identity; account_switch_isolation; public_listing_gate; offline_reconnect; android_back; safe_areas; app_check_token_observed; remote_ai_disabled. Set topi_real_ai to not_applicable ONLY in this limited schema, never in the official R6. All nine limited checks require real PASS observations (no fabricated evidence). This scope does not test real two-device FCM, moderation, complete erasure, guardian attestation or Play compliance.
+
+Run locally only AFTER owner approved keys and obtained/decrypted an exact new APK:
+node scripts/private-qa-no-ai-smoke-gate.mjs TuTop-Private-QA.provenance.txt private-no-ai-smoke.json --json
+
+JSON fields: schema=tutop.private-smoke-no-ai.v1, source_sha, apk_sha256, certificate_sha256, firebase_project, remote_ai_enabled=false, observed_at, device {physical,manufacturer,model,android_version,installation}, recovery {owner_age_decryption_verified,decrypted_apk_sha256,certificate_sha256}, cases {the nine names above all pass, topi_real_ai:not_applicable}. Keep identity private, never store login/FCM/AppCheck tokens, passwords, OTPs, email, phone, or device identifiers. Owner reports are not independent attestation. The result may be EVIDENCE_COMPLETE_SELF_REPORTED but always includes release_blocked=true AND r6_release_blocked=true.
+
+The workflow's provenance source_sha points to the unique one-file trigger commit, whose parent MUST be the exact code-reviewed HEAD; the final APK hash comes from the decrypted signed bytes. Do not reuse historical Build120/Build121 or claim code HEAD alone is the APK identity.
+
