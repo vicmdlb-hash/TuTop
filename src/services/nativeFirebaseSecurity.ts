@@ -256,7 +256,7 @@ export async function initializeNativeFirebaseSecurity() {
     // Never memoize a completed initialization when the plugin is missing;
     // otherwise a later retry cannot install its FCM event listeners.
     if (!messaging?.getToken) {
-      if (initialization === pending) initialization = null;
+      if (initialEpoch === pushRegistrationEpoch) initialization = null;
       return;
     }
     await installMessagingListeners(messaging);
@@ -269,7 +269,7 @@ export async function initializeNativeFirebaseSecurity() {
     const ownership = await reconcilePendingPushOwnershipReset();
     if (initialEpoch !== pushRegistrationEpoch) return;
     if (ownership.pending) {
-      if (initialization === pending) initialization = null;
+      if (initialEpoch === pushRegistrationEpoch) initialization = null;
       return;
     }
     await syncGrantedPushToken().catch(() => false);
