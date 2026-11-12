@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BellRing, ChevronDown, ChevronUp, ExternalLink, KeyRound, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NOTIFICATION_PRIORITY, type NotificationPreferenceKey, type NotificationPreferences } from '../lib/notificationPreferences.ts';
 import { nationalSchemaEnabled } from '../services/nationalBackend.ts';
 import { disableNativePushNotifications, enableNativePushNotifications, nativePushPermission } from '../services/nativeFirebaseSecurity.ts';
 import { hasTrustedAccountDeletionCompletion } from '../lib/accountDeletionCompletionTruth.ts';
 import { nationalUserSettings, type AccountDeletionRequest } from '../services/nationalUserSettings.ts';
+import { verifiedEmailBetaAuth } from '../services/verifiedEmailBetaAuth.ts';
+import { isCurrentBackendHydration } from '../lib/backendHydrationIdentity.ts';
+import { useAppStore } from '../store/useAppStore.ts';
 
 const LABELS: Record<NotificationPreferenceKey, string> = {
   new_message: 'Nuevo mensaje',
@@ -24,8 +27,23 @@ const LABELS: Record<NotificationPreferenceKey, string> = {
 
 type DevicePushPermission = 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' | 'unavailable';
 
+// A→B must remount the entire account panel so A's password inputs,
+// deletion status and notification preferences cannot render for B.
 export default function NationalAccountControls() {
+  const ownerUid = useAppStore((state) => state.user.id);
+  return ownerUid ? <AccountControlsForOwner key={ownerUid} ownerUid={ownerUid} /> : null;
+}
+
+function AccountControlsForOwner({ ownerUid }: { ownerUid: string }) {
   const enabled = nationalSchemaEnabled();
+  const ownerEpoch = useRef(verifiedEmailBetaAuth.sessionGeneration());
+  const stillCurrent = () => isCurrentBackendHydration(
+    ownerUid,
+    useAppStore.getState().user.id,
+    verifiedEmailBetaAuth.readSessionIdentity()?.uid,
+    ownerEpoch.current,
+    verifiedEmailBetaAuth.sessionGeneration(),
+  );
   const [open, setOpen] = useState(false);
   const [preferences, setPreferences] = useState<NotificationPreferences>({ ...DEFAULT_NOTIFICATION_PREFERENCES });
   const [busyKey, setBusyKey] = useState<NotificationPreferenceKey | null>(null);
@@ -40,14 +58,14 @@ export default function NationalAccountControls() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !stillCurrent()) return;
     let active = true;
     void Promise.all([
       nationalUserSettings.loadNotificationPreferences().catch(() => ({ ...DEFAULT_NOTIFICATION_PREFERENCES })),
       nationalUserSettings.accountDeletionStatus().catch(() => null),
       nativePushPermission().catch(() => 'unavailable' as const),
     ]).then(([prefs, request, permission]) => {
-      if (!active) return;
+      if (!active || !stillCurrent() || (request && request.uid !== ownerUid)) return;
       setPreferences(prefs);
       setDeletion(request);
       setPushPermission(permission as DevicePushPermission);
@@ -66,72 +84,82 @@ export default function NationalAccountControls() {
   if (!enabled) return null;
 
   const toggle = async (key: NotificationPreferenceKey) => {
+    if (!stillCurrent()) return;
     const next = { ...preferences, [key]: !preferences[key] };
     setPreferences(next);
     setBusyKey(key);
     setMessage(null);
     try {
       const saved = await nationalUserSettings.saveNotificationPreferences(next);
-      setPreferences(saved);
+      if (stillCurrent()) setPreferences(saved);
     } catch {
-      setPreferences(preferences);
-      setMessage('No pudimos guardar esa preferencia.');
-    } finally { setBusyKey(null); }
+      if (stillCurrent()) {
+        setPreferences(preferences);
+        setMessage('No pudimos guardar esa preferencia.');
+      }
+    } finally { if (stillCurrent()) setBusyKey(null); }
   };
 
   const toggleDevicePush = async () => {
-    if (pushBusy || pushPermission === 'unavailable') return;
+    if (!stillCurrent() || pushBusy || pushPermission === 'unavailable') return;
     setPushBusy(true);
     setMessage(null);
     try {
       if (pushPermission === 'granted') {
         const disabled = await disableNativePushNotifications();
+        if (!stillCurrent()) return;
         const permission = disabled ? 'prompt' : await nativePushPermission();
+        if (!stillCurrent()) return;
         setPushPermission(permission as DevicePushPermission);
         setMessage(disabled ? 'Notificaciones push desactivadas en este dispositivo.' : 'No pudimos desactivar el token del dispositivo.');
       } else {
         const result = await enableNativePushNotifications();
+        if (!stillCurrent()) return;
         setPushPermission(result.permission as DevicePushPermission);
         setMessage(result.enabled ? 'Notificaciones del dispositivo activadas.' : result.permission === 'denied' ? 'Android no concedió permiso para notificaciones. Puedes cambiarlo desde los ajustes del sistema.' : 'No pudimos activar las notificaciones del dispositivo.');
       }
     } catch {
+      if (!stillCurrent()) return;
       setMessage('No pudimos cambiar las notificaciones del dispositivo.');
       const permission = await nativePushPermission().catch(() => 'unavailable' as const);
-      setPushPermission(permission as DevicePushPermission);
-    } finally { setPushBusy(false); }
+      if (stillCurrent()) setPushPermission(permission as DevicePushPermission);
+    } finally { if (stillCurrent()) setPushBusy(false); }
   };
 
   const rotatePassword = async () => {
-    if (passwordBusy) return;
+    if (!stillCurrent() || passwordBusy) return;
     if (nextPassword.length < 8) { setMessage('La nueva Clave TuTop necesita al menos 8 caracteres.'); return; }
     if (nextPassword !== confirmPassword) { setMessage('Las dos claves no coinciden.'); return; }
     setPasswordBusy(true);
     setMessage(null);
     try {
       await nationalUserSettings.changePassword(nextPassword);
+      if (!stillCurrent()) return;
       setNextPassword('');
       setConfirmPassword('');
       setPasswordOpen(false);
       setMessage('Clave TuTop actualizada. Úsala la próxima vez que inicies sesión.');
     } catch (error) {
+      if (!stillCurrent()) return;
       const raw = error instanceof Error ? error.message : String(error);
       setMessage(/WEAK_PASSWORD/i.test(raw) ? 'La nueva clave es demasiado débil.' : /TOKEN_EXPIRED|INVALID_ID_TOKEN|CREDENTIAL_TOO_OLD_LOGIN_AGAIN/i.test(raw) ? 'Por seguridad, cierra sesión y vuelve a entrar antes de cambiar la clave.' : 'No pudimos actualizar tu Clave TuTop.');
-    } finally { setPasswordBusy(false); }
+    } finally { if (stillCurrent()) setPasswordBusy(false); }
   };
 
   const requestDeletion = async () => {
-    if (deletion || deletionBusy) return;
+    if (!stillCurrent() || deletion || deletionBusy) return;
     const confirmed = window.confirm('¿Quieres solicitar la eliminación de tu cuenta y datos? Algunas evidencias de fraude, disputas u obligaciones legales pueden conservarse temporalmente según la política de retención.');
-    if (!confirmed) return;
+    if (!confirmed || !stillCurrent()) return;
     setDeletionBusy(true);
     setMessage(null);
     try {
       const request = await nationalUserSettings.requestAccountDeletion();
+      if (!stillCurrent() || request.uid !== ownerUid) return;
       setDeletion(request);
       setMessage('Solicitud registrada. TuTop no la tratará como una simple desactivación.');
     } catch {
-      setMessage('No pudimos registrar la solicitud de eliminación.');
-    } finally { setDeletionBusy(false); }
+      if (stillCurrent()) setMessage('No pudimos registrar la solicitud de eliminación.');
+    } finally { if (stillCurrent()) setDeletionBusy(false); }
   };
 
   const renderToggle = (key: NotificationPreferenceKey) => (
