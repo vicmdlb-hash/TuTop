@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { matchesNativePushSession } from '../src/lib/nativePushSessionGuard.ts';
+import { isNativePushOptedOut, setNativePushOptOut, NATIVE_PUSH_OPT_OUT_PREFIX } from '../src/lib/nativePushOptOut.ts';
 import { createFirstPushTokenDocument, normalizePushTokenIdentity, normalizePushAppVersion } from '../src/lib/pushTokenCreateFirst.ts';
 const A={uid:'synthetic-A',refreshToken:'synthetic-session-A',generation:3,epoch:7};
 const same={uid:A.uid,refreshToken:A.refreshToken};
@@ -112,5 +113,55 @@ const unregister=backend.slice(backend.indexOf('async unregisterDeviceToken('),
   backend.indexOf('async loadTrustedNotifications('));
 assert(unregister.includes('normalizePushTokenIdentity(token, platform)'),
   'unregister must validate the same token identity before constructing a document ID');
+
+// Synthetic localStorage only, no real tokens/accounts/devices.
+const pushMarkers = new Map();
+const pushStorage = {
+  getItem: (key) => pushMarkers.get(key) ?? null,
+  setItem: (key, value) => { pushMarkers.set(key, value); },
+  removeItem: (key) => { pushMarkers.delete(key); },
+};
+assert.equal(isNativePushOptedOut('synthetic-A', pushStorage), false);
+assert.equal(setNativePushOptOut('synthetic-A', true, pushStorage), true);
+assert.equal(pushMarkers.get(NATIVE_PUSH_OPT_OUT_PREFIX + 'synthetic-A'), '1');
+assert.equal(isNativePushOptedOut('synthetic-A', pushStorage), true);
+assert.equal(isNativePushOptedOut('synthetic-B', pushStorage), false, 'other UID must not inherit A preference');
+pushMarkers.set(NATIVE_PUSH_OPT_OUT_PREFIX + 'synthetic-A', 'corrupted');
+assert.equal(isNativePushOptedOut('synthetic-A', pushStorage), true, 'tampered persistent opt-out must fail closed');
+assert.equal(setNativePushOptOut('synthetic-A', false, pushStorage), true);
+assert.equal(isNativePushOptedOut('synthetic-A', pushStorage), false);
+assert.equal(isNativePushOptedOut('invalid uid!', pushStorage), true);
+assert.equal(setNativePushOptOut('invalid uid!', true, pushStorage), false);
+const inaccessible = {
+  getItem() { throw new Error('storage unavailable'); },
+  setItem() { throw new Error('storage unavailable'); },
+  removeItem() { throw new Error('storage unavailable'); },
+};
+assert.equal(isNativePushOptedOut('synthetic-A', inaccessible), true);
+assert.equal(setNativePushOptOut('synthetic-A', false, inaccessible), false);
+assert.equal(setNativePushOptOut('synthetic-A', true, inaccessible), false);
+
+const emit = native.slice(native.indexOf('function emitNotificationIntent('), native.indexOf('function currentPushSessionWitness()'));
+const init = native.slice(native.indexOf('export async function initializeNativeFirebaseSecurity()'), native.indexOf('export async function nativePushRegistrationHealth()'));
+const health = native.slice(native.indexOf('export async function nativePushRegistrationHealth()'), native.indexOf('export async function enableNativePushNotifications()'));
+const enable = native.slice(native.indexOf('export async function enableNativePushNotifications()'), native.indexOf('export async function disableNativePushNotifications()'));
+const disable = native.slice(native.indexOf('export async function disableNativePushNotifications()'), native.indexOf('function bounded<'));
+assert(emit.includes('pendingPushOwnershipReset() || nativePushOptedOut()'), 'opted-out owners must not route stale token events');
+assert(native.includes('if (pendingPushOwnershipReset() || nativePushOptedOut()) return null;'));
+assert(sync.includes("if (nativePushOptedOut()) return { registered: false, reason: 'user-opted-out' };"));
+assert(init.includes('await syncGrantedPushToken().catch(() => false)'), 'automatic registration must preserve opt-out check inside sync');
+assert(health.includes('if (nativePushOptedOut())'), 'health checks must never re-enable opt-out');
+assert(health.includes("reason: 'user-opted-out'"));
+assert(enable.includes('setNativePushOptOut(uid, false)'), 'only direct explicit enable action may clear opt-out');
+assert(enable.includes('pushRegistrationEpoch += 1;'));
+assert(disable.includes('setNativePushOptOut(owner.uid, true)'), 'disable must persist opt-out before touching native token');
+assert(disable.indexOf('setNativePushOptOut(owner.uid, true)') < disable.indexOf('pushRegistrationEpoch += 1;'));
+assert(disable.includes('if (!isSameOwner()) return false;'), 'late token cleanup must reject new owner');
+const permissionUI = fs.readFileSync('src/components/PermissionSettings.tsx','utf8');
+const deviceHealthUI = fs.readFileSync('src/components/DeviceHealthPanel.tsx','utf8');
+assert(permissionUI.includes("reason === 'user-opted-out'"));
+assert(permissionUI.includes("return 'Ver estado'"), 'opt-out must not be presented as retryable token failure');
+assert(deviceHealthUI.includes("reason === 'user-opted-out'"));
+console.log('PASS synthetic native push per-owner opt-out persistence, fail-closed storage, no automatic re-register or stale routing');
 
 console.log('PASS synthetic native push owner epoch guard, delayed callback and backend CAS pre-write contracts');
