@@ -34,6 +34,8 @@ function stateLabel(id: CapabilityPermission, state: PermissionState091) {
 }
 
 function pushReasonCopy(reason: PushRegistrationReason | null) {
+  if (reason === 'user-opted-out') return 'El registro push está desactivado en esta instalación para esta cuenta. Puedes reactivarlo en Notificaciones y privacidad.';
+  if (reason === 'preference-storage-unavailable') return 'No se pudo guardar tu preferencia de notificaciones de forma segura.';
   if (reason === 'firebase-config-rejected') return 'Firebase rechazó la configuración nativa de esta instalación.';
   if (reason === 'network-failure') return 'No hubo conexión suficiente para registrar notificaciones.';
   if (reason === 'server-registration-failed') return 'El teléfono obtuvo token, pero TuTop no pudo asociarlo a esta cuenta.';
@@ -42,9 +44,10 @@ function pushReasonCopy(reason: PushRegistrationReason | null) {
   return 'El permiso está activo, pero el token FCM sigue pendiente.';
 }
 
-function actionLabel(id: CapabilityPermission, state: PermissionState091, busy: boolean, pushRegistered?: boolean | null) {
+function actionLabel(id: CapabilityPermission, state: PermissionState091, busy: boolean, pushRegistered?: boolean | null, pushReason?: PushRegistrationReason | null) {
   if (busy) return 'Comprobando…';
   if (id === 'camera' && state === 'granted') return 'Verificar';
+  if (id === 'notifications' && state === 'granted' && pushReason === 'user-opted-out') return 'Ver estado';
   if (id === 'notifications' && state === 'granted' && pushRegistered === false) return 'Reintentar';
   return state === 'granted' ? 'Comprobar' : 'Activar';
 }
@@ -116,7 +119,9 @@ export default function PermissionSettings() {
           ? 'Permiso Android activo, pero TuTop está invalidando un token que pertenecía a la cuenta anterior. No registrará ese mismo token para esta cuenta hasta completar la reconciliación.'
           : registered
             ? 'Permiso Android activo y token FCM registrado para esta cuenta. La entrega real se confirma sólo cuando llegue y se abra una notificación de prueba.'
-            : `${pushReasonCopy(health?.reason || null)} Puedes tocar “Reintentar” después de recuperar conexión o corregir la configuración.`);
+            : health?.reason === 'user-opted-out'
+              ? pushReasonCopy(health.reason)
+              : `${pushReasonCopy(health?.reason || null)} Puedes tocar “Reintentar” después de recuperar conexión o corregir la configuración.`);
       } else if (id === 'camera' && result === 'granted') {
         setNote('Cámara/galería disponible. La prueba real se hace desde Publicar: toca Cámara o Galería y Android abrirá su selector del sistema.');
       } else if (id === 'location' && result !== 'granted') {
@@ -170,7 +175,7 @@ export default function PermissionSettings() {
                     <p className="mt-0.5 text-[9px] text-slate-500">{hint}</p>
                   </div>
                   <button type="button" disabled={busy !== null} onClick={() => void request(id)} className="rounded-xl bg-violet-600 px-3 py-2 text-[9px] font-black text-white disabled:opacity-50">
-                    {actionLabel(id, state, busy === id, id === 'notifications' ? pushTokenRegistered : null)}
+                    {actionLabel(id, state, busy === id, id === 'notifications' ? pushTokenRegistered : null, id === 'notifications' ? pushRegistrationReason : null)}
                   </button>
                 </div>
                 <p className="mt-2 text-[8px] leading-4 text-slate-600">{PERMISSION_PRIVACY_COPY[id]}</p>
