@@ -1,6 +1,7 @@
 import { pushBackend } from './pushBackend';
 import { verifiedEmailBetaAuth } from './verifiedEmailBetaAuth';
 import { matchesNativePushSession, type PushSessionWitness } from '../lib/nativePushSessionGuard';
+import { isNativePushOptedOut, setNativePushOptOut } from '../lib/nativePushOptOut';
 import { initializeNativeAppCheck, isNativeFirebaseRuntime } from './nativeAppCheckToken';
 
 type CapacitorPlugin = Record<string, (...args: any[]) => Promise<any>>;
@@ -14,7 +15,9 @@ export type PushRegistrationReason =
   | 'firebase-config-rejected'
   | 'network-failure'
   | 'server-registration-failed'
-  | 'token-registration-failed';
+  | 'token-registration-failed'
+  | 'user-opted-out'
+  | 'preference-storage-unavailable';
 
 export type NativeNotificationIntent = {
   source: 'received' | 'action';
@@ -36,6 +39,11 @@ let ownershipRetryInstalled = false;
 // A logout or native disable immediately invalidates all earlier registration work.
 let pushRegistrationEpoch = 0;
 const PENDING_PUSH_OWNERSHIP_RESET_KEY = 'tutop.push.pending-owner-reset.v1';
+
+function nativePushOptedOut() {
+  const uid = verifiedEmailBetaAuth.readSessionIdentity()?.uid || '';
+  return isNativePushOptedOut(uid);
+}
 
 function pendingPushOwnershipReset() {
   try { return typeof localStorage !== 'undefined' && localStorage.getItem(PENDING_PUSH_OWNERSHIP_RESET_KEY) === '1'; }
@@ -95,12 +103,12 @@ function emitNotificationIntent(intent: NativeNotificationIntent) {
   if (typeof window === 'undefined') return;
   // After a fully-offline account switch, do not route any stale push inside
   // TuTop until the native registration token has been invalidated/reconciled.
-  if (pendingPushOwnershipReset()) return;
+  if (pendingPushOwnershipReset() || nativePushOptedOut()) return;
   window.dispatchEvent(new CustomEvent<NativeNotificationIntent>(NATIVE_NOTIFICATION_EVENT, { detail: intent }));
 }
 
 function currentPushSessionWitness(): PushSessionWitness | null {
-  if (pendingPushOwnershipReset()) return null;
+  if (pendingPushOwnershipReset() || nativePushOptedOut()) return null;
   const identity = verifiedEmailBetaAuth.readSessionIdentity();
   if (!identity?.uid || !identity.refreshToken) return null;
   return { ...identity, generation: verifiedEmailBetaAuth.sessionGeneration(), epoch: pushRegistrationEpoch };
@@ -175,6 +183,7 @@ function classifyPushFailure(error: unknown): PushRegistrationReason {
 async function syncGrantedPushTokenHealth(
   providedWitness?: PushSessionWitness,
 ): Promise<{ registered: boolean; reason: PushRegistrationReason }> {
+  if (nativePushOptedOut()) return { registered: false, reason: 'user-opted-out' };
   const witness = providedWitness || currentPushSessionWitness();
   const denied = { registered: false, reason: 'ownership-reconciliation-pending' as PushRegistrationReason };
   if (!witness || !isCurrentPushSession(witness)) return denied;
@@ -255,6 +264,12 @@ export async function initializeNativeFirebaseSecurity() {
 
 export async function nativePushRegistrationHealth() {
   const permission = await nativePushPermission();
+  // Health probes must never silently re-enable an explicit user opt-out.
+  if (nativePushOptedOut()) {
+    return { permission, tokenRegistered: false,
+      ownershipReconciliationPending: pendingPushOwnershipReset(),
+      reason: 'user-opted-out' as PushRegistrationReason };
+  }
   if (permission !== 'granted') {
     return {
       permission,
@@ -282,6 +297,12 @@ export async function enableNativePushNotifications() {
   if (!messaging?.requestPermissions || !messaging?.getToken) {
     return { enabled: false, permission: 'unavailable' as PushPermission, reason: 'plugin-unavailable' as PushRegistrationReason };
   }
+  // Only a direct user action may clear the stored per-owner opt-out.
+  const uid = verifiedEmailBetaAuth.readSessionIdentity()?.uid || '';
+  if (!uid || !setNativePushOptOut(uid, false)) {
+    return { enabled: false, permission: await nativePushPermission(), reason: 'preference-storage-unavailable' as PushRegistrationReason };
+  }
+  pushRegistrationEpoch += 1;
   await initializeNativeFirebaseSecurity();
   let permission = await nativePushPermission();
   if (permission !== 'granted') {
@@ -304,16 +325,27 @@ export async function enableNativePushNotifications() {
 }
 
 export async function disableNativePushNotifications() {
-  pushRegistrationEpoch += 1;
   if (!isNativeFirebaseRuntime()) return false;
+  const owner = verifiedEmailBetaAuth.readSessionIdentity();
+  if (!owner?.uid || !setNativePushOptOut(owner.uid, true)) return false;
+  // Invalidate queued tokenReceived callbacks before native token deletion.
+  pushRegistrationEpoch += 1;
+  const generation = verifiedEmailBetaAuth.sessionGeneration();
+  const isSameOwner = () => {
+    const live = verifiedEmailBetaAuth.readSessionIdentity();
+    return live?.uid === owner.uid && live?.refreshToken === owner.refreshToken
+      && verifiedEmailBetaAuth.sessionGeneration() === generation;
+  };
   const messaging = capacitorPlugin('FirebaseMessaging');
   if (!messaging?.getToken || !messaging?.deleteToken) return false;
   try {
     const result = await messaging.getToken();
+    if (!isSameOwner()) return false;
     const token = String(result?.token || '').trim();
     if (token) await pushBackend.unregisterDeviceToken(token, 'android').catch(() => undefined);
+    if (!isSameOwner()) return false;
     await messaging.deleteToken();
-    return true;
+    return isSameOwner();
   } catch {
     return false;
   }
