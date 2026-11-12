@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 
 const runner = fs.readFileSync('scripts/reconcile-v2-reservations.mjs', 'utf8');
 const domain = fs.readFileSync('src/lib/reservationReconciliation.ts', 'utf8');
@@ -47,6 +48,44 @@ assert.doesNotMatch(finalizeBlock, /terminalTransactionWrites/);
 assert.doesNotMatch(backend, /releaseCompletedLockBestEffort/);
 assert.match(lockRuleHardener, /completed queda reservado a cleanup trusted/);
 assert.doesNotMatch(lockRuleHardener, /data\.status == 'completed'.*allow delete/s);
+
+// Test the exact current TypeScript helper as isolated credential-free JS.
+const terminalStart = backend.indexOf('async function terminalTransactionWrites(');
+const terminalEnd = backend.indexOf('async function assertReservationLockConsistent(', terminalStart);
+assert(terminalStart >= 0 && terminalEnd > terminalStart);
+const terminalHelper = backend.slice(terminalStart, terminalEnd)
+  .replace('client: FirebaseRestClient, transaction: MarketplaceTransaction, patch: Record<string, unknown>', 'client, transaction, patch')
+  .replace('getDocument<any>', 'getDocument');
+assert(terminalHelper.includes('currentDocument: { updateTime: lock.updateTime }'));
+const terminalWriteTest = vm.runInNewContext(terminalHelper + '\\nterminalTransactionWrites', {
+  reservationLockPath: listing => `listing_reservation_locks/${listing}`,
+  patchWrite: (_client, path, data) => ({ update: path, data }),
+  reservationAvailabilityWrite: (_client, id, availability) => ({ listing: id, availability }),
+  nowIso: () => '2026-11-12T00:00:00Z',
+});
+const lockFixture = { data: { transaction_id: 'tx-a' }, updateTime: '2026-11-12T01:02:03.123456789Z' };
+const mockClient = lock => ({
+  getDocument: async () => lock,
+  documentName: path => path,
+});
+const terminalTransaction = { id: 'tx-a', listing_id: 'listing-a' };
+const latestWrites = await terminalWriteTest(mockClient(lockFixture), terminalTransaction,
+  { status: 'cancelled', updated_at: '2026-11-12T01:05:00Z' });
+assert.equal(latestWrites.length, 3);
+assert.equal(latestWrites[1].delete, 'listing_reservation_locks/listing-a');
+assert.equal(latestWrites[1].currentDocument.updateTime, lockFixture.updateTime,
+  'lock deletion must carry the exact Firestore read witness');
+await assert.rejects(
+  terminalWriteTest(mockClient({ data: { transaction_id: 'tx-a' } }), terminalTransaction, { status: 'expired' }),
+  /RESERVATION_LOCK_VERSION_UNKNOWN/,
+);
+await assert.rejects(
+  terminalWriteTest(mockClient({ data: { transaction_id: 'tx-b' }, updateTime: lockFixture.updateTime }),
+    terminalTransaction, { status: 'cancelled' }), /RESERVATION_LOCK_MISMATCH/,
+);
+const noLockWrites = await terminalWriteTest(mockClient(null), terminalTransaction, { status: 'expired' });
+assert.equal(noLockWrites.length, 1, 'no existing lock must not create a delete');
+console.log('PASS terminal transaction locks use exact updateTime delete preconditions, reject missing witness');
 
 // Pure synthetic inventory tests: do NOT contact Firestore or use credentials.
 const { assertCompleteReconciliationPage, validateReconciliationInventoryPage } = await import('./reservation-reconcile-inventory-lib.mjs');

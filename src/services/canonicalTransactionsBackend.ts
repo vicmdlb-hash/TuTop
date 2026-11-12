@@ -53,10 +53,14 @@ function assertCancelable(transaction: MarketplaceTransaction, actor: string) {
 async function terminalTransactionWrites(client: FirebaseRestClient, transaction: MarketplaceTransaction, patch: Record<string, unknown>) {
   const lock = await client.getDocument<any>(reservationLockPath(transaction.listing_id));
   if (lock && lock.data.transaction_id !== transaction.id) throw new Error('RESERVATION_LOCK_MISMATCH');
+  // Never delete a successor's lock after a concurrent cancellation/rebooking.
+  // Firestore enforces this version witness atomically with the full commit.
+  if (lock && !lock.updateTime) throw new Error('RESERVATION_LOCK_VERSION_UNKNOWN');
   return [
     patchWrite(client, `transactions_v2/${transaction.id}`, patch),
     ...(lock ? [
-      { delete: client.documentName(reservationLockPath(transaction.listing_id)) },
+      { delete: client.documentName(reservationLockPath(transaction.listing_id)),
+        currentDocument: { updateTime: lock.updateTime } },
       reservationAvailabilityWrite(client, transaction.listing_id, 'available', String(patch.updated_at || nowIso())),
     ] : []),
   ];
