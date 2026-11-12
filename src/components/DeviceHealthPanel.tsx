@@ -13,6 +13,8 @@ type Snapshot = {
 };
 
 function pushReason(reason?: PushRegistrationReason | null) {
+  if (reason === 'user-opted-out') return 'registro desactivado por esta cuenta';
+  if (reason === 'preference-storage-unavailable') return 'preferencia local no disponible';
   if (reason === 'registered') return 'token registrado';
   if (reason === 'permission-not-granted') return 'permiso pendiente';
   if (reason === 'ownership-reconciliation-pending') return 'reconciliando cuenta anterior';
