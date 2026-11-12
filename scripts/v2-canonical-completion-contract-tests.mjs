@@ -81,4 +81,72 @@ console.log('PASS newly created transactions surface through transactionHint wit
 console.log('PASS review UI/bridge is unlocked only after canonical completed transaction projection');
 console.log('PASS trusted reconciliation remains a drift/historical repair path only');
 console.log('PASS legacy chat confirmations remain V1-only compatibility behavior through the store → onlineBackend boundary');
+// Execute actual delivery-confirmation helper with no credentials or Firebase.
+// Version preconditions prevent a stale first/second confirmation from updating
+// the transaction or selling the listing after a competing state change.
+const { stripTypeScriptTypes } = await import('node:module');
+function completionSection(startToken, endToken) {
+  const start = transactionBackend.indexOf(startToken);
+  const end = transactionBackend.indexOf(endToken, start);
+  assert(start >= 0 && end > start, 'completion helper source unavailable');
+  return transactionBackend.slice(start, end);
+}
+const completionSource = [
+  completionSection('function sameTransactionIdentity(', '\nasync function loadCurrentTransaction('),
+  completionSection('function actorConfirmationField(', '\nasync function commitDeliveryConfirmation('),
+  completionSection('async function commitDeliveryConfirmation(', '\nexport const canonicalTransactionsBackend'),
+].join('\n');
+const observedCommits = [];
+const confirmWithVersion = new Function('nowIso', 'canActOnTransaction', 'transactionStatusForAction',
+  'patchWrite', 'assertReservationLockConsistent',
+  stripTypeScriptTypes(completionSource) + '\nreturn commitDeliveryConfirmation;'
+)(
+  () => '2026-11-12T20:00:00.000Z',
+  () => true,
+  (transaction, actor) => actor === 'seller-a' && transaction.buyer_confirmed_at ? 'completed' : transaction.status,
+  (_client, path, fields) => ({ update: path, fields }),
+  async () => {},
+);
+const baseline = {
+  id: 'tx-guarded', listing_id: 'listing-a', chat_id: 'chat-a',
+  buyer_id: 'buyer-a', seller_id: 'seller-a', accepted_offer_id: 'offer-a',
+  agreed_amount_mxn: 125, status: 'reserved', updated_at: '2026-11-12T19:00:00.000Z',
+};
+const TX_UPDATE_TIME = '2026-11-12T19:00:10.123456789Z';
+function isolatedClient(transaction, canonical = { id: transaction.id, data: { ...transaction }, updateTime: TX_UPDATE_TIME }) {
+  return {
+    getDocument: async path => {
+      assert.equal(path, 'transactions_v2/tx-guarded', 'only canonical transaction is read');
+      return canonical;
+    },
+    commit: async writes => { observedCommits.push(writes); },
+  };
+}
+const confirmedBuyer = await confirmWithVersion(isolatedClient(baseline), baseline, 'buyer-a');
+assert.equal(confirmedBuyer.status, 'reserved');
+assert.equal(observedCommits.length, 1);
+assert.equal(observedCommits[0].length, 1);
+assert.equal(observedCommits[0][0].currentDocument.updateTime, TX_UPDATE_TIME);
+assert.equal(observedCommits[0][0].fields.buyer_confirmed_at, '2026-11-12T20:00:00.000Z');
+const second = { ...baseline, buyer_confirmed_at: '2026-11-12T19:20:00.000Z' };
+const completed = await confirmWithVersion(isolatedClient(second), second, 'seller-a');
+assert.equal(completed.status, 'completed');
+assert.equal(observedCommits[1].length, 2);
+assert.equal(observedCommits[1][0].currentDocument.updateTime, TX_UPDATE_TIME,
+  'second confirmation and sold_out must be in the same versioned commit');
+assert.equal(observedCommits[1][1].fields.status, 'sold_out');
+const beforeFailure = observedCommits.length;
+for (const badCanonical of [
+  { id: baseline.id, data: { ...baseline, status: 'disputed' }, updateTime: TX_UPDATE_TIME },
+  { id: baseline.id, data: { ...baseline, seller_confirmed_at: '2026-11-12T19:10:00.000Z' }, updateTime: TX_UPDATE_TIME },
+  { id: baseline.id, data: { ...baseline, updated_at: '2026-11-12T19:40:00.000Z' }, updateTime: TX_UPDATE_TIME },
+]) {
+  await assert.rejects(confirmWithVersion(isolatedClient(baseline, badCanonical), baseline, 'buyer-a'),
+    /TRANSACTION_CHANGED/);
+}
+await assert.rejects(confirmWithVersion(isolatedClient(baseline, { id: baseline.id, data: baseline }), baseline, 'buyer-a'),
+  /TRANSACTION_VERSION_UNKNOWN/);
+assert.equal(observedCommits.length, beforeFailure, 'no write when server state or version is untrustworthy');
+console.log('PASS both delivery confirmations use exact transaction updateTime; stale states cannot complete or sell listing (synthetic)');
+
 console.log('V2 canonical completion contract: PASS');
