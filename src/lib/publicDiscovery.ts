@@ -1,12 +1,11 @@
 import type { Product } from '../types';
 
-// The canonical V2 adapter always supplies a lifecycle status. Restrict
-// listings that declare one to active only, including cached stale records.
-// Unknown lifecycle objects remain a legacy compatibility case; direct-ID
-// buyer navigation additionally requires the explicit active status below.
+// The canonical V2 adapter supplies a lifecycle status. A missing status in
+// a stale or malformed cached record must fail closed, not imply public access.
+// Legacy V1 compatibility is handled only by the explicit !v2Enabled path.
 export function isPublicDiscoveryProduct(product: Product, v2Enabled: boolean): boolean {
   return !v2Enabled || (product.moderation_status === 'approved'
-    && (product.estado === undefined || product.estado === 'Activo'));
+    && product.estado === 'Activo');
 }
 
 export function canViewerOpenListing(product: Product, viewerUid: string, v2Enabled: boolean): boolean {

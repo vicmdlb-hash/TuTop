@@ -12,13 +12,17 @@ for (const status of statuses) {
 }
 for (const estado of ['Activo','Pausado','Vendido','Archivado','Reservado','',undefined]) {
   const product={id:'synthetic',vendedor_id:'seller-a',moderation_status:'approved',estado};
-  assert.equal(isPublicDiscoveryProduct(product,true),estado==='Activo'||estado===undefined,
-    'buyer list must exclude known inactive statuses');
+  assert.equal(isPublicDiscoveryProduct(product,true),estado==='Activo',
+    'V2 buyer list must require explicit active lifecycle even when status is missing');
   assert.equal(canViewerOpenListing(product,'buyer-b',true),estado==='Activo',
     'buyer direct ID requires active lifecycle');
   assert.equal(canViewerOpenListing(product,'seller-a',true),true,
     'seller retains private listing access');
 }
+// Only V1 intentionally preserves its historical absent-lifecycle behavior.
+assert.equal(isPublicDiscoveryProduct({ moderation_status: 'approved', estado: undefined }, false), true);
+assert.equal(isPublicDiscoveryProduct({ moderation_status: 'approved', estado: undefined }, true), false,
+  'an approved but lifecycle-unknown V2 listing must not reach buyer discovery');
 assert.equal(isPublicDiscoveryProduct({moderation_status:'pending'},false),true);
 const feed=fs.readFileSync('src/components/Feed.tsx','utf8');
 const explore=fs.readFileSync('src/components/ExploreScreen.tsx','utf8');
