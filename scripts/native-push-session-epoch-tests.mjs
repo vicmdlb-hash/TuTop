@@ -251,6 +251,67 @@ assert(permissionUI.includes("return 'Ver estado'"), 'opt-out must not be presen
 assert(deviceHealthUI.includes("reason === 'user-opted-out'"));
 console.log('PASS synthetic native push per-owner opt-out persistence, fail-closed storage, no automatic re-register or stale routing');
 
+// Exercise the real initialization function with delayed App Check, without
+// connecting native plugins or Firebase. An old startup cannot register a new
+// UID after sign-out or erase a newer initialization promise.
+const isolatedInitCode = init.replace(/^export /, '');
+const appCheckResolvers = [];
+let pluginAvailable = true;
+let installedListeners = 0;
+let nativeRegistrations = 0;
+const initContext = {
+  initialization: null,
+  pushRegistrationEpoch: 0,
+  isNativeFirebaseRuntime: () => true,
+  installPushOwnershipRetryListener: () => {},
+  initializeNativeAppCheck: () => new Promise(resolve => { appCheckResolvers.push(resolve); }),
+  capacitorPlugin: () => pluginAvailable ? { getToken: async () => ({ token: 'synthetic' }) } : null,
+  installMessagingListeners: async () => { installedListeners += 1; },
+  reconcilePendingPushOwnershipReset: async () => ({ pending: false, tokenDeleted: false }),
+  syncGrantedPushToken: async () => { nativeRegistrations += 1; return true; },
+};
+const startNativeInitialization = vm.runInNewContext(
+  isolatedInitCode + '\ninitializeNativeFirebaseSecurity', initContext,
+);
+const oldInitialization = startNativeInitialization();
+assert.equal(appCheckResolvers.length, 1);
+initContext.pushRegistrationEpoch += 1; // Simulated sign-out revokes old startup.
+initContext.initialization = null;
+const currentInitialization = startNativeInitialization();
+const currentPendingPromise = initContext.initialization;
+assert.equal(appCheckResolvers.length, 2);
+appCheckResolvers[0](); // Old App Check resolves after next session starts.
+await oldInitialization;
+assert.equal(nativeRegistrations, 0, 'old startup must not register the new account');
+assert.equal(installedListeners, 0, 'old startup must not install stale listeners');
+assert.equal(initContext.initialization, currentPendingPromise,
+  'old startup cannot reset a newer initialization promise');
+appCheckResolvers[1]();
+await currentInitialization;
+assert.equal(nativeRegistrations, 1, 'current startup alone registers push');
+assert.equal(installedListeners, 1);
+
+// Current missing-plugin startup may still safely clear its own memoized
+// promise and be retried; the epoch guard must not permanently poison retry.
+initContext.pushRegistrationEpoch += 1;
+initContext.initialization = null;
+pluginAvailable = false;
+const unavailableInitialization = startNativeInitialization();
+assert.equal(appCheckResolvers.length, 3);
+appCheckResolvers[2]();
+await unavailableInitialization;
+assert.equal(initContext.initialization, null,
+  'current missing-plugin startup must allow an eventual retry');
+pluginAvailable = true;
+const retriedInitialization = startNativeInitialization();
+assert.equal(appCheckResolvers.length, 4);
+appCheckResolvers[3]();
+await retriedInitialization;
+assert.equal(nativeRegistrations, 2);
+console.log('PASS native initialization epoch: obsolete App Check completion cannot register next owner or clobber newer startup');
+
+
+
 // Exercise the actual (TypeScript-free) sign-out function in a synthetic VM.
 // The marker must be durable before getToken awaits, including when the native
 // plugin is temporarily missing. Never access Firebase or a physical device.

@@ -246,25 +246,30 @@ export async function initializeNativeFirebaseSecurity() {
   if (!isNativeFirebaseRuntime()) return;
   installPushOwnershipRetryListener();
   if (initialization) return initialization;
+  const initialEpoch = pushRegistrationEpoch;
   const pending = (async () => {
     await initializeNativeAppCheck();
+    // A sign-out invalidates old startup work before it can read the next UID.
+    if (initialEpoch !== pushRegistrationEpoch) return;
     const messaging = capacitorPlugin('FirebaseMessaging');
     // Capacitor can expose Messaging after the first native startup probe.
     // Never memoize a completed initialization when the plugin is missing;
     // otherwise a later retry cannot install its FCM event listeners.
     if (!messaging?.getToken) {
-      initialization = null;
+      if (initialization === pending) initialization = null;
       return;
     }
     await installMessagingListeners(messaging);
+    if (initialEpoch !== pushRegistrationEpoch) return;
 
     // If a previous account logged out fully offline, never register that same
     // native token under a new UID. Invalidate it first; a fresh token can then
     // be registered for the current account. The stale server record remains a
     // cleanup concern, but it no longer authorizes reuse on this device.
     const ownership = await reconcilePendingPushOwnershipReset();
+    if (initialEpoch !== pushRegistrationEpoch) return;
     if (ownership.pending) {
-      initialization = null;
+      if (initialization === pending) initialization = null;
       return;
     }
     await syncGrantedPushToken().catch(() => false);
