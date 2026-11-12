@@ -51,13 +51,23 @@ function assertCancelable(transaction: MarketplaceTransaction, actor: string) {
 }
 
 async function terminalTransactionWrites(client: FirebaseRestClient, transaction: MarketplaceTransaction, patch: Record<string, unknown>) {
+  // A read before cancellation/expiry is not an atomic witness. Bind the
+  // transaction's exact Firestore version to the SAME commit as the lock and
+  // listing changes, so a competing action cannot silently overwrite it.
+  const canonical = await client.getDocument<any>(`transactions_v2/${transaction.id}`);
+  if (!canonical || !canonical.updateTime) throw new Error('TRANSACTION_VERSION_UNKNOWN');
+  const observed = { id: canonical.id, ...canonical.data } as MarketplaceTransaction;
+  if (!sameTransactionIdentity(observed, transaction)
+    || observed.status !== transaction.status
+    || observed.updated_at !== transaction.updated_at) throw new Error('TRANSACTION_CHANGED');
   const lock = await client.getDocument<any>(reservationLockPath(transaction.listing_id));
   if (lock && lock.data.transaction_id !== transaction.id) throw new Error('RESERVATION_LOCK_MISMATCH');
   // Never delete a successor's lock after a concurrent cancellation/rebooking.
-  // Firestore enforces this version witness atomically with the full commit.
+  // Firestore enforces both transaction and lock witnesses atomically.
   if (lock && !lock.updateTime) throw new Error('RESERVATION_LOCK_VERSION_UNKNOWN');
   return [
-    patchWrite(client, `transactions_v2/${transaction.id}`, patch),
+    { ...patchWrite(client, `transactions_v2/${transaction.id}`, patch),
+      currentDocument: { updateTime: canonical.updateTime } },
     ...(lock ? [
       { delete: client.documentName(reservationLockPath(transaction.listing_id)),
         currentDocument: { updateTime: lock.updateTime } },
