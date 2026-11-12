@@ -381,6 +381,8 @@ function bounded<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promis
 export async function prepareNativePushForAccountSignOut() {
   pushRegistrationEpoch += 1;
   initialization = null;
+  // Another logout or explicit opt-in can supersede an in-flight cleanup.
+  const cleanupEpoch = pushRegistrationEpoch;
   if (!isNativeFirebaseRuntime()) return { serverDeactivated: false, tokenDeleted: false };
 
   // Persist the previous owner's token quarantine BEFORE any async work.
@@ -418,10 +420,11 @@ export async function prepareNativePushForAccountSignOut() {
 
   // A successful server unregister does not invalidate a native token. If
   // deleteToken failed, keep the quarantine before a different UID logs in.
+  // A stale cleanup must not clear a newer session's quarantine marker.
   const ownershipResetQueued = needsNativePushOwnershipReset(tokenDeleted)
-    ? true
-    : !setPendingPushOwnershipReset(false);
+    || cleanupEpoch !== pushRegistrationEpoch
+    || !setPendingPushOwnershipReset(false);
 
-  initialization = null;
+  if (cleanupEpoch === pushRegistrationEpoch) initialization = null;
   return { serverDeactivated, tokenDeleted, ownershipResetQueued };
 }

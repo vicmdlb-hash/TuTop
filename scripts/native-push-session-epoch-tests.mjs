@@ -319,6 +319,53 @@ const failedRemovalLogout = await syntheticSignOut({
 assert.equal(failedRemovalLogout.ownershipResetQueued, true,
   'successful native delete is insufficient without durable marker removal');
 assert.equal(failedRemovalReset.pendingPushOwnershipReset(), true);
+// Two asynchronous logouts share the module epoch: older cleanup must not
+// erase a newer logout's marker even if its native token deletion resolves.
+const overlappingStorage = makeSyntheticResetStorage();
+const overlappingReset = makeResetGuard(overlappingStorage.storage);
+let activeSyntheticPlugin;
+const sharedContext = {
+  pushRegistrationEpoch: 0, initialization: null,
+  isNativeFirebaseRuntime: () => true,
+  capacitorPlugin: () => activeSyntheticPlugin,
+  setPendingPushOwnershipReset: overlappingReset.setPendingPushOwnershipReset,
+  needsNativePushOwnershipReset,
+  pushBackend: { unregisterDeviceToken: async () => undefined },
+  bounded: (promise, _ms, fallback) => Promise.resolve(promise).catch(() => fallback),
+};
+const sharedSignOut = vm.runInNewContext(
+  signOutCode + '\nprepareNativePushForAccountSignOut', sharedContext,
+);
+let resolveFirstDelete;
+activeSyntheticPlugin = {
+  getToken: async () => ({ token: 'synthetic-token-first-abcdefghijklmnopqrstuvwxyz' }),
+  deleteToken: () => new Promise(resolve => { resolveFirstDelete = resolve; }),
+};
+const oldLogout = sharedSignOut();
+for (let i = 0; i < 32 && !resolveFirstDelete; i++) await Promise.resolve();
+assert.equal(typeof resolveFirstDelete, 'function', 'first logout must reach pending native deletion');
+let resolveSecondDelete;
+activeSyntheticPlugin = {
+  getToken: async () => ({ token: 'synthetic-token-second-abcdefghijklmnopqrstuvwxyz' }),
+  deleteToken: () => new Promise(resolve => { resolveSecondDelete = resolve; }),
+};
+const newLogout = sharedSignOut();
+for (let i = 0; i < 32 && !resolveSecondDelete; i++) await Promise.resolve();
+assert.equal(typeof resolveSecondDelete, 'function', 'new logout must start before stale completion');
+assert.equal(sharedContext.pushRegistrationEpoch, 2);
+resolveFirstDelete();
+const staleCleanup = await oldLogout;
+assert.equal(staleCleanup.tokenDeleted, true);
+assert.equal(staleCleanup.ownershipResetQueued, true,
+  'stale successful deletion cannot clear the newer ownership reset');
+assert.equal(overlappingReset.pendingPushOwnershipReset(), true);
+assert.equal(overlappingStorage.entries.get('tutop.synthetic-push-reset'), '1');
+resolveSecondDelete();
+const currentCleanup = await newLogout;
+assert.equal(currentCleanup.ownershipResetQueued, false);
+assert.equal(overlappingReset.pendingPushOwnershipReset(), false);
+console.log('PASS overlapping native push signouts: stale cleanup cannot release new owner quarantine');
+
 console.log('PASS synthetic native logout: pre-await quarantine, absent plugin, deletion failure, marker readback failure');
 
 console.log('PASS synthetic native push owner epoch guard, delayed callback and backend CAS pre-write contracts');
