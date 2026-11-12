@@ -118,6 +118,25 @@ for(const [start,end] of [
   assert(section.lastIndexOf('if (get().user.id !== actorUid)',reload)>=0, `old account can reload B ${start}`);
   assert(section.slice(reload,hydrate).includes('if (get().user.id !== actorUid) return'), `old account can hydrate B ${start}`);
 }
+// Regression for a silent Firebase UID replacement while account A still
+// occupies the store. Without clearing A first, the store correctly rejects
+// B's snapshot, but BackendGate could keep rendering A after authenticating B.
+assert.equal(isLiveAccountSnapshot(A,B,B), false, 'old A view must reject B snapshot');
+assert.equal(isLiveAccountSnapshot('',B,B), true, 'empty store may safely hydrate verified B');
+const gateSource = fs.readFileSync('src/components/BackendGate.tsx', 'utf8');
+const replacementStart = gateSource.indexOf("expectedUid = onlineBackend.session?.uid || '';");
+const replacementEnd = gateSource.indexOf('const localIdentity = verifiedEmailBetaAuth.readLocalStatus();', replacementStart);
+assert(replacementStart >= 0 && replacementEnd > replacementStart, 'UID handoff guard must run before Auth migration and hydration');
+const handoff = gateSource.slice(replacementStart, replacementEnd);
+assert.match(handoff, /if \(renderedUid && renderedUid !== expectedUid\) \{\s*clearOnline\(\);/);
+assert.match(handoff, /clearOnline\(\);\s*setLoading\(true\);\s*setAuthenticated\(false\);/);
+const syncBody = gateSource.slice(replacementStart, gateSource.indexOf('hydrateOnline(snapshot);', replacementEnd));
+assert(syncBody.indexOf('const renderedUid = useAppStore.getState().user.id;') >= 0);
+assert(syncBody.indexOf('clearOnline();', syncBody.indexOf('const renderedUid')) >= 0,
+  'B snapshot must never be rendered on top of A state');
+assert.equal(isLiveAccountSnapshot(A,A,A), true, 'same-UID refresh must keep its data');
+console.log('PASS silent A->B Auth replacement clears A UI before B hydration; same-UID refresh preserved');
+
 const source=fs.readFileSync('src/components/BackendGate.tsx','utf8');
 assert.match(source,/const expectedEpoch = authEpoch\.current/);
 assert.match(source,/const snapshot = await onlineBackend\.loadSnapshot\(\);[\s\S]*if \(!stillCurrent\(snapshot\.user\.id\)\) return;[\s\S]*hydrateOnline\(snapshot\)/);
