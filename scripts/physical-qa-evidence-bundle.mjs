@@ -45,27 +45,45 @@ export function loadPhysicalQaCandidate() {
   return candidate;
 }
 
-function scanSensitive(value, errors, pathParts = []) {
+// JSON field names can themselves contain raw PII or copied credentials.
+// Never print untrusted nested field paths in a diagnostic.
+function containsSensitiveIdentifier(value) {
+  return typeof value === 'string' && (
+    /\b\d{10,17}\b/.test(value)
+    || /(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)
+    || /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)
+    || /[A-Za-z0-9_-]{120,}/.test(value)
+    || /(?:^|[^A-Za-z0-9_-])[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}(?=$|[^A-Za-z0-9_-])/.test(value)
+  );
+}
+
+function scanSensitive(value, errors) {
   if (Array.isArray(value)) {
-    value.forEach((item, index) => scanSensitive(item, errors, [...pathParts, String(index)]));
+    value.forEach(item => scanSensitive(item, errors));
     return;
   }
   if (value && typeof value === 'object') {
     for (const [key, child] of Object.entries(value)) {
-      if (forbiddenKeys.has(normalizeSensitiveField(key))) errors.push(`dato prohibido detectado en campo: ${[...pathParts, key].join('.')}`);
-      scanSensitive(child, errors, [...pathParts, key]);
+      if (forbiddenKeys.has(normalizeSensitiveField(key))) {
+        const label = key.length <= 64 && !containsSensitiveIdentifier(key) ? key : '[redacted]';
+        errors.push('dato prohibido detectado en campo: ' + label);
+      }
+      if (containsSensitiveIdentifier(key))
+        errors.push('nombre de campo contiene identificador sensible sin redactar');
+      scanSensitive(child, errors);
     }
     return;
   }
   if (typeof value !== 'string') return;
-  if (/\b\d{10,17}\b/.test(value)) errors.push(`posible número telefónico/identificador sensible sin redactar en ${pathParts.join('.') || 'root'}`);
-  if (/(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)) errors.push(`posible dirección MAC sin redactar en ${pathParts.join('.') || 'root'}`);
-  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)) errors.push(`posible correo electrónico sin redactar en ${pathParts.join('.') || 'root'}`);
-  if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push(`posible token/identificador largo sin redactar en ${pathParts.join('.') || 'root'}`);
-  // JWT-like values can be sensitive even if no individual segment is long.
+  // Keep diagnostic category, but no source path controlled by a user.
+  if (/\b\d{10,17}\b/.test(value)) errors.push('posible número telefónico/identificador sensible sin redactar');
+  if (/(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)) errors.push('posible dirección MAC sin redactar');
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)) errors.push('posible correo electrónico sin redactar');
+  if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push('posible token/identificador largo sin redactar');
   if (/(?:^|[^A-Za-z0-9_-])[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}(?=$|[^A-Za-z0-9_-])/.test(value))
-    errors.push(`posible token segmentado sin redactar en ${pathParts.join('.') || 'root'}`);
+    errors.push('posible token segmentado sin redactar');
 }
+
 
 function isPlaceholder(value) {
   const text = String(value || '').trim();

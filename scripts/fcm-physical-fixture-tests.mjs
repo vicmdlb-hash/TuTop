@@ -158,6 +158,20 @@ for (const [label, payload] of [
   assert.equal(result.pass, false, label);
   assert(result.errors.some((msg) => msg.includes('valor sensible')), label);
 }
+// Reject copied PII/credentials inside arbitrary JSON property NAMES without
+// echoing any such name through nested error-path diagnostics.
+for (const rawName of [
+  'tester@example.invalid', '2461234567', 'A1:B2:C3:D4:E5:F6',
+  'x'.repeat(128), 'a'.repeat(24) + '.' + 'b'.repeat(24) + '.' + 'c'.repeat(24),
+]) {
+  const sensitiveKey = structuredClone(valid);
+  sensitiveKey.scenarios[0].events[0].metadata = { [rawName]: { accessToken: 'synthetic' } };
+  const result = validateFcmPhysicalFixture(sensitiveKey, candidate, now);
+  assert.equal(result.pass, false);
+  assert(result.errors.some(error => error.includes('nombre de campo contiene identificador sensible')));
+  assert.equal(JSON.stringify(result.errors).includes(rawName), false);
+}
+
 const copiedImeiSession = structuredClone(valid);
 copiedImeiSession.evidence_session_id = '123456789012345';
 assert.equal(validateFcmPhysicalFixture(copiedImeiSession, candidate, now).pass, false);

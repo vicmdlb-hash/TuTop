@@ -25,26 +25,37 @@ const MAX_SESSION_MS = 6 * 60 * 60_000;
 const MAX_EVIDENCE_AGE_MS = 24 * 60 * 60_000;
 const CLOCK_SKEW_MS = 5 * 60_000;
 
-function scan(value, errors, pathParts = []) {
+// Field names are evidence too, and untrusted nested paths must never be
+// included verbatim in errors, even when a value is rejected.
+function containsSensitiveIdentifier(value) {
+  return typeof value === 'string' && (
+    /\b\d{10,17}\b/.test(value)
+    || /(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)
+    || /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)
+    || /[A-Za-z0-9_-]{120,}/.test(value)
+    || /(?:^|[^A-Za-z0-9_-])[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}(?=$|[^A-Za-z0-9_-])/.test(value)
+  );
+}
+
+function scan(value, errors) {
   if (typeof value === 'string') {
-    // Check values too: sensitive IDs can hide in notes or opaque fields.
-    // Never echo raw values in diagnostics.
-    if (/\b\d{10,17}\b/.test(value)
-      || /(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)
-      || /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)
-      || /[A-Za-z0-9_-]{120,}/.test(value)
-      || /\b[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b/.test(value)) {
-      errors.push(`valor sensible sin redactar: ${pathParts.join('.') || 'root'}`);
-    }
+    if (containsSensitiveIdentifier(value))
+      errors.push('valor sensible sin redactar');
     return;
   }
-  if (Array.isArray(value)) return value.forEach((item, index) => scan(item, errors, [...pathParts, String(index)]));
+  if (Array.isArray(value)) return value.forEach(item => scan(item, errors));
   if (!value || typeof value !== 'object') return;
   for (const [key, child] of Object.entries(value)) {
-    if (FORBIDDEN_KEYS.has(normalizeEvidenceKey(key))) errors.push(`campo sensible prohibido: ${[...pathParts, key].join('.')}`);
-    scan(child, errors, [...pathParts, key]);
+    if (FORBIDDEN_KEYS.has(normalizeEvidenceKey(key))) {
+      const label = key.length <= 64 && !containsSensitiveIdentifier(key) ? key : '[redacted]';
+      errors.push('campo sensible prohibido: ' + label);
+    }
+    if (containsSensitiveIdentifier(key))
+      errors.push('nombre de campo contiene identificador sensible sin redactar');
+    scan(child, errors);
   }
 }
+
 
 function placeholder(value) {
   return !String(value || '').trim() || /PENDIENTE|TODO|TBD/i.test(String(value));

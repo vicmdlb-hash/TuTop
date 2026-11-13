@@ -152,6 +152,21 @@ for (const [where, rawValue] of [
   assert(verdict.errors.some((error) => error.includes('sin redactar')), where);
 }
 
+// JSON property names may hold a raw identifier even with a harmless value.
+// Reject sensitive names without printing them, including nested child errors.
+for (const rawName of [
+  'tester@example.invalid', '2461234567', 'A1:B2:C3:D4:E5:F6',
+  'x'.repeat(128), 'a'.repeat(24) + '.' + 'b'.repeat(24) + '.' + 'c'.repeat(24),
+]) {
+  const sensitiveKey = structuredClone(good);
+  sensitiveKey.diagnostic_report[rawName] = { accessToken: 'synthetic' };
+  const result = validatePhysicalQaEvidence(sensitiveKey, now, candidateManifest);
+  assert.equal(result.overall, 'fail');
+  assert.equal(result.release_blocked, true);
+  assert(result.errors.some(error => error.includes('nombre de campo contiene identificador sensible')));
+  assert.equal(JSON.stringify(result.errors).includes(rawName), false);
+}
+
 const explanatory = structuredClone(good);
 explanatory.notes = 'No incluir password, idToken, refreshToken ni otros secretos en evidencia.';
 assert.equal(validatePhysicalQaEvidence(explanatory, now, candidateManifest).overall, 'pass');
