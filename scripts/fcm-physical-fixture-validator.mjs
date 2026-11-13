@@ -113,12 +113,12 @@ export function validateFcmPhysicalFixture(fixture, candidate, now = Date.now())
 
   for (const scenario of scenarios) {
     const name = scenario?.name;
-    if (!REQUIRED.has(name)) { errors.push(`escenario desconocido ${String(name)}`); continue; }
+    if (!REQUIRED.has(name)) { errors.push('escenario desconocido (valor omitido)'); continue; }
     const events = Array.isArray(scenario?.events) ? scenario.events : [];
     if (!events.length) { errors.push(`${name}: sin eventos`); continue; }
     let previous = -Infinity;
     for (const event of events) {
-      if (!ALLOWED_EVENT_KINDS.has(event?.kind)) errors.push(`${name}: kind desconocido ${String(event?.kind)}`);
+      if (!ALLOWED_EVENT_KINDS.has(event?.kind)) errors.push(`${name}: kind desconocido (valor omitido)`);
       if (event && Object.hasOwn(event, 'target') && !SAFE_LOGICAL_TARGETS.has(event.target))
         errors.push(`${name}: destino lógico no permitido`);
       if (!Number.isFinite(event?.at_ms)) errors.push(`${name}: at_ms inválido`);

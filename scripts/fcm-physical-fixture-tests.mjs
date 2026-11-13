@@ -90,6 +90,21 @@ const staleWindow = structuredClone(valid); staleWindow.evidence_started_at = '2
 assert.equal(validateFcmPhysicalFixture(staleWindow, candidate, now).pass, false);
 const futureWindow = structuredClone(valid); futureWindow.evidence_started_at = '2026-09-07T05:00:00.000Z'; futureWindow.evidence_completed_at = '2026-09-07T05:01:00.000Z';
 assert.equal(validateFcmPhysicalFixture(futureWindow, candidate, now).pass, false);
+// Unknown scenario names and event kinds are untrusted user values; even if
+// scanning rejects them, error text must not reveal their raw contents.
+const malformedScenarioName = structuredClone(valid);
+malformedScenarioName.scenarios[0].name = 'tester@example.invalid';
+const redactedScenario = validateFcmPhysicalFixture(malformedScenarioName, candidate, now);
+assert.equal(redactedScenario.pass, false);
+assert(redactedScenario.errors.some(error => error.includes('escenario desconocido')));
+assert.equal(JSON.stringify(redactedScenario.errors).includes('tester@example.invalid'), false);
+const malformedEventKind = structuredClone(valid);
+malformedEventKind.scenarios[0].events[0].kind = 'x'.repeat(128);
+const redactedKind = validateFcmPhysicalFixture(malformedEventKind, candidate, now);
+assert.equal(redactedKind.pass, false);
+assert(redactedKind.errors.some(error => error.includes('kind desconocido')));
+assert.equal(JSON.stringify(redactedKind.errors).includes('x'.repeat(128)), false);
+
 const unknownKind = structuredClone(valid); unknownKind.scenarios[0].events.push({ at_ms: 3_000, kind: 'mystery_event' });
 assert.equal(validateFcmPhysicalFixture(unknownKind, candidate, now).pass, false);
 // Synthetic adversarial traces: the app state must PRECEDE a receipt, and
