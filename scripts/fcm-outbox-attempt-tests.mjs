@@ -164,6 +164,29 @@ assert.deepEqual(trustedFcmQueryRecord(record('device_tokens/token-a', {
 }), 'device_tokens', identityDecode), {
   owner_uid: 'synthetic-a', active: true, id: 'token-a', _document_update_time: newTime,
 });
+// The query-backed token/outbox version is used as a Firestore CAS witness.
+// Date.parse can normalize 31 February or accept noncanonical offsets.
+for (const invalidFirestoreVersion of [
+  '2026-02-31T20:00:02Z',
+  '2026-10-28T20:00:02+00:00',
+  '2026-10-28T20:00:02',
+  '2026-10-28T25:00:02Z',
+  'not-a-timestamp',
+  1234, null,
+]) {
+  assert.throws(() => trustedFcmQueryRecord(
+    record('device_tokens/token-a', {}, invalidFirestoreVersion),
+    'device_tokens', identityDecode,
+  ), /FCM_DOCUMENT_UPDATE_TIME_REQUIRED/);
+  assert.throws(() => trustedFcmQueryRecord(
+    record('notification_outbox/notice-a', {}, invalidFirestoreVersion),
+    'notification_outbox', identityDecode,
+  ), /FCM_DOCUMENT_UPDATE_TIME_REQUIRED/);
+}
+const nineDigitVersion = '2026-10-28T20:00:02.123456789Z';
+assert.equal(trustedFcmQueryRecord(record('device_tokens/token-a', {}, nineDigitVersion),
+  'device_tokens', identityDecode)._document_update_time, nineDigitVersion);
+
 assert.deepEqual(trustedFcmDirectRecord(record('chats/chat-a', {
   buyer_id: 'synthetic-a',
 }), 'chats/chat-a', identityDecode), { buyer_id: 'synthetic-a', id: 'chat-a' });

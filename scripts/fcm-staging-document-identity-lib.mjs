@@ -1,5 +1,7 @@
 // Pure fail-closed binding between authoritative Firestore document.name and
 // decoded user/admin-provided fields. No credentials, SDK or network access.
+import { isCanonicalFcmTimestamp } from './fcm-token-ownership-lib.mjs';
+
 const ROOT = 'projects/tutop-beta-vicmdlb-1356585881/databases/(default)/documents';
 const QUERY_COLLECTIONS = new Set(['device_tokens', 'notification_outbox']);
 
@@ -23,8 +25,9 @@ function canonicalRecord(document, expectedPath, decode, includeVersion) {
   if (Object.hasOwn(fields, 'id') && fields.id !== id) {
     throw new Error('FCM_DOCUMENT_FIELD_ID_CONFLICT');
   }
-  if (includeVersion && (typeof document.updateTime !== 'string'
-      || !Number.isFinite(Date.parse(document.updateTime)))) {
+  // Firestore document-version CAS must use canonical, real UTC instants.
+  // Date.parse alone silently normalizes impossible dates and accepts offsets.
+  if (includeVersion && !isCanonicalFcmTimestamp(document.updateTime)) {
     throw new Error('FCM_DOCUMENT_UPDATE_TIME_REQUIRED');
   }
   return {
