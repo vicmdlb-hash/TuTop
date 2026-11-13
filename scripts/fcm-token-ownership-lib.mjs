@@ -179,8 +179,26 @@ export function assertCompleteFcmInventory(rows, maxDocuments, collectionId) {
         || Array.isArray(row) || Object.hasOwn(row, 'error'))) {
     throw new Error('FCM_QUERY_INVENTORY_INVALID');
   }
-  const docs = rows.filter(row => row.document);
-  if (docs.some(row => !row.document || typeof row.document.name !== 'string'
+  // runQuery may report skippedResults even when fewer than LIMIT documents
+  // were returned. Missing rows could hide a newer owner or revocation.
+  // Do not treat malformed/non-document envelopes as an exhausted inventory.
+  const allowedFields = new Set(['document', 'readTime', 'skippedResults', 'explainMetrics']);
+  for (const row of rows) {
+    if (Object.keys(row).some(key => !allowedFields.has(key))
+        || !Object.keys(row).length
+        || (Object.hasOwn(row, 'document') && (!row.document
+          || typeof row.document !== 'object' || Array.isArray(row.document)))) {
+      throw new Error('FCM_QUERY_INVENTORY_INVALID');
+    }
+    if (Object.hasOwn(row, 'skippedResults')) {
+      if (!Number.isSafeInteger(row.skippedResults) || row.skippedResults < 0)
+        throw new Error('FCM_QUERY_INVENTORY_INVALID');
+      if (row.skippedResults > 0)
+        throw new Error('FCM_QUERY_INCOMPLETE_DENIED');
+    }
+  }
+  const docs = rows.filter(row => Object.hasOwn(row, 'document'));
+  if (docs.some(row => typeof row.document.name !== 'string'
       || !row.document.name.includes('/documents/' + collectionId + '/'))) {
     throw new Error('FCM_QUERY_INVENTORY_INVALID');
   }

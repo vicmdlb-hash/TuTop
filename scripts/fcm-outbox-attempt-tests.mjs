@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
-import { isCanonicalFcmTimestamp, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
+import { isCanonicalFcmTimestamp, fcmTokenCleanupPrecondition, assertCompleteFcmInventory } from './fcm-token-ownership-lib.mjs';
 import fs from 'node:fs';
 import { trustedFcmQueryRecord, trustedFcmDirectRecord, fcmRecipientErasureAllows } from './fcm-staging-document-identity-lib.mjs';
 import { planFcmOutboxClaim, attachCommittedFcmClaim, planFcmOutboxCompletion, canSendAfterStaleOwnerCleanup, isFreshFcmTargetStillEligible } from './fcm-outbox-attempt-lib.mjs';
@@ -60,6 +60,31 @@ for (const badStamp of [
   assert.throws(() => planFcmOutboxCompletion(claimed, badStamp), /FCM_OUTBOX_SENT_TIME_INVALID/);
 }
 assert.equal(isCanonicalFcmTimestamp(newTime), true);
+// A Firestore runQuery response with skipped records is NOT a complete FCM
+// ownership inventory, even if the returned document count is below LIMIT.
+// All cases are synthetic: no FCM tokens, users, or Firestore requests.
+const inventoryRoot = 'projects/tutop-beta-vicmdlb-1356585881/databases/(default)/documents';
+const inventoryRow = { document: { name: inventoryRoot + '/device_tokens/synthetic-row' }, readTime: newTime };
+assert.equal(assertCompleteFcmInventory([inventoryRow, { readTime: newTime, skippedResults: 0 }],
+  500, 'device_tokens').length, 1);
+for (const collectionId of ['device_tokens', 'notification_outbox']) {
+  for (const skipped of [1, 3, 499]) {
+    assert.throws(() => assertCompleteFcmInventory([
+      { document: { name: inventoryRoot + '/' + collectionId + '/synthetic-row' } },
+      { readTime: newTime, skippedResults: skipped },
+    ], 500, collectionId), /FCM_QUERY_INCOMPLETE_DENIED/);
+  }
+}
+for (const malformed of [
+  [{ skippedResults: -1 }], [{ skippedResults: '1' }], [{ skippedResults: 1.5 }],
+  [{ document: null }], [{}], [{ unexpected: 'not-a-Firestore-response' }],
+]) {
+  assert.throws(() => assertCompleteFcmInventory(malformed, 500, 'device_tokens'),
+    /FCM_QUERY_INVENTORY_INVALID/);
+}
+assert.throws(() => assertCompleteFcmInventory([inventoryRow], 1, 'device_tokens'),
+  /FCM_QUERY_INCOMPLETE_DENIED/);
+console.log('PASS bounded FCM inventory rejects skipped query rows and malformed envelopes');
 console.log('PASS FCM outbox requires canonical UTC stamps and rejects rolled-over dates');
 
 
