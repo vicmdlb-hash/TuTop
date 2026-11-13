@@ -14,6 +14,8 @@ const requiredCases = [
 const allowedCase = new Set(['pass','warn','fail','pending','not_applicable']);
 // Reject raw secrets regardless of casing or common camel/snake-case aliases.
 // Correlation IDs and boolean observation flags remain allowed.
+// Normalize case and separators so aliases cannot hide sensitive fields.
+const normalizeSensitiveField = (key) => String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
 const forbiddenKeys = new Set([
   'refreshToken', 'idToken', 'password', 'FIREBASE_TOKEN', 'token',
   'fcm_token', 'fcmToken', 'appCheckToken', 'app_check_token',
@@ -21,7 +23,7 @@ const forbiddenKeys = new Set([
   'apiKey', 'api_key', 'notification_id', 'raw_notification_id', 'phone',
   'imei', 'device_serial', 'serial_number', 'mac_address', 'android_id',
   'advertising_id', 'email', 'email_address', 'emailAddress',
-].map((key) => key.toLowerCase()));
+].map(normalizeSensitiveField));
 const requiredDeviceFields = ['label','manufacturer','model','android_version','viewport','installation'];
 const requiredCandidateFields = [
   'artifact_name','artifact_id','build_run_id','build_commit_sha','build_tree_sha','apk_sha256',
@@ -50,7 +52,7 @@ function scanSensitive(value, errors, pathParts = []) {
   }
   if (value && typeof value === 'object') {
     for (const [key, child] of Object.entries(value)) {
-      if (forbiddenKeys.has(key.toLowerCase())) errors.push(`dato prohibido detectado en campo: ${[...pathParts, key].join('.')}`);
+      if (forbiddenKeys.has(normalizeSensitiveField(key))) errors.push(`dato prohibido detectado en campo: ${[...pathParts, key].join('.')}`);
       scanSensitive(child, errors, [...pathParts, key]);
     }
     return;

@@ -109,6 +109,19 @@ for (const [field, nested] of [
     `raw ${field} field should be identified in the report`);
 }
 
+// Alternative separators/casing must not bypass the protected-field list.
+for (const alias of [
+  'fcm-token', 'fcm token', 'eMail-Address', 'authorization.header',
+  'device-serial', 'raw_notification-id',
+]) {
+  const leakedAlias = structuredClone(good);
+  leakedAlias.diagnostic_report[alias] = 'synthetic-secret';
+  const verdict = validatePhysicalQaEvidence(leakedAlias, now, candidateManifest);
+  assert.equal(verdict.overall, 'fail', alias);
+  assert.equal(verdict.release_blocked, true, alias);
+  assert(verdict.errors.some((error) => error.includes(alias)), alias);
+}
+
 // Physical R6 evidence must reject sensitive identifiers even when embedded in
 // free-text notes or diagnostic events under otherwise permitted field names.
 for (const [field, rawValue] of [
