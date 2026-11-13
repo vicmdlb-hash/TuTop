@@ -62,6 +62,9 @@ function scanSensitive(value, errors, pathParts = []) {
   if (/(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)) errors.push(`posible dirección MAC sin redactar en ${pathParts.join('.') || 'root'}`);
   if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)) errors.push(`posible correo electrónico sin redactar en ${pathParts.join('.') || 'root'}`);
   if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push(`posible token/identificador largo sin redactar en ${pathParts.join('.') || 'root'}`);
+  // JWT-like values can be sensitive even if no individual segment is long.
+  if (/(?:^|[^A-Za-z0-9_-])[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}(?=$|[^A-Za-z0-9_-])/.test(value))
+    errors.push(`posible token segmentado sin redactar en ${pathParts.join('.') || 'root'}`);
 }
 
 function isPlaceholder(value) {

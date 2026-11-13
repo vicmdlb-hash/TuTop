@@ -141,6 +141,8 @@ for (const [where, rawValue] of [
   ['imei-like numeric', 'Device test: 123456789012345'],
   ['MAC-like address', 'Device MAC A1:B2:C3:D4:E5:F6'],
   ['email address', 'Used tester@example.invalid'],
+  ['opaque long token', 'x'.repeat(128)],
+  ['JWT-like segmented token', 'a'.repeat(24) + '.' + 'b'.repeat(24) + '.' + 'c'.repeat(24)],
 ]) {
   const leakedValue = structuredClone(good);
   leakedValue.notes = rawValue;
