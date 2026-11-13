@@ -149,6 +149,8 @@ assert.equal(validateFcmPhysicalFixture(nestedSensitiveHeader, candidate, now).p
 for (const [label, payload] of [
   ['IMEI', '123456789012345'], ['MAC', 'AA:BB:CC:DD:EE:FF'],
   ['email', 'tester@example.invalid'],
+  ['opaque long token', 'x'.repeat(128)],
+  ['JWT-like token', 'a'.repeat(24) + '.' + 'b'.repeat(24) + '.' + 'c'.repeat(24)],
 ]) {
   const leaked = structuredClone(valid);
   leaked.scenarios[0].events[0].metadata = { note: payload };

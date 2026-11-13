@@ -31,7 +31,9 @@ function scan(value, errors, pathParts = []) {
     // Never echo raw values in diagnostics.
     if (/\b\d{10,17}\b/.test(value)
       || /(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)
-      || /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)) {
+      || /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)
+      || /[A-Za-z0-9_-]{120,}/.test(value)
+      || /\b[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b/.test(value)) {
       errors.push(`valor sensible sin redactar: ${pathParts.join('.') || 'root'}`);
     }
     return;
