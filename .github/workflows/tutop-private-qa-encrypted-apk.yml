@@ -34,6 +34,10 @@ jobs:
       - name: Verify isolated source and no mutation permissions
         env:
           TUTOP_QA_AGE_RECIPIENT: ${{ vars.TUTOP_QA_AGE_RECIPIENT }}
+          TUTOP_QA_JKS_BASE64: ${{ secrets.TUTOP_QA_JKS_BASE64 }}
+          TUTOP_QA_JKS_PASSWORD: ${{ secrets.TUTOP_QA_JKS_PASSWORD }}
+          TUTOP_QA_KEY_ALIAS: ${{ secrets.TUTOP_QA_KEY_ALIAS }}
+          TUTOP_QA_KEY_PASSWORD: ${{ secrets.TUTOP_QA_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
@@ -51,6 +55,11 @@ jobs:
           test "$(git rev-parse HEAD^)" = "$expected_parent"
           test -n "$TUTOP_QA_AGE_RECIPIENT" || { echo 'BLOCKED: generate an age public recipient and set TUTOP_QA_AGE_RECIPIENT'; exit 42; }
           [[ "$TUTOP_QA_AGE_RECIPIENT" =~ ^age1[a-z0-9]+$ ]] || { echo 'BLOCKED: age public recipient format invalid'; exit 42; }
+          # Check owner key custody before installing dependencies or compiling.
+          for var in TUTOP_QA_JKS_BASE64 TUTOP_QA_JKS_PASSWORD TUTOP_QA_KEY_ALIAS TUTOP_QA_KEY_PASSWORD; do
+            test -n "${!var}" || { echo 'BLOCKED: QA signing secrets not configured'; exit 42; }
+          done
+          [[ "${TUTOP_QA_KEY_ALIAS,,}" != "androiddebugkey" ]] || { echo 'BLOCKED: Android debug key cannot sign QA'; exit 42; }
       - name: Node 22
         uses: actions/setup-node@v7
         with:
@@ -304,6 +313,10 @@ jobs:
           "$ANDROID_SDK_ROOT/build-tools/36.0.0/aapt" dump badging "$RUNNER_TEMP/TuTop-Private-QA.apk"             | grep -q "package: name='mx.tutop.app' versionCode='90200' versionName='0.9.2-beta.0'"
           certificate="$("$apktool" verify --print-certs "$RUNNER_TEMP/TuTop-Private-QA.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
           [[ "$certificate" =~ ^[0-9a-fA-F]{64}$ ]] || { echo 'BLOCKED: QA signing certificate digest invalid'; exit 43; }
+          [[ "${TUTOP_QA_KEY_ALIAS,,}" != "androiddebugkey" ]] || { echo 'BLOCKED: debug alias rejected at signing'; exit 43; }
+          debug_certificate="${TUTOP_EXPECTED_ANDROID_CERT_SHA256:-}"
+          [[ "$debug_certificate" =~ ^[0-9a-fA-F]{64}$ ]] || { echo 'BLOCKED: original debug signer missing'; exit 43; }
+          [[ "${certificate,,}" != "${debug_certificate,,}" ]] || { echo 'BLOCKED: QA signer must differ from ephemeral debug signer'; exit 43; }
           echo "TUTOP_EXPECTED_ANDROID_CERT_SHA256=$certificate" >> "$GITHUB_ENV"
           echo "cert_sha256=$certificate" >> "$GITHUB_OUTPUT"
           echo 'QA APK was signed with owner-managed private key and verified; never upload plaintext.'

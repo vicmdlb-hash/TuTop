@@ -48,6 +48,23 @@ for (const name of ['TUTOP_QA_JKS_BASE64','TUTOP_QA_JKS_PASSWORD','TUTOP_QA_KEY_
 assert.match(encryptedQa, /TUTOP_QA_AGE_RECIPIENT: \$\{\{ vars\.TUTOP_QA_AGE_RECIPIENT \}\}/);
 assert.match(encryptedQa, /filippo\.io\/age\/cmd\/age@v1\.2\.1/);
 assert.match(encryptedQa, /TUTOP_EXPECTED_ANDROID_CERT_SHA256=\$certificate/);
+// Fail before build when private QA signing custody is absent or debug-only.
+const privatePreflight = encryptedQa.slice(
+  encryptedQa.indexOf('      - name: Verify isolated source and no mutation permissions'),
+  encryptedQa.indexOf('      - name: Node 22'),
+);
+for (const name of ['TUTOP_QA_JKS_BASE64','TUTOP_QA_JKS_PASSWORD','TUTOP_QA_KEY_ALIAS','TUTOP_QA_KEY_PASSWORD']) {
+  assert(privatePreflight.includes(name + ': '), 'QA credentials must be checked before compilation: ' + name);
+}
+assert.match(privatePreflight, /QA signing secrets not configured/);
+assert.match(privatePreflight, /Android debug key cannot sign QA/);
+const privateSigner = encryptedQa.slice(
+  encryptedQa.indexOf('      - name: Re-sign ephemeral debug APK using owner-controlled QA signing certificate'),
+  encryptedQa.indexOf('      - name: Read back off-Play App Check policy for physical QA, no Firebase writes'),
+);
+assert.match(privateSigner, /debug_certificate=/);
+assert.match(privateSigner, /QA signer must differ from ephemeral debug signer/);
+assert.match(privateSigner, /debug alias rejected at signing/);
 const flowOrder = [
   'Re-sign ephemeral debug APK using owner-controlled QA signing certificate',
   'Read back off-Play App Check policy for physical QA, no Firebase writes',
