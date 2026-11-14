@@ -122,6 +122,37 @@ function validateFreshNativeDiagnostic(bundle, errors, now = Date.now()) {
   else if (generatedAt > now + 5 * 60_000 || now - generatedAt > MAX_DIAGNOSTIC_AGE_MS) errors.push('diagnostic_report fuera de ventana fresca de 24 h');
 }
 
+// Physical QA verdicts may be exported beyond the phone. The evaluator's
+// check keys, labels and details originate in a diagnostic report; even when
+// scanSensitive flags a raw identifier, the assessment must not echo it.
+const safeFindingCodes = new Set([
+  'check:staging-project', 'check:v2', 'check:auth', 'check:identity',
+  'check:network', 'check:push-permission', 'check:app-check',
+  'runtime:unhandled-error', 'network:no-reconnect-evidence',
+  'network:legacy-no-reconnect-evidence', 'push:not-exercised',
+  'push:no-tap-evidence', 'push:correlation-mismatch',
+  'app-check:no-physical-token', 'runtime:not-native', 'viewport:compact',
+]);
+function redactedQaAssessment(assessment) {
+  const findings = assessment.findings.map((finding) => {
+    const code = safeFindingCodes.has(finding.code)
+      ? finding.code : 'qa:untrusted-check-redacted';
+    return {
+      severity: finding.severity,
+      code,
+      message: 'Revisar comprobación localmente; detalle omitido por privacidad.',
+    };
+  });
+  return {
+    overall: assessment.overall,
+    score: assessment.score,
+    findings,
+    next_actions: findings.length
+      ? findings.slice(0, 6).map((finding) => `Revisar ${finding.code} sin exportar datos de diagnóstico.`)
+      : ['Continuar matriz manual; conservar evidencia privada del dispositivo.'],
+  };
+}
+
 export function validatePhysicalQaEvidence(bundle, now = Date.now(), expectedCandidate = loadPhysicalQaCandidate()) {
   const errors = [];
   const warnings = [];
@@ -151,8 +182,8 @@ export function validatePhysicalQaEvidence(bundle, now = Date.now(), expectedCan
 
   let assessment = null;
   if (bundle?.diagnostic_report) {
-    try { assessment = evaluatePhysicalQaReport(bundle.diagnostic_report); }
-    catch (error) { errors.push(`diagnostic_report inválido: ${error instanceof Error ? error.message : String(error)}`); }
+    try { assessment = redactedQaAssessment(evaluatePhysicalQaReport(bundle.diagnostic_report)); }
+    catch { errors.push('diagnostic_report inválido: estructura de evaluación incorrecta'); }
   } else {
     warnings.push('diagnostic_report todavía no adjunto');
   }

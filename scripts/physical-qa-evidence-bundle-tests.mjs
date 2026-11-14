@@ -167,6 +167,29 @@ for (const rawName of [
   assert.equal(JSON.stringify(result.errors).includes(rawName), false);
 }
 
+// Raw check labels/details must never be copied into exportable R6 verdicts,
+// even after the sensitive-field scan has correctly blocked their submission.
+for (const secret of ['qa-tester@example.invalid',
+  'a'.repeat(24) + '.' + 'b'.repeat(24) + '.' + 'c'.repeat(24)]) {
+  const rawCheck = structuredClone(good);
+  rawCheck.diagnostic_report.checks.push({
+    key: secret, label: secret, status: 'fail', detail: secret,
+  });
+  const verdict = validatePhysicalQaEvidence(rawCheck, now, candidateManifest);
+  assert.equal(verdict.overall, 'fail');
+  assert.equal(verdict.release_blocked, true);
+  assert.equal(JSON.stringify(verdict).includes(secret), false,
+    'evidence verdict must not reflect raw check keys, labels or details');
+  assert(verdict.assessment.findings.some((finding) =>
+    finding.code === 'qa:untrusted-check-redacted'));
+}
+const malformedCheckReport = structuredClone(good);
+malformedCheckReport.diagnostic_report.checks = null;
+const malformedVerdict = validatePhysicalQaEvidence(malformedCheckReport, now, candidateManifest);
+assert.equal(malformedVerdict.overall, 'fail');
+assert.equal(malformedVerdict.release_blocked, true);
+assert(malformedVerdict.errors.some((error) => error.includes('estructura de evaluación incorrecta')));
+
 const explanatory = structuredClone(good);
 explanatory.notes = 'No incluir password, idToken, refreshToken ni otros secretos en evidencia.';
 assert.equal(validatePhysicalQaEvidence(explanatory, now, candidateManifest).overall, 'pass');
