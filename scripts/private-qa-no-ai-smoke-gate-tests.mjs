@@ -44,6 +44,30 @@ denied(x=>{x.device.model='123456789012345'},'IMEI-like hardware identifier');
 denied(x=>{x.device.manufacturer='A1:B2:C3:D4:E5:F6'},'MAC-like hardware identifier');
 denied(x=>{x.device.imei='synthetic-identifier'},'private device field');
 denied(x=>{x.refreshToken='synthetic'},'raw auth token');
+// Raw JSON keys must not be reflected by privacy/audit verdicts, even when
+// that key is itself an email, device ID or token-like string.
+for (const sensitiveKey of [
+  'tester@example.invalid',
+  'a'.repeat(24)+'.'+'b'.repeat(24)+'.'+'c'.repeat(24),
+  'A1:B2:C3:D4:E5:F6',
+]) {
+  for (const target of ['root','device','recovery','cases']) {
+    const probe=structuredClone(e);
+    const item=target==='root'?probe:probe[target];
+    item[sensitiveKey]='synthetic-secret';
+    const verdict=assessPrivateNoAiSmoke(p,probe,now);
+    assert.equal(verdict.status,'BLOCKED');
+    assert.equal(verdict.r6_release_blocked,true);
+    assert.equal(JSON.stringify(verdict).includes(sensitiveKey),false,
+      'unknown JSON property name must be redacted');
+    assert(verdict.errors.some(err=>err.includes('unrecognized field [redacted]')));
+  }
+}
+const sourceText=(await import('node:fs')).readFileSync(
+  'scripts/private-qa-no-ai-smoke-gate.mjs','utf8');
+assert.match(sourceText,/PRIVATE_SMOKE_INPUT_INVALID/);
+assert.doesNotMatch(sourceText,/errors:\[String\(err\)\]/);
+
 denied(x=>{x.recovery.privateKey='synthetic'},'private age key');
 denied(x=>{x.recovery.owner_age_decryption_verified=false},'not decrypted');
 denied(x=>{x.recovery.decrypted_apk_sha256='0'.repeat(64)},'restored bytes mismatch');

@@ -28,7 +28,10 @@ function isObject(x) {
 }
 function exactKeys(x, allowed, where, errors) {
   if (!isObject(x)) { errors.push(where + ' must be an object'); return false; }
-  for (const key of Object.keys(x)) if (!allowed.includes(key)) errors.push(where + '.' + key + ' forbidden');
+  // A user-provided JSON property name may contain an email, JWT, OTP or
+  // device ID. Never echo an unknown key into an exportable QA verdict.
+  for (const key of Object.keys(x)) if (!allowed.includes(key))
+    errors.push(where + ' has an unrecognized field [redacted]');
   for (const key of allowed) if (!Object.hasOwn(x,key)) errors.push(where + '.' + key + ' missing');
   return true;
 }
@@ -106,7 +109,13 @@ function main() {
     const evidenceBytes=fs.readFileSync(args[1]);
     if(evidenceBytes.length>65536) throw Error('EVIDENCE_TOO_LARGE');
     result=assessPrivateNoAiSmoke(parseQaProvenance(raw),JSON.parse(evidenceBytes.toString('utf8')));
-  }catch(err){result={scope:'PRIVATE_NO_AI_SINGLE_DEVICE_SELF_REPORTED',status:'BLOCKED',private_smoke_evidence_complete:false,r6_release_blocked:true,release_blocked:true,errors:[String(err)]};}
+  }catch{
+    // JSON.parse and filesystem exceptions may include raw document fragments,
+    // attacker-controlled paths or values. Keep only a fixed failure category.
+    result={scope:'PRIVATE_NO_AI_SINGLE_DEVICE_SELF_REPORTED',status:'BLOCKED',
+      private_smoke_evidence_complete:false,r6_release_blocked:true,
+      release_blocked:true,errors:['PRIVATE_SMOKE_INPUT_INVALID']};
+  }
   console.log(process.argv.includes('--json')?JSON.stringify(result,null,2):result.status+'; R6/RELEASE ALWAYS BLOCKED\n'+result.errors.join('\n'));
   if(!result.private_smoke_evidence_complete)process.exitCode=2;
 }
