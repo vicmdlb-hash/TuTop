@@ -65,6 +65,26 @@ assert.equal(environments.featureEnabled(environments.STAGING_DEFAULT_FLAGS, 'st
 
 assert.equal(privacy.assertNoPrivateFieldsInPublicProfile({ uid: 'u1', nombre: 'Ana', institution_id: 'uatx' }), true);
 assert.equal(privacy.assertNoPrivateFieldsInPublicProfile({ uid: 'u1', telefono: '123' }), false);
+
+// Public profile checks must not allow unexpected private aliases to leak
+// simply because the caller used a different casing or field name.
+for (const key of [
+  'email', 'institutional_email', 'telefono', 'phone', 'refreshToken',
+  'id_token', 'password', 'credential', 'image_data', 'exact_address',
+  'notification_tokens', 'private_account', 'securityMetadata',
+  'custom_freeform', 'EMAIL',
+]) {
+  assert.equal(privacy.assertNoPrivateFieldsInPublicProfile({
+    uid: 'u1', nombre: 'Ana', [key]: 'sensitive-synthetic-value',
+  }), false, 'unknown public field must fail closed');
+}
+assert.equal(privacy.assertNoPrivateFieldsInPublicProfile(null), false);
+assert.equal(privacy.assertNoPrivateFieldsInPublicProfile([]), false);
+assert.equal(privacy.assertNoPrivateFieldsInPublicProfile({
+  uid: 'u1', nombre: 'Ana', handle: 'ana', avatar_url: 'https://example.invalid/a',
+  institution_id: 'uatx', verification_level: 1, member_since: '2026-01-01',
+}), true);
+
 assert.equal(privacy.accountDeletionDecision({ zone: 'private' }).action, 'delete');
 assert.equal(privacy.accountDeletionDecision({ zone: 'transactional' }).action, 'anonymize');
 assert.equal(privacy.accountDeletionDecision({ zone: 'trust_safety', active_dispute: true }).action, 'retain_temporarily');
