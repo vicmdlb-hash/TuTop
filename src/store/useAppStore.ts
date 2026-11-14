@@ -193,7 +193,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!actorUid || !product || product.vendedor_id === actorUid
       || !canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())) return null;
     const existing = state.chats.find((chat) => chat.producto_id === productId && chat.comprador_id === state.user.id && chat.vendedor_id === product.vendedor_id);
-    if (product.availability_status === 'reserved' && !existing) return null;
+    if ((product.availability_status === 'reserved' || product.availability_status === 'unverified') && !existing) return null;
     const chatId = existing?.id || `chat-${state.user.id}-${product.id}`;
     if (!existing) {
       const chat: Chat = {

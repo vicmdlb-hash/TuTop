@@ -11,9 +11,20 @@ const prepare = fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs','utf8')
 const lockRules = fs.readFileSync('scripts/harden-transaction-lock-rules.mjs','utf8');
 
 assert.match(schema, /availability_status\?: 'available' \| 'reserved'/);
-assert.match(listings, /availability_status: data\.availability_status === 'reserved' \? 'reserved' : 'available'/);
+assert.match(listings, /availability_status: data\.availability_status === 'available' \|\| data\.availability_status === undefined \? 'available' : data\.availability_status === 'reserved' \? 'reserved' : 'unverified'/);
 assert.match(listings, /availability_status: 'available' as const/);
-assert.match(listings, /Number\(a\.availability_status === 'reserved'\)/);
+// Exercise the actual canonical projection expression, with no Firebase credentials.
+const availabilityMatch = listings.match(/availability_status: (data\.availability_status[^\n]+),\n\s*punto_encuentro:/);
+assert(availabilityMatch, 'canonical availability projection must remain traceable');
+const projectAvailability = new Function('data', 'return (' + availabilityMatch[1] + ');');
+assert.equal(projectAvailability({ availability_status: 'available' }), 'available');
+assert.equal(projectAvailability({ availability_status: 'reserved' }), 'reserved');
+assert.equal(projectAvailability({}), 'available', 'legacy absent status remains compatible');
+assert.equal(projectAvailability({ availability_status: null }), 'unverified');
+assert.equal(projectAvailability({ availability_status: 'unexpected' }), 'unverified');
+assert.equal(projectAvailability({ availability_status: false }), 'unverified');
+
+assert.match(listings, /Number\(a\.availability_status !== 'available'\)/);
 
 assert.match(tx, /reservationAvailabilityWrite/);
 assert.match(tx, /availability_status: availability/);
@@ -29,7 +40,12 @@ assert.match(lockRules, /availability_status == 'available'/);
 assert.match(card, /Reservado temporalmente/);
 assert.match(card, /reservedForViewer/);
 assert.match(detail, /Reservado temporalmente/);
-assert.match(detail, /disabled=\{reserved\}/);
+assert.match(detail, /disabled=\{blocked\}/);
+assert.match(detail, /const unverified = product\.availability_status === 'unverified'/);
+assert.match(detail, /const blocked = reserved \|\| unverified/);
+assert.match(detail, /if \(ownProduct \|\| blocked\) return;/);
+assert.match(card, /Disponibilidad por verificar/);
+assert.match(card, /reservedForViewer = \(reserved \|\| unverified\)/);
 assert.match(detail, /const reserved = product\.availability_status === 'reserved'/);
 assert.match(detail, /if \(ownProduct \|\| reserved\) return;/);
 const topiQuickReply = detail.split("['¿Sigue disponible?'")[1]?.split("</button>)}</div>", 1)[0];
@@ -39,7 +55,7 @@ assert.match(topiQuickReply, /disabled=\{reservedForViewer\}/,
 assert.match(topiQuickReply, /onClick=\{\(\) => \{ if \(reservedForViewer\) return; const chatId = contactProduct\(product\.id\)/,
   'Topi shortcut handler must independently enforce reservation gate before contact');
 
-assert.match(store, /product\.availability_status === 'reserved' && !existing/);
+assert.match(store, /product\.availability_status === 'unverified'\) && !existing/);
 
 // A stale UI transaction snapshot must never authorize new outcome records or
 // a sold-out listing. Each action re-reads the canonical transaction first.

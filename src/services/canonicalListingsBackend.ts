@@ -129,7 +129,9 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     visibility_scope: data.visibility_scope,
     listing_kind: 'offer',
     moderation_status: data.moderation_status === 'flagged' ? 'flagged' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
-    availability_status: data.availability_status === 'reserved' ? 'reserved' : 'available',
+    // Invalid/null remote availability is not consent to display a listing as offerable.
+    // Only missing legacy V2 availability remains available for backwards compatibility.
+    availability_status: data.availability_status === 'available' || data.availability_status === undefined ? 'available' : data.availability_status === 'reserved' ? 'reserved' : 'unverified',
     punto_encuentro: 'Coordinar por Chat' as MeetingPoint,
     metodos_entrega: data.delivery_methods.map(legacyDelivery),
     shipping_available: data.shipping_available,
@@ -186,7 +188,7 @@ async function productsForDocuments(client: FirebaseRestClient, docs: FirestoreD
   return docs
     .map((doc) => canonicalListingToProduct(doc, names.get(doc.data.seller_id) || 'Estudiante'))
     .sort((a, b) => {
-      const availability = Number(a.availability_status === 'reserved') - Number(b.availability_status === 'reserved');
+      const availability = Number(a.availability_status !== 'available') - Number(b.availability_status !== 'available');
       if (availability) return availability;
       return Date.parse(b.updated_at || b.fecha_creacion) - Date.parse(a.updated_at || a.fecha_creacion);
     });
