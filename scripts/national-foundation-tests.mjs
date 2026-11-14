@@ -69,6 +69,20 @@ assert.equal(privacy.accountDeletionDecision({ zone: 'private' }).action, 'delet
 assert.equal(privacy.accountDeletionDecision({ zone: 'transactional' }).action, 'anonymize');
 assert.equal(privacy.accountDeletionDecision({ zone: 'trust_safety', active_dispute: true }).action, 'retain_temporarily');
 
+// A forged or corrupted zone may arrive from runtime deserialization even
+// though TypeScript declares a closed union. Never default it to deletion.
+for (const input of [
+  null, undefined, [], {}, { zone: null }, { zone: 'unknown_zone' },
+  { zone: 'TRUST_SAFETY' }, { zone: false }, { zone: 0 },
+]) {
+  assert.deepEqual(privacy.accountDeletionDecision(input), {
+    action: 'retain_temporarily', reason: 'unknown_data_zone_requires_review',
+  }, 'unknown zone must be reviewed, never deleted');
+}
+assert.equal(privacy.accountDeletionDecision({ zone: 'verification' }).action, 'delete');
+assert.equal(privacy.accountDeletionDecision({ zone: 'analytics' }).action, 'anonymize');
+
+
 console.log('PASS canonical listing lifecycle separates reservation from listing state');
 console.log('PASS prohibited/restricted marketplace policy contract');
 console.log('PASS anti-scam message signals and trust-aware rate limits');
