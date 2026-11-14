@@ -322,8 +322,10 @@ export const canonicalListingsBackend = {
 
   async updateProduct(listingId: string, updates: Partial<Product>) {
     const client = getClient();
-    const uid = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
     const first = await client.getDocument<CanonicalListingV2>(`listings_v2/${listingId}`);
+    assertListingReadSessionCurrent(client, requestSession);
     if (!first) throw new Error('LISTING_NOT_FOUND');
     if (first.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
 
@@ -352,12 +354,14 @@ export const canonicalListingsBackend = {
     if (contentChanged) patch.moderation_status = 'pending';
 
     const writeAgainst = async (snapshot: FirestoreDocument<CanonicalListingV2>) => {
+      // The initial or retried read may outlive logout, A→B or A→logout→A.
+      assertListingReadSessionCurrent(client, requestSession);
       if (snapshot.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
+      if (!snapshot.updateTime) throw new Error('LISTING_VERSION_REQUIRED');
       const next = { ...snapshot.data, ...patch, updated_at: new Date().toISOString() } as CanonicalListingV2;
       validateCanonicalListingPolicy(next, updates.categoria || categoryLabel(snapshot.data.category_id));
       await client.setDocument(`listings_v2/${listingId}`, patch, {
-        merge: true,
-        ...(snapshot.updateTime ? { updateTime: snapshot.updateTime } : {}),
+        merge: true, updateTime: snapshot.updateTime,
       });
     };
 
