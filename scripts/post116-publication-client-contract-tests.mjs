@@ -33,6 +33,27 @@ assert.match(listings,/LISTING_DELIVERY_INVALID/);
 assert.match(listings,/LISTING_MEETING_POINTS_INVALID/);
 assert.match(listings,/LISTING_PHOTO_INVALID/);
 assert.match(listings,/Number\.isInteger\(listing\.quantity\)/);
+// Exercise the real update-time numeric preflight without a network or Firebase client.
+const numericStart = listings.indexOf('    const patch: Record<string, unknown> = { updated_at: new Date() };');
+const numericEnd = listings.indexOf('    if (updates.categoria !== undefined)', numericStart);
+assert(numericStart >= 0 && numericEnd > numericStart, 'canonical editing numeric guards must remain visible');
+const numericSource = listings.slice(numericStart, numericEnd);
+const { stripTypeScriptTypes } = await import('node:module');
+const validateEditNumeric = new Function('updates', stripTypeScriptTypes(numericSource) + '\nreturn patch;');
+assert.equal(validateEditNumeric({ stock: 1 }).quantity, 1);
+assert.equal(validateEditNumeric({ stock: 99 }).quantity, 99);
+assert.equal(validateEditNumeric({ precio_mxn: 0.01 }).price_mxn, 0.01);
+assert.equal(validateEditNumeric({ precio_mxn: 1_000_000 }).price_mxn, 1_000_000);
+assert.equal(Object.hasOwn(validateEditNumeric({}), 'quantity'), false);
+assert.equal(Object.hasOwn(validateEditNumeric({}), 'price_mxn'), false);
+for (const stock of [null, 0, -3, 1.5, 100, 1_000, '1', NaN, Infinity]) {
+  assert.throws(() => validateEditNumeric({stock}), /LISTING_QUANTITY_INVALID/, 'invalid stock must not become saleable');
+}
+for (const precio_mxn of [null, -1, 0, 0.001, 1_000_000.01, '20', NaN, Infinity]) {
+  assert.throws(() => validateEditNumeric({precio_mxn}), /LISTING_PRICE_INVALID/, 'invalid price must not be silently coerced');
+}
+assert.doesNotMatch(numericSource, /Math\.round\(Number\(updates\.stock\)\)/);
+
 
 assert.match(rulesGenerator,/request\.resource\.data\.title\.size\(\) >= 2/);
 assert.match(rulesGenerator,/request\.resource\.data\.title\.size\(\) <= 120/);

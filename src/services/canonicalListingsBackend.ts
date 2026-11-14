@@ -331,8 +331,18 @@ export const canonicalListingsBackend = {
     let contentChanged = false;
     if (updates.titulo !== undefined) { patch.title = updates.titulo.trim().slice(0, 120); contentChanged = true; }
     if (updates.descripcion !== undefined) { patch.description = updates.descripcion.trim().slice(0, 3000); contentChanged = true; }
-    if (updates.precio_mxn !== undefined) patch.price_mxn = Math.max(0, Math.min(1_000_000, Number(updates.precio_mxn)));
-    if (updates.stock !== undefined) patch.quantity = Math.max(1, Math.min(99, Math.round(Number(updates.stock))));
+    // An edit must not silently turn zero stock, a fractional amount or malformed
+    // input into a valid sale. Validate the supplied value before the Firestore write.
+    if (updates.precio_mxn !== undefined) {
+      if (typeof updates.precio_mxn !== 'number' || !Number.isFinite(updates.precio_mxn)
+        || updates.precio_mxn < 0.01 || updates.precio_mxn > 1_000_000) throw new Error('LISTING_PRICE_INVALID');
+      patch.price_mxn = updates.precio_mxn;
+    }
+    if (updates.stock !== undefined) {
+      if (typeof updates.stock !== 'number' || !Number.isSafeInteger(updates.stock)
+        || updates.stock < 1 || updates.stock > 99) throw new Error('LISTING_QUANTITY_INVALID');
+      patch.quantity = updates.stock;
+    }
     if (updates.categoria !== undefined) { patch.category_id = slug(updates.categoria); contentChanged = true; }
     if (updates.condicion !== undefined) { patch.condition = updates.condicion; contentChanged = true; }
     if (updates.attributes !== undefined) { patch.attributes = updates.attributes; contentChanged = true; }
