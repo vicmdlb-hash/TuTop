@@ -85,6 +85,10 @@ export function privateAccountFields() {
 }
 
 export function assertNoPrivateFieldsInPublicProfile(profile: Record<string, unknown>) {
-  const forbidden = ['telefono', 'phone', 'email', 'institutional_email', 'credential', 'image_data', 'exact_address', 'notification_tokens'];
-  return forbidden.every((key) => !(key in profile));
+  // A negative list cannot anticipate token aliases, camelCase, nested
+  // private fields or future schema changes. Public projection is an
+  // explicit allowlist: reject any unexpected field before serialization.
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return false;
+  const allowed = new Set<string>(publicProfileFields());
+  return Object.keys(profile).every((key) => allowed.has(key));
 }
