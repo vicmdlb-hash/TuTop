@@ -1,4 +1,4 @@
-import { parseStrictIsoTimestamp } from './transactionRetry';
+import { parseStrictIsoTimestamp } from './transactionRetry.ts';
 import type { MarketplaceTransaction } from '../types';
 import type { CanonicalListingStatus } from './marketplaceGovernance';
 
