@@ -20,6 +20,23 @@ const locked = evaluateRecoveryRateLimit(failed, now);
 assert.equal(locked.allowed, false);
 assert.equal(locked.reason, 'temporarily_locked');
 assert(locked.retry_after_ms <= ACCOUNT_RECOVERY_POLICY.temporary_lock_ms);
+// A 30-minute lock must survive its triggering failures aging out of the 15-minute rate window.
+for (const minutes of [15, 16, 29]) {
+  const decision = evaluateRecoveryRateLimit(failed, now + minutes * 60_000);
+  assert.equal(decision.allowed, false, 'premature recovery unlock');
+  assert.equal(decision.reason, 'temporarily_locked');
+}
+assert.equal(evaluateRecoveryRateLimit(failed, now + 30 * 60_000).allowed, true);
+// Detect a burst even when one triggering attempt is now older than 30 minutes.
+const oldBurst = [29, 30, 31].map((min) => ({ at: now - min * 60_000, status: 'challenge_failed' }));
+const remaining = evaluateRecoveryRateLimit(oldBurst, now);
+assert.equal(remaining.allowed, false);
+assert.equal(remaining.reason, 'temporarily_locked');
+assert.equal(remaining.retry_after_ms, 60_000);
+const scattered = [2, 20, 40].map((min) => ({ at: now - min * 60_000, status: 'challenge_failed' }));
+assert.equal(evaluateRecoveryRateLimit(scattered, now).allowed, true);
+console.log('PASS recovery lock lasts the full 30 minutes across the 15-minute rate window');
+
 
 // A corrupted or untrusted clock/history must deny instead of treating the
 // caller as fresh. No real account, provider or network is involved.
