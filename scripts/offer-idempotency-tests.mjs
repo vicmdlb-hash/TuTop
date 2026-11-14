@@ -97,7 +97,7 @@ const assertOfferableListing = new Function(
 const makeListingClient = (availability_status) => ({
   getDocument: async (path) => {
     assert.equal(path, 'listings_v2/listing-1');
-    return { data: { seller_id: 'seller-a', status: 'active', moderation_status: 'approved', availability_status } };
+    return { data: { seller_id: 'seller-a', status: 'active', moderation_status: 'approved', quantity: 1, availability_status } };
   },
 });
 await assert.rejects(

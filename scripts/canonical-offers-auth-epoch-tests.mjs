@@ -128,7 +128,7 @@ const eligibleListing = {
   id: 'listing-1',
   data: {
     seller_id: 'seller-B', status: 'active',
-    moderation_status: 'approved', availability_status: 'available',
+    moderation_status: 'approved', availability_status: 'available', quantity: 1,
   },
 };
 mutationSession = identity('buyer-A', 'offer-preflight-A');
