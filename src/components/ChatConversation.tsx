@@ -56,6 +56,9 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
   const canReportUser = Boolean(peerUid && user.id && peerUid !== user.id);
   const [reportUserBusy, setReportUserBusy] = useState(false);
   const [reportUserMessage, setReportUserMessage] = useState<string | null>(null);
+  const [reportChatBusy, setReportChatBusy] = useState(false);
+  const [reportChatMessage, setReportChatMessage] = useState<string | null>(null);
+  const reportChatPendingRef = useRef(false);
   const [blocked, setBlocked] = useState(false);
   const [blockBusy, setBlockBusy] = useState(false);
   const [blockLoaded, setBlockLoaded] = useState(false);
@@ -65,6 +68,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
     const ownerUid = user.id;
     // Do not show a prior conversation's report outcome after switching accounts.
     setReportUserMessage(null);
+    setReportChatMessage(null);
     setBlocked(false);
     setBlockLoaded(false);
     setBlockMessage(null);
@@ -327,10 +331,26 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
   };
 
   const reportChat = async () => {
+    if (!user.id || reportChatPendingRef.current) return;
+    const reporterUid = user.id;
     const reason = window.prompt('¿Qué ocurrió en esta conversación?');
     if (!reason || reason.trim().length < 3) return;
-    try { await onlineBackend.submitReport('chat', chatId, reason); window.alert('Reporte enviado. El equipo de TuTop revisará la conversación.'); }
-    catch { window.alert('No pudimos enviar el reporte. Inténtalo otra vez.'); }
+    // An open prompt or an in-flight report must not cross A→B or chat changes.
+    const sameReporterAndChat = () => useAppStore.getState().user.id === reporterUid
+      && useAppStore.getState().activeChatId === chatId;
+    if (!sameReporterAndChat()) return;
+    reportChatPendingRef.current = true;
+    setReportChatBusy(true);
+    setReportChatMessage(null);
+    try {
+      await onlineBackend.submitReport('chat', chatId, reason);
+      if (sameReporterAndChat()) setReportChatMessage('Reporte de conversación enviado. TuTop lo revisará.');
+    } catch {
+      if (sameReporterAndChat()) setReportChatMessage('No pudimos enviar el reporte. Inténtalo otra vez.');
+    } finally {
+      reportChatPendingRef.current = false;
+      setReportChatBusy(false);
+    }
   };
 
   const incomingSeverity = riskSeverity(latestIncomingSafety);
@@ -339,9 +359,10 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
     <div className="chat-screen pt-safe">
       <header className="chat-header"><button onClick={closeChat} className="icon-button" aria-label="Regresar"><ArrowLeft /></button><img src={product.imagen_url} alt="" className="h-9 w-9 rounded-xl object-cover" /><div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><h1 className="truncate text-[13px] font-black">{chat.nombre_otro_usuario}</h1><span className={`rounded-full px-2 py-0.5 text-[8px] font-black ${isBuyer ? 'bg-sky-500/10 text-sky-300' : 'bg-violet-500/10 text-violet-300'}`}>{isBuyer ? 'COMPRA' : 'VENTA'}</span></div><p className="truncate text-[10px] text-muted">{product.titulo} · ${product.precio_mxn.toLocaleString('es-MX')}</p></div>{canReportUser && <button type="button" disabled={reportUserBusy} onClick={() => void reportUser()} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-400/15 px-2 py-2 text-[9px] font-bold text-amber-200 disabled:opacity-40" aria-label="Reportar usuario"><Flag className="h-3.5 w-3.5" />Reportar persona</button>}{canBlockUser && <button type="button" disabled={!blockLoaded || blockBusy} onClick={() => void toggleBlock()} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-400/15 px-2 py-2 text-[9px] font-bold text-rose-200 disabled:opacity-40" aria-label={blocked ? 'Desbloquear usuario' : 'Bloquear usuario'}><Ban className="h-3.5 w-3.5" />{blocked ? 'Desbloquear usuario' : 'Bloquear usuario'}</button>}</header>
       {reportUserMessage && <p role="status" aria-live="polite" className="mx-4 mt-2 rounded-lg bg-amber-500/10 p-2 text-[9px] text-amber-200">{reportUserMessage}</p>}
+      {reportChatMessage && <p role="status" aria-live="polite" className="mx-4 mt-2 rounded-lg bg-amber-500/10 p-2 text-[9px] text-amber-200">{reportChatMessage}</p>}
       {(blocked || blockMessage) && <p role="status" aria-live="polite" className="mx-4 mt-2 rounded-lg bg-rose-500/10 p-2 text-[9px] text-rose-200">{blocked ? 'Usuario bloqueado: el historial sigue disponible, pero no puedes iniciar nuevas comunicaciones.' : blockMessage}</p>}
 
-      <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-white/5 bg-[#0d1725] px-3 py-2 text-[10px] text-muted"><MapPin className="h-3.5 w-3.5 text-success" /><span className="min-w-0 flex-1 truncate">{product.punto_encuentro}</span><button onClick={() => void reportChat()} className="inline-flex items-center gap-1 text-slate-500" aria-label="Reportar conversación"><Flag className="h-3.5 w-3.5" />Reportar</button></div>
+      <div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-white/5 bg-[#0d1725] px-3 py-2 text-[10px] text-muted"><MapPin className="h-3.5 w-3.5 text-success" /><span className="min-w-0 flex-1 truncate">{product.punto_encuentro}</span><button type="button" disabled={reportChatBusy} onClick={() => void reportChat()} className="inline-flex items-center gap-1 text-slate-500 disabled:opacity-40" aria-label="Reportar conversación"><Flag className="h-3.5 w-3.5" />Reportar</button></div>
       <div className="mx-4 mt-2 flex items-center gap-2 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.05] px-3 py-2 text-[9px] leading-relaxed text-slate-400"><ShieldCheck className="h-4 w-4 shrink-0 text-emerald-300" />Acuérdense de verse en un lugar público. No compartas tu domicilio exacto si no es necesario.</div>
       <div role="note" aria-label="Recordatorio de seguridad para menores" className="mx-4 mt-2 flex items-start gap-2 rounded-xl border border-amber-400/20 bg-amber-500/[0.06] px-3 py-2 text-[10px] leading-relaxed text-amber-100"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p><strong>Seguridad antes de conversar:</strong> Si eres menor de edad, consulta a tu madre, padre o tutor antes de compartir información o acordar entregas. No compartas dirección, escuela, teléfono, contraseñas ni códigos de verificación. No acuerdes encuentros a solas con personas desconocidas. Puedes usar Reportar o Bloquear cuando algo te preocupe.</p></div>
       {latestIncomingSafety.length > 0 && <div className={`mx-4 mt-2 flex items-start gap-2 rounded-xl border px-3 py-2 text-[9px] ${incomingSeverity === 'critical' || incomingSeverity === 'high' ? 'border-rose-400/20 bg-rose-500/[0.08] text-rose-200' : 'border-amber-400/15 bg-amber-500/[0.06] text-amber-100'}`}><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div><strong className="block">Topi detectó una señal de riesgo</strong><span className="mt-0.5 block opacity-80">{latestIncomingSafety[0].message}</span></div></div>}
