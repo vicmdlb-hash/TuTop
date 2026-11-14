@@ -22,4 +22,13 @@ assert.match(permissions, /entrega\/tap todavía requiere prueba E2E real/);
 assert.match(permissions, /La entrega real se confirma sólo cuando llegue y se abra una notificación de prueba/);
 assert.doesNotMatch(permissions, /permiso.*entrega.*confirmada/i);
 
+const receiptBridge = fs.readFileSync('src/services/notificationReceiptStoreBridge.ts', 'utf8');
+assert.match(receiptBridge, /markNotificationRead\(notificationId\)\.catch\(\(\) =>/);
+assert.match(receiptBridge, /markAllNotificationsRead\(unread\.map\(\(item\) => item\.id\)\)\.catch\(\(\) =>/);
+assert.match(receiptBridge, /\[TuTop notification receipt\] sync failed/);
+assert.match(receiptBridge, /\[TuTop notification receipts\] sync failed/);
+assert.doesNotMatch(receiptBridge, /console\.(warn|error|log)\([^\n]*,\s*(error|err)\b/,
+  'never log raw remote notification errors');
+console.log('PASS notification receipt sync errors retain fixed categories without raw exception leakage');
+
 console.log('PASS post-build116 push truth: OS permission, FCM token registration and real delivery remain distinct');
