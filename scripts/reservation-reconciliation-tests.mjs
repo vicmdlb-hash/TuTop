@@ -71,4 +71,47 @@ console.log('PASS expired reserved transactions expire without mutating canonica
 console.log('PASS completed bilateral transactions repair listing to sold_out');
 console.log('PASS scheduled meetups/disputes are never auto-expired');
 console.log('PASS malformed expiry never triggers an automatic write plan');
+
+// Treat runtime-deserialized clocks and dates as untrusted. A malformed
+// timestamp must never create an automatic transaction expiry or sold-out
+// repair plan even when it would be truthy in JavaScript.
+for (const invalidClock of [Number.NaN, Infinity, -1, 0, 'invalid', null]) {
+  assert.deepEqual(
+    reservationReconciliationPlan({
+      transaction: { status: 'reserved', reservation_expires_at: '2026-09-05T17:59:00.000Z' },
+      listingStatus: 'active',
+      nowMs: invalidClock,
+    }),
+    { kind: 'none', reason: 'reservation_clock_invalid' },
+  );
+}
+for (const invalidExpiry of [null, false, '', '2026-02-31T17:00:00Z',
+  '2026-09-05T25:00:00Z', '2026-09-05T17:00:00']) {
+  assert.deepEqual(
+    reservationReconciliationPlan({
+      transaction: { status: 'reserved', reservation_expires_at: invalidExpiry },
+      listingStatus: 'active', nowMs,
+    }),
+    { kind: 'none', reason: 'reservation_expiry_missing_or_invalid' },
+  );
+}
+for (const invalidConfirmation of [false, 'yes', '2026-02-31T17:00:00Z',
+  '2026-09-05T17:00:00', '2026-09-05T24:00:00Z']) {
+  assert.deepEqual(
+    reservationReconciliationPlan({
+      transaction: {
+        status: 'completed',
+        buyer_confirmed_at: invalidConfirmation,
+        seller_confirmed_at: '2026-09-05T17:11:00.000Z',
+      },
+      listingStatus: 'active', nowMs,
+    }),
+    { kind: 'none', reason: 'completed_requires_bilateral_confirmation' },
+  );
+}
+assert.deepEqual(reservationReconciliationPlan(null), {
+  kind: 'none', reason: 'reservation_input_invalid',
+});
+console.log('PASS invalid reservation clock, expiry, and bilateral timestamps never authorize a state repair');
+
 console.log('Reservation reconciliation tests: PASS');
