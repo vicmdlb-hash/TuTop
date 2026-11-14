@@ -56,6 +56,7 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
   const canReportUser = Boolean(peerUid && user.id && peerUid !== user.id);
   const [reportUserBusy, setReportUserBusy] = useState(false);
   const [reportUserMessage, setReportUserMessage] = useState<string | null>(null);
+  const reportUserPendingRef = useRef(false);
   const [reportChatBusy, setReportChatBusy] = useState(false);
   const [reportChatMessage, setReportChatMessage] = useState<string | null>(null);
   const reportChatPendingRef = useRef(false);
@@ -308,24 +309,28 @@ export default function ChatConversation({ chatId }: { chatId: string }) {
   // Reporting a user is distinct from reporting a conversation. Reuse the
   // authenticated report writer, including server-side rate/owner checks.
   const reportUser = async () => {
-    if (!canReportUser || reportUserBusy) return;
+    if (!canReportUser || reportUserPendingRef.current) return;
+    const reporterUid = user.id;
     const reason = window.prompt('¿Por qué quieres reportar a esta persona?');
     if (!reason || reason.trim().length < 3) return;
-    const reporterUid = user.id;
+    const sameReporterAndChat = () => useAppStore.getState().user.id === reporterUid
+      && useAppStore.getState().activeChatId === chatId;
+    // The prompt can outlive logout. Never submit A's report under B's session.
+    if (!sameReporterAndChat()) return;
+    reportUserPendingRef.current = true;
     setReportUserBusy(true);
     setReportUserMessage(null);
     try {
       await onlineBackend.submitReport('user', peerUid, reason);
-      if (useAppStore.getState().user.id === reporterUid
-        && useAppStore.getState().activeChatId === chatId) {
+      if (sameReporterAndChat()) {
         setReportUserMessage('Reporte de usuario enviado. TuTop lo revisará.');
       }
     } catch {
-      if (useAppStore.getState().user.id === reporterUid
-        && useAppStore.getState().activeChatId === chatId) {
+      if (sameReporterAndChat()) {
         setReportUserMessage('No pudimos reportar al usuario. Inténtalo otra vez.');
       }
     } finally {
+      reportUserPendingRef.current = false;
       setReportUserBusy(false);
     }
   };
