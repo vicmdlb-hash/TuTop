@@ -33,7 +33,10 @@ assert.match(feed, /return Boolean\(product\.city_id && product\.city_id === cit
 assert.match(feed, /if \(nearby !== null\) return nearby;/, 'nearby must use coarse-coordinate distance when available');
 assert.match(feed, /return sameCampus\(product, user, legacyFaculty\) \|\| sameCity\(product, user\);/, 'missing coarse coordinates may fall back only to campus/city identity');
 
-assert.match(store, /if \(!before \|\| \(before\.sin_leer \|\| 0\) === 0\) return/);
+const markRead = store.split('  markChatRead: (chatId) => {')[1]?.split('  confirmDelivery:')[0];
+assert(markRead?.includes('(before.sin_leer || 0) === 0) return;'));
+assert(markRead.includes('before.comprador_id !== actorUid && before.vendedor_id !== actorUid'));
+assert(markRead.includes('chatReadMutationVersion.get(mutationKey) !== version'));
 assert.match(store, /onlineBackend\.markChatRead\(chatId\)/);
 assert.doesNotMatch(online, /Turismo Internacional/);
 assert.equal((online.match(/Comunidad universitaria/g) || []).length >= 2, true);

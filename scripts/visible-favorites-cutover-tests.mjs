@@ -7,6 +7,7 @@ const mutationBridge = fs.readFileSync('src/services/v2FavoriteMutationCacheBrid
 const backend = fs.readFileSync('src/services/visibleFavoritesBackend.ts', 'utf8');
 const hydrator = fs.readFileSync('src/components/V2VisibleFavoritesHydrator.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
+const appStore = fs.readFileSync('src/store/useAppStore.ts', 'utf8');
 const listings = fs.readFileSync('src/components/V2ListingsHydrator.tsx', 'utf8');
 const env = fs.readFileSync('.env.example', 'utf8');
 const indexes = JSON.parse(fs.readFileSync('firebase/firestore.indexes.json', 'utf8'));
@@ -17,6 +18,12 @@ const emulatorFixture = fs.readFileSync('tests/firestore.v2.favorite-membership.
 const canonicalRulesHardener = fs.readFileSync('scripts/harden-canonical-v2-rules.mjs', 'utf8');
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 
+// A's late favorite failure must not undo B's UI when two accounts use
+// the same listing ID on one device.
+assert(appStore.includes('const actorUid = state.user.id;'));
+assert(appStore.includes('const mutationKey = `${actorUid}:${productId}`;'));
+assert(appStore.includes('favoriteMutationVersion.get(mutationKey)'));
+assert(appStore.includes('if (get().user.id !== actorUid) return;'));
 assert.match(flags, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER/);
 assert.match(flags, /favoritesVisibleCutoverEnabled/);
 assert.match(env, /VITE_TUTOP_V2_FAVORITES_VISIBLE_CUTOVER=false/);

@@ -1,11 +1,8 @@
-name: Build118 staging native Firebase key repair — exact APK
+# RETIRED: obsolete Build115/116/118/120 candidate. Audit source only; do not execute.
+name: RETIRED — Build118 staging native Firebase key repair — exact APK
 
 on:
-  push:
-    branches: [fix/build118-deviceA-physical-failures]
-    paths:
-      - 'scripts/repair-build118-staging-native-api-key.mjs'
-      - '.github/workflows/build118-staging-native-key-repair.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,6 +13,8 @@ concurrency:
 
 jobs:
   repair:
+    # Historical candidate retained for audit only. Hard-disabled.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:

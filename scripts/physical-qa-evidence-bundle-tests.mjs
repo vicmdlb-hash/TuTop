@@ -76,6 +76,14 @@ const pass = validatePhysicalQaEvidence(good, now, candidateManifest);
 assert.equal(pass.overall, 'pass');
 assert.equal(pass.release_blocked, false);
 assert.equal(pass.candidate_artifact_id, candidateManifest.artifact_id);
+for (const mandatory of ["second_account_email_verification","topi_real_ai","notification_permission_activation","notification_token_registered","fcm_two_device_receive","fcm_two_device_tap_deep_link","account_switch_fcm_isolation"]) {
+  const omitted = structuredClone(good);
+  delete omitted.required_cases[mandatory];
+  const denied = validatePhysicalQaEvidence(omitted, now, candidateManifest);
+  assert.equal(denied.release_blocked, true, `missing ${mandatory} must block R6`);
+  assert(denied.errors.some((error) => error.includes(`required_cases.${mandatory}`)));
+}
+
 
 const leaked = structuredClone(good);
 leaked.password = 'secret';
@@ -84,6 +92,135 @@ const bad = validatePhysicalQaEvidence(leaked, now, candidateManifest);
 assert.equal(bad.overall, 'fail');
 assert(bad.errors.some((x) => x.includes('password')));
 assert(bad.errors.some((x) => x.includes('idToken')));
+
+// Evidence is a diagnostic artifact, never an approved container for secrets.
+// Regression cases intentionally use short synthetic strings to prove that
+// protection is based on sensitive KEY names rather than token length alone.
+for (const [field, nested] of [
+  ['FcmToken', false], ['APP_CHECK_TOKEN', false], ['ApiKey', false],
+  ['access_token', true], ['AUTHORIZATION', true], ['notification_id', true],
+]) {
+  const leak = structuredClone(good);
+  if (nested) leak.diagnostic_report[field] = 'synthetic-secret';
+  else leak[field] = 'synthetic-secret';
+  const outcome = validatePhysicalQaEvidence(leak, now, candidateManifest);
+  assert.equal(outcome.release_blocked, true, `raw ${field} must block QA`);
+  assert(outcome.errors.some((error) => error.includes(field)),
+    `raw ${field} field should be identified in the report`);
+}
+
+// Alternative separators/casing must not bypass the protected-field list.
+for (const alias of [
+  'fcm-token', 'fcm token', 'eMail-Address', 'authorization.header',
+  'device-serial', 'raw_notification-id',
+]) {
+  const leakedAlias = structuredClone(good);
+  leakedAlias.diagnostic_report[alias] = 'synthetic-secret';
+  const verdict = validatePhysicalQaEvidence(leakedAlias, now, candidateManifest);
+  assert.equal(verdict.overall, 'fail', alias);
+  assert.equal(verdict.release_blocked, true, alias);
+  assert(verdict.errors.some((error) => error.includes(alias)), alias);
+}
+
+// Physical R6 evidence must reject sensitive identifiers even when embedded in
+// free-text notes or diagnostic events under otherwise permitted field names.
+for (const [field, rawValue] of [
+  ['device_serial', 'synthetic-short'],
+  ['imei', '123456789012345'],
+  ['emailAddress', 'tester@example.invalid'],
+  ['mac_address', 'A1:B2:C3:D4:E5:F6'],
+]) {
+  const leakedField = structuredClone(good);
+  leakedField.diagnostic_report[field] = rawValue;
+  const verdict = validatePhysicalQaEvidence(leakedField, now, candidateManifest);
+  assert.equal(verdict.overall, 'fail', field);
+  assert.equal(verdict.release_blocked, true, field);
+  assert(verdict.errors.some((error) => error.includes(field)), field);
+}
+for (const [where, rawValue] of [
+  ['imei-like numeric', 'Device test: 123456789012345'],
+  ['MAC-like address', 'Device MAC A1:B2:C3:D4:E5:F6'],
+  ['email address', 'Used tester@example.invalid'],
+  ['opaque long token', 'x'.repeat(128)],
+  ['JWT-like segmented token', 'a'.repeat(24) + '.' + 'b'.repeat(24) + '.' + 'c'.repeat(24)],
+]) {
+  const leakedValue = structuredClone(good);
+  leakedValue.notes = rawValue;
+  const verdict = validatePhysicalQaEvidence(leakedValue, now, candidateManifest);
+  assert.equal(verdict.overall, 'fail', where);
+  assert.equal(verdict.release_blocked, true, where);
+  assert(verdict.errors.some((error) => error.includes('sin redactar')), where);
+}
+
+// JSON property names may hold a raw identifier even with a harmless value.
+// Reject sensitive names without printing them, including nested child errors.
+for (const rawName of [
+  'tester@example.invalid', '2461234567', 'A1:B2:C3:D4:E5:F6',
+  'x'.repeat(128), 'a'.repeat(24) + '.' + 'b'.repeat(24) + '.' + 'c'.repeat(24),
+]) {
+  const sensitiveKey = structuredClone(good);
+  sensitiveKey.diagnostic_report[rawName] = { accessToken: 'synthetic' };
+  const result = validatePhysicalQaEvidence(sensitiveKey, now, candidateManifest);
+  assert.equal(result.overall, 'fail');
+  assert.equal(result.release_blocked, true);
+  assert(result.errors.some(error => error.includes('nombre de campo contiene identificador sensible')));
+  assert.equal(JSON.stringify(result.errors).includes(rawName), false);
+}
+
+// Raw check labels/details must never be copied into exportable R6 verdicts,
+// even after the sensitive-field scan has correctly blocked their submission.
+for (const secret of ['qa-tester@example.invalid',
+  'a'.repeat(24) + '.' + 'b'.repeat(24) + '.' + 'c'.repeat(24)]) {
+  const rawCheck = structuredClone(good);
+  rawCheck.diagnostic_report.checks.push({
+    key: secret, label: secret, status: 'fail', detail: secret,
+  });
+  const verdict = validatePhysicalQaEvidence(rawCheck, now, candidateManifest);
+  assert.equal(verdict.overall, 'fail');
+  assert.equal(verdict.release_blocked, true);
+  assert.equal(JSON.stringify(verdict).includes(secret), false,
+    'evidence verdict must not reflect raw check keys, labels or details');
+  assert(verdict.assessment.findings.some((finding) =>
+    finding.code === 'qa:untrusted-check-redacted'));
+}
+const malformedCheckReport = structuredClone(good);
+malformedCheckReport.diagnostic_report.checks = null;
+const malformedVerdict = validatePhysicalQaEvidence(malformedCheckReport, now, candidateManifest);
+assert.equal(malformedVerdict.overall, 'fail');
+assert.equal(malformedVerdict.release_blocked, true);
+assert(malformedVerdict.errors.some((error) => error.includes('estructura de evaluación incorrecta')));
+
+// A synthetic report with all manual cases marked PASS is not a valid Android
+// diagnostic unless each mandatory native check exists exactly once as PASS.
+for (const key of [
+  'staging-project', 'v2', 'auth', 'identity',
+  'network', 'push-permission', 'app-check',
+]) {
+  const missingCheck = structuredClone(good);
+  missingCheck.diagnostic_report.checks =
+    missingCheck.diagnostic_report.checks.filter((check) => check.key !== key);
+  const verdict = validatePhysicalQaEvidence(missingCheck, now, candidateManifest);
+  assert.equal(verdict.overall, 'fail', `missing diagnostic ${key} must fail`);
+  assert.equal(verdict.release_blocked, true, `missing diagnostic ${key} must block`);
+  assert(verdict.errors.some((error) => error.includes(`sin PASS: ${key}`)));
+
+  const notPassing = structuredClone(good);
+  notPassing.diagnostic_report.checks.find((check) => check.key === key).status = 'pending';
+  const denied = validatePhysicalQaEvidence(notPassing, now, candidateManifest);
+  assert.equal(denied.release_blocked, true, `unknown status ${key} must block`);
+  assert(denied.errors.some((error) => error.includes('comprobación malformada')));
+}
+const duplicateCheck = structuredClone(good);
+duplicateCheck.diagnostic_report.checks.push(
+  structuredClone(duplicateCheck.diagnostic_report.checks[0]));
+const duplicateVerdict = validatePhysicalQaEvidence(duplicateCheck, now, candidateManifest);
+assert.equal(duplicateVerdict.overall, 'fail');
+assert(duplicateVerdict.errors.some((error) => error.includes('comprobación duplicada')));
+const missingChecksArray = structuredClone(good);
+delete missingChecksArray.diagnostic_report.checks;
+const missingChecksVerdict = validatePhysicalQaEvidence(missingChecksArray, now, candidateManifest);
+assert.equal(missingChecksVerdict.release_blocked, true);
+assert(missingChecksVerdict.errors.some((error) => error.includes('diagnostic_report.checks inválido')));
 
 const explanatory = structuredClone(good);
 explanatory.notes = 'No incluir password, idToken, refreshToken ni otros secretos en evidencia.';

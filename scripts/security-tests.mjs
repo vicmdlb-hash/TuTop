@@ -113,12 +113,17 @@ test('config cliente Firebase puede venir integrada sin incluir credenciales pri
   assert.ok(!runtime.includes('client_email'));
 });
 
-test('registro puede reparar Auth huérfano sin borrar cuentas existentes', () => {
-  const registerBlock = backend.slice(backend.indexOf('async register('), backend.indexOf('async login('));
+test('registro recupera identidad existente sin borrar Auth después de un commit ambiguo', () => {
+  const registerBlock = backend.slice(backend.indexOf('async register('), backend.indexOf('async ensureMarketplaceCatalog('));
   assert.ok(registerBlock.includes('/EMAIL_EXISTS/i'));
   assert.ok(registerBlock.includes('signInWithPhonePassword'));
-  assert.ok(registerBlock.includes('createdAuthIdentity'));
-  assert.ok(registerBlock.includes('if (createdAuthIdentity)'));
+  assert.ok(registerBlock.includes('await this.createInitialAccount(session, profile)'));
+  assert.ok(registerBlock.includes('client.signOut();\n      throw error;'));
+  assert.ok(registerBlock.includes('await this.ensureMarketplaceCatalog().catch(() => undefined)'));
+  assert.ok(!registerBlock.includes('deleteAuthAccount('), 'ambiguous account creation must not delete Firebase Auth');
+  assert.ok(!registerBlock.includes('createdAuthIdentity'), 'do not assume a rollback is safe for a fresh Auth identity');
+  assert.ok(firebaseRest.includes("throw new Error('ACCOUNT_ERASURE_TRUSTED_PROCESSOR_REQUIRED')"));
+  assert.ok(!firebaseRest.includes("authRequest('accounts:delete'"), 'client must not bypass trusted server account erasure');
 });
 
 test('sesión Firebase queda aislada por projectId', () => {

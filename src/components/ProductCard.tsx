@@ -4,7 +4,7 @@ import { BadgeCheck, CircleDollarSign, Heart, MapPin, MessageCircle, MoreHorizon
 import type { Product } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { feedbackFavorite, feedbackTap } from '../lib/feedback';
-import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, productDistanceKm, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, productDistanceKm, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { parseListingDescription } from '../lib/listingDetails';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
 
@@ -35,7 +35,8 @@ export default function ProductCard({ product }: { product: Product }) {
     ? product.moderation_status === 'pending' ? 'En revisión'
       : product.moderation_status === 'rejected' ? 'Rechazada'
         : product.moderation_status === 'review' ? 'Revisión necesaria'
-          : null
+          : product.moderation_status === 'flagged' ? 'Marcada para revisión'
+            : null
     : null;
   const parsed = parseListingDescription(product.descripcion);
   const negotiable = product.precio_negociable === true || parsed.details['Precio negociable']?.toLowerCase() === 'sí';
@@ -47,13 +48,15 @@ export default function ProductCard({ product }: { product: Product }) {
   const [viewerLocation, setViewerLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
 
   useEffect(() => {
+    // A prior account's delayed geolocation event must never update B's card.
+    setViewerLocation(getCachedApproxLocation(user.id));
     const onLocation = (event: Event) => {
-      const detail = (event as CustomEvent<ApproxLocation>).detail;
-      if (detail) setViewerLocation(detail);
+      const detail = (event as CustomEvent<ScopedApproxLocationEvent>).detail;
+      if (detail?.owner_uid === user.id) setViewerLocation(detail);
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
     return () => window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
-  }, []);
+  }, [user.id]);
 
   const distance = productDistanceKm(viewerLocation, product);
   const proximity = distanceLabel(distance);
@@ -92,7 +95,7 @@ export default function ProductCard({ product }: { product: Product }) {
 
         <div className="mt-3 flex items-center gap-2">
           <button disabled={reservedForViewer} onClick={() => { feedbackTap(); ownProduct ? openProduct(product.id) : contactProduct(product.id); }} className="contact-button disabled:cursor-not-allowed disabled:opacity-45"><MessageCircle className="h-4 w-4" />{ownProduct ? 'Ver publicación' : reservedForViewer ? 'Reservado' : existingBuyerChat ? 'Volver al chat' : 'Contactar'}</button>
-          <button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`favorite-button ${favorite ? 'favorite-button-active' : ''}`} aria-label="Guardar producto">
+          <button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`favorite-button ${favorite ? 'favorite-button-active' : ''}`} aria-label={favorite ? "Quitar de guardados" : "Guardar producto"} aria-pressed={favorite}>
             <Heart className="h-5 w-5" fill={favorite ? 'currentColor' : 'none'} />
             <span>{favorite ? 'Guardado' : 'Guardar'}</span>
           </button>

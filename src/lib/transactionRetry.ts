@@ -1,3 +1,39 @@
+/**
+ * A trusted reservation/offer deadline must be a real RFC3339 date-time.
+ * Date.parse alone normalizes impossible calendar dates (e.g. February 31).
+ * Never turn malformed source data into an automatic financial state change.
+ */
+export function parseStrictIsoTimestamp(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!parts) return null;
+  const year = Number(parts[1]), month = Number(parts[2]), day = Number(parts[3]);
+  const hour = Number(parts[4]), minute = Number(parts[5]), second = Number(parts[6]);
+  if (month < 1 || month > 12 || day < 1 || day > 31
+      || hour > 23 || minute > 59 || second > 59) return null;
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  if (calendar.getUTCFullYear() !== year
+      || calendar.getUTCMonth() + 1 !== month
+      || calendar.getUTCDate() !== day) return null;
+  const offset = parts[7];
+  if (offset !== 'Z') {
+    const [hours, minutes] = offset.slice(1).split(':').map(Number);
+    if (hours > 23 || minutes > 59) return null;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+/** An absent expiry preserves explicit legacy offer compatibility.
+ * A present malformed expiry never authorizes a fresh commercial action. */
+export function assertFreshOfferExpiry(value: unknown, nowMs = Date.now()): void {
+  if (value === undefined) return;
+  const expiresMs = parseStrictIsoTimestamp(value);
+  if (expiresMs === null) throw new Error('OFFER_EXPIRY_INVALID');
+  if (expiresMs <= nowMs) throw new Error('OFFER_EXPIRED');
+}
+
 export function isRecoverableTransactionRetryError(error: unknown) {
   const candidate = error as any;
   const text = [candidate?.message, candidate?.payload?.error?.message, candidate?.payload?.error?.status]

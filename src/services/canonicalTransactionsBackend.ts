@@ -51,12 +51,26 @@ function assertCancelable(transaction: MarketplaceTransaction, actor: string) {
 }
 
 async function terminalTransactionWrites(client: FirebaseRestClient, transaction: MarketplaceTransaction, patch: Record<string, unknown>) {
+  // A read before cancellation/expiry is not an atomic witness. Bind the
+  // transaction's exact Firestore version to the SAME commit as the lock and
+  // listing changes, so a competing action cannot silently overwrite it.
+  const canonical = await client.getDocument<any>(`transactions_v2/${transaction.id}`);
+  if (!canonical || !canonical.updateTime) throw new Error('TRANSACTION_VERSION_UNKNOWN');
+  const observed = { id: canonical.id, ...canonical.data } as MarketplaceTransaction;
+  if (!sameTransactionIdentity(observed, transaction)
+    || observed.status !== transaction.status
+    || observed.updated_at !== transaction.updated_at) throw new Error('TRANSACTION_CHANGED');
   const lock = await client.getDocument<any>(reservationLockPath(transaction.listing_id));
   if (lock && lock.data.transaction_id !== transaction.id) throw new Error('RESERVATION_LOCK_MISMATCH');
+  // Never delete a successor's lock after a concurrent cancellation/rebooking.
+  // Firestore enforces both transaction and lock witnesses atomically.
+  if (lock && !lock.updateTime) throw new Error('RESERVATION_LOCK_VERSION_UNKNOWN');
   return [
-    patchWrite(client, `transactions_v2/${transaction.id}`, patch),
+    { ...patchWrite(client, `transactions_v2/${transaction.id}`, patch),
+      currentDocument: { updateTime: canonical.updateTime } },
     ...(lock ? [
-      { delete: client.documentName(reservationLockPath(transaction.listing_id)) },
+      { delete: client.documentName(reservationLockPath(transaction.listing_id)),
+        currentDocument: { updateTime: lock.updateTime } },
       reservationAvailabilityWrite(client, transaction.listing_id, 'available', String(patch.updated_at || nowIso())),
     ] : []),
   ];
@@ -91,6 +105,28 @@ async function loadCurrentTransaction(client: FirebaseRestClient, expected: Mark
   return current;
 }
 
+// A status-changing client action must not overwrite a competing cancellation,
+ // confirmation, dispute, or meeting update after its canonical preflight.
+async function commitCurrentTransactionPatch(
+  client: FirebaseRestClient,
+  transaction: MarketplaceTransaction,
+  patch: Record<string, unknown>,
+) {
+  const stored = await client.getDocument<any>(`transactions_v2/${transaction.id}`);
+  if (!stored?.updateTime) throw new Error('TRANSACTION_VERSION_UNKNOWN');
+  const observed = { id: stored.id, ...stored.data } as MarketplaceTransaction;
+  if (!sameTransactionIdentity(observed, transaction)
+    || observed.status !== transaction.status
+    || observed.updated_at !== transaction.updated_at
+    || observed.buyer_confirmed_at !== transaction.buyer_confirmed_at
+    || observed.seller_confirmed_at !== transaction.seller_confirmed_at
+    || observed.meetup_at !== transaction.meetup_at) throw new Error('TRANSACTION_CHANGED');
+  await client.commit([{
+    ...patchWrite(client, `transactions_v2/${transaction.id}`, patch),
+    currentDocument: { updateTime: stored.updateTime },
+  }]);
+}
+
 function actorConfirmationField(transaction: MarketplaceTransaction, actor: string) {
   if (actor === transaction.buyer_id) return 'buyer_confirmed_at' as const;
   if (actor === transaction.seller_id) return 'seller_confirmed_at' as const;
@@ -105,7 +141,21 @@ async function commitDeliveryConfirmation(client: FirebaseRestClient, transactio
   const at = nowIso();
   const status = transactionStatusForAction(transaction, actor, 'confirm_delivery') || transaction.status;
   const next = { ...transaction, [field]: at, status, updated_at: at } as MarketplaceTransaction;
-  const confirmationWrite = patchWrite(client, `transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at });
+  // Both participants can confirm concurrently. Read the same canonical
+  // transaction generation we based the status decision on, then require its
+  // Firestore updateTime in the atomic commit (including sold_out).
+  const canonical = await client.getDocument<any>(`transactions_v2/${transaction.id}`);
+  if (!canonical?.updateTime) throw new Error('TRANSACTION_VERSION_UNKNOWN');
+  const observed = { id: canonical.id, ...canonical.data } as MarketplaceTransaction;
+  if (!sameTransactionIdentity(observed, transaction)
+    || observed.status !== transaction.status
+    || observed.updated_at !== transaction.updated_at
+    || observed.buyer_confirmed_at !== transaction.buyer_confirmed_at
+    || observed.seller_confirmed_at !== transaction.seller_confirmed_at) throw new Error('TRANSACTION_CHANGED');
+  const confirmationWrite = {
+    ...patchWrite(client, `transactions_v2/${transaction.id}`, { [field]: at, status, updated_at: at }),
+    currentDocument: { updateTime: canonical.updateTime },
+  };
 
   if (status === 'completed') {
     await assertReservationLockConsistent(client, transaction);
@@ -210,7 +260,7 @@ export const canonicalTransactionsBackend = {
     if (!meetingPointId || !Number.isFinite(meetupMs) || meetupMs <= Date.now() || meetupMs > Date.now() + 30 * 86400000) throw new Error('INVALID_MEETUP');
     const at = nowIso();
     const next = { ...current, status: 'meetup_scheduled' as const, meeting_point_id: meetingPointId, meetup_at: new Date(meetupMs).toISOString(), updated_at: at };
-    await client.setDocument(`transactions_v2/${current.id}`, { status: next.status, meeting_point_id: meetingPointId, meetup_at: next.meetup_at, updated_at: at }, { merge: true });
+    await commitCurrentTransactionPatch(client, current, { status: next.status, meeting_point_id: meetingPointId, meetup_at: next.meetup_at, updated_at: at });
     return next;
   },
 
@@ -242,12 +292,13 @@ export const canonicalTransactionsBackend = {
   async finalizeCompletedListing(transaction: MarketplaceTransaction) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (actor !== transaction.seller_id) throw new Error('SELLER_REQUIRED');
-    if (transaction.status !== 'completed' || !transaction.buyer_confirmed_at || !transaction.seller_confirmed_at) throw new Error('TRANSACTION_NOT_COMPLETED');
+    const current = await loadCurrentTransaction(client, transaction);
+    if (actor !== current.seller_id) throw new Error('SELLER_REQUIRED');
+    if (current.status !== 'completed' || !current.buyer_confirmed_at || !current.seller_confirmed_at) throw new Error('TRANSACTION_NOT_COMPLETED');
     const at = nowIso();
-    await assertReservationLockConsistent(client, transaction);
+    await assertReservationLockConsistent(client, current);
     await client.commit([
-      patchWrite(client, `listings_v2/${transaction.listing_id}`, { status: 'sold_out', updated_at: at }),
+      patchWrite(client, `listings_v2/${current.listing_id}`, { status: 'sold_out', updated_at: at }),
     ]);
   },
 
@@ -257,7 +308,7 @@ export const canonicalTransactionsBackend = {
     const current = await loadCurrentTransaction(client, transaction);
     if (!canActOnTransaction(current, actor, 'dispute')) throw new Error('TRANSACTION_ACTION_DENIED');
     const at = nowIso();
-    await client.setDocument(`transactions_v2/${current.id}`, { status: 'disputed', updated_at: at }, { merge: true });
+    await commitCurrentTransactionPatch(client, current, { status: 'disputed', updated_at: at });
     return { ...current, status: 'disputed' as const, updated_at: at };
   },
 
@@ -276,13 +327,14 @@ export const canonicalTransactionsBackend = {
   async requestMutualCancellation(transaction: MarketplaceTransaction, institutionId: string) {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    assertCancelable(transaction, actor);
-    const listing = await client.getDocument<any>(`listings_v2/${transaction.listing_id}`);
+    const current = await loadCurrentTransaction(client, transaction);
+    assertCancelable(current, actor);
+    const listing = await client.getDocument<any>(`listings_v2/${current.listing_id}`);
     if (!listing || listing.data.institution_id !== institutionId) throw new Error('INSTITUTION_MISMATCH');
     const at = nowIso();
-    const requestId = `${transaction.id}-${actor}`;
+    const requestId = `${current.id}-${actor}`;
     await client.setDocument(`transaction_cancellation_requests/${requestId}`, {
-      transaction_id: transaction.id,
+      transaction_id: current.id,
       requester_uid: actor,
       kind: 'mutual_cancel',
       institution_id: institutionId,
@@ -296,20 +348,21 @@ export const canonicalTransactionsBackend = {
   async claimNoShow(transaction: MarketplaceTransaction, institutionId: string, reason = '') {
     const client = getClient();
     const actor = client.currentSession!.uid;
-    if (actor !== transaction.buyer_id && actor !== transaction.seller_id) throw new Error('PARTICIPANT_REQUIRED');
-    if (transaction.status !== 'meetup_scheduled' || !transaction.meetup_at) throw new Error('NO_SHOW_NOT_AVAILABLE');
-    const meetupMs = Date.parse(transaction.meetup_at);
+    const current = await loadCurrentTransaction(client, transaction);
+    if (actor !== current.buyer_id && actor !== current.seller_id) throw new Error('PARTICIPANT_REQUIRED');
+    if (current.status !== 'meetup_scheduled' || !current.meetup_at) throw new Error('NO_SHOW_NOT_AVAILABLE');
+    const meetupMs = Date.parse(current.meetup_at);
     if (!Number.isFinite(meetupMs) || Date.now() < meetupMs + 30 * 60_000) throw new Error('NO_SHOW_TOO_EARLY');
-    const listing = await client.getDocument<any>(`listings_v2/${transaction.listing_id}`);
+    const listing = await client.getDocument<any>(`listings_v2/${current.listing_id}`);
     if (!listing || listing.data.institution_id !== institutionId) throw new Error('INSTITUTION_MISMATCH');
-    const accused = actor === transaction.buyer_id ? transaction.seller_id : transaction.buyer_id;
-    const kind: TransactionOutcomeCode = accused === transaction.buyer_id ? 'buyer_no_show' : 'seller_no_show';
+    const accused = actor === current.buyer_id ? current.seller_id : current.buyer_id;
+    const kind: TransactionOutcomeCode = accused === current.buyer_id ? 'buyer_no_show' : 'seller_no_show';
     const at = nowIso();
-    const claimId = `${transaction.id}-${actor}`;
+    const claimId = `${current.id}-${actor}`;
     await commitWithRateLimit(client, 'report_create', [
       {
         update: client.encodeDocumentForWrite(`transaction_outcome_claims/${claimId}`, {
-          transaction_id: transaction.id,
+          transaction_id: current.id,
           claimant_uid: actor,
           accused_uid: accused,
           kind,

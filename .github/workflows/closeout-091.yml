@@ -1,15 +1,16 @@
-name: TuTop 0.9.1 beta closeout
+# RETIRED: 0.9.1 legacy orchestration; no automatic or manual execution.
+# Source-only freeze on PR123 branch. Older feature branch remains independent.
+# Never push to feat/tutop-0.9.1-nearby-topi to apply this change:
+# its historic push trigger would run the old privileged workflow first.
+name: RETIRED — TuTop 0.9.1 beta closeout (HARD-DISABLED)
 
 on:
-  push:
-    branches:
-      - feat/tutop-0.9.1-nearby-topi
   workflow_dispatch:
 
 permissions:
-  contents: write
-  actions: write
-  issues: write
+  contents: read
+  actions: read
+  issues: read
 
 concurrency:
   group: tutop-091-beta-closeout
@@ -17,6 +18,8 @@ concurrency:
 
 jobs:
   normalize-version:
+    # Historical privileged self-mutation disabled before all steps.
+    if: ${{ false }}
     name: Normalize 0.9.1 package lock
     runs-on: [self-hosted, linux, x64, tutop-zero-cost-controller]
     timeout-minutes: 10
@@ -55,9 +58,10 @@ jobs:
           fi
 
   release-chain:
+    # Historical staging/Android dispatch chain disabled before all steps.
+    if: ${{ false }}
     name: October → Staging → Android → verified APK
     needs: normalize-version
-    if: needs.normalize-version.outputs.mutated == 'false'
     runs-on: [self-hosted, linux, x64, tutop-zero-cost-controller]
     timeout-minutes: 150
     env:

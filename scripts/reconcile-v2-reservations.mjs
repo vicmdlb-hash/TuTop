@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { validateReconciliationInventoryPage } from './reservation-reconcile-inventory-lib.mjs';
+import { collectCursorPages } from './firestore-query-pagination.mjs';
 
 if (process.env.TUTOP_NODE_TS_STRIP !== '1') {
   const result = spawnSync(process.execPath, ['--experimental-strip-types', fileURLToPath(import.meta.url), ...process.argv.slice(2)], {
@@ -17,7 +19,10 @@ const apply = process.argv.includes('--apply');
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_V2_RECONCILE || '').trim();
 const historicalProject = 'tutop-3a4f7';
-const maxDocs = Math.max(1, Math.min(500, Number(process.env.TUTOP_V2_RECONCILE_LIMIT || 200)));
+const maxDocs = Number(process.env.TUTOP_V2_RECONCILE_LIMIT ?? '200');
+if (!Number.isSafeInteger(maxDocs) || maxDocs < 1 || maxDocs > 500) throw new Error('RECONCILE_LIMIT_INVALID');
+const maxPages = Number(process.env.TUTOP_V2_RECONCILE_MAX_PAGES ?? '20');
+if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 100) throw new Error('RECONCILE_MAX_PAGES_INVALID');
 
 function stop(message) {
   console.error(`DETENIDO: ${message}`);
@@ -68,17 +73,21 @@ function encodeValue(value) {
   throw new Error(`No se puede codificar ${typeof value}`);
 }
 
-function patchWrite(documentPath, data) {
+function patchWrite(documentPath, data, expectedUpdateTime) {
   return {
     update: {
       name: `projects/${projectId}/databases/(default)/documents/${documentPath}`,
       fields: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, encodeValue(value)])),
     },
     updateMask: { fieldPaths: Object.keys(data) },
+    currentDocument: { updateTime: expectedUpdateTime },
   };
 }
-function deleteWrite(documentPath) {
-  return { delete: `projects/${projectId}/databases/(default)/documents/${documentPath}` };
+function deleteWrite(documentPath, expectedUpdateTime) {
+  return {
+    delete: `projects/${projectId}/databases/(default)/documents/${documentPath}`,
+    currentDocument: { updateTime: expectedUpdateTime },
+  };
 }
 
 async function requestJson(url, options = {}) {
@@ -87,24 +96,42 @@ async function requestJson(url, options = {}) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`${response.status} ${detail.slice(0, 800)}`);
+    // Public CI logs must not expose Firestore error bodies with document paths.
+    throw new Error(`RESERVATION_RECONCILE_HTTP_${response.status}`);
   }
   return response.status === 204 ? null : response.json();
 }
 
 async function runCollectionQuery(collectionId) {
-  const response = await requestJson(`${base}:runQuery`, {
-    method: 'POST',
-    body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], limit: maxDocs } }),
-  });
-  return (response || []).filter((row) => row.document).map((row) => ({
-    id: row.document.name.split('/').pop(),
-    ...decodeFields(row.document.fields || {}),
-  }));
+  // Both collection inventories must finish before any mutation is considered.
+  return collectCursorPages(async ({ afterName, pageSize }) => {
+    const structuredQuery = {
+      from: [{ collectionId }],
+      orderBy: [{ field: { fieldPath: '__name__' }, direction: 'ASCENDING' }],
+      ...(afterName ? { startAt: { values: [{ referenceValue: afterName }], before: false } } : {}),
+      limit: pageSize,
+    };
+    const response = await requestJson(`${base}:runQuery`, {
+      method: 'POST',
+      body: JSON.stringify({ structuredQuery }),
+    });
+    return validateReconciliationInventoryPage(response, { projectId, collectionId, limit: pageSize })
+      .map((document) => ({
+        ...decodeFields(document.fields || {}),
+        // Authenticated document path overrides any untrusted data field 'id'.
+        id: document.name.split('/').pop(),
+        name: document.name,
+        __updateTime: document.updateTime || null,
+      }));
+  }, { pageSize: maxDocs, maxPages });
 }
 
+// P01 fail closed before any privileged Firebase token or commerce read.
+// A Firestore :commit with version predicates is NOT the required shared
+// buyer/seller account-deletion read-write transaction. Never permit apply
+// until that server-side admission barrier is integrated and proven.
 assertStagingTarget();
+if (apply) throw new Error('RESERVATION_COMMERCE_ADMISSION_FREEZE_NOT_VERIFIED');
 const token = await accessToken();
 const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
 const [transactions, locks] = await Promise.all([
@@ -114,20 +141,43 @@ const [transactions, locks] = await Promise.all([
 
 const txById = new Map(transactions.map((tx) => [tx.id, tx]));
 const listingStatusById = new Map();
+const listingSnapshotById = new Map();
+const lockByListingId = new Map(locks.map((lock) => [lock.id, lock]));
 const plans = [];
 for (const transaction of transactions) {
   if (!transaction.listing_id) continue;
   let listingStatus = 'archived';
   try {
     const listing = await requestJson(`${base}/listings_v2/${encodeURIComponent(transaction.listing_id)}`);
-    listingStatus = decodeFields(listing.fields || {}).status || listingStatus;
+    const listingFields = decodeFields(listing.fields || {});
+    listingStatus = listingFields.status || listingStatus;
     listingStatusById.set(transaction.listing_id, listingStatus);
+    listingSnapshotById.set(transaction.listing_id, {
+      status: listingStatus, availability_status: listingFields.availability_status,
+      updateTime: listing.updateTime || null,
+    });
   } catch (error) {
     plans.push({ transaction_id: transaction.id, listing_id: transaction.listing_id, kind: 'none', reason: `listing_unavailable:${error.message}` });
     continue;
   }
   const plan = reservationReconciliationPlan({ transaction, listingStatus });
-  plans.push({ transaction_id: transaction.id, listing_id: transaction.listing_id, current_transaction_status: transaction.status, current_listing_status: listingStatus, ...plan });
+  const lock = lockByListingId.get(transaction.listing_id);
+  const listingSnapshot = listingSnapshotById.get(transaction.listing_id);
+  const snapshotSafe = Boolean(transaction.__updateTime && listingSnapshot?.updateTime
+    && lock?.__updateTime && lock?.id === transaction.listing_id
+    && lock?.listing_id === transaction.listing_id
+    && lock?.transaction_id === transaction.id);
+  if (plan.kind !== 'none' && (!snapshotSafe
+    || (plan.kind === 'expire_reserved' && listingSnapshot.availability_status !== 'reserved'))) {
+    plans.push({ transaction_id: transaction.id, listing_id: transaction.listing_id,
+      kind: 'none', reason: 'trusted_snapshot_guard_failed', proposed_kind: plan.kind });
+    continue;
+  }
+  plans.push({ transaction_id: transaction.id, listing_id: transaction.listing_id,
+    current_transaction_status: transaction.status, current_listing_status: listingStatus,
+    transaction_update_time: transaction.__updateTime,
+    listing_update_time: listingSnapshot?.updateTime, lock_update_time: lock?.__updateTime,
+    ...plan });
 }
 
 const actionable = plans.filter((plan) => plan.kind !== 'none');
@@ -136,18 +186,23 @@ for (const lock of locks) {
   const transaction = txById.get(lock.transaction_id);
   if (!transaction || transaction.listing_id !== lock.listing_id) continue;
   const listingStatus = listingStatusById.get(lock.listing_id);
+  const listingSnapshot = listingSnapshotById.get(lock.listing_id);
   const completedSafe = transaction.status === 'completed'
     && Boolean(transaction.buyer_confirmed_at)
     && Boolean(transaction.seller_confirmed_at)
     && listingStatus === 'sold_out';
-  const terminalSafe = ['cancelled', 'expired', 'no_show'].includes(transaction.status);
-  if (completedSafe || terminalSafe) {
+  const terminalSafe = ['cancelled', 'expired', 'no_show'].includes(transaction.status)
+    && listingStatus === 'active'
+    && listingSnapshot?.availability_status === 'reserved';
+  const snapshotSafe = Boolean(transaction.__updateTime && lock.__updateTime
+    && lock.id === lock.listing_id && (!terminalSafe || listingSnapshot?.updateTime));
+  if ((completedSafe || terminalSafe) && snapshotSafe) {
     terminalLockPlans.push({
-      lock_id: lock.id,
-      listing_id: lock.listing_id,
-      transaction_id: transaction.id,
-      transaction_status: transaction.status,
-      listing_status: listingStatus || 'unknown',
+      lock_id: lock.id, listing_id: lock.listing_id, transaction_id: transaction.id,
+      transaction_status: transaction.status, listing_status: listingStatus || 'unknown',
+      transaction_update_time: transaction.__updateTime,
+      listing_update_time: listingSnapshot?.updateTime, lock_update_time: lock.__updateTime,
+      release_availability: terminalSafe,
       reason: completedSafe ? 'completed_sold_out_trusted_cleanup' : 'terminal_transaction_trusted_cleanup',
     });
   }
@@ -155,10 +210,20 @@ for (const lock of locks) {
 
 console.log(`TuTop V2 reservation reconciliation · ${projectId}`);
 console.log(`Transacciones revisadas: ${plans.length} · Reparaciones: ${actionable.length} · Locks terminales: ${terminalLockPlans.length} · Modo: ${apply ? 'APPLY' : 'DRY RUN'}`);
-if (actionable.length) console.table(actionable);
-else console.log('Sin reparaciones de transacción/listing necesarias en la muestra revisada.');
-if (terminalLockPlans.length) console.table(terminalLockPlans);
-else console.log('Sin reservation locks terminales para cleanup trusted.');
+// Only finite plan categories are logged: never print buyer/seller, listing,
+// transaction or lock IDs into an Actions log on this public repository.
+const actionTypeCounts = Object.fromEntries(
+  ['expire_reserved', 'repair_completed_listing'].map((kind) => [
+    kind, actionable.filter((plan) => plan.kind === kind).length,
+  ]),
+);
+const lockReasonCounts = Object.fromEntries(
+  ['completed_sold_out_trusted_cleanup', 'terminal_transaction_trusted_cleanup'].map((reason) => [
+    reason, terminalLockPlans.filter((plan) => plan.reason === reason).length,
+  ]),
+);
+console.log(`Acciones de reparación por clase: ${JSON.stringify(actionTypeCounts)}`);
+console.log(`Limpieza de reservation locks por clase: ${JSON.stringify(lockReasonCounts)}`);
 
 if (!apply) {
   console.log('\nDRY RUN: no se escribió nada.');
@@ -172,11 +237,20 @@ for (const plan of actionable) {
   const updatedAt = new Date().toISOString();
   const writes = [];
   if (plan.kind === 'expire_reserved') {
-    writes.push(patchWrite(`transactions_v2/${plan.transaction_id}`, { status: 'expired', updated_at: updatedAt }));
-    writes.push(deleteWrite(`listing_reservation_locks/${plan.listing_id}`));
+    // One commit, three guarded writes: never strand a listing as reserved.
+    writes.push(patchWrite(`transactions_v2/${plan.transaction_id}`,
+      { status: 'expired', updated_at: updatedAt }, plan.transaction_update_time));
+    writes.push(patchWrite(`listings_v2/${plan.listing_id}`,
+      { availability_status: 'available', updated_at: updatedAt }, plan.listing_update_time));
+    writes.push(deleteWrite(`listing_reservation_locks/${plan.listing_id}`, plan.lock_update_time));
   } else if (plan.kind === 'repair_completed_listing') {
-    writes.push(patchWrite(`listings_v2/${plan.listing_id}`, { status: 'sold_out', updated_at: updatedAt }));
-    writes.push(deleteWrite(`listing_reservation_locks/${plan.listing_id}`));
+    // Firestore REST Write supports update/delete/transform, not a verify operation.
+    // A status-preserving patch with updateTime is an atomic transaction witness.
+    writes.push(patchWrite(`transactions_v2/${plan.transaction_id}`,
+      { status: 'completed' }, plan.transaction_update_time));
+    writes.push(patchWrite(`listings_v2/${plan.listing_id}`,
+      { status: 'sold_out', updated_at: updatedAt }, plan.listing_update_time));
+    writes.push(deleteWrite(`listing_reservation_locks/${plan.listing_id}`, plan.lock_update_time));
   }
   if (!writes.length) continue;
   await requestJson(`${base}:commit`, { method: 'POST', body: JSON.stringify({ writes }) });
@@ -185,10 +259,20 @@ for (const plan of actionable) {
 
 let cleanedLocks = 0;
 for (const lockPlan of terminalLockPlans) {
-  await requestJson(`${base}:commit`, {
-    method: 'POST',
-    body: JSON.stringify({ writes: [deleteWrite(`listing_reservation_locks/${lockPlan.lock_id}`)] }),
-  });
+  // Only known terminal statuses may be emitted into a Firestore Write.
+  if (!['cancelled', 'expired', 'no_show', 'completed'].includes(lockPlan.transaction_status)) {
+    throw new Error('TERMINAL_TRANSACTION_STATUS_INVALID');
+  }
+  // Verify the transaction and lock still belong to the inspected snapshot.
+  const writes = [patchWrite(`transactions_v2/${lockPlan.transaction_id}`,
+    { status: lockPlan.transaction_status }, lockPlan.transaction_update_time)];
+  if (lockPlan.release_availability) {
+    writes.push(patchWrite(`listings_v2/${lockPlan.listing_id}`,
+      { availability_status: 'available', updated_at: new Date().toISOString() },
+      lockPlan.listing_update_time));
+  }
+  writes.push(deleteWrite(`listing_reservation_locks/${lockPlan.lock_id}`, lockPlan.lock_update_time));
+  await requestJson(`${base}:commit`, { method: 'POST', body: JSON.stringify({ writes }) });
   cleanedLocks += 1;
 }
 

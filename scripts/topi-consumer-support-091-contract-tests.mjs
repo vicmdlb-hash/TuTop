@@ -15,6 +15,8 @@ assert.match(tree, /classifySupportQuery/);
 assert.match(tree, /supportTreeFacts/);
 assert.match(tree, /No compartas contraseñas, códigos ni capturas con datos sensibles/);
 assert.match(tree, /TuTop no opera una paquetería propia/);
+assert.match(tree, /la beta de pruebas debe informar indisponibilidad sin fingir una respuesta de IA real/);
+assert.doesNotMatch(tree, /Si la IA remota no está disponible, TuTop usa su asistente local/);
 assert.match(tree, /No son dinero, criptomoneda ni saldo retirable/);
 assert.match(tree, /ubicación aproximada/i);
 assert.match(tree, /no necesita ubicación en segundo plano/i);
@@ -36,12 +38,27 @@ assert.match(ui, /startTopiDictation/);
 assert.match(ui, /Firebase AI real, tu pregunta se procesa remotamente/);
 assert.match(ui, /omitió datos de contacto o códigos sensibles detectados/);
 assert.match(ui, /answerConsumerSupport/);
+
+assert.match(ui, /role="dialog" aria-modal="true" aria-labelledby="tutop-topi-dialog-title"/);
+assert.match(ui, /id="tutop-topi-dialog-title"/);
+assert.match(ui, /htmlFor="tutop-topi-support-question"/);
+assert.match(ui, /id="tutop-topi-support-question"/);
+assert.match(ui, /event.key === 'Escape'/);
+assert.match(ui, /source: 'unavailable'/);
+assert.match(ui, /No pudimos responder en este momento/);
+
 assert.doesNotMatch(ui, /Árbol de decisiones \+ IA/);
 assert.doesNotMatch(ui, /Soporte guiado/);
 assert.doesNotMatch(ui, /Ruta guiada/);
 assert.doesNotMatch(ui, /tokens ni domicilio exacto/);
 assert.match(voice, /TuTopVoice/);
 assert.match(app, /TopiSupportAssistant/);
-assert.match(app, /!activeChatId && <TopiSupportAssistant \/>/);
+assert.match(app, /!activeChatId && <TopiSupportAssistant key=\{user\.id\} \/>/);
+assert.match(ui, /const requestSerial = useRef\(0\)/);
+assert.match(ui, /const serial = \+\+requestSerial\.current/);
+assert.match(ui, /if \(serial !== requestSerial\.current\) return/);
+assert.match(ui, /if \(serial === requestSerial\.current\) setBusy\(false\)/);
+assert.match(ui, /invalidatePendingAnswer\(\)/);
+assert.match(ui, /onClick=\{close\}/);
 
 console.log('✅ TuTop 0.9.1 consumer Topi support + native voice + AI fallback contracts PASS');

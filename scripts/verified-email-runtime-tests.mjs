@@ -2,17 +2,36 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 const source = fs.readFileSync(process.argv[2] || 'src/services/verifiedEmailBetaAuth.ts', 'utf8').replace(/\r\n/g, '\n');
+// The runtime harness strips TS imports. Inject the real source helper explicitly;
+// omitting it would yield a false failure unrelated to Firebase auth behavior.
+const phoneIndicatorSource = stripTypeScriptTypes(fs.readFileSync('src/lib/nationalVerificationIndicators.ts', 'utf8'))
+  .replace(/^export /gm, '');
+const nationalVerificationIndicators = new Function(
+  phoneIndicatorSource + '; return nationalVerificationIndicators;'
+)();
+// Execute the actual TypeScript national profile normalizer in the isolated harness.
+const academicSource = stripTypeScriptTypes(fs.readFileSync('src/lib/nationalAcademicMetadata.ts', 'utf8')).replace(/^export /gm, '');
+const { nationalAcademicMetadata, validateBetaAcademicCatalog } = new Function(academicSource + '; return { nationalAcademicMetadata, validateBetaAcademicCatalog };')();
+const INSTITUTIONS = [
+  { id: 'uatx', name: 'Universidad Autónoma de Tlaxcala', active: true },
+  { id: 'unam', name: 'Universidad Nacional Autónoma de México', active: true },
+];
+const CAMPUSES = [
+  { id: 'uatx-riberena', institution_id: 'uatx', name: 'Campus Ribereña', active: true },
+  { id: 'unam-cu', institution_id: 'unam', name: 'Ciudad Universitaria', active: true },
+  { id: 'closed-campus', institution_id: 'uatx', name: 'Campus cerrado', active: false },
+];
 function harness() {
   let session = null;
   let privateEmail = '';
   const calls = [];
-  let commitError, sendError, lookupWait, signInWait, profileWait, lookupVerified=true, lookupEmail='a@example.test';
+  let commitError, sendError, commitWait, deleteWait, signupWait, sendWait, lookupWait, signInWait, updateWait, profileWait, lookupVerified=true, lookupEmail='a@example.test';
   class Client {
     get currentSession() { return session && {...session}; }
     persistSession(value) { session = value; }
     signOut() { session = null; }
     encodeDocumentForWrite(path, data) { return {path,data}; }
-    async commit(writes) { calls.push({kind:'commit',writes}); if(commitError) throw new Error(commitError); }
+    async commit(writes) { calls.push({kind:'commit',writes}); if(commitWait) await commitWait; if(commitError) throw new Error(commitError); }
     async getDocument(path) {
       if(profileWait) await profileWait;
       if(String(path).startsWith('user_private/')) return {data:{uid:'u1',telefono:'+522461234567',auth_mode:'phone_password_beta',...(privateEmail?{institutional_email:privateEmail}:{})}};
@@ -31,8 +50,12 @@ function harness() {
   const fetch = async (url, options) => {
     const body = options.body instanceof URLSearchParams ? Object.fromEntries(options.body) : JSON.parse(options.body);
     calls.push({kind:url,body});
+    if(url.includes('accounts:signUp') && signupWait) await signupWait;
+    if(url.includes('accounts:delete') && deleteWait) await deleteWait;
+    if(url.includes('sendOobCode') && sendWait) await sendWait;
     if(url.includes('accounts:lookup') && lookupWait) await lookupWait;
     if(url.includes('accounts:signInWithPassword') && signInWait) await signInWait;
+    if(url.includes('accounts:update') && updateWait) await updateWait;
     if(url.includes('sendOobCode') && sendError) throw new Error(sendError);
     let data = url.includes('accounts:lookup') ? {users:[{localId:'u1',email:lookupEmail,emailVerified:lookupVerified}]} :
       url.includes('accounts:update') ? {localId:'u1',email:body.email,idToken:'migrated-token',refreshToken:'migrated-refresh',expiresIn:'3600'} :
@@ -41,16 +64,43 @@ function harness() {
     return {ok:true,text:async()=>JSON.stringify(data)};
   };
   const firebaseFetch = fetch;
+  const readFirebaseResponseText = async (response) => response.text();
   const isFirebaseRequestTimeout = (error) => error?.message === 'FIREBASE_REQUEST_TIMEOUT' || error?.code === 'FIREBASE_REQUEST_TIMEOUT';
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
-  const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','isFirebaseRequestTimeout',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,isFirebaseRequestTimeout);
-  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set profileWait(v){profileWait=v;}};
+  const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','readFirebaseResponseText','isFirebaseRequestTimeout','nationalVerificationIndicators','nationalAcademicMetadata','validateBetaAcademicCatalog','INSTITUTIONS','CAMPUSES',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,readFirebaseResponseText,isFirebaseRequestTimeout,nationalVerificationIndicators,nationalAcademicMetadata,validateBetaAcademicCatalog,INSTITUTIONS,CAMPUSES);
+  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set commitWait(v){commitWait=v;},set deleteWait(v){deleteWait=v;},set signupWait(v){signupWait=v;},set sendWait(v){sendWait=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set updateWait(v){updateWait=v;},set profileWait(v){profileWait=v;}};
 }
-const profile={nombre:'Tester',facultad:'Campus',institution_id:'inst',institution_name:'Institution',campus_id:'camp',campus_name:'Campus'};
+const profile={nombre:'Tester',facultad:'Campus',institution_id:'uatx',institution_name:'Universidad Autónoma de Tlaxcala',campus_id:'uatx-riberena',campus_name:'Campus Ribereña'};
+const replacementSession={uid:'u2',idToken:'newer-B-token',refreshToken:'newer-B-refresh',expiresAt:Date.now()+600000,phone:''};
+async function waitForCall(h, fragment) {
+  for(let i=0;i<30;i++) {
+    if(h.calls.some(c=>String(c.kind).includes(fragment))) return;
+    await new Promise(r=>setImmediate(r));
+  }
+  assert.fail('synthetic request was not reached: '+fragment);
+}
 const tests = [
  ['optional Mexican phone is normalized before profile commit',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',{...profile,phone:'246 123 4567'});
    assert.equal(h.calls.find(c=>c.kind==='commit').writes.find(w=>w.update.path==='user_private/u1').update.data.telefono,'+522461234567');
+ }],
+ ['incomplete academic pair cannot create an orphan Firebase Auth identity',async()=>{
+   const h=harness();
+   await assert.rejects(h.auth.register('a@example.test','password123',{...profile,campus_name:''}),/ACADEMIC_NAME_INVALID/);
+   assert.equal(h.calls.length,0);
+ }],
+ ['invalid, mismatched, or inactive campus does not create a Firebase Auth UID',async()=>{
+   for(const values of [
+     {campus_id:'missing-campus'},
+     {campus_id:'unam-cu',campus_name:'Ciudad Universitaria'},
+     {campus_id:'closed-campus',campus_name:'Campus cerrado'},
+     {institution_name:'Universidad inventada'},
+     {campus_name:'Campus inventado'},
+   ]) {
+     const h=harness();
+     await assert.rejects(h.auth.register('a@example.test','password123',{...profile,...values}),/ACADEMIC_CATALOG_/);
+     assert.equal(h.calls.length,0);
+   }
  }],
  ['invalid optional phone rejected before account creation',async()=>{
    const h=harness(); await assert.rejects(h.auth.register('a@example.test','password123',{...profile,phone:'123'}));
@@ -62,6 +112,38 @@ const tests = [
    assert.equal(h.calls.some(c=>c.kind.includes('accounts:delete')),false);
    h.sendError=null; await h.auth.resendVerificationEmail();
  }],
+ ['password reset hides nonexistent accounts and does not create an identity',async()=>{
+   const h=harness();
+   assert.equal(await h.auth.requestPasswordReset('TEST@Example.test'),true);
+   const requests=h.calls.filter(c=>String(c.kind).includes('accounts:sendOobCode'));
+   assert.equal(requests.length,1);
+   assert.deepEqual(requests[0].body,{requestType:'PASSWORD_RESET',email:'test@example.test'});
+   assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:signUp')),false);
+   assert.equal(h.session,null);
+   h.sendError='EMAIL_NOT_FOUND';
+   assert.equal(await h.auth.requestPasswordReset('unknown@example.test'),true,
+     'nonexistent emails must receive the same success-shaped response');
+ }],
+ ['password reset rejects invalid addresses and propagates transport errors',async()=>{
+   const h=harness();
+   await assert.rejects(h.auth.requestPasswordReset('invalid-email'),/EMAIL_INVALID/);
+   assert.equal(h.calls.length,0,'no Firebase request may be sent for an invalid email');
+   h.sendError='NETWORK_FAILED';
+   await assert.rejects(h.auth.requestPasswordReset('a@example.test'),/NETWORK_FAILED/);
+   assert.equal(h.session,null);
+ }],
+ ['verification resend failure preserves pending session without claiming delivery',async()=>{
+   const h=harness(); await h.auth.register('a@example.test','password123',profile);
+   h.sendError='NETWORK_FAILED';
+   await assert.rejects(h.auth.resendVerificationEmail(),/NETWORK_FAILED/);
+   assert.equal(h.session.uid,'u1','a failed verification mail must not delete the account');
+   const audit=h.calls.findLast(c=>c.kind==='setDocument' && c.path==='auth_status/u1');
+   assert.equal(audit?.data.last_client_code,'VERIFICATION_EMAIL_SEND_FAILED');
+   h.sendError=null;
+   assert.equal(await h.auth.resendVerificationEmail(),true);
+   const retried=h.calls.findLast(c=>c.kind==='setDocument' && c.path==='auth_status/u1');
+   assert.equal(retried?.data.last_client_code,'VERIFICATION_EMAIL_SENT');
+ }],
  ['definite denied profile commit still rolls back Auth',async()=>{
    const h=harness(); h.commitError='PERMISSION_DENIED'; await assert.rejects(h.auth.register('a@example.test','password123',profile),/PERMISSION_DENIED/);
    assert.equal(h.session,null); assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,1);
@@ -69,6 +151,74 @@ const tests = [
  ['ambiguous profile commit timeout preserves Auth session and avoids destructive rollback',async()=>{
    const h=harness(); h.commitError='FIREBASE_REQUEST_TIMEOUT'; await assert.rejects(h.auth.register('a@example.test','password123',profile),/FIREBASE_REQUEST_TIMEOUT/);
    assert.equal(h.session.uid,'u1'); assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,0);
+ }],
+ ['signup response after sign-out cannot restore or commit an old account',async()=>{
+   const h=harness(); let release;
+   h.signupWait=new Promise(r=>release=r);
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'accounts:signUp');
+   h.auth.signOut(); release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session,null);
+   assert.equal(h.calls.some(c=>c.kind==='commit'),false,'stale signup must not start marketplace writes');
+ }],
+ ['signup response after independent Firebase client logs B cannot replace that session',async()=>{
+   const h=harness(); let release;
+   h.signupWait=new Promise(r=>release=r);
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'accounts:signUp');
+   h.session={...replacementSession}; // Another FirebaseRestClient persisted B without changing authGeneration.
+   release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2');
+   assert.equal(h.session.idToken,'newer-B-token');
+   assert.equal(h.calls.some(c=>c.kind==='commit'),false,'stale signup must not write a profile after B logs in');
+   assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:delete')),false);
+ }],
+ ['signup response after independent same-UID re-login cannot replace newer tokens',async()=>{
+   const h=harness(); let release;
+   h.session={uid:'u1',idToken:'earlier-A-token',refreshToken:'earlier-A-refresh',expiresAt:Date.now()+600000,phone:''};
+   h.signupWait=new Promise(r=>release=r);
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'accounts:signUp');
+   h.session={uid:'u1',idToken:'newer-A-token',refreshToken:'newer-A-refresh',expiresAt:Date.now()+600000,phone:''};
+   release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.idToken,'newer-A-token');
+   assert.equal(h.session.refreshToken,'newer-A-refresh');
+   assert.equal(h.calls.some(c=>c.kind==='commit'),false,'stale signup must not write a profile after A re-logs in');
+   assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:delete')),false);
+ }],
+ ['failed profile commit cannot clear a newer signed-in account',async()=>{
+   const h=harness(); let release;
+   h.commitWait=new Promise(r=>release=r); h.commitError='PERMISSION_DENIED';
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'commit');
+   h.session={...replacementSession}; release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2');
+   assert.equal(h.calls.filter(c=>String(c.kind).includes('accounts:delete')).length,0,
+     'stale signup must not delete an identity after an account switch');
+ }],
+ ['rollback response cannot clear a newer login',async()=>{
+   const h=harness(); let release;
+   h.commitError='PERMISSION_DENIED';
+   h.deleteWait=new Promise(r=>release=r);
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'accounts:delete');
+   h.session={...replacementSession}; release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2','late Auth rollback must preserve newer login');
+ }],
+ ['verification email response cannot complete a stale signup',async()=>{
+   const h=harness(); let release;
+   h.sendWait=new Promise(r=>release=r);
+   const pending=h.auth.register('a@example.test','password123',profile);
+   await waitForCall(h,'accounts:sendOobCode');
+   h.session={...replacementSession}; release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2');
+   assert.equal(h.calls.filter(c=>String(c.kind).includes('accounts:delete')).length,0);
  }],
  ['lookup response after sign-out cannot restore session',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',profile);
@@ -108,6 +258,44 @@ const tests = [
    assert.equal(h.session.phone,'+522461234567');
    assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:signUp')),false);
    assert.equal(h.calls.some(c=>String(c.kind).includes('accounts:delete')),false);
+ }],
+ ['current legacy migration succeeds only when its canonical session stays unchanged',async()=>{
+   const h=harness();
+   h.session={uid:'u1',idToken:'legacy-token',refreshToken:'legacy-r1',expiresAt:Date.now()+300000,phone:'+522461234567'};
+   const result=await h.auth.migrateCurrentLegacySession('legacy@example.test');
+   assert.equal(result.uid,'u1');
+   assert.equal(h.session.email,'legacy@example.test');
+   assert.equal(h.session.refreshToken,'migrated-refresh');
+ }],
+ ['delayed current legacy migration cannot overwrite B or a same-UID re-login',async()=>{
+   for(const replacement of [
+     {uid:'u2',idToken:'token-B',refreshToken:'refresh-B'},
+     {uid:'u1',idToken:'new-A-token',refreshToken:'new-A-refresh'},
+   ]) {
+     const h=harness();
+     h.session={uid:'u1',idToken:'legacy-token',refreshToken:'legacy-r1',expiresAt:Date.now()+300000,phone:'+522461234567'};
+     let release; h.updateWait=new Promise(r=>release=r);
+     const pending=h.auth.migrateCurrentLegacySession('legacy@example.test');
+     await new Promise(r=>setImmediate(r));
+     assert(h.calls.some(c=>String(c.kind).includes('accounts:update')), 'update request must be pending');
+     h.session={...replacement,expiresAt:Date.now()+300000,phone:''};
+     release();
+     await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+     assert.equal(h.session.idToken,replacement.idToken,'new canonical session must survive stale migration response');
+     assert.equal(h.calls.filter(c=>String(c.kind).includes('accounts:sendOobCode')).length,0,'stale migration cannot request verification email');
+   }
+ }],
+ ['signed-out legacy recovery cannot resurrect A after another client logs in as B',async()=>{
+   const h=harness();
+   let release; h.updateWait=new Promise(r=>release=r);
+   const pending=h.auth.recoverLegacyPhoneAccount('2461234567','password123','legacy@example.test');
+   await new Promise(r=>setImmediate(r));
+   assert(h.calls.some(c=>String(c.kind).includes('accounts:update')),'recovery update must be pending');
+   h.session={uid:'u2',idToken:'token-B',refreshToken:'refresh-B',expiresAt:Date.now()+300000,phone:''};
+   release();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2');
+   assert.equal(h.calls.filter(c=>String(c.kind).includes('accounts:sendOobCode')).length,0);
  }],
  ['verified legacy recovery synchronizes private email without creating a new marketplace account',async()=>{
    const h=harness(); h.lookupEmail='legacy@example.test';

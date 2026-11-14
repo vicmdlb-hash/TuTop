@@ -82,4 +82,64 @@ console.log('PASS disputed freezes the canonical transaction and deliberately re
 console.log('PASS no_show is not self-declared by clients; only an upheld trusted outcome materializes it and releases the lock');
 console.log('PASS reputation derives completed/cancellation/no-show evidence from transactions_v2 and excludes mutual cancellation penalty');
 console.log('PASS reconciliation is drift repair, not a second marketplace authority');
+// Execute the production status-transition write helper with a synthetic
+// Firestore client. This does not grant release status or access staging.
+const { stripTypeScriptTypes } = await import('node:module');
+const helperSource = [
+  section(backend, 'function sameTransactionIdentity(', 'async function loadCurrentTransaction('),
+  section(backend, 'async function commitCurrentTransactionPatch(', 'function actorConfirmationField('),
+].join('\n');
+const commitVersioned = new Function('patchWrite', stripTypeScriptTypes(helperSource)
+  + '\nreturn commitCurrentTransactionPatch;')(
+    (_client, name, data) => ({ update: name, fields: data })
+  );
+const baseTransaction = {
+  id: 'tx-versioned', listing_id: 'listing-a', chat_id: 'chat-a',
+  buyer_id: 'buyer-a', seller_id: 'seller-a', accepted_offer_id: 'offer-a',
+  agreed_amount_mxn: 125, status: 'reserved', updated_at: '2026-11-12T19:00:00Z',
+};
+const serverVersion = '2026-11-12T19:00:01.123456789Z';
+const calls = [];
+const fakeClient = (doc = { id: baseTransaction.id, data: baseTransaction, updateTime: serverVersion }) => ({
+  getDocument: async path => {
+    assert.equal(path, 'transactions_v2/tx-versioned');
+    return doc;
+  },
+  commit: async writes => { calls.push(writes); },
+});
+await commitVersioned(fakeClient(), baseTransaction, {
+  status: 'meetup_scheduled', meeting_point_id: 'campus', meetup_at: '2026-11-13T19:00:00Z',
+});
+assert.equal(calls.length, 1);
+assert.equal(calls[0].length, 1);
+assert.equal(calls[0][0].currentDocument.updateTime, serverVersion);
+await commitVersioned(fakeClient(), baseTransaction, { status: 'disputed' });
+assert.equal(calls[1][0].currentDocument.updateTime, serverVersion);
+const savedCallCount = calls.length;
+for (const changed of [
+  { ...baseTransaction, status: 'cancelled' },
+  { ...baseTransaction, updated_at: '2026-11-12T19:30:00Z' },
+  { ...baseTransaction, buyer_confirmed_at: '2026-11-12T19:30:00Z' },
+  { ...baseTransaction, meetup_at: '2026-11-13T19:00:00Z' },
+  { ...baseTransaction, seller_id: 'another-seller' },
+]) {
+  await assert.rejects(
+    commitVersioned(fakeClient({ id: baseTransaction.id, data: changed, updateTime: serverVersion }),
+      baseTransaction, { status: 'disputed' }),
+    /TRANSACTION_CHANGED/,
+  );
+}
+await assert.rejects(
+  commitVersioned(fakeClient({ id: baseTransaction.id, data: baseTransaction }), baseTransaction,
+    { status: 'disputed' }),
+  /TRANSACTION_VERSION_UNKNOWN/,
+);
+assert.equal(calls.length, savedCallCount, 'reject stale transaction without writing');
+const meetupSource = section(backend, '  async scheduleMeetup(', '  async confirmDelivery(');
+assert.match(meetupSource, /commitCurrentTransactionPatch\(client, current,/);
+assert.match(dispute, /commitCurrentTransactionPatch\(client, current,/);
+assert.doesNotMatch(meetupSource, /setDocument\(/);
+assert.doesNotMatch(dispute, /setDocument\(/);
+console.log('PASS scheduling and disputes carry atomic transaction versions and reject stale state (synthetic)');
+
 console.log('V2 terminal-state authority contract: PASS');

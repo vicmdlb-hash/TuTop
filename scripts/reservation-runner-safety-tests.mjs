@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 
 const runner = fs.readFileSync('scripts/reconcile-v2-reservations.mjs', 'utf8');
 const domain = fs.readFileSync('src/lib/reservationReconciliation.ts', 'utf8');
@@ -12,6 +13,13 @@ assert.match(runner, /allow !== 'staging-v2'/);
 assert.match(runner, /historicalProject = 'tutop-3a4f7'/);
 assert.match(runner, /projectId === historicalProject/);
 assert.match(runner, /DRY RUN: no se escribió nada/);
+assert.match(runner, /RESERVATION_RECONCILE_HTTP_/);
+assert.doesNotMatch(runner, /await response\.text\(\)/, 'never log raw Firestore REST errors');
+assert.doesNotMatch(runner, /console\.table\s*\(/, 'do not print staging user/listing/transaction identifiers');
+assert.match(runner, /actionTypeCounts/);
+assert.match(runner, /lockReasonCounts/);
+assert.match(runner, /Acciones de reparación por clase/);
+assert.match(runner, /Limpieza de reservation locks por clase/);
 assert.match(runner, /requestJson\(`\$\{base\}:commit`/);
 assert.match(runner, /listings_v2/);
 assert.match(runner, /status: 'expired'/);
@@ -40,6 +48,133 @@ assert.doesNotMatch(finalizeBlock, /terminalTransactionWrites/);
 assert.doesNotMatch(backend, /releaseCompletedLockBestEffort/);
 assert.match(lockRuleHardener, /completed queda reservado a cleanup trusted/);
 assert.doesNotMatch(lockRuleHardener, /data\.status == 'completed'.*allow delete/s);
+
+// Execute the EXACT current TypeScript helper in a credential-free VM,
+// using Node's type stripper rather than a hand-picked type annotation regex.
+const { stripTypeScriptTypes } = await import('node:module');
+const terminalStart = backend.indexOf('async function terminalTransactionWrites(');
+const terminalEnd = backend.indexOf('async function assertReservationLockConsistent(', terminalStart);
+const identityStart = backend.indexOf('function sameTransactionIdentity(');
+const identityEnd = backend.indexOf('async function loadCurrentTransaction(', identityStart);
+assert(terminalStart >= 0 && terminalEnd > terminalStart);
+assert(identityStart >= 0 && identityEnd > identityStart);
+const terminalHelper = stripTypeScriptTypes(
+  backend.slice(identityStart, identityEnd) + '\n'
+  + backend.slice(terminalStart, terminalEnd));
+assert(terminalHelper.includes('currentDocument: { updateTime: lock.updateTime }'));
+assert(terminalHelper.includes('currentDocument: { updateTime: canonical.updateTime }'));
+const terminalWriteTest = vm.runInNewContext(terminalHelper + '\nterminalTransactionWrites', {
+  reservationLockPath: listing => 'listing_reservation_locks/' + listing,
+  patchWrite: (_client, path, data) => ({ update: path, data }),
+  reservationAvailabilityWrite: (_client, id, availability) => ({ listing: id, availability }),
+  nowIso: () => '2026-11-12T00:00:00Z',
+});
+const transactionFixture = {
+  id: 'tx-a', listing_id: 'listing-a', chat_id: 'chat-a',
+  buyer_id: 'buyer-a', seller_id: 'seller-a', accepted_offer_id: 'offer-a',
+  agreed_amount_mxn: 125, status: 'reserved', updated_at: '2026-11-12T01:00:00Z',
+};
+const canonicalFixture = {
+  id: transactionFixture.id,
+  data: { ...transactionFixture },
+  updateTime: '2026-11-12T01:01:01.123456789Z',
+};
+const lockFixture = { data: { transaction_id: 'tx-a' }, updateTime: '2026-11-12T01:02:03.123456789Z' };
+const mockClient = (canonical = canonicalFixture, lock = lockFixture) => ({
+  getDocument: async path => {
+    if (path === 'transactions_v2/tx-a') return canonical;
+    if (path === 'listing_reservation_locks/listing-a') return lock;
+    throw Error('UNEXPECTED_DOCUMENT_PATH');
+  },
+  documentName: path => path,
+});
+const latestWrites = await terminalWriteTest(mockClient(), transactionFixture,
+  { status: 'cancelled', updated_at: '2026-11-12T01:05:00Z' });
+assert.equal(latestWrites.length, 3);
+assert.equal(latestWrites[0].currentDocument.updateTime, canonicalFixture.updateTime,
+  'transaction update must carry its exact Firestore read witness');
+assert.equal(latestWrites[1].delete, 'listing_reservation_locks/listing-a');
+assert.equal(latestWrites[1].currentDocument.updateTime, lockFixture.updateTime,
+  'lock deletion must carry the exact Firestore read witness');
+await assert.rejects(
+  terminalWriteTest(mockClient(canonicalFixture, { data: { transaction_id: 'tx-a' } }), transactionFixture, { status: 'expired' }),
+  /RESERVATION_LOCK_VERSION_UNKNOWN/,
+);
+await assert.rejects(
+  terminalWriteTest(mockClient(canonicalFixture, { data: { transaction_id: 'tx-b' }, updateTime: lockFixture.updateTime }),
+    transactionFixture, { status: 'cancelled' }), /RESERVATION_LOCK_MISMATCH/,
+);
+await assert.rejects(
+  terminalWriteTest(mockClient({ ...canonicalFixture, updateTime: '' }), transactionFixture, { status: 'expired' }),
+  /TRANSACTION_VERSION_UNKNOWN/,
+);
+await assert.rejects(
+  terminalWriteTest(mockClient({ ...canonicalFixture, data: { ...transactionFixture, status: 'completed' } }), transactionFixture, { status: 'cancelled' }),
+  /TRANSACTION_CHANGED/,
+);
+const noLockWrites = await terminalWriteTest(mockClient(canonicalFixture, null), transactionFixture, { status: 'expired' });
+assert.equal(noLockWrites.length, 1, 'no existing lock must not create a delete');
+assert.equal(noLockWrites[0].currentDocument.updateTime, canonicalFixture.updateTime,
+  'even lock-free terminal writes must be version-guarded');
+console.log('PASS terminal transaction and lock use exact updateTime preconditions, rejecting stale witnesses');
+
+// Pure synthetic inventory tests: do NOT contact Firestore or use credentials.
+const { assertCompleteReconciliationPage, validateReconciliationInventoryPage } = await import('./reservation-reconcile-inventory-lib.mjs');
+const { collectCursorPages } = await import('./firestore-query-pagination.mjs');
+const inventoryScope = { projectId: 'tutop-beta-vicmdlb-1356585881', collectionId: 'transactions_v2', limit: 3 };
+const inventoryRow = (id) => ({ document: {
+  name: `projects/${inventoryScope.projectId}/databases/(default)/documents/${inventoryScope.collectionId}/${id}`,
+  fields: {}, updateTime: '2026-11-07T00:00:00Z',
+} });
+assert.equal(assertCompleteReconciliationPage([inventoryRow('A'), inventoryRow('B')], inventoryScope).length, 2);
+assert.equal(assertCompleteReconciliationPage([{ readTime: '2026-11-07T00:00:00Z' }], inventoryScope).length, 0);
+for (const invalid of [
+  [inventoryRow('A'), inventoryRow('B'), inventoryRow('C')],
+  [inventoryRow('A'), inventoryRow('A')],
+  [{ document: { name: 'projects/other/databases/(default)/documents/transactions_v2/A' } }],
+  [{ document: { name: `projects/${inventoryScope.projectId}/databases/(default)/documents/listing_reservation_locks/A` } }],
+  [{ error: { code: 500 } }],
+  null,
+]) assert.throws(() => assertCompleteReconciliationPage(invalid, inventoryScope), /RECONCILE_INVENTORY_/);
+for (const invalidScope of [
+  { ...inventoryScope, collectionId: 'user_private' },
+  { ...inventoryScope, projectId: 'tutop-3a4f7' },
+  { ...inventoryScope, limit: 0 }, { ...inventoryScope, limit: 501 },
+  { ...inventoryScope, limit: Number.NaN },
+]) assert.throws(() => assertCompleteReconciliationPage([inventoryRow('A')], invalidScope), /RECONCILE_INVENTORY_/);
+assert.match(runner, /validateReconciliationInventoryPage/);
+assert.match(runner, /collectCursorPages/);
+assert.match(runner, /RECONCILE_MAX_PAGES_INVALID/);
+assert.match(runner, /RECONCILE_LIMIT_INVALID/);
+
+// Cursor pagination must exhaust all pages, including exact-boundary pages.
+const rows12 = Array.from({ length: 12 }, (_, n) => inventoryRow('ID' + String(n).padStart(3, '0')));
+let pagesRead = 0;
+const collected = await collectCursorPages(async ({ afterName, pageSize }) => {
+  pagesRead += 1;
+  const start = afterName ? rows12.findIndex(x => x.document.name === afterName) + 1 : 0;
+  return validateReconciliationInventoryPage(rows12.slice(start, start + pageSize),
+    { ...inventoryScope, limit: pageSize }).map(doc => ({ name: doc.name }));
+}, { pageSize: 3, maxPages: 10 });
+assert.equal(collected.length, 12);
+assert.equal(pagesRead, 5, 'full last page must be followed by a final empty query');
+assert.equal(new Set(collected.map(x => x.name)).size, 12);
+assert.equal(validateReconciliationInventoryPage(rows12.slice(0, 3), inventoryScope).length, 3);
+for (const invalid of [
+  [{}], [{ document: null }],
+  [{ document: { name: rows12[0].document.name + '/nested' } }],
+  Array.from({ length: 4 }, (_, n) => inventoryRow('X' + n)),
+]) assert.throws(() => validateReconciliationInventoryPage(invalid, inventoryScope),
+  /RECONCILE_INVENTORY_/);
+await assert.rejects(collectCursorPages(async ({ pageSize }) =>
+  validateReconciliationInventoryPage([rows12[0]], { ...inventoryScope, limit: pageSize })
+    .map(doc => ({ name: doc.name })),
+  { pageSize: 1, maxPages: 2 }), /QUERY_CURSOR_NOT_ADVANCING/);
+assert.match(runner, /id: document.name.split/);
+assert.match(runner, /name: document.name/);
+console.log('PASS reservation inventory paginates all pages and rejects malformed cursors');
+
+console.log('PASS reconciliation inventory: incomplete/duplicate/untrusted pages refuse all writes');
 
 console.log('PASS reservation runner is dry-run by default');
 console.log('PASS apply mode requires explicit staging-v2 permission');

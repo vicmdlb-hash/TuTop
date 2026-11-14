@@ -13,15 +13,18 @@ const durable = fs.readFileSync('src/lib/publishDraftPersistence.ts','utf8');
 const gate = fs.readFileSync('src/components/BackendGate.tsx','utf8');
 const assistant = fs.readFileSync('src/services/assistantProvider.ts','utf8');
 
-assert.match(nearby, /type PersistedApproxLocation = ApproxLocation & \{ owner_uid: string \}/);
+assert.match(nearby, /export type ScopedApproxLocationEvent = ApproxLocation & \{ owner_uid: string \}/);
+assert.match(nearby, /type PersistedApproxLocation = ScopedApproxLocationEvent/);
 assert.match(nearby, /getCachedApproxLocation\(ownerUid: string/);
-assert.match(nearby, /!parsed\.owner_uid \|\| parsed\.owner_uid !== ownerUid/);
+assert.match(nearby, /if \(!parsed\.owner_uid\) \{/);
+assert.match(nearby, /if \(parsed\.owner_uid !== ownerUid\) return null/);
+assert.match(nearby, /Object\.keys\(parsed\)\.some\(\(key\) => !allowedKeys\.includes\(key\)\)/);
 assert.match(nearby, /saveApproxLocation\(location: ApproxLocation, ownerUid: string\)/);
 assert.match(nearby, /clearApproxLocation\(ownerUid\?: string\)/);
 assert.match(nearby, /ownerUid\?: string/);
 
 assert.match(publish, /getCachedApproxLocation\(user\.id\)/);
-assert.match(publish, /ownerUid: user\.id/);
+assert.match(publish, /ownerUid: requestUid, isOwnerActive: stillCurrent/);
 assert.match(publish, /locationOptIn \? approxLocation : null/);
 assert.match(publish, /topi_privacy_redaction_applied/);
 assert.match(publish, /privacyRedactions\.includes\('email'\)/);
@@ -31,9 +34,11 @@ assert.match(publish, /const location = locationOptIn \? approxLocation : null/)
 assert.doesNotMatch(publish, /approxLocation \|\| await requestApproxLocation/);
 
 assert.match(explore, /getCachedApproxLocation\(user\.id\)/);
-assert.match(explore, /ownerUid: user\.id/);
+assert.match(explore, /ownerUid: requestUid/);
+assert.match(explore, /isOwnerActive: \(\) => useAppStore\.getState\(\)\.user\.id === requestUid/);
 assert.match(feed, /getCachedApproxLocation\(user\.id\)/);
-assert.match(feed, /ownerUid: user\.id/);
+assert.match(feed, /ownerUid: requestUid/);
+assert.match(feed, /isOwnerActive: \(\) => useAppStore\.getState\(\)\.user\.id === requestUid/);
 assert.doesNotMatch(feed, /void requestApproxLocation\(\)\.then/);
 assert.match(card, /getCachedApproxLocation\(user\.id\)/);
 assert.match(hydrator, /getCachedApproxLocation\(uid\)/);
@@ -52,6 +57,50 @@ assert.ok(phone.redactions.includes('phone'));
 const otp = redactTopiRemoteText('Código de verificación: 839201');
 assert.equal(otp.text?.includes('839201'), false);
 assert.ok(otp.redactions.includes('otp'));
+const keyExamples = [
+  'AIza' + 'a'.repeat(35),
+  'sk-proj-' + 'a'.repeat(36),
+  'sk-' + 'b'.repeat(24),
+];
+for (const value of keyExamples) {
+  const result = redactTopiRemoteText('Configuración API: ' + value);
+  assert.equal(result.text?.includes(value), false, 'raw API key must not survive redaction');
+  assert(result.redactions.includes('token'));
+}
+// Synthetic published payment-card test patterns only; never use real card data.
+// Run the full-card detector BEFORE the phone matcher can consume ten digits.
+for (const card of ['4111 1111 1111 1111', '4111111111111111', '4111-1111-1111-1111']) {
+  const sanitized = redactTopiRemoteText('Mi tarjeta para pago es ' + card);
+  assert.equal(sanitized.text?.includes(card), false, 'complete card must not reach remote Topi');
+  assert.ok(sanitized.text?.includes('[tarjeta omitida]'));
+  assert.ok(sanitized.redactions.includes('card'));
+  assert.equal(/4111/.test(sanitized.text || ''), false, 'partial PAN must not survive phone redaction');
+}
+const nonCard = redactTopiRemoteText('Referencia 1234567890123456');
+assert.equal(nonCard.text, 'Referencia 1234567890123456',
+  'a non-Luhn serial must remain intact instead of being treated as a card');
+const nearLimitCard = redactTopiRemoteText('a'.repeat(892) + ' 4111 1111 1111 1111', 900);
+assert.equal(nearLimitCard.text?.includes('4111'), false,
+  'redact the complete card before outbound truncation');
+assert.ok(nearLimitCard.redactions.includes('card'));
+
+// Synthetic Mexican identity examples, never real taxpayer data. Labels are
+// required so ordinary product model codes remain available to the assistant.
+for (const [kind, value] of [
+  ['CURP', 'ABCD990101HDFXXX01'],
+  ['RFC', 'XAXX010101000'],
+]) {
+  const masked = redactTopiRemoteText(kind + ': ' + value);
+  assert.equal(masked.text?.includes(value), false, 'identity numbers must not enter remote prompts');
+  assert.ok(masked.text?.includes('[identificador omitido]'));
+  assert.ok(masked.redactions.includes('identity'));
+}
+const serialUntouched = redactTopiRemoteText('Modelo XAXX010101000 sin identificador personal');
+assert.equal(serialUntouched.text, 'Modelo XAXX010101000 sin identificador personal');
+const limitedIdentity = redactTopiRemoteText('a'.repeat(895) + ' CURP: ABCD990101HDFXXX01', 900);
+assert.equal(limitedIdentity.text?.includes('ABCD990101HDFXXX01'), false,
+  'identity masking must run before outbound text truncation');
+
 const productFacts = redactTopiRemoteText('Vendo iPhone 13 de 128 GB en $12,500, batería 88%');
 assert.equal(productFacts.text, 'Vendo iPhone 13 de 128 GB en $12,500, batería 88%');
 

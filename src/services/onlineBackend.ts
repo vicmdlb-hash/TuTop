@@ -1,5 +1,6 @@
 import { FirebaseRestClient, type AuthSession, type FirestoreDocument } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
+import { nextReportRateBucket, type ReportRateBucket } from '../lib/reportRateBudget';
 import { MARKETPLACE_CATEGORIES, VALID_MEETING_POINTS, normalizeCategory, sellerLevelFor } from '../lib/productAssistant';
 import type { AppNotification, Chat, Product, Review, User, WalletTransaction } from '../types';
 
@@ -81,13 +82,11 @@ export class TuTopOnlineBackend {
   async register(phone: string, password: string, profile: { nombre: string; facultad: string }) {
     const client = this.getClient();
     let session: AuthSession;
-    let createdAuthIdentity = true;
     try {
       session = await client.registerWithPhonePassword(phone, password);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!/EMAIL_EXISTS/i.test(message)) throw error;
-      createdAuthIdentity = false;
       session = await client.signInWithPhonePassword(phone, password);
       const existingProfile = await client.getDocument<any>(`users/${session.uid}`);
       if (existingProfile) {
@@ -96,14 +95,18 @@ export class TuTopOnlineBackend {
       }
     }
     try {
+      // A Firestore commit may have SUCCEEDED even when its response was lost.
+      // Deleting the newly created Auth user here would orphan the profile,
+      // wallet and other committed documents. Keep the identity for an
+      // explicit sign-in or reviewed recovery instead of destructive rollback.
       await this.createInitialAccount(session, profile);
-      await this.ensureMarketplaceCatalog();
     } catch (error) {
-      if (createdAuthIdentity) {
-        try { await client.deleteAuthAccount(); } catch { client.signOut(); }
-      } else client.signOut();
+      client.signOut();
       throw error;
     }
+    // Shared catalog bootstrap is optional and must not roll back an otherwise
+    // committed account. A subsequent signed-in refresh may try it again.
+    await this.ensureMarketplaceCatalog().catch(() => undefined);
     return session;
   }
 
@@ -461,6 +464,7 @@ export class TuTopOnlineBackend {
       { update: client.encodeDocumentForWrite(`chats/${chatId}/messages/${messageId}`, messageData), currentDocument: { exists: false } },
       { update: client.encodeDocumentForWrite(`chats/${chatId}`, { updated_at: createdAt, last_message: lastMessage.slice(0, 180), last_message_at: createdAt }), updateMask: { fieldPaths: ['updated_at', 'last_message', 'last_message_at'] } },
     ]);
+    return messageId;
   }
 
   async markChatRead(chatId: string) {
@@ -591,8 +595,27 @@ export class TuTopOnlineBackend {
     const client = this.getClient();
     const uid = client.currentSession?.uid;
     if (!uid) throw new Error('AUTH_REQUIRED');
+    const cleanTarget = targetId.trim();
+    const cleanReason = reason.trim().slice(0, 500);
+    if (cleanTarget.length < 2 || cleanTarget.length > 180 || cleanReason.length < 3) throw new Error('REPORT_INPUT_INVALID');
     const reportId = id('report');
-    await client.setDocument(`reports/${reportId}`, { created_by: uid, target_type: targetType, target_id: targetId, reason: reason.trim().slice(0, 500), status: 'open', created_at: nowIso(), updated_at: nowIso() }, { exists: false });
+    const at = nowIso();
+    const report = { created_by: uid, target_type: targetType, target_id: cleanTarget, reason: cleanReason, status: 'open', created_at: at, updated_at: at };
+    if (!v2SnapshotMode()) {
+      await client.setDocument(`reports/${reportId}`, report, { exists: false });
+      return reportId;
+    }
+    // V2 Rules require the counter and report to be committed atomically.
+    const bucketPath = `rate_limits/${uid}-report_create`;
+    const previous = await client.getDocument<ReportRateBucket>(bucketPath);
+    if (client.currentSession?.uid !== uid) throw new Error('SESSION_CHANGED');
+    if (previous && !previous.updateTime) throw new Error('REPORT_RATE_VERSION_REQUIRED');
+    const next = nextReportRateBucket(uid, at, previous?.data || null);
+    await client.commit([
+      { update: client.encodeDocumentForWrite(`reports/${reportId}`, report), currentDocument: { exists: false } },
+      { update: client.encodeDocumentForWrite(bucketPath, next),
+        currentDocument: previous ? { updateTime: previous.updateTime } : { exists: false } },
+    ]);
     return reportId;
   }
 }

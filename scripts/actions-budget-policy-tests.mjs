@@ -125,7 +125,15 @@ assert.match(october, /npm run check/);
 assert.match(october, /npm run build/);
 assert.equal(october.includes('npm run typecheck'), false, 'October no debe ejecutar typecheck dos veces');
 assert.equal(pkg.scripts.typecheck, 'tsc --noEmit');
-assert.equal(pkg.scripts.build, 'npm run typecheck && vite build');
+// Source build still runs TypeScript exactly once and now enforces the local,
+// zero-network WebView 83 vendor syntax gate after the production bundle.
+assert.equal(pkg.scripts.build, 'npm run typecheck && vite build && node scripts/webview83-bundle-compat-tests.mjs');
+const webviewGate = fs.readFileSync('scripts/webview83-bundle-compat-tests.mjs', 'utf8');
+assert.match(webviewGate, /WEBVIEW83_PRODUCTION_JS_MISSING/);
+assert.match(webviewGate, /WEBVIEW83_LOGICAL_ASSIGNMENT_REMAINING/);
+assert.match(webviewGate, /\['\|\|=', '&&=', '\?\?='\]/);
+assert.doesNotMatch(webviewGate, /firebase:deploy|--apply|gh release create|upload-artifact/,
+  'WebView gate must remain local-only and cannot initiate deployments');
 assert.match(october, /Typecheck once and build web/);
 assert.match(october, /emulators:exec --only firestore/);
 assert.doesNotMatch(october, /upload-artifact/);

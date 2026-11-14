@@ -1,5 +1,7 @@
 import { firebaseFetch } from './firebaseHttp';
+import { readFirebaseResponseText } from './firebaseHttp';
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
+import { sameFirebaseSession, assertFirebaseRequestSessionCurrent } from '../lib/firebaseSharedSessionGuard';
 import type { FirebaseRuntimeConfig } from './runtimeConfig';
 
 export interface AuthSession {
@@ -86,7 +88,7 @@ function decodeFields(fields: Record<string, unknown>) {
 }
 
 async function readJson(response: Response) {
-  const text = await response.text();
+  const text = await readFirebaseResponseText(response);
   let data: any = null;
   if (text) {
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
@@ -153,7 +155,19 @@ export class FirebaseRestClient {
       const raw = scoped || legacy;
       if (!raw) return null;
       const parsed = JSON.parse(raw) as AuthSession;
-      if (!parsed.uid || !parsed.idToken || !parsed.refreshToken) return null;
+      // localStorage is user-editable JSON, not trusted AuthSession typing.
+      // Reject spoofed objects/tokens and malformed expiry before any
+      // rehydrated session may authorize a Firestore or refresh request.
+      const validIdentity = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        && typeof parsed.uid === 'string' && parsed.uid.length > 0
+        && parsed.uid.length <= 256 && parsed.uid.trim() === parsed.uid
+        && typeof parsed.idToken === 'string' && parsed.idToken.length > 0
+        && parsed.idToken.length <= 16384
+        && typeof parsed.refreshToken === 'string' && parsed.refreshToken.length > 0
+        && parsed.refreshToken.length <= 16384
+        && Number.isFinite(parsed.expiresAt) && parsed.expiresAt >= 0
+        && (parsed.phone === undefined || typeof parsed.phone === 'string');
+      if (!validIdentity) return null;
       if (legacy) {
         localStorage.setItem(this.sessionStorageKey, raw);
         localStorage.removeItem(LEGACY_SESSION_KEY);
@@ -204,24 +218,36 @@ export class FirebaseRestClient {
     return session;
   }
 
-  async deleteAuthAccount() {
-    const token = await this.getIdToken();
-    await this.authRequest('accounts:delete', { idToken: token });
-    this.persistSession(null);
+  async deleteAuthAccount(): Promise<never> {
+    // Auth account deletion is not a browser-side rollback. Only a trusted
+    // processor may delete an identity AFTER the full residual inventory,
+    // admission freeze and retention checks have passed.
+    throw new Error('ACCOUNT_ERASURE_TRUSTED_PROCESSOR_REQUIRED');
   }
 
   async getIdToken() {
-    if (!this.session) throw new Error('AUTH_REQUIRED');
-    if (this.session.expiresAt > Date.now() + 60_000) return this.session.idToken;
+    const starting = this.session;
+    if (!starting) throw new Error('AUTH_REQUIRED');
+    // Multiple FirebaseRestClient instances share a project-scoped persisted
+    // session. Do not use an old instance's credentials after a new login.
+    if (!sameFirebaseSession(this.readStoredSession(), starting)) throw new Error('AUTH_SESSION_CHANGED');
+    if (starting.expiresAt > Date.now() + 60_000) return starting.idToken;
     const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded', ...(await appCheckHeader()) };
     const response = await firebaseFetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(this.config.apiKey)}`, {
       method: 'POST', headers,
-      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: this.session.refreshToken }),
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: starting.refreshToken }),
     });
     const data = await readJson(response);
+    // Check immediately before persistence; a different FirebaseRestClient
+    // may have signed out, or signed in as B (or re-signed in as A) meanwhile.
+    if (!sameFirebaseSession(this.session, starting)
+      || !sameFirebaseSession(this.readStoredSession(), starting)
+      || (data.user_id && data.user_id !== starting.uid)) {
+      throw new Error('AUTH_SESSION_CHANGED');
+    }
     const refreshed: AuthSession = {
-      ...this.session, idToken: data.id_token, refreshToken: data.refresh_token || this.session.refreshToken,
-      uid: data.user_id || this.session.uid, expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
+      ...starting, idToken: data.id_token, refreshToken: data.refresh_token || starting.refreshToken,
+      uid: starting.uid, expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
     };
     this.persistSession(refreshed);
     return refreshed.idToken;
@@ -233,12 +259,30 @@ export class FirebaseRestClient {
 
   private async firestoreFetch(url: string, init: RequestInit = {}) {
     const token = await this.getIdToken();
+    // Capture the exact post-refresh identity: UID alone is not enough on A -> A relogin.
+    const requestSession = this.session;
+    // getIdToken() can yield: reject if an A token now belongs to a newer B or A login.
+    if (!requestSession || requestSession.idToken !== token) throw new Error('AUTH_SESSION_CHANGED');
+    const assertCurrent = () => assertFirebaseRequestSessionCurrent(
+      requestSession, this.session, this.readStoredSession(),
+    );
+    assertCurrent();
     const headers = new Headers(init.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
     const appCheck = await getNativeAppCheckToken(false).catch(() => null);
+    // An App Check wait must not send A's request after a logout or account switch.
+    assertCurrent();
     if (appCheck) headers.set('X-Firebase-AppCheck', appCheck);
     if (init.body) headers.set('Content-Type', 'application/json');
-    return readJson(await firebaseFetch(url, { ...init, headers }));
+    // Guard both successful and rejected network/body promises. Without finally,
+    // a late 404 could become a false "not found" for the newly signed-in account.
+    try {
+      const response = await firebaseFetch(url, { ...init, headers });
+      assertCurrent();
+      return await readJson(response);
+    } finally {
+      assertCurrent();
+    }
   }
 
   async getDocument<T = Record<string, unknown>>(path: string): Promise<FirestoreDocument<T> | null> {
@@ -303,7 +347,41 @@ export class FirebaseRestClient {
     else if (filters.length > 1) structuredQuery.where = { compositeFilter: { op: 'AND', filters: filters.map((filter) => this.toFieldFilter(filter)) } };
     if (orders.length) structuredQuery.orderBy = orders.map((order) => ({ field: { fieldPath: order.field }, direction: order.direction || 'ASCENDING' }));
     const raw = await this.firestoreFetch(`${parent}:runQuery`, { method: 'POST', body: JSON.stringify({ structuredQuery }) });
-    return (raw || []).filter((row: any) => row.document).map((row: any) => this.decodeDocument<T>(row.document));
+    // HTTP 200 is not proof that every Firestore streaming row succeeded.
+    // Never silently discard an in-band error, skipped result, or malformed
+    // envelope and present an incomplete marketplace/moderation read as truth.
+    if (!Array.isArray(raw)) throw new Error('FIRESTORE_QUERY_RESPONSE_INVALID');
+    // Firestore document.name is a resource name, never the REST HTTP URL.
+    // Limit this response to the queried collection, not just the project.
+    const expectedDocumentPrefix = `${this.documentName(parentPath ? `${parentPath}/${collectionId}` : collectionId)}/`;
+    const documents: FirestoreDocument<T>[] = [];
+    for (const row of raw) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)
+          || Object.prototype.hasOwnProperty.call(row, 'error')) {
+        throw new Error('FIRESTORE_QUERY_ROW_INVALID');
+      }
+      if (Object.prototype.hasOwnProperty.call(row, 'skippedResults')
+          && (!Number.isSafeInteger(row.skippedResults) || row.skippedResults !== 0)) {
+        throw new Error('FIRESTORE_QUERY_SKIPPED_RESULTS_UNSAFE');
+      }
+      if (!Object.prototype.hasOwnProperty.call(row, 'document')) {
+        if (!('readTime' in row) && !('skippedResults' in row) && !('explainMetrics' in row))
+          throw new Error('FIRESTORE_QUERY_ROW_INVALID');
+        continue;
+      }
+      const doc = row.document;
+      if (!doc || typeof doc !== 'object' || Array.isArray(doc)
+          || typeof doc.name !== 'string'
+          || !doc.name.startsWith(expectedDocumentPrefix)
+          || !doc.name.slice(expectedDocumentPrefix.length)
+          || doc.name.slice(expectedDocumentPrefix.length).includes('/')
+          || (doc.fields !== undefined
+            && (!doc.fields || typeof doc.fields !== 'object' || Array.isArray(doc.fields)))) {
+        throw new Error('FIRESTORE_QUERY_DOCUMENT_INVALID');
+      }
+      documents.push(this.decodeDocument<T>(doc));
+    }
+    return documents;
   }
 
   private toFieldFilter(filter: QueryFilter) {

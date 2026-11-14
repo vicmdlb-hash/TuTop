@@ -6,6 +6,8 @@ import { ACCOUNT_LOCAL_KEYS, readAccountLocalList, writeAccountLocalList } from 
 import { parseListingDescription } from '../lib/listingDetails';
 import { normalizeCategory } from '../lib/productAssistant';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
+import { canViewerOpenListing } from '../lib/publicDiscovery';
+import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { firebaseMediaStorage, mediaStorageEnabled } from '../services/firebaseMediaStorage';
 import { onlineBackend } from '../services/onlineBackend';
 import { useAppStore } from '../store/useAppStore';
@@ -29,16 +31,23 @@ export default function ProductDetail() {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [topiOpen, setTopiOpen] = useState(false);
   const [sellerProfileOpen, setSellerProfileOpen] = useState(false);
-  const [videoObjectUrl, setVideoObjectUrl] = useState<string | null>(null);
+  const [videoBlob, setVideoBlob] = useState<{ ownerUid: string; sourceUri: string; url: string } | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   useEffect(() => { setPhotoIndex(0); setSellerProfileOpen(false); }, [selectedProductId]);
-  const product = selectedProductId ? products.find((item) => item.id === selectedProductId) : undefined;
+  const candidate = selectedProductId ? products.find((item) => item.id === selectedProductId) : undefined;
+  const product = candidate && canViewerOpenListing(candidate, user.id, nationalSchemaEnabled())
+    ? candidate : undefined;
   const videoUri = product ? (product as Product & { video_urls?: string[] }).video_urls?.[0] : undefined;
+  // A's already-loaded blob must not render for B, even before effect cleanup.
+  const videoObjectUrl = videoBlob?.ownerUid === user.id && videoBlob?.sourceUri === videoUri
+    ? videoBlob.url : null;
   const similar = useMemo(
     () => product
-      ? products.filter((item) => item.id !== product.id && item.estado === 'Activo' && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4)
+      ? products.filter((item) => item.id !== product.id && item.estado === 'Activo'
+        && canViewerOpenListing(item, user.id, nationalSchemaEnabled())
+        && normalizeCategory(item.categoria) === normalizeCategory(product.categoria)).slice(0, 4)
       : [],
-    [products, product],
+    [products, product, user.id],
   );
 
   useEffect(() => {
@@ -55,7 +64,7 @@ export default function ProductDetail() {
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
-    setVideoObjectUrl(null);
+    setVideoBlob(null);
     setVideoError(null);
     if (!videoUri) return () => undefined;
     if (!mediaStorageEnabled()) {
@@ -66,7 +75,7 @@ export default function ProductDetail() {
       .then((url) => {
         if (cancelled) { URL.revokeObjectURL(url); return; }
         objectUrl = url;
-        setVideoObjectUrl(url);
+        setVideoBlob({ ownerUid: user.id, sourceUri: videoUri, url });
       })
       .catch((error) => {
         if (!cancelled) setVideoError(error instanceof Error ? error.message : 'No pudimos cargar el video.');
@@ -75,7 +84,7 @@ export default function ProductDetail() {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [videoUri]);
+  }, [videoUri, user.id]);
 
   if (!product) return null;
 
@@ -88,7 +97,8 @@ export default function ProductDetail() {
     ? product.moderation_status === 'pending' ? 'En revisión · aún no visible para otros'
       : product.moderation_status === 'rejected' ? 'Rechazada'
         : product.moderation_status === 'review' ? 'Revisión necesaria'
-          : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado
+          : product.moderation_status === 'flagged' ? 'Marcada para revisión · no visible para otros'
+            : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado
     : product.estado === 'Activo' ? (reserved ? 'Reservado temporalmente' : 'Disponible') : product.estado;
   const photos = product.imagenes_url?.length ? product.imagenes_url : [product.imagen_url];
   const activePhoto = photos[Math.min(photoIndex, photos.length - 1)] || product.imagen_url;
@@ -152,7 +162,7 @@ export default function ProductDetail() {
           </div>
           <div className="mt-3 flex items-center justify-between gap-2 rounded-2xl border border-white/5 bg-[#0d1725] p-3 text-[12px] text-[#b6c0cf]"><span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-success" />{deliverySummary}</span><span className="text-[10px] font-bold text-slate-500">{reserved ? 'Reserva activa' : `${product.stock || 1} disponible${(product.stock || 1) === 1 ? '' : 's'}`}</span></div>
 
-          {!ownProduct && <section className="mt-3 rounded-2xl border border-violet-400/10 bg-violet-500/[0.055] p-3"><button onClick={() => setTopiOpen((value) => !value)} className="flex w-full items-center gap-2 text-left"><span className="brand-mini">T</span><span className="flex-1"><strong className="block text-[11px]">Topi puede ayudarte</strong><small className="text-[9px] text-slate-500">Preguntas útiles antes de comprar.</small></span><Sparkles className="h-4 w-4 text-violet-300" /></button>{topiOpen && <div className="mt-3 flex flex-wrap gap-2">{['¿Sigue disponible?', '¿Qué incluye exactamente?', '¿Dónde entregas?', negotiable ? '¿Aceptarías una oferta?' : '¿El precio es fijo?'].map((text) => <button key={text} onClick={() => { const chatId = contactProduct(product.id); if (chatId) sendMessage(chatId, text); }} className="rounded-full border border-white/5 bg-white/[0.035] px-3 py-2 text-[9px] font-bold text-slate-300">{text}</button>)}</div>}</section>}
+          {!ownProduct && <section className="mt-3 rounded-2xl border border-violet-400/10 bg-violet-500/[0.055] p-3"><button onClick={() => setTopiOpen((value) => !value)} className="flex w-full items-center gap-2 text-left"><span className="brand-mini">T</span><span className="flex-1"><strong className="block text-[11px]">Topi puede ayudarte</strong><small className="text-[9px] text-slate-500">Preguntas útiles antes de comprar.</small></span><Sparkles className="h-4 w-4 text-violet-300" /></button>{topiOpen && <div className="mt-3 flex flex-wrap gap-2">{['¿Sigue disponible?', '¿Qué incluye exactamente?', '¿Dónde entregas?', negotiable ? '¿Aceptarías una oferta?' : '¿El precio es fijo?'].map((text) => <button key={text} disabled={reservedForViewer} onClick={() => { if (reservedForViewer) return; const chatId = contactProduct(product.id); if (chatId) sendMessage(chatId, text); }} className="rounded-full border border-white/5 bg-white/[0.035] px-3 py-2 text-[9px] font-bold text-slate-300 disabled:cursor-not-allowed disabled:opacity-45">{text}</button>)}</div>}</section>}
 
           <div className="mt-4 flex gap-2"><button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`detail-favorite ${favorite ? 'favorite-button-active' : ''}`}><Heart className="h-5 w-5" fill={favorite ? 'currentColor' : 'none'} />{favorite ? 'Guardado' : 'Guardar'}</button><button onClick={() => { if (!ownProduct && !reservedForViewer) { feedbackTap(); contactProduct(product.id); } }} disabled={ownProduct || reservedForViewer} className="detail-contact disabled:cursor-not-allowed disabled:opacity-45"><MessageCircle className="h-5 w-5" />{ownProduct ? 'Es tu publicación' : reservedForViewer ? 'Reservado' : existingBuyerChat ? 'Volver al chat' : 'Contactar'}</button></div>
           {!ownProduct && <button disabled={reserved} onClick={startOffer} className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-400/15 bg-emerald-500/10 py-3 text-xs font-black text-emerald-200 disabled:cursor-not-allowed disabled:border-amber-400/10 disabled:bg-amber-500/[0.06] disabled:text-amber-200"><TimerReset className="h-4 w-4" />{reserved ? 'Reservado temporalmente' : 'Negociar / hacer oferta'}</button>}

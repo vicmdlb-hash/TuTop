@@ -1,6 +1,6 @@
 # TuTop 0.9 — Android Physical QA
 
-> **Build120 exact candidate:** `0.9.2-beta.10` · source `554f4ef6d0429b0059738d8cd6e1b6e4890bda91` · artifact `10622421310` · APK SHA-256 `9855a2e51587f3115f9c270c28d61b1f5c4aa4db7813dacc16b3fe700d458cc0`. Todos los resultados empiezan en PENDING; CI no sustituye observación física.
+> **ATENCIÓN: Build120 es HISTÓRICO, NO CANDIDATO ACTIVO** · source `554f4ef6d0429b0059738d8cd6e1b6e4890bda91` · artifact `10622421310` · APK SHA-256 `9855a2e51587f3115f9c270c28d61b1f5c4aa4db7813dacc16b3fe700d458cc0`. Sus resultados físicos fallaron y el manifiesto `docs/PHYSICAL_QA_CANDIDATE_0.9.json` exige reemplazo. **NO instalar ni retestar este APK como beta actual**. Conservar estos identificadores sólo para trazabilidad. Para un candidato nuevo, seguir `docs/NEXT_CANDIDATE_SIGNING_BINDING.md` sin inventar firma ni SHA. R6 sigue 0/2 hasta dos pruebas físicas reales.
 
 Este protocolo valida comportamiento físico. Los gates CI, emulator y Firebase staging **no sustituyen** estas pruebas.
 
@@ -62,7 +62,7 @@ Para cada notificación ejercitada, `push_received` y `push_action` deben compar
 32. Si no hay token, capturar reporte QA antes de cualquier enforcement.
 33. App Check seguirá UNENFORCED durante esta fase. No activar enforcement hasta PASS físico estable.
 
-Para un futuro enforcement, completar una copia privada del esquema `docs/APP_CHECK_PHYSICAL_EVIDENCE_TEMPLATE.json` con `status=verified`, al menos un dispositivo Android y `app_check_token_observed=true`. Nunca guardar el token real. El script `scripts/app-check-enforcement-readiness.mjs` bloquea ENFORCED si esta evidencia no existe, está vencida o no corresponde a staging 0.9.
+Para un futuro enforcement, completar una copia privada del esquema `docs/APP_CHECK_PHYSICAL_EVIDENCE_TEMPLATE.json` con `status=verified`, dos dispositivos Android independientes (slots A y B), `device_count=2` y `app_check_token_observed=true` en cada uno. Nunca guardar el token real. El script `scripts/app-check-enforcement-readiness.mjs` bloquea ENFORCED si esta evidencia no existe, está vencida o no corresponde a staging 0.9.
 
 ## Cuenta y privacidad
 

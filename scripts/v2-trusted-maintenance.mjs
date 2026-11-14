@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { validateTrustedMaintenanceQueryRows } from './trusted-maintenance-query-validation.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const allow = String(process.env.TUTOP_ALLOW_V2_MAINTENANCE || '').trim();
@@ -15,6 +16,20 @@ if (projectId === historicalProject) stop(`${historicalProject} está bloqueado 
 if (/prod(uction)?/i.test(projectId) && process.env.TUTOP_ALLOW_PRODUCTION_FIREBASE !== '1') stop('el project ID parece producción.');
 if (!/(staging|stage|beta|dev|test|sandbox)/i.test(projectId) && process.env.TUTOP_ALLOW_NONDESCRIPTIVE_STAGING_ID !== '1') stop('el project ID no parece staging/beta/dev/test.');
 if (apply && allow !== 'staging-v2') stop('para escribir define TUTOP_ALLOW_V2_MAINTENANCE=staging-v2.');
+// P01: no outcome write, lock deletion or settlement before a shared
+// read-write admission transaction proves buyer and seller are not deleting.
+// Keep non-commerce maintenance lanes independently gated as before.
+if (apply && tasks.has('outcomes')) throw new Error('TRUSTED_OUTCOMES_ADMISSION_FREEZE_NOT_VERIFIED');
+// P02/P05: rebuilding reputation, creating saved-search alerts or sending push
+// can recreate state or contact a user whose erasure is in progress. A global
+// snapshot cannot establish recipient eligibility under concurrent deletion.
+// Freeze ONLY these unproven apply lanes until all recipients are checked by
+// a trusted transactional admission barrier. Credential retention is separate.
+for (const task of ['reputation', 'saved-searches', 'push']) {
+  if (apply && tasks.has(task))
+    throw new Error('TRUSTED_MAINTENANCE_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED:' + task);
+}
+
 
 const token = await firebaseCiAccessToken();
 const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
@@ -59,7 +74,7 @@ async function request(url, options = {}, allowStatuses = []) {
   const text = await response.text();
   let data = null;
   if (text) { try { data = JSON.parse(text); } catch { data = { raw: text }; } }
-  if (!response.ok && !allowStatuses.includes(response.status)) throw new Error(`${response.status} ${url}: ${text.slice(0, 800)}`);
+  if (!response.ok && !allowStatuses.includes(response.status)) throw new Error(`V2_TRUSTED_MAINTENANCE_HTTP_${response.status}`);
   return { status: response.status, data };
 }
 
@@ -68,7 +83,7 @@ async function query(collectionId, max = limit) {
     method: 'POST',
     body: JSON.stringify({ structuredQuery: { from: [{ collectionId }], limit: max } }),
   });
-  return (result.data || []).filter((row) => row.document).map((row) => ({ id: row.document.name.split('/').pop(), ...decodeFields(row.document.fields || {}) }));
+  return validateTrustedMaintenanceQueryRows({ rows: result.data, projectId, collectionId, limit: max, decodeFields });
 }
 async function commit(writes) {
   if (!writes.length || !apply) return;
@@ -258,8 +273,9 @@ async function runPush() {
       });
       if (response.ok) delivered += 1;
       else {
-        const detail = await response.text();
-        console.warn(`FCM ${item.id}/${target.id}: ${response.status} ${detail.slice(0, 220)}`);
+        // FCM errors can echo device tokens and private notification fields.
+        // Report the status only; never log response bodies or recipient IDs.
+        console.warn(`V2_TRUSTED_MAINTENANCE_FCM_HTTP_${response.status}`);
       }
     }
     if (delivered > 0) {

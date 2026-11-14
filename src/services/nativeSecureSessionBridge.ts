@@ -1,8 +1,22 @@
+import { createNativeSessionWriteQueue } from '../lib/nativeSessionWriteQueue';
 import { FirebaseRestClient, type AuthSession } from './firebaseRest';
 import { isNativeSecureSessionRuntime, markNativeSignedOut, persistNativeSessionRaw, volatileSessionStorage } from './nativeSecureSession';
 
 const LEGACY_SESSION_KEY = 'tutop.firebase.session.v1';
 const proto = FirebaseRestClient.prototype as any;
+const queueNativeWrite = createNativeSessionWriteQueue(
+  persistNativeSessionRaw,
+  (key, raw) => {
+    const current = volatileSessionStorage().getItem(key);
+    return raw === null ? current === null : current === raw;
+  },
+  (key, raw) => {
+    // Explicit sign-out keeps its tombstone. Only a successfully persisted
+    // exact current session can become eligible for cold-start restoration.
+    if (raw !== null) markNativeSignedOut(key, false);
+  },
+);
+
 
 if (!proto.__tutopNativeSecureSessionInstalled) {
   Object.defineProperty(proto, '__tutopNativeSecureSessionInstalled', { value: true, configurable: false, enumerable: false });
@@ -32,18 +46,16 @@ if (!proto.__tutopNativeSecureSessionInstalled) {
     if (key) localStorage.removeItem(key);
     const storage = volatileSessionStorage();
     if (!key) return;
-    if (session) {
-      markNativeSignedOut(key, false);
-      const raw = JSON.stringify(session);
-      storage.setItem(key, raw);
-      void persistNativeSessionRaw(key, raw).catch(() => undefined);
-    } else {
-      // Tombstone is synchronous and non-sensitive, so a killed process cannot
-      // resurrect a stale encrypted session before plugin.remove() completes.
-      markNativeSignedOut(key, true);
-      storage.removeItem(key);
-      void persistNativeSessionRaw(key, null).catch(() => undefined);
-    }
+    // A new login or refreshed token must never clear the restart tombstone
+    // until its exact encrypted write has completed. If the process is killed
+    // before persistence succeeds, restoreNativeSessionForProject fails closed.
+    markNativeSignedOut(key, true);
+    const raw = session ? JSON.stringify(session) : null;
+    if (raw === null) storage.removeItem(key);
+    else storage.setItem(key, raw);
+    // Queue is per project key; native plugin operations must not complete
+    // out of order and restore credentials from an older account on restart.
+    void queueNativeWrite(key, raw).catch(() => undefined);
   };
 }
 

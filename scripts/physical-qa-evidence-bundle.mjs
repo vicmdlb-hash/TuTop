@@ -5,11 +5,25 @@ import { evaluatePhysicalQaReport } from '../src/lib/physicalQaEvaluator.ts';
 import { candidateExactHeadIdentityValid } from './physical-qa-candidate-drift.mjs';
 
 const requiredCases = [
-  'install_boot','auth_identity','reinstall_identity','keyboard','android_back','lifecycle','safe_areas','rotation',
+  'install_boot','second_account_email_verification','auth_identity','reinstall_identity','topi_real_ai',
+  'notification_permission_activation','notification_token_registered','fcm_two_device_receive',
+  'fcm_two_device_tap_deep_link','account_switch_fcm_isolation',
+  'keyboard','android_back','lifecycle','safe_areas','rotation',
   'offline_reconnect','push_foreground','push_background','push_cold_start','push_deep_link','app_check_token_observed',
 ];
 const allowedCase = new Set(['pass','warn','fail','pending','not_applicable']);
-const forbiddenKeys = new Set(['refreshToken','idToken','password','FIREBASE_TOKEN']);
+// Reject raw secrets regardless of casing or common camel/snake-case aliases.
+// Correlation IDs and boolean observation flags remain allowed.
+// Normalize case and separators so aliases cannot hide sensitive fields.
+const normalizeSensitiveField = (key) => String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
+const forbiddenKeys = new Set([
+  'refreshToken', 'idToken', 'password', 'FIREBASE_TOKEN', 'token',
+  'fcm_token', 'fcmToken', 'appCheckToken', 'app_check_token',
+  'accessToken', 'access_token', 'authorization', 'authorizationHeader',
+  'apiKey', 'api_key', 'notification_id', 'raw_notification_id', 'phone',
+  'imei', 'device_serial', 'serial_number', 'mac_address', 'android_id',
+  'advertising_id', 'email', 'email_address', 'emailAddress',
+].map(normalizeSensitiveField));
 const requiredDeviceFields = ['label','manufacturer','model','android_version','viewport','installation'];
 const requiredCandidateFields = [
   'artifact_name','artifact_id','build_run_id','build_commit_sha','build_tree_sha','apk_sha256',
@@ -31,22 +45,45 @@ export function loadPhysicalQaCandidate() {
   return candidate;
 }
 
-function scanSensitive(value, errors, pathParts = []) {
+// JSON field names can themselves contain raw PII or copied credentials.
+// Never print untrusted nested field paths in a diagnostic.
+function containsSensitiveIdentifier(value) {
+  return typeof value === 'string' && (
+    /\b\d{10,17}\b/.test(value)
+    || /(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)
+    || /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)
+    || /[A-Za-z0-9_-]{120,}/.test(value)
+    || /(?:^|[^A-Za-z0-9_-])[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}(?=$|[^A-Za-z0-9_-])/.test(value)
+  );
+}
+
+function scanSensitive(value, errors) {
   if (Array.isArray(value)) {
-    value.forEach((item, index) => scanSensitive(item, errors, [...pathParts, String(index)]));
+    value.forEach(item => scanSensitive(item, errors));
     return;
   }
   if (value && typeof value === 'object') {
     for (const [key, child] of Object.entries(value)) {
-      if (forbiddenKeys.has(key)) errors.push(`dato prohibido detectado en campo: ${[...pathParts, key].join('.')}`);
-      scanSensitive(child, errors, [...pathParts, key]);
+      if (forbiddenKeys.has(normalizeSensitiveField(key))) {
+        const label = key.length <= 64 && !containsSensitiveIdentifier(key) ? key : '[redacted]';
+        errors.push('dato prohibido detectado en campo: ' + label);
+      }
+      if (containsSensitiveIdentifier(key))
+        errors.push('nombre de campo contiene identificador sensible sin redactar');
+      scanSensitive(child, errors);
     }
     return;
   }
   if (typeof value !== 'string') return;
-  if (/\b\d{10,13}\b/.test(value)) errors.push(`posible número telefónico/identificador sensible sin redactar en ${pathParts.join('.') || 'root'}`);
-  if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push(`posible token/identificador largo sin redactar en ${pathParts.join('.') || 'root'}`);
+  // Keep diagnostic category, but no source path controlled by a user.
+  if (/\b\d{10,17}\b/.test(value)) errors.push('posible número telefónico/identificador sensible sin redactar');
+  if (/(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i.test(value)) errors.push('posible dirección MAC sin redactar');
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value)) errors.push('posible correo electrónico sin redactar');
+  if (/[A-Za-z0-9_-]{120,}/.test(value)) errors.push('posible token/identificador largo sin redactar');
+  if (/(?:^|[^A-Za-z0-9_-])[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}(?=$|[^A-Za-z0-9_-])/.test(value))
+    errors.push('posible token segmentado sin redactar');
 }
+
 
 function isPlaceholder(value) {
   const text = String(value || '').trim();
@@ -83,6 +120,66 @@ function validateFreshNativeDiagnostic(bundle, errors, now = Date.now()) {
   const generatedAt = Date.parse(String(report.generated_at || ''));
   if (!Number.isFinite(generatedAt)) errors.push('diagnostic_report.generated_at inválido');
   else if (generatedAt > now + 5 * 60_000 || now - generatedAt > MAX_DIAGNOSTIC_AGE_MS) errors.push('diagnostic_report fuera de ventana fresca de 24 h');
+
+  // A report cannot prove Android health when mandatory checks are missing,
+  // repeated or have unknown status. The evaluator alone treats absent checks
+  // as having no findings, so otherwise an all-pass bundle could be promoted.
+  const mandatory = [
+    'staging-project', 'v2', 'auth', 'identity', 'network',
+    'push-permission', 'app-check',
+  ];
+  if (!Array.isArray(report.checks)) {
+    errors.push('diagnostic_report.checks inválido');
+    return;
+  }
+  const seen = new Set();
+  for (const check of report.checks) {
+    if (!check || typeof check !== 'object' || Array.isArray(check)
+      || typeof check.key !== 'string' || !check.key
+      || !['pass', 'warn', 'fail'].includes(check.status)) {
+      errors.push('diagnostic_report comprobación malformada');
+      continue;
+    }
+    if (seen.has(check.key)) errors.push('diagnostic_report comprobación duplicada');
+    seen.add(check.key);
+  }
+  for (const key of mandatory) {
+    // Only fixed, audited check identifiers appear in exported errors.
+    if (!report.checks.some((check) => check?.key === key && check?.status === 'pass')) {
+      errors.push(`diagnostic_report comprobación requerida sin PASS: ${key}`);
+    }
+  }
+}
+
+// Physical QA verdicts may be exported beyond the phone. The evaluator's
+// check keys, labels and details originate in a diagnostic report; even when
+// scanSensitive flags a raw identifier, the assessment must not echo it.
+const safeFindingCodes = new Set([
+  'check:staging-project', 'check:v2', 'check:auth', 'check:identity',
+  'check:network', 'check:push-permission', 'check:app-check',
+  'runtime:unhandled-error', 'network:no-reconnect-evidence',
+  'network:legacy-no-reconnect-evidence', 'push:not-exercised',
+  'push:no-tap-evidence', 'push:correlation-mismatch',
+  'app-check:no-physical-token', 'runtime:not-native', 'viewport:compact',
+]);
+function redactedQaAssessment(assessment) {
+  const findings = assessment.findings.map((finding) => {
+    const code = safeFindingCodes.has(finding.code)
+      ? finding.code : 'qa:untrusted-check-redacted';
+    return {
+      severity: finding.severity,
+      code,
+      message: 'Revisar comprobación localmente; detalle omitido por privacidad.',
+    };
+  });
+  return {
+    overall: assessment.overall,
+    score: assessment.score,
+    findings,
+    next_actions: findings.length
+      ? findings.slice(0, 6).map((finding) => `Revisar ${finding.code} sin exportar datos de diagnóstico.`)
+      : ['Continuar matriz manual; conservar evidencia privada del dispositivo.'],
+  };
 }
 
 export function validatePhysicalQaEvidence(bundle, now = Date.now(), expectedCandidate = loadPhysicalQaCandidate()) {
@@ -114,8 +211,8 @@ export function validatePhysicalQaEvidence(bundle, now = Date.now(), expectedCan
 
   let assessment = null;
   if (bundle?.diagnostic_report) {
-    try { assessment = evaluatePhysicalQaReport(bundle.diagnostic_report); }
-    catch (error) { errors.push(`diagnostic_report inválido: ${error instanceof Error ? error.message : String(error)}`); }
+    try { assessment = redactedQaAssessment(evaluatePhysicalQaReport(bundle.diagnostic_report)); }
+    catch { errors.push('diagnostic_report inválido: estructura de evaluación incorrecta'); }
   } else {
     warnings.push('diagnostic_report todavía no adjunto');
   }

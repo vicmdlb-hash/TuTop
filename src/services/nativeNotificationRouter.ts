@@ -1,31 +1,58 @@
 import { useAppStore } from '../store/useAppStore';
+import { canApplyNativeNotificationSnapshot, canRouteNativeNotification } from '../lib/nativeNotificationSessionGuard';
 import { NATIVE_NOTIFICATION_EVENT, type NativeNotificationIntent } from './nativeFirebaseSecurity';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { onlineBackend } from './onlineBackend';
+import { verifiedEmailBetaAuth } from './verifiedEmailBetaAuth';
 
 let installed = false;
 
 function activeRecipientUid() {
   try {
     if (!onlineBackend.ready) onlineBackend.configureFromRuntime();
-  } catch { /* fail closed below when recipient identity is present */ }
-  return String(onlineBackend.session?.uid || useAppStore.getState().user.id || '').trim();
+  } catch { /* missing verified Auth must fail closed */ }
+  // A cached FirebaseRestClient may still hold A after a separate client logs
+  // in as B. Route only when it agrees with the canonical stored identity.
+  const cachedUid = String(onlineBackend.session?.uid || '').trim();
+  const canonicalUid = String(verifiedEmailBetaAuth.readSessionIdentity()?.uid || '').trim();
+  return cachedUid && cachedUid === canonicalUid ? canonicalUid : '';
 }
 
 function recipientMatchesActiveSession(intent: NativeNotificationIntent) {
-  const intended = String(intent.recipient_uid || '').trim();
-  if (!intended) return true; // backward compatibility for historical payloads
-  const active = activeRecipientUid();
-  return Boolean(active && active === intended);
+  return canRouteNativeNotification(
+    intent.recipient_uid,
+    activeRecipientUid(),
+    useAppStore.getState().user.id,
+  );
+}
+
+// A recipient UID in a push payload does not authorize its chat target.
+// Account switches can leave a stale chat object in memory until hydration.
+function hasOwnedChat(chatId: string, uid: string) {
+  if (!chatId || !uid) return false;
+  return useAppStore.getState().chats.some((chat) =>
+    chat.id === chatId && (chat.comprador_id === uid || chat.vendedor_id === uid));
 }
 
 function route(intent: NativeNotificationIntent, markRead = true) {
   if (!recipientMatchesActiveSession(intent)) return false;
   const state = useAppStore.getState();
-  if (markRead && intent.notification_id) state.markNotificationRead(intent.notification_id);
+  if (markRead && intent.notification_id) {
+    // The store can still contain an A-owned message notification after B
+    // becomes the authenticated user. Never mark that foreign chat as read.
+    const cached = state.notifications.find((item) => item.id === intent.notification_id);
+    if (!cached?.chat_id || hasOwnedChat(cached.chat_id, state.user.id)) {
+      state.markNotificationRead(intent.notification_id);
+    }
+  }
   if (intent.source !== 'action') return true;
 
   if (intent.chat_id) {
+    if (!hasOwnedChat(intent.chat_id, state.user.id)) {
+      // Only show the Inbox until the online snapshot proves membership.
+      state.setActiveTab('inbox');
+      return false;
+    }
     state.openChat(intent.chat_id);
     return true;
   }
@@ -36,7 +63,7 @@ function route(intent: NativeNotificationIntent, markRead = true) {
   }
   if (intent.transaction_id) {
     const chat = state.chats.find((item: any) => item.transaction_id === intent.transaction_id);
-    if (chat) {
+    if (chat && hasOwnedChat(chat.id, state.user.id)) {
       state.openChat(chat.id);
       return true;
     }
@@ -60,10 +87,29 @@ export function installNativeNotificationRouter() {
   window.addEventListener(NATIVE_NOTIFICATION_EVENT, ((event: CustomEvent<NativeNotificationIntent>) => {
     const intent = event.detail || { source: 'received' };
     if (!recipientMatchesActiveSession(intent)) return;
+    const expectedUid = String(intent.recipient_uid || '').trim();
+    const expectedSessionGeneration = verifiedEmailBetaAuth.sessionGeneration();
+    const expectedCanonicalSession = verifiedEmailBetaAuth.readSessionIdentity();
+    if (!expectedCanonicalSession || expectedCanonicalSession.uid !== expectedUid) return;
     const exactTargetResolved = route(intent);
     void onlineBackend.loadSnapshot().then((snapshot) => {
-      useAppStore.getState().hydrateOnline(snapshot);
-      if (!exactTargetResolved && intent.source === 'action' && intent.transaction_id) route(intent, false);
+      // An A-owned request can settle after A logs out and B signs in.
+      // Never hydrate or retry a target if the verified identity has changed.
+      const store = useAppStore.getState();
+      // UID checks alone are insufficient for logout -> login of the same UID.
+      if (verifiedEmailBetaAuth.sessionGeneration() !== expectedSessionGeneration) return;
+      const currentCanonicalSession = verifiedEmailBetaAuth.readSessionIdentity();
+      // The phone-password path does not increment the email-beta generation.
+      // Refresh-token ownership changes across logout/relogin of the same UID.
+      if (!currentCanonicalSession
+        || currentCanonicalSession.uid !== expectedCanonicalSession.uid
+        || currentCanonicalSession.refreshToken !== expectedCanonicalSession.refreshToken) return;
+      if (!canApplyNativeNotificationSnapshot(
+        expectedUid, activeRecipientUid(), store.user.id, snapshot.user.id,
+      )) return;
+      store.hydrateOnline(snapshot);
+      if (!exactTargetResolved && intent.source === 'action'
+        && (intent.chat_id || intent.transaction_id)) route(intent, false);
     }).catch(() => undefined);
   }) as EventListener);
 }

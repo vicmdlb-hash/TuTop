@@ -4,8 +4,7 @@ import { ACCOUNT_LOCAL_KEYS, readAccountLocalList, readAccountLocalText, writeAc
 import { MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
 import { useAppStore } from '../store/useAppStore';
 
-export default function WelcomeTour() {
-  const userId = useAppStore((state) => state.user.id);
+function WelcomeTourForUser({ userId }: { userId: string }) {
   const [visible, setVisible] = useState(() => Boolean(userId) && readAccountLocalText(ACCOUNT_LOCAL_KEYS.onboarding, userId) !== 'done');
   const [step, setStep] = useState(1);
   const [interests, setInterests] = useState<string[]>(() => readAccountLocalList(ACCOUNT_LOCAL_KEYS.interests, userId, 6));
@@ -39,4 +38,12 @@ export default function WelcomeTour() {
       </section>
     </div>
   );
+}
+
+// Key the whole interactive tour by its authenticated owner. A -> B may happen
+// without unmounting the parent app; state from A must never render/write as B.
+export default function WelcomeTour() {
+  const userId = useAppStore((state) => state.user.id);
+  if (!userId) return null;
+  return <WelcomeTourForUser key={userId} userId={userId} />;
 }

@@ -22,6 +22,16 @@ const nativeBridge = fs.readFileSync('src/services/nativeSecureSessionBridge.ts'
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 
 assert.match(rules, /function verifiedIdentity\(\)[\s\S]*email_verified == true/);
+// Assert the generated PREVIEW is actual Firebase Rules syntax rooted in a
+// trusted signed token. This helper is deliberately not a public launch grant.
+const nationalHelper = rules.match(/function nationalVerifiedIdentity\(\) \{([\s\S]*?)\n    \}/)?.[1] || '';
+assert.match(nationalHelper, /verifiedIdentity\(\)/);
+assert.match(nationalHelper, /request\.auth\.token\.sub == request\.auth\.uid/);
+assert.match(nationalHelper, /request\.auth\.token\.phone_number is string/);
+assert.match(nationalHelper, /phone_number\.matches\('\^\[\+\]52/);
+assert.doesNotMatch(nationalHelper, /user_private|auth_status|request\.resource\.data/);
+assert.equal((rules.match(/function nationalVerifiedIdentity\(\)/g) || []).length, 1,
+  'must not duplicate Rules sections when phone regex contains a dollar anchor');
 assert.match(rules, /auth_mode in \['phone_password_beta','email_password_verified_beta'\]/);
 assert.match(rules, /auth_mode == 'email_password_verified_beta'[\s\S]*institutional_email == request\.auth\.token\.email/);
 assert.match(rules, /function listingRateLimitConsumed\(\)/);

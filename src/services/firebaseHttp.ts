@@ -29,7 +29,14 @@ export async function firebaseFetch(
   const controller = new AbortController();
   const upstream = init.signal;
 
-  const relayAbort = () => controller.abort(upstream?.reason);
+  // Caller cancellation must settle even if a transport ignores AbortSignal.
+  // Do not misreport an upstream cancel as a Firebase network timeout.
+  let rejectCallerAbort: ((reason: unknown) => void) | undefined;
+  const callerAbort = new Promise<never>((_, reject) => { rejectCallerAbort = reject; });
+  const relayAbort = () => {
+    controller.abort(upstream?.reason);
+    rejectCallerAbort?.(controller.signal.reason);
+  };
   if (upstream?.aborted) relayAbort();
   else upstream?.addEventListener('abort', relayAbort, { once: true });
 
@@ -47,6 +54,7 @@ export async function firebaseFetch(
     return await Promise.race([
       fetch(input, { ...init, signal: controller.signal }),
       timeout,
+      callerAbort,
     ]);
   } catch (error) {
     if (timedOut && !(error instanceof FirebaseRequestTimeoutError)) {
@@ -56,5 +64,26 @@ export async function firebaseFetch(
   } finally {
     if (timer) clearTimeout(timer);
     upstream?.removeEventListener('abort', relayAbort);
+  }
+}
+
+/**
+ * Headers may arrive before the response body stalls. Limit body consumption
+ * independently from firebaseFetch's header timeout; never log response text.
+ * The original network reader may finish later, but cannot keep its caller hung.
+ */
+export async function readFirebaseResponseText(
+  response: Pick<Response, 'text'>,
+  timeoutMs = FIREBASE_REQUEST_TIMEOUT_MS,
+): Promise<string> {
+  const boundedTimeout = Number.isFinite(timeoutMs) ? Math.max(1, Math.floor(timeoutMs)) : FIREBASE_REQUEST_TIMEOUT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new FirebaseRequestTimeoutError(boundedTimeout)), boundedTimeout);
+  });
+  try {
+    return await Promise.race([response.text(), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }

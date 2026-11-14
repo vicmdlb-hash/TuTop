@@ -2,6 +2,8 @@ import { categorySafetyRequirements, classifyMarketplaceItem } from '../lib/mark
 import { listingV2HasNoLegacyDescriptionPacking, validCanonicalVideoUri, type CanonicalListingV2, type ListingDeliveryMethod } from '../lib/listingSchemaV2.ts';
 import { CAMPUSES, FACULTIES, INSTITUTIONS } from '../lib/universityNetwork.ts';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant.ts';
+import { validNearbyGeoCell, validListingApproxLocationAttributes } from '../lib/nearbyMarketplace.ts';
+import { assertFirebaseRequestSessionCurrent, sameFirebaseSession, type FirebaseSessionIdentity } from '../lib/firebaseSharedSessionGuard';
 import type { DeliveryMethod, MeetingPoint, Product, ProductCategory, ProductStatus } from '../types/index.ts';
 import { FirebaseRestClient, type FirestoreDocument, type QueryFilter } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
@@ -12,7 +14,8 @@ const SELLER_NAME_CACHE_TTL_MS = 10 * 60_000;
 const NEARBY_CACHE_TTL_MS = 60_000;
 const sellerNameCache = new Map<string, { name: string; expiresAt: number }>();
 const sellerNameInflight = new Map<string, Promise<string>>();
-const nearbyCache = new Map<string, { products: Product[]; expiresAt: number }>();
+// Only reuse a private Nearby snapshot within the exact authenticated session.
+const nearbyCache = new Map<string, { products: Product[]; expiresAt: number; session: FirebaseSessionIdentity }>();
 
 function localId() {
   const random = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -29,6 +32,13 @@ function getClient() {
   const client = new FirebaseRestClient(getFirebaseConfig());
   if (!client.currentSession?.uid) throw new Error('AUTH_REQUIRED');
   return client;
+}
+
+// A read can outlive logout, A→B, or A→logout→A even when individual
+// Firestore calls were authenticated. Never return/cache old private listings.
+function assertListingReadSessionCurrent(client: FirebaseRestClient, requestSession: FirebaseSessionIdentity | null) {
+  assertFirebaseRequestSessionCurrent(requestSession, client.currentSession,
+    new FirebaseRestClient(getFirebaseConfig()).currentSession);
 }
 
 function hasValue(value: unknown) {
@@ -118,7 +128,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     career_id: data.career_id,
     visibility_scope: data.visibility_scope,
     listing_kind: 'offer',
-    moderation_status: data.moderation_status === 'flagged' ? 'review' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
+    moderation_status: data.moderation_status === 'flagged' ? 'flagged' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
     availability_status: data.availability_status === 'reserved' ? 'reserved' : 'available',
     punto_encuentro: 'Coordinar por Chat' as MeetingPoint,
     metodos_entrega: data.delivery_methods.map(legacyDelivery),
@@ -139,6 +149,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
 
 export function validateCanonicalListingPolicy(listing: CanonicalListingV2, category: ProductCategory) {
   if (!listingV2HasNoLegacyDescriptionPacking(listing)) throw new Error('LISTING_V2_SCHEMA_INCOMPLETE');
+  if (!validListingApproxLocationAttributes(listing.attributes)) throw new Error('LISTING_APPROX_LOCATION_UNSAFE');
   if (listing.title.trim().length < 2 || listing.title.length > 120) throw new Error('LISTING_TITLE_INVALID');
   if (!Number.isFinite(listing.price_mxn) || listing.price_mxn < 0.01 || listing.price_mxn > 1_000_000) throw new Error('LISTING_PRICE_INVALID');
   if (!Number.isInteger(listing.quantity) || listing.quantity < 1 || listing.quantity > 99) throw new Error('LISTING_QUANTITY_INVALID');
@@ -211,6 +222,11 @@ export function buildCanonicalListingCreateWrite(
 
 export const canonicalListingsBackend = {
   async create(listing: CanonicalListingV2, category: ProductCategory, operationId?: string) {
+    // Schema-only migration: national listings without campus can be modeled,
+    // but never sent to Firebase before signed dual-factor Rules are proven.
+    if (!listing.institution_id || !listing.campus_id) {
+      throw new Error('NATIONAL_RULES_AND_PHONE_PROOF_NOT_READY');
+    }
     const client = getClient();
     const uid = client.currentSession!.uid;
     if (listing.seller_id !== uid) throw new Error('SELLER_MISMATCH');
@@ -249,12 +265,16 @@ export const canonicalListingsBackend = {
 
   async loadMine(limit = 50) {
     const client = getClient();
-    const uid = client.currentSession!.uid;
-    return client.runQuery<CanonicalListingV2>('listings_v2', [{ field: 'seller_id', op: 'EQUAL', value: uid }], [{ field: 'updated_at', direction: 'DESCENDING' }], Math.max(1, Math.min(100, limit)));
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
+    const documents = await client.runQuery<CanonicalListingV2>('listings_v2', [{ field: 'seller_id', op: 'EQUAL', value: uid }], [{ field: 'updated_at', direction: 'DESCENDING' }], Math.max(1, Math.min(100, limit)));
+    assertListingReadSessionCurrent(client, requestSession);
+    return documents;
   },
 
   async loadMarketplaceProducts(input: { campusId?: string; institutionId?: string; cityId?: string; limitPerScope?: number } = {}) {
     const client = getClient();
+    const requestSession = client.currentSession;
     const limit = Math.max(5, Math.min(50, input.limitPerScope || 30));
     const queries: Array<Promise<FirestoreDocument<CanonicalListingV2>[]>> = [];
     if (input.campusId) queries.push(queryApproved(client, 'campus_id', input.campusId, limit));
@@ -265,18 +285,22 @@ export const canonicalListingsBackend = {
     const [sets, mine] = await Promise.all([Promise.all(queries), minePromise]);
     const byId = new Map<string, FirestoreDocument<CanonicalListingV2>>();
     for (const doc of [...sets.flat(), ...mine]) byId.set(doc.id, doc);
-    return productsForDocuments(client, [...byId.values()]);
+    const products = await productsForDocuments(client, [...byId.values()]);
+    assertListingReadSessionCurrent(client, requestSession);
+    return products;
   },
 
   async loadNearbyProducts(input: { geoCells: string[]; limitPerCell?: number; force?: boolean }) {
-    const cells = [...new Set(input.geoCells.filter((cell) => /^g1:\d+:\d+$/.test(cell)))].slice(0, 9).sort();
+    const cells = [...new Set(input.geoCells.filter(validNearbyGeoCell))].slice(0, 9).sort();
     if (!cells.length) return [] as Product[];
     const limit = Math.max(4, Math.min(15, input.limitPerCell || 10));
     const client = getClient();
-    const uid = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
     const cacheKey = `${uid}#${cells.join('|')}#${limit}`;
     const cached = nearbyCache.get(cacheKey);
-    if (!input.force && cached && cached.expiresAt > Date.now()) return cached.products;
+    if (!input.force && cached && cached.expiresAt > Date.now()
+      && sameFirebaseSession(cached.session, requestSession)) return cached.products;
 
     const approvedPromise = Promise.all(cells.map((cell) => queryApproved(client, 'attributes.geo_cell', cell, limit)));
     const minePromise = this.loadMine(Math.min(50, Math.max(limit * 3, 20)));
@@ -289,7 +313,8 @@ export const canonicalListingsBackend = {
     const byId = new Map<string, FirestoreDocument<CanonicalListingV2>>();
     for (const doc of [...sets.flat(), ...ownNearby]) byId.set(doc.id, doc);
     const products = await productsForDocuments(client, [...byId.values()]);
-    nearbyCache.set(cacheKey, { products, expiresAt: Date.now() + NEARBY_CACHE_TTL_MS });
+    assertListingReadSessionCurrent(client, requestSession);
+    nearbyCache.set(cacheKey, { products, expiresAt: Date.now() + NEARBY_CACHE_TTL_MS, session: requestSession! });
     return products;
   },
 
@@ -338,7 +363,18 @@ export const canonicalListingsBackend = {
 
   async setStatus(listingId: string, status: CanonicalListingV2['status']) {
     const client = getClient();
-    await client.setDocument(`listings_v2/${listingId}`, { status, updated_at: new Date() }, { merge: true });
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
+    // A stale or wrong-owner UI action must never prepare a status write.
+    const existing = await client.getDocument<CanonicalListingV2>(`listings_v2/${listingId}`);
+    if (!existing) throw new Error('LISTING_NOT_FOUND');
+    if (existing.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
+    // Same UID is insufficient: A -> logout -> A is a new session.
+    assertFirebaseRequestSessionCurrent(requestSession, client.currentSession,
+      new FirebaseRestClient(getFirebaseConfig()).currentSession);
+    if (!existing.updateTime) throw new Error('LISTING_VERSION_REQUIRED');
+    await client.setDocument(`listings_v2/${listingId}`, { status, updated_at: new Date() },
+      { merge: true, updateTime: existing.updateTime });
     nearbyCache.clear();
   },
 };

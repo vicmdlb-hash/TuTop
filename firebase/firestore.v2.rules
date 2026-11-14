@@ -7,6 +7,16 @@ service cloud.firestore {
     function statusDoc(uid) { return /databases/$(database)/documents/moderationStatus/$(uid); }
     function isAdmin() { return signedIn() && exists(adminDoc()) && get(adminDoc()).data.active == true; }
     function notSuspended() { return signedIn() && (!exists(statusDoc(request.auth.uid)) || get(statusDoc(request.auth.uid)).data.suspended != true); }
+    // P01 client admission: a deleted/deleting participant must not start new
+    // offers or reservations. Only a rejected deletion request can resume.
+    // This does not authorize privileged server writers or erasure --apply.
+    function commerceAccountEligible(uid) {
+      let deletion = /databases/$(database)/documents/account_deletion_requests/$(uid);
+      return !exists(deletion) || get(deletion).data.status == 'rejected';
+    }
+    function commerceAccountsEligible(buyerUid, sellerUid) {
+      return commerceAccountEligible(buyerUid) && commerceAccountEligible(sellerUid);
+    }
     function userDoc(uid) { return get(/databases/$(database)/documents/users/$(uid)); }
     function productDoc(productId) { return get(/databases/$(database)/documents/products/$(productId)); }
     function chatDoc(chatId) { return get(/databases/$(database)/documents/chats/$(chatId)); }
@@ -435,6 +445,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','accepted_offer_id','agreed_amount_mxn','status','reservation_expires_at','meeting_point_id','meetup_at','buyer_confirmed_at','seller_confirmed_at','created_at','updated_at'])
         && request.auth.uid == request.resource.data.seller_id
         && request.resource.data.buyer_id != request.resource.data.seller_id
+        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)
         && transactionId == 'tx-' + request.resource.data.accepted_offer_id
         && request.resource.data.status == 'reserved'
         && request.resource.data.reservation_expires_at is timestamp
@@ -675,6 +686,23 @@ service cloud.firestore {
     }
 
     match /admins/{uid} { allow read: if owner(uid) || isAdmin(); allow write: if false; }
+    // Trusted age/guardian/adult-action evidence must be issued and revoked only
+    // by a verified backend using privileged server credentials (never an app).
+    // Owner-only single-document reads; listing and ALL client mutations denied.
+    // This storage boundary alone does NOT enforce marketplace capabilities.
+    match /age_proofs_v2/{uid} {
+      allow get: if owner(uid);
+      allow list, create, update, delete: if false;
+    }
+    match /guardian_grants_v2/{uid} {
+      allow get: if owner(uid);
+      allow list, create, update, delete: if false;
+    }
+    match /adult_actions_v2/{uid} {
+      allow get: if owner(uid);
+      allow list, create, update, delete: if false;
+    }
+
     match /{document=**} { allow read, write: if false; }
   }
 }

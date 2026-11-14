@@ -86,5 +86,15 @@ if (!manifest.includes('tools:ignore="MissingClass"')) stop('falta supresión ac
 if (!manifest.includes('android:allowBackup="false"')) stop('allowBackup debe quedar desactivado.');
 if (!manifest.includes('android:usesCleartextTraffic="false"')) stop('cleartext traffic debe quedar desactivado.');
 
+// Merge only the Capacitor Firebase service; suppress the redundant base receiver.
+const defaultMessagingService = 'com.google.firebase.messaging.FirebaseMessagingService';
+const removeDefaultService = '<service android:name="' + defaultMessagingService + '" tools:node="remove" tools:ignore="MissingClass" />';
+if (!manifest.includes(removeDefaultService)) {
+  const start = manifest.indexOf('<application');
+  const end = start >= 0 ? manifest.indexOf('>', start) : -1;
+  if (end < 0) stop('Android application tag missing for FCM merger rule');
+  manifest = manifest.slice(0, end + 1) + '\n        ' + removeDefaultService + manifest.slice(end + 1);
+}
+
 fs.writeFileSync(manifestPath, manifest);
 console.log('✅ Android 0.9.2: coarse location + mic bajo demanda + POST_NOTIFICATIONS + camera/photo picker sin permisos legacy + backport Photo Picker.');

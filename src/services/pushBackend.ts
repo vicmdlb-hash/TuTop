@@ -1,6 +1,8 @@
 import { appNotificationKindFromOutbox } from '../lib/notificationProjection';
+import { isCurrentPushSession } from '../lib/pushBackendSessionWitness';
+import { createFirstPushTokenDocument, normalizePushTokenIdentity, normalizePushAppVersion } from '../lib/pushTokenCreateFirst';
 import type { AppNotification } from '../types';
-import { FirebaseRestClient } from './firebaseRest';
+import { FirebaseRestClient, type AuthSession } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
 import { getFirebaseConfig } from './runtimeConfig';
 
@@ -11,6 +13,18 @@ function getClient() {
   const client = new FirebaseRestClient(getFirebaseConfig());
   if (!client.currentSession?.uid) throw new Error('AUTH_REQUIRED');
   return client;
+}
+
+function currentPushOwnerGuard(client: FirebaseRestClient) {
+  const original = client.currentSession;
+  if (!original?.uid || !original.refreshToken) throw new Error('AUTH_REQUIRED');
+  return () => {
+    // Secure native bridge shares this project-scoped readStoredSession method.
+    // Never allow an old A request to return results after another login.
+    const reader = client as unknown as { readStoredSession?: () => AuthSession | null };
+    if (!isCurrentPushSession(original, client.currentSession, reader.readStoredSession?.() ?? null))
+      throw new Error('PUSH_OWNER_SESSION_CHANGED');
+  };
 }
 
 async function sha256(value: string) {
@@ -24,42 +38,68 @@ function receiptId(uid: string, notificationId: string) {
 }
 
 export const pushBackend = {
-  async registerDeviceToken(token: string, platform: PushPlatform, appVersion: string) {
+  async registerDeviceToken(
+    token: string, platform: PushPlatform, appVersion: string,
+    isOriginalSession?: () => boolean,
+  ) {
     const client = getClient();
     const uid = client.currentSession!.uid;
-    const cleanToken = token.trim();
-    if (cleanToken.length < 20 || cleanToken.length > 4096) throw new Error('INVALID_PUSH_TOKEN');
+    const canonicalGuard = currentPushOwnerGuard(client);
+    const assertOwner = () => {
+      canonicalGuard();
+      if (isOriginalSession && !isOriginalSession()) throw new Error('PUSH_OWNER_SESSION_CHANGED');
+    };
+    assertOwner();
+    const { token: cleanToken, platform: cleanPlatform } = normalizePushTokenIdentity(token, platform);
+    const cleanAppVersion = normalizePushAppVersion(appVersion);
     const tokenHash = await sha256(cleanToken);
-    const id = `${uid}-${platform}-${tokenHash.slice(0, 20)}`;
+    assertOwner();
+    const id = `${uid}-${cleanPlatform}-${tokenHash.slice(0, 20)}`;
     const now = new Date().toISOString();
-    const existing = await client.getDocument(`device_tokens/${id}`);
     const payload = {
       owner_uid: uid,
       token: cleanToken,
-      platform,
-      app_version: appVersion.slice(0, 40),
+      platform: cleanPlatform,
+      app_version: cleanAppVersion,
       active: true,
-      ...(existing ? {} : { created_at: now }),
+      created_at: now,
       updated_at: now,
     };
-    if (existing) await client.setDocument(`device_tokens/${id}`, payload, { merge: true });
-    else await client.setDocument(`device_tokens/${id}`, payload, { exists: false });
+    await createFirstPushTokenDocument(
+      (record, options) => client.setDocument(`device_tokens/${id}`, record, options),
+      payload,
+      assertOwner,
+    );
     return id;
   },
 
   async unregisterDeviceToken(token: string, platform: PushPlatform) {
     const client = getClient();
     const uid = client.currentSession!.uid;
-    const tokenHash = await sha256(token.trim());
-    const id = `${uid}-${platform}-${tokenHash.slice(0, 20)}`;
-    const existing = await client.getDocument(`device_tokens/${id}`);
-    if (!existing) return;
-    await client.setDocument(`device_tokens/${id}`, { active: false, updated_at: new Date().toISOString() }, { merge: true });
+    const assertOwner = currentPushOwnerGuard(client);
+    assertOwner();
+    const { token: cleanToken, platform: cleanPlatform } = normalizePushTokenIdentity(token, platform);
+    const tokenHash = await sha256(cleanToken);
+    assertOwner();
+    const id = `${uid}-${cleanPlatform}-${tokenHash.slice(0, 20)}`;
+    // A missing or unreadable token cannot be distinguished safely by a
+    // pre-GET under owner-only Rules: update only an existing owner record.
+    // Any 404/403/failed precondition propagates to the sign-out quarantine;
+    // never report server deactivation without an acknowledged write.
+    assertOwner();
+    await client.setDocument(
+      `device_tokens/${id}`,
+      { active: false, updated_at: new Date().toISOString() },
+      { merge: true, exists: true },
+    );
+    assertOwner();
   },
 
   async loadTrustedNotifications(limit = 80): Promise<AppNotification[]> {
     const client = getClient();
     const uid = client.currentSession!.uid;
+    const assertOwner = currentPushOwnerGuard(client);
+    assertOwner();
     const [docs, receipts] = await Promise.all([
       client.runQuery<any>(
         'notification_outbox',
@@ -69,6 +109,7 @@ export const pushBackend = {
       ),
       client.runQuery<any>('notification_receipts', [{ field: 'owner_uid', op: 'EQUAL', value: uid }], [], 200).catch(() => []),
     ]);
+    assertOwner(); // Reject A's completed query when B has logged in.
     const read = new Set(receipts.filter((doc) => Boolean(doc.data?.read_at)).map((doc) => String(doc.data.notification_id || '')));
     return docs.map((doc) => ({
       id: doc.id,
@@ -88,11 +129,15 @@ export const pushBackend = {
   async markNotificationRead(notificationId: string) {
     const client = getClient();
     const uid = client.currentSession!.uid;
+    const assertOwner = currentPushOwnerGuard(client);
+    assertOwner();
     const outbox = await client.getDocument<any>(`notification_outbox/${notificationId}`);
+    assertOwner();
     if (!outbox || outbox.data?.recipient_uid !== uid) throw new Error('NOTIFICATION_NOT_FOUND');
     const id = receiptId(uid, notificationId);
     const now = new Date().toISOString();
     const existing = await client.getDocument<any>(`notification_receipts/${id}`);
+    assertOwner();
     const payload = { owner_uid: uid, notification_id: notificationId, read_at: now, updated_at: now, ...(existing ? {} : { created_at: now }) };
     if (existing) await client.setDocument(`notification_receipts/${id}`, payload, { merge: true });
     else await client.setDocument(`notification_receipts/${id}`, payload, { exists: false });

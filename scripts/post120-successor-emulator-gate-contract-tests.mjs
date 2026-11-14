@@ -35,7 +35,8 @@ const firestoreTests = [
   'tests/firestore.v2.post106-verified-identity.test.mjs',
   'tests/firestore.v2.private-admin-reads.test.mjs',
   'tests/firestore.v2.publication-profile-coupling.test.mjs',
-  'tests/firestore.v2.seller-follows.test.mjs'
+  'tests/firestore.v2.seller-follows.test.mjs',
+  'tests/firestore.v2.user-blocks.test.mjs'
 ];
 for (const testPath of firestoreTests) assert.equal(workflow.includes(testPath), true, 'missing Firestore test: ' + testPath);
 

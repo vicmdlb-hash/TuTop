@@ -1,4 +1,6 @@
 import { OfferIdempotencyWindow, isAlreadyCommittedOfferError, isUncertainOfferWriteError } from '../lib/offerIdempotency';
+import { assertFreshOfferExpiry } from '../lib/transactionRetry';
+import { assertFirebaseRequestSessionCurrent, sameFirebaseSession, type FirebaseSessionIdentity } from '../lib/firebaseSharedSessionGuard';
 import type { Offer, OfferStatus } from '../types';
 import { FirebaseRestClient } from './firebaseRest';
 import { nationalSchemaEnabled } from './nationalBackend';
@@ -8,17 +10,28 @@ import { getFirebaseConfig } from './runtimeConfig';
 const operations = new OfferIdempotencyWindow();
 const DEFAULT_OFFER_TTL_MS = 24 * 60 * 60_000;
 const OFFER_LIST_CACHE_TTL_MS = 30_000;
-const offerListCache = new Map<string, { offers: Offer[]; expiresAt: number }>();
-const offerListInflight = new Map<string, Promise<Offer[]>>();
+const offerListCache = new Map<string, { offers: Offer[]; expiresAt: number; session: FirebaseSessionIdentity }>();
+const offerListInflight = new Map<string, { promise: Promise<Offer[]>; session: FirebaseSessionIdentity }>();
 
 function nowIso() { return new Date().toISOString(); }
 function defaultOfferExpiry() { return new Date(Date.now() + DEFAULT_OFFER_TTL_MS).toISOString(); }
 function patchWrite(client: FirebaseRestClient, path: string, data: Record<string, unknown>) {
   return { update: client.encodeDocumentForWrite(path, data), updateMask: { fieldPaths: Object.keys(data) } };
 }
+function offerListCacheKey(uid: string, chatId: string) {
+  // Encode both components so an attacker-controlled chat ID cannot collide
+  // with another UID's cache entry, even when it contains delimiters.
+  return `${encodeURIComponent(uid)}:${encodeURIComponent(chatId)}`;
+}
+
 function invalidateOfferList(chatId: string) {
-  offerListCache.delete(chatId);
-  offerListInflight.delete(chatId);
+  const suffix = `:${encodeURIComponent(chatId)}`;
+  for (const key of offerListCache.keys()) {
+    if (key.endsWith(suffix)) offerListCache.delete(key);
+  }
+  for (const key of offerListInflight.keys()) {
+    if (key.endsWith(suffix)) offerListInflight.delete(key);
+  }
 }
 
 function getClient() {
@@ -28,17 +41,36 @@ function getClient() {
   return client;
 }
 
+// Defense in depth: reads used to prepare a commercial mutation may outlive
+// logout, A→B switching, or same-UID re-login. Do not proceed from that stale
+// snapshot. firebaseRest's network guard remains the authoritative last gate.
+function assertOfferMutationSessionCurrent(
+  client: FirebaseRestClient,
+  requestSession: FirebaseSessionIdentity | null,
+) {
+  assertFirebaseRequestSessionCurrent(
+    requestSession, client.currentSession, new FirebaseRestClient(getFirebaseConfig()).currentSession,
+  );
+}
+
 async function assertOfferableListing(client: FirebaseRestClient, listingId: string, sellerId: string) {
   const listing = await client.getDocument<any>(`listings_v2/${listingId}`);
   if (!listing) throw new Error('LISTING_NOT_FOUND');
   if (listing.data.seller_id !== sellerId) throw new Error('SELLER_MISMATCH');
   if (listing.data.status !== 'active') throw new Error('LISTING_NOT_ACTIVE');
   if (listing.data.moderation_status !== 'approved') throw new Error('LISTING_NOT_APPROVED');
+  // Client-side defense: a reserved listing is not offerable. Server rules and atomic race tests remain separate gates.
+  if (listing.data.availability_status === 'reserved') throw new Error('LISTING_ALREADY_RESERVED');
+  // Unknown or absent availability is not positive proof of an offerable
+  // listing. A stale/partial listing must fail closed, not invite new offers.
+  // Historical canonical records may omit this optional field. Preserve that
+  // supported legacy case; explicit unknown/null states still fail closed.
+  if (listing.data.availability_status !== undefined
+    && listing.data.availability_status !== 'available') throw new Error('LISTING_AVAILABILITY_UNVERIFIED');
 }
 
 function assertOfferNotExpired(offer: Offer) {
-  const expiresAt = offer.expires_at ? Date.parse(offer.expires_at) : NaN;
-  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) throw new Error('OFFER_EXPIRED');
+  assertFreshOfferExpiry(offer.expires_at);
 }
 
 async function loadCurrentOffer(client: FirebaseRestClient, offerId: string) {
@@ -124,27 +156,50 @@ export const canonicalOffersBackend = {
   async listOffersForChat(chatId: string, force = false) {
     const cleanChatId = chatId.trim();
     if (!cleanChatId) throw new Error('CHAT_ID_REQUIRED');
-    const cached = offerListCache.get(cleanChatId);
-    if (!force && cached && cached.expiresAt > Date.now()) return cached.offers.map((offer) => ({ ...offer }));
-    const inflight = offerListInflight.get(cleanChatId);
-    if (!force && inflight) return inflight;
-
+    // Never return cached private chat offers without checking authentication.
     const client = getClient();
+    const requestSession = client.currentSession;
+    const key = offerListCacheKey(requestSession!.uid, cleanChatId);
+    const assertCurrent = () => assertFirebaseRequestSessionCurrent(
+      requestSession, client.currentSession, new FirebaseRestClient(getFirebaseConfig()).currentSession,
+    );
+    const cached = offerListCache.get(key);
+    if (!force && cached && cached.expiresAt > Date.now()
+      && sameFirebaseSession(cached.session, requestSession)) {
+      assertCurrent();
+      return cached.offers.map((offer) => ({ ...offer }));
+    }
+    const inflight = offerListInflight.get(key);
+    if (!force && inflight && sameFirebaseSession(inflight.session, requestSession)) {
+      assertCurrent();
+      return inflight.promise;
+    }
+
     const request = client.runQuery<any>('offers', [{ field: 'chat_id', op: 'EQUAL', value: cleanChatId }], [{ field: 'created_at', direction: 'DESCENDING' }], 30)
-      .then((docs) => docs.map((doc) => ({ id: doc.id, ...doc.data } as Offer)))
+      .then((docs) => {
+        assertCurrent();
+        if (offerListInflight.get(key)?.promise !== request) throw new Error('STALE_OFFER_READ');
+        return docs.map((doc) => ({ id: doc.id, ...doc.data } as Offer));
+      })
       .then((offers) => {
-        offerListCache.set(cleanChatId, { offers, expiresAt: Date.now() + OFFER_LIST_CACHE_TTL_MS });
+        assertCurrent();
+        if (offerListInflight.get(key)?.promise !== request) throw new Error('STALE_OFFER_READ');
+        offerListCache.set(key, { offers, expiresAt: Date.now() + OFFER_LIST_CACHE_TTL_MS, session: requestSession! });
         return offers.map((offer) => ({ ...offer }));
       })
-      .finally(() => offerListInflight.delete(cleanChatId));
-    offerListInflight.set(cleanChatId, request);
+      .finally(() => {
+        if (offerListInflight.get(key)?.promise === request) offerListInflight.delete(key);
+      });
+    offerListInflight.set(key, { promise: request, session: requestSession! });
     return request;
   },
 
   async updateOffer(offerId: string, status: Extract<OfferStatus, 'accepted' | 'rejected' | 'countered' | 'withdrawn'>, counterOfferId?: string) {
     const client = getClient();
-    const actor = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const actor = requestSession!.uid;
     const current = await loadCurrentOffer(client, offerId);
+    assertOfferMutationSessionCurrent(client, requestSession);
     if (actor !== current.buyer_id && actor !== current.seller_id) throw new Error('PARTICIPANT_REQUIRED');
     if (current.status !== 'pending') throw new Error('OFFER_NOT_PENDING');
     assertOfferNotExpired(current);
@@ -165,11 +220,14 @@ export const canonicalOffersBackend = {
   },
 
   async createOffer(input: { listingId: string; chatId: string; sellerId: string; amountMxn: number; expiresAt?: string }) {
+    assertFreshOfferExpiry(input.expiresAt);
     const client = getClient();
-    const buyerId = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const buyerId = requestSession!.uid;
     if (buyerId === input.sellerId) throw new Error('SELF_OFFER_DENIED');
-    if (!Number.isFinite(input.amountMxn) || input.amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
+    if (!Number.isFinite(input.amountMxn) || input.amountMxn < 1 || input.amountMxn > 1_000_000) throw new Error('INVALID_OFFER_AMOUNT');
     await assertOfferableListing(client, input.listingId, input.sellerId);
+    assertOfferMutationSessionCurrent(client, requestSession);
     const amountMxn = Math.round(input.amountMxn * 100) / 100;
     const operation = operations.begin({
       actorId: buyerId,
@@ -200,12 +258,16 @@ export const canonicalOffersBackend = {
   },
 
   async createCounterOffer(parent: Offer, amountMxn: number, expiresAt?: string) {
+    assertFreshOfferExpiry(expiresAt);
     const client = getClient();
-    const actor = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const actor = requestSession!.uid;
     if (actor !== parent.buyer_id && actor !== parent.seller_id) throw new Error('PARTICIPANT_REQUIRED');
-    if (!Number.isFinite(amountMxn) || amountMxn < 1) throw new Error('INVALID_OFFER_AMOUNT');
+    if (!Number.isFinite(amountMxn) || amountMxn < 1 || amountMxn > 1_000_000) throw new Error('INVALID_OFFER_AMOUNT');
     const currentParent = await assertCurrentPendingParent(client, parent, actor);
+    assertOfferMutationSessionCurrent(client, requestSession);
     await assertOfferableListing(client, currentParent.listing_id, currentParent.seller_id);
+    assertOfferMutationSessionCurrent(client, requestSession);
     const normalizedAmount = Math.round(amountMxn * 100) / 100;
     const operation = operations.begin({
       actorId: actor,

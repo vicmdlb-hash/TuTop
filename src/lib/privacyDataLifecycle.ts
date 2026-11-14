@@ -25,12 +25,22 @@ export type AccountDeletionDecision = {
   retention_days?: number;
 };
 
+const knownDeletionZones = new Set<DataZone>([
+  'public', 'private', 'verification', 'transactional', 'trust_safety', 'analytics',
+]);
+
 export function accountDeletionDecision(input: {
   zone: DataZone;
   active_dispute?: boolean;
   upheld_fraud_case?: boolean;
   legal_retention_required?: boolean;
 }): AccountDeletionDecision {
+  // Deserialized policy inputs can bypass the DataZone TypeScript union.
+  // An unknown collection zone requires review; never default to deletion.
+  if (!input || typeof input !== 'object' || Array.isArray(input)
+    || !knownDeletionZones.has(input.zone)) {
+    return { action: 'retain_temporarily', reason: 'unknown_data_zone_requires_review' };
+  }
   // Engineering may classify data as temporarily retained, but the actual
   // retention deadline is a legal/operational decision supplied externally.
   // Do not invent 30/60/90/180/365-day defaults here.

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, HelpCircle, Loader2, Mic, RotateCcw, Send, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { startTopiDictation } from '../lib/topiVoice';
 import { supportNode, type SupportRouteId } from '../lib/supportDecisionTree';
@@ -14,45 +14,110 @@ export default function TopiSupportAssistant() {
   const [listening, setListening] = useState(false);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // A delayed AI/support reply must never hydrate another decision-tree route.
+  const requestSerial = useRef(0);
+  const dictationSerial = useRef(0);
+  const stopDictation = useRef<(() => void) | null>(null);
+  const guidedBeta = String(import.meta.env.VITE_TUTOP_TOPI_GUIDED_BETA || '').toLowerCase() === 'true'
+    && String(import.meta.env.VITE_TUTOP_ENVIRONMENT || '').toLowerCase() === 'staging';
   const currentId = route[route.length - 1] || 'root';
   const node = useMemo(() => supportNode(currentId), [currentId]);
 
+  const cancelDictation = () => {
+    dictationSerial.current += 1;
+    const stop = stopDictation.current;
+    stopDictation.current = null;
+    // The native/Web Speech recognizer may still be listening; stopping it is
+    // a privacy requirement, not merely a UI-state reset.
+    stop?.();
+    setListening(false);
+  };
+  useEffect(() => {
+    // Move keyboard focus into the modal so Escape and Tab work when it opens.
+    if (open) inputRef.current?.focus();
+    return () => {
+      requestSerial.current += 1;
+      dictationSerial.current += 1;
+      stopDictation.current?.();
+      stopDictation.current = null;
+    };
+  }, [open]);
+
+  const invalidatePendingAnswer = () => {
+    requestSerial.current += 1;
+    cancelDictation();
+    setBusy(false);
+  };
   const choose = (next: SupportRouteId) => {
+    invalidatePendingAnswer();
     setRoute((current) => [...current, next]);
     setAnswer(null);
     setQuestion('');
   };
   const back = () => {
     if (route.length <= 1) return;
+    invalidatePendingAnswer();
     setRoute((current) => current.slice(0, -1));
     setAnswer(null);
     setQuestion('');
   };
   const reset = () => {
+    invalidatePendingAnswer();
     setRoute(['root']);
     setAnswer(null);
     setQuestion('');
+  };
+  const close = () => {
+    invalidatePendingAnswer();
+    // Closing a private support dialog must discard questions and answers,
+    // not just hide them for the next person who opens the floating assistant.
+    setQuestion('');
+    setAnswer(null);
+    setVoiceNote(null);
+    setRoute(['root']);
+    setOpen(false);
   };
 
   const ask = async () => {
     const clean = question.trim();
     if (clean.length < 3 || busy) return;
+    const serial = ++requestSerial.current;
+    // A submitted question must also terminate native microphone listening.
+    cancelDictation();
     setBusy(true);
     try {
       const result = await answerConsumerSupport(clean, currentId);
+      // Route changed or dialog closed before the network/AI response arrived.
+      if (serial !== requestSerial.current) return;
       setAnswer(result);
       if (result.route !== 'root' && result.route !== currentId) setRoute((current) => [...current, result.route]);
-    } finally { setBusy(false); }
+    } catch {
+      // Never render raw errors (tokens, URLs or provider stack details) in UI.
+      // A failed AI call is unavailable, not a successful local AI fallback.
+      if (serial === requestSerial.current) {
+        setAnswer({
+          source: 'unavailable',
+          route: currentId,
+          text: 'No pudimos responder en este momento. Comprueba tu conexión e inténtalo de nuevo.',
+        });
+      }
+    } finally {
+      if (serial === requestSerial.current) setBusy(false);
+    }
   };
 
   const dictate = () => {
+    cancelDictation();
     setVoiceNote(null);
-    startTopiDictation({
+    const serial = ++dictationSerial.current;
+    stopDictation.current = startTopiDictation({
       onText: (text) => {
+        if (serial !== dictationSerial.current) return;
         setQuestion((current) => `${current}${current ? ' ' : ''}${text}`.slice(0, 900));
         setVoiceNote('Dictado agregado. Revísalo antes de enviar.');
       },
       onStatus: (status) => {
+        if (serial !== dictationSerial.current) return;
         setListening(status === 'listening');
         if (status === 'unsupported') setVoiceNote('El dictado no está disponible en este dispositivo. Puedes seguir escribiendo.');
         if (status === 'error') setVoiceNote('No pudimos reconocer la voz. Habla después de que se active el micrófono y vuelve a intentarlo.');
@@ -68,7 +133,7 @@ export default function TopiSupportAssistant() {
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="fixed bottom-[calc(84px+env(safe-area-inset-bottom))] right-4 z-[65] flex items-center gap-2 rounded-2xl border border-violet-300/20 bg-violet-600 px-3 py-2.5 text-[10px] font-black text-white shadow-2xl shadow-violet-950/40" aria-label="Abrir Topi">
+      <button type="button" onClick={() => setOpen(true)} className="fixed bottom-[calc(84px+env(safe-area-inset-bottom))] right-4 z-[65] flex min-h-12 items-center gap-2 rounded-2xl border border-violet-300/20 bg-violet-600 px-3 py-2.5 text-[10px] font-black text-white shadow-2xl shadow-violet-950/40" aria-label="Abrir Topi">
         <TopiMascot className="h-7 w-7" /><span>Pregúntale a Topi</span>
       </button>
     );
@@ -76,20 +141,20 @@ export default function TopiSupportAssistant() {
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end bg-black/60 px-2 pb-[calc(82px+env(safe-area-inset-bottom))] pt-safe backdrop-blur-sm sm:items-center sm:justify-center sm:p-6">
-      <section className="max-h-[78vh] w-full overflow-hidden rounded-[26px] border border-violet-300/15 bg-[#0d111a] shadow-2xl sm:max-w-md">
+      <section role="dialog" aria-modal="true" aria-labelledby="tutop-topi-dialog-title" onKeyDown={(event) => { if (event.key === 'Escape') close(); }} className="max-h-[78vh] w-full overflow-hidden rounded-[26px] border border-violet-300/15 bg-[#0d111a] shadow-2xl sm:max-w-md">
         <header className="flex items-center gap-3 border-b border-white/[0.06] p-4">
           <TopiMascot className="h-11 w-11 shrink-0" />
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-black">Topi</h2>
-            <p className="mt-0.5 text-[9px] text-slate-500">Tu amigo para resolver dudas y usar TuTop · guía segura e IA real claramente identificada.</p>
+            <h2 id="tutop-topi-dialog-title" className="text-sm font-black">Topi</h2>
+            <p className="mt-0.5 text-[9px] text-slate-500">{guidedBeta ? "Guía local de reglas. No es IA generativa ni consulta a proveedores externos de IA." : "Tu amigo para resolver dudas y usar TuTop · guía segura e IA real claramente identificada."}</p>
           </div>
-          <button type="button" onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-xl bg-white/[0.05] text-slate-400" aria-label="Cerrar"><X className="h-4 w-4" /></button>
+          <button type="button" onClick={close} className="grid h-12 w-12 place-items-center rounded-xl bg-white/[0.05] text-slate-400" aria-label="Cerrar"><X className="h-4 w-4" /></button>
         </header>
 
         <div className="max-h-[calc(78vh-72px)] overflow-y-auto p-4">
           <div className="mb-3 flex items-center gap-2">
-            {route.length > 1 && <button type="button" onClick={back} className="inline-flex items-center gap-1 rounded-lg bg-white/[0.04] px-2 py-1.5 text-[9px] font-bold text-slate-300"><ArrowLeft className="h-3 w-3" />Atrás</button>}
-            <button type="button" onClick={reset} className="inline-flex items-center gap-1 rounded-lg bg-white/[0.04] px-2 py-1.5 text-[9px] font-bold text-slate-400"><RotateCcw className="h-3 w-3" />Inicio</button>
+            {route.length > 1 && <button type="button" onClick={back} className="inline-flex min-h-12 items-center gap-1 rounded-lg bg-white/[0.04] px-2 py-1.5 text-[9px] font-bold text-slate-300"><ArrowLeft className="h-3 w-3" />Atrás</button>}
+            <button type="button" onClick={reset} className="inline-flex min-h-12 items-center gap-1 rounded-lg bg-white/[0.04] px-2 py-1.5 text-[9px] font-bold text-slate-400"><RotateCcw className="h-3 w-3" />Inicio</button>
           </div>
 
           <div className={`rounded-2xl border p-4 ${node.priority === 'safety' ? 'border-amber-300/15 bg-amber-500/[0.05]' : 'border-violet-300/10 bg-violet-500/[0.04]'}`}>
@@ -99,9 +164,9 @@ export default function TopiSupportAssistant() {
           </div>
 
           {node.choices?.length ? (
-            <div className="mt-3 grid gap-2">{node.choices.map((choice) => <button key={choice.id} type="button" onClick={() => choose(choice.next)} className="rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-3 text-left text-[10px] font-bold text-slate-200 transition active:scale-[0.99]">{choice.label}</button>)}</div>
+            <div className="mt-3 grid gap-2">{node.choices.map((choice) => <button key={choice.id} type="button" onClick={() => choose(choice.next)} className="min-h-12 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-3 text-left text-[10px] font-bold text-slate-200 transition active:scale-[0.99]">{choice.label}</button>)}</div>
           ) : (
-            <div className="mt-3 flex gap-2"><button type="button" onClick={() => setOpen(false)} className="flex-1 rounded-xl bg-emerald-500/10 px-3 py-2.5 text-[9px] font-black text-emerald-200">Ya quedó</button><button type="button" onClick={() => inputRef.current?.focus()} className="flex-1 rounded-xl bg-violet-500/10 px-3 py-2.5 text-[9px] font-black text-violet-200">Preguntar otra cosa</button></div>
+            <div className="mt-3 flex gap-2"><button type="button" onClick={close} className="min-h-12 flex-1 rounded-xl bg-emerald-500/10 px-3 py-2.5 text-[9px] font-black text-emerald-200">Ya quedó</button><button type="button" onClick={() => inputRef.current?.focus()} className="min-h-12 flex-1 rounded-xl bg-violet-500/10 px-3 py-2.5 text-[9px] font-black text-violet-200">Preguntar otra cosa</button></div>
           )}
 
           {answer && (
@@ -115,14 +180,14 @@ export default function TopiSupportAssistant() {
           )}
 
           <div className="mt-4 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3">
-            <label className="text-[9px] font-bold text-slate-400">Escribe o dicta tu pregunta</label>
+            <label htmlFor="tutop-topi-support-question" className="text-[9px] font-bold text-slate-400">Escribe o dicta tu pregunta</label>
             <div className="mt-2 flex gap-2">
-              <input ref={inputRef} value={question} onChange={(event) => setQuestion(event.target.value.slice(0, 900))} onKeyDown={(event) => { if (event.key === 'Enter') void ask(); }} className="min-w-0 flex-1 rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[10px] outline-none placeholder:text-slate-700 focus:border-violet-400/30" placeholder="Ej. ¿Cómo publico algo cerca de mi campus?" />
-              <button type="button" onClick={dictate} className={`grid h-10 w-10 place-items-center rounded-xl ${listening ? 'bg-fuchsia-500 text-white' : 'bg-violet-500/10 text-violet-300'}`} aria-label="Dictar pregunta"><Mic className="h-4 w-4" /></button>
-              <button type="button" disabled={busy || question.trim().length < 3} onClick={() => void ask()} className="grid h-10 w-10 place-items-center rounded-xl bg-violet-600 text-white disabled:opacity-40" aria-label="Preguntar a Topi">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
+              <input id="tutop-topi-support-question" ref={inputRef} value={question} onChange={(event) => setQuestion(event.target.value.slice(0, 900))} onKeyDown={(event) => { if (event.key === 'Enter') void ask(); }} className="min-h-12 min-w-0 flex-1 rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[10px] outline-none placeholder:text-slate-700 focus:border-violet-400/30" placeholder="Ej. ¿Cómo publico algo cerca de mi campus?" />
+              <button type="button" onClick={dictate} className={`grid h-12 w-12 place-items-center rounded-xl ${listening ? 'bg-fuchsia-500 text-white' : 'bg-violet-500/10 text-violet-300'}`} aria-label="Dictar pregunta"><Mic className="h-4 w-4" /></button>
+              <button type="button" disabled={busy || question.trim().length < 3} onClick={() => void ask()} className="grid h-12 w-12 place-items-center rounded-xl bg-violet-600 text-white disabled:opacity-40" aria-label="Preguntar a Topi">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
             </div>
             {voiceNote && <p className="mt-2 text-[8px] leading-4 text-violet-200/80">{voiceNote}</p>}
-            <p className="mt-2 text-[8px] leading-4 text-slate-600">Si la respuesta se marca como Firebase AI real, tu pregunta se procesa remotamente después de omitir emails, teléfonos y códigos sensibles evidentes. Por seguridad, no compartas contraseñas, tarjetas ni tu domicilio exacto.</p>
+            <p className="mt-2 text-[8px] leading-4 text-slate-600">{guidedBeta ? "Beta segura: tus preguntas se resuelven con la guía local de TuTop, sin generación ni envío a proveedores de IA. El dictado del dispositivo puede depender de su servicio de voz; evita compartir datos sensibles." : "Si la respuesta se marca como Firebase AI real, tu pregunta se procesa remotamente después de omitir emails, teléfonos y códigos sensibles evidentes. Por seguridad, no compartas contraseñas, tarjetas ni tu domicilio exacto."}</p>
           </div>
         </div>
       </section>

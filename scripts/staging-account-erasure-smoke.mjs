@@ -4,11 +4,22 @@ import { spawnSync } from 'node:child_process';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, Timestamp, doc, setDoc } from 'firebase/firestore';
-import { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminPatchDocument, adminRunQuery } from './staging-v2-admin.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const configPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-staging-web-config.json').trim();
 const REQUIRED = 'tutop-beta-vicmdlb-1356585881';
+
+// SAFETY STOP (source-only): legacy end-to-end smoke expects destructive --apply
+// to succeed, but process-account-erasure.mjs correctly rejects ALL --apply
+// until an atomic, server-enforced admission freeze covers both parties.
+// Never seed or clean up Firebase staging data merely to reach a known failure.
+// A future replacement requires independent security review and physical gates.
+throw new Error('ACCOUNT_ERASURE_STAGING_SMOKE_DISABLED_UNTIL_ATOMIC_ADMISSION_FREEZE');
+
+// Historical implementation below intentionally remains unreachable. Its admin
+// module acquires credentials at import time, so this import MUST stay after
+// the unconditional stop. Do not replace with a static ESM import.
+const { adminDeleteDocument, adminDeleteTestUsers, adminGetDocument, adminPatchDocument, adminRunQuery } = await import('./staging-v2-admin.mjs');
 
 if (projectId !== REQUIRED) throw new Error(`Erasure smoke fijado a ${REQUIRED}.`);
 if (process.env.TUTOP_ALLOW_ACCOUNT_ERASURE !== 'staging-reviewed') throw new Error('Erasure smoke requiere TUTOP_ALLOW_ACCOUNT_ERASURE=staging-reviewed.');
@@ -229,7 +240,7 @@ try {
 
   const request = await mustExist(`account_deletion_requests/${uid}`);
   assert.equal(fieldString(request, 'status'), 'completed');
-  assert.equal(fieldString(request, 'processing_note'), 'staging-controlled-erasure-v1');
+  assert.equal(fieldString(request, 'processing_note'), 'staging-controlled-erasure-v2');
   assert.equal(fieldString(request, 'residual_manifest_version'), 'staging-erasure-residual-v2');
   assert(fieldInteger(request, 'retained_count') >= 6, 'el manifiesto no contó los residuos chat anidados');
   const audits = await adminRunQuery('audit_log', [{ field: 'target_id', value: uid }], 100);
