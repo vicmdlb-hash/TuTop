@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 'e3a9789163b852be3b08a2aea6e683dbd08c0885'
+          test "$(git rev-parse HEAD^)" = 'c100a6b75176b9678354190c5affea5356f6cad3'
           test "$(git diff --name-only HEAD^ HEAD)" = '.github/workflows/tutop-offline-lab-debug.yml'
           test "$VITE_TUTOP_SCHEMA_V2" = false
           test "$TUTOP_OFFLINE_LAB_ONLY" = true
@@ -141,7 +141,7 @@ jobs:
           {
             echo "repository=vicmdlb-hash/TuTop"
             echo "purpose=offline_emulator_shell_only_not_production_or_physical_R6"
-            echo "source_application_commit=e3a9789163b852be3b08a2aea6e683dbd08c0885"
+            echo "source_application_commit=c100a6b75176b9678354190c5affea5356f6cad3"
             echo "workflow_commit=${GITHUB_SHA}"
             echo "package_id=mx.tutop.app.lab"
             echo "firebase_config=none"
