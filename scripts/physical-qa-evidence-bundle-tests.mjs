@@ -190,6 +190,38 @@ assert.equal(malformedVerdict.overall, 'fail');
 assert.equal(malformedVerdict.release_blocked, true);
 assert(malformedVerdict.errors.some((error) => error.includes('estructura de evaluación incorrecta')));
 
+// A synthetic report with all manual cases marked PASS is not a valid Android
+// diagnostic unless each mandatory native check exists exactly once as PASS.
+for (const key of [
+  'staging-project', 'v2', 'auth', 'identity',
+  'network', 'push-permission', 'app-check',
+]) {
+  const missingCheck = structuredClone(good);
+  missingCheck.diagnostic_report.checks =
+    missingCheck.diagnostic_report.checks.filter((check) => check.key !== key);
+  const verdict = validatePhysicalQaEvidence(missingCheck, now, candidateManifest);
+  assert.equal(verdict.overall, 'fail', `missing diagnostic ${key} must fail`);
+  assert.equal(verdict.release_blocked, true, `missing diagnostic ${key} must block`);
+  assert(verdict.errors.some((error) => error.includes(`sin PASS: ${key}`)));
+
+  const notPassing = structuredClone(good);
+  notPassing.diagnostic_report.checks.find((check) => check.key === key).status = 'pending';
+  const denied = validatePhysicalQaEvidence(notPassing, now, candidateManifest);
+  assert.equal(denied.release_blocked, true, `unknown status ${key} must block`);
+  assert(denied.errors.some((error) => error.includes('comprobación malformada')));
+}
+const duplicateCheck = structuredClone(good);
+duplicateCheck.diagnostic_report.checks.push(
+  structuredClone(duplicateCheck.diagnostic_report.checks[0]));
+const duplicateVerdict = validatePhysicalQaEvidence(duplicateCheck, now, candidateManifest);
+assert.equal(duplicateVerdict.overall, 'fail');
+assert(duplicateVerdict.errors.some((error) => error.includes('comprobación duplicada')));
+const missingChecksArray = structuredClone(good);
+delete missingChecksArray.diagnostic_report.checks;
+const missingChecksVerdict = validatePhysicalQaEvidence(missingChecksArray, now, candidateManifest);
+assert.equal(missingChecksVerdict.release_blocked, true);
+assert(missingChecksVerdict.errors.some((error) => error.includes('diagnostic_report.checks inválido')));
+
 const explanatory = structuredClone(good);
 explanatory.notes = 'No incluir password, idToken, refreshToken ni otros secretos en evidencia.';
 assert.equal(validatePhysicalQaEvidence(explanatory, now, candidateManifest).overall, 'pass');

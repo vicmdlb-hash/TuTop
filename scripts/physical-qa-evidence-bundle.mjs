@@ -120,6 +120,35 @@ function validateFreshNativeDiagnostic(bundle, errors, now = Date.now()) {
   const generatedAt = Date.parse(String(report.generated_at || ''));
   if (!Number.isFinite(generatedAt)) errors.push('diagnostic_report.generated_at inválido');
   else if (generatedAt > now + 5 * 60_000 || now - generatedAt > MAX_DIAGNOSTIC_AGE_MS) errors.push('diagnostic_report fuera de ventana fresca de 24 h');
+
+  // A report cannot prove Android health when mandatory checks are missing,
+  // repeated or have unknown status. The evaluator alone treats absent checks
+  // as having no findings, so otherwise an all-pass bundle could be promoted.
+  const mandatory = [
+    'staging-project', 'v2', 'auth', 'identity', 'network',
+    'push-permission', 'app-check',
+  ];
+  if (!Array.isArray(report.checks)) {
+    errors.push('diagnostic_report.checks inválido');
+    return;
+  }
+  const seen = new Set();
+  for (const check of report.checks) {
+    if (!check || typeof check !== 'object' || Array.isArray(check)
+      || typeof check.key !== 'string' || !check.key
+      || !['pass', 'warn', 'fail'].includes(check.status)) {
+      errors.push('diagnostic_report comprobación malformada');
+      continue;
+    }
+    if (seen.has(check.key)) errors.push('diagnostic_report comprobación duplicada');
+    seen.add(check.key);
+  }
+  for (const key of mandatory) {
+    // Only fixed, audited check identifiers appear in exported errors.
+    if (!report.checks.some((check) => check?.key === key && check?.status === 'pass')) {
+      errors.push(`diagnostic_report comprobación requerida sin PASS: ${key}`);
+    }
+  }
 }
 
 // Physical QA verdicts may be exported beyond the phone. The evaluator's
