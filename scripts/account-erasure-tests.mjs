@@ -69,7 +69,7 @@ assert.match(processor, /\['listing_reservation_locks', 'buyer_id'\]/);
 assert.match(processor, /\['listing_reservation_locks', 'seller_id'\]/);
 assert.match(processor, /adminListDocuments/);
 assert.match(processor, /for \(const nested of \['messages', 'reads', 'confirmations'\]\)/);
-assert.match(processor, /collection: `chats\/\*\/\$\{nested\}`/);
+assert.match(planner, /collection: `chats\/\*\/\$\{nested\}`/, 'nested path category now originates in the pure grouped summarizer');
 assert.match(processor, /adminListDocuments\(`\$\{chatPath\}\/\$\{nested\}`, 500\)/);
 assert.match(processor, /residual_manifest_version: 'staging-erasure-residual-v2'/);
 assert.match(processor, /retained_count: plan\.retained_count/);
