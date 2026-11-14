@@ -1,4 +1,4 @@
-import { isRecoverableTransactionRetryError, transactionMatchesOfferRetry } from '../lib/transactionRetry';
+import { assertFreshOfferExpiry, isRecoverableTransactionRetryError, transactionMatchesOfferRetry } from '../lib/transactionRetry';
 import type { MarketplaceTransaction, Offer } from '../types';
 import { canonicalTransactionsBackend } from './canonicalTransactionsBackend';
 import { FirebaseRestClient } from './firebaseRest';
@@ -25,8 +25,10 @@ function assertSameOffer(stored: Offer, expected: Offer) {
 }
 
 function assertNotExpired(offer: Offer) {
-  const expiresAt = offer.expires_at ? Date.parse(offer.expires_at) : NaN;
-  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) throw new Error('OFFER_EXPIRED');
+  // Date.parse accepts impossible calendar dates; malformed source data must
+  // not enter a commercial accept/retry path. Missing legacy expiry is allowed,
+  // but a present, malformed expiry fails closed in the shared strict parser.
+  assertFreshOfferExpiry(offer.expires_at);
 }
 
 async function loadStoredOffer(expected: Offer, requiredStatus: 'pending' | 'accepted') {
