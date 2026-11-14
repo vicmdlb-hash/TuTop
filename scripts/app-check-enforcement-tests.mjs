@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { validateAppCheckPhysicalEvidence } from './app-check-enforcement-readiness.mjs';
+import { validateAppCheckPhysicalEvidence, requireAppCheckPhysicalEvidence } from './app-check-enforcement-readiness.mjs';
+import os from 'node:os';
+import path from 'node:path';
 
 const historical = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
 assert.equal(historical.physical_release_candidate, false);
@@ -155,6 +157,46 @@ for (const [patch, reason] of [
   assert.equal(result.ready, false);
   assert(result.errors.includes(reason));
 }
+
+// App Check QA diagnostics are exportable and must not reflect attacker-
+// controlled device slot values, which could themselves be private identifiers.
+for (const maliciousSlot of [
+  'tester@example.invalid', 'A1:B2:C3:D4:E5:F6',
+  'synthetic.header.signature',
+]) {
+  const evidence = structuredClone(valid);
+  evidence.devices[0].slot = maliciousSlot;
+  evidence.devices[0].physical = false;
+  evidence.devices[0].app_check_token_observed = false;
+  evidence.devices[0].verified_at = 'invalid';
+  const verdict = validateAppCheckPhysicalEvidence(evidence, now, candidate);
+  assert.equal(verdict.ready, false);
+  assert(verdict.errors.includes('device_slots_A_B_required'));
+  assert(verdict.errors.includes('device_unknown_not_physical'));
+  assert(verdict.errors.includes('device_unknown_token_not_observed'));
+  assert(verdict.errors.includes('device_unknown_evidence_stale_or_future'));
+  assert.equal(JSON.stringify(verdict).includes(maliciousSlot), false,
+    'untrusted device slot must not leak into QA diagnostics');
+}
+// Caller-supplied local filenames and malformed JSON fragments must be redacted
+// from exception messages. These tests do not access Firebase or real devices.
+const privateFilename = 'tester@example.invalid';
+assert.throws(
+  () => requireAppCheckPhysicalEvidence('./missing-private-qa/' + privateFilename + '.json', now),
+  err => err?.message === 'APP_CHECK_PHYSICAL_EVIDENCE_NOT_FOUND'
+);
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tutop-appcheck-synthetic-'));
+try {
+  const badJson = path.join(tmpDir, privateFilename + '.json');
+  fs.writeFileSync(badJson, '{"synthetic.email@example.invalid":', 'utf8');
+  assert.throws(
+    () => requireAppCheckPhysicalEvidence(badJson, now),
+    err => err?.message === 'APP_CHECK_PHYSICAL_EVIDENCE_INPUT_INVALID'
+  );
+} finally {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+console.log('PASS App Check QA diagnostics redact untrusted slots, paths and JSON parser fragments');
 
 console.log('PASS retired Build120 manifest remains historical App Check provenance and is not an active candidate');
 console.log('PASS App Check enforcement accepts fresh verified Android evidence only against an explicit candidate');
