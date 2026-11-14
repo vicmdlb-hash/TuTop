@@ -46,6 +46,9 @@ export type VerifiedAdultAction = {
   issuer: 'trusted_server';
   authorized: boolean;
   expiresAtMs: number;
+  // Bind one adult action to the exact current guardian consent epoch.
+  // The trusted issuer must rotate consentVersion on every new grant.
+  consentVersion: string;
 };
 export type CapabilityDecision = {
   allowed: boolean;
@@ -133,6 +136,10 @@ export function decideCapability(input: {
         || action.actorUid !== guardian?.guardianUid
         || action.actorUid === uid
         || action.capability !== 'share_personal_info' || action.authorized !== true
+        // A prior guardian action must not regain authority when a revoked
+        // grant is later replaced by a new consent epoch for the same adult.
+        || typeof action.consentVersion !== 'string'
+        || action.consentVersion !== guardian?.consentVersion
         || !Number.isFinite(action.expiresAtMs) || action.expiresAtMs <= nowMs)
         return DENIED('requires_guardian_action');
     }

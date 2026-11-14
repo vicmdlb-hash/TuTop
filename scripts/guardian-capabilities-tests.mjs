@@ -48,7 +48,8 @@ denied(check('share_personal_info', 'teen_13_17', { adultAction: {
 const adultAction = (extras = {}) => ({
   subjectUid: 'child', actorUid: 'adult-guardian',
   capability: 'share_personal_info', issuer: 'trusted_server',
-  authorized: true, expiresAtMs: nowMs + 60_000, ...extras,
+  authorized: true, expiresAtMs: nowMs + 60_000,
+  consentVersion: 'v1', ...extras,
 });
 const teenGuardian = guardian(['share_personal_info']);
 assert.equal(check('share_personal_info', 'teen_13_17', {
@@ -70,6 +71,24 @@ for (const invalidGrant of [
 denied(check('share_personal_info', 'teen_13_17', {
   guardian: teenGuardian, adultAction: adultAction({ actorUid: 'different-adult' }),
 }), 'requires_guardian_action');
+// Revoked consent cannot be replayed after an issuer creates a NEW grant
+// with the same guardian but a new consent version/epoch.
+denied(check('share_personal_info', 'teen_13_17', {
+  guardian: guardian(['share_personal_info'], { consentVersion: 'v2' }),
+  adultAction: adultAction({ consentVersion: 'v1' }),
+}), 'requires_guardian_action');
+denied(check('share_personal_info', 'teen_13_17', {
+  guardian: teenGuardian, adultAction: adultAction({ consentVersion: undefined }),
+}), 'requires_guardian_action');
+denied(check('share_personal_info', 'teen_13_17', {
+  guardian: teenGuardian, adultAction: adultAction({ consentVersion: ' ' }),
+}), 'requires_guardian_action');
+// Only a new trusted action bound to the new consent epoch can pass this
+// pure policy decision. Backend identity/provenance remain unproven.
+assert.equal(check('share_personal_info', 'teen_13_17', {
+  guardian: guardian(['share_personal_info'], { consentVersion: 'v2' }),
+  adultAction: adultAction({ consentVersion: 'v2' }),
+}).allowed, true);
 denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ expiresAtMs: nowMs }) }), 'requires_guardian_action');
 denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ authorized: false }) }), 'requires_guardian_action');
 denied(check('share_personal_info', 'teen_13_17', { adultAction: adultAction({ actorUid: 'child' }) }), 'requires_guardian_action');
