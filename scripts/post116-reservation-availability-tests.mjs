@@ -47,7 +47,7 @@ assert.match(detail, /if \(ownProduct \|\| blocked\) return;/);
 assert.match(card, /Disponibilidad por verificar/);
 assert.match(card, /reservedForViewer = \(reserved \|\| unverified\)/);
 assert.match(detail, /const reserved = product\.availability_status === 'reserved'/);
-assert.match(detail, /if \(ownProduct \|\| reserved\) return;/);
+assert.match(detail, /if \(ownProduct \|\| blocked\) return;/);
 const topiQuickReply = detail.split("['¿Sigue disponible?'")[1]?.split("</button>)}</div>", 1)[0];
 assert(topiQuickReply, 'Topi suggested-question buttons must exist in ProductDetail');
 assert.match(topiQuickReply, /disabled=\{reservedForViewer\}/,
