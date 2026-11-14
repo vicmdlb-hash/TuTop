@@ -17,6 +17,16 @@ const e={
  recovery:{owner_age_decryption_verified:true,decrypted_apk_sha256:APK,certificate_sha256:CERT},
  cases:{...Object.fromEntries(PRIVATE_SMOKE_CASES.map(k=>[k,'pass'])),topi_real_ai:'not_applicable'}
 };
+// Malformed caller-supplied provenance must fail closed in the exported pure
+// API, not throw or accidentally authorize a private QA self-report.
+for (const malformedProvenance of [null, undefined, false, [], 'malformed']) {
+  const verdict = assessPrivateNoAiSmoke(malformedProvenance, e, now);
+  assert.equal(verdict.status, 'BLOCKED');
+  assert.equal(verdict.private_smoke_evidence_complete, false);
+  assert.equal(verdict.release_blocked, true);
+  assert.equal(verdict.r6_release_blocked, true);
+  assert(verdict.errors.some((error) => error.includes('provenance must be an object')));
+}
 const good=assessPrivateNoAiSmoke(p,e,now);
 assert.equal(good.status,'EVIDENCE_COMPLETE_SELF_REPORTED');
 assert.equal(good.private_smoke_evidence_complete,true);

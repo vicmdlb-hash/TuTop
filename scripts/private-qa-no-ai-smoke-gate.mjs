@@ -56,7 +56,8 @@ export function parseQaProvenance(raw) {
 }
 export function assessPrivateNoAiSmoke(p,e,now=Date.now()) {
   const errors=[];
-  if (exactKeys(p, PROVENANCE_KEYS, 'provenance', errors)) {
+  const validProvenance = exactKeys(p, PROVENANCE_KEYS, 'provenance', errors);
+  if (validProvenance) {
     if (!SHA40.test(p.source_sha)) errors.push('source_sha invalid');
     if (!SHA256.test(p.qa_signed_apk_sha256)) errors.push('APK SHA-256 invalid');
     if (!SHA256.test(p.qa_certificate_sha256)) errors.push('signer SHA-256 invalid');
@@ -65,7 +66,10 @@ export function assessPrivateNoAiSmoke(p,e,now=Date.now()) {
     if (p.encryption !== 'age-public-recipient') errors.push('age encryption is required');
     if (p.release_ready !== 'false' || p.device_a_b_passed !== 'false') errors.push('fake release/physical success');
   }
-  if (exactKeys(e,EVIDENCE_KEYS,'evidence',errors)) {
+  // Never dereference invalid provenance even if the evidence shape is valid.
+  // A missing/invalid provenance always blocks the self-report; no exception.
+  const validEvidence = exactKeys(e,EVIDENCE_KEYS,'evidence',errors);
+  if (validEvidence && validProvenance) {
     if (e.schema !== 'tutop.private-smoke-no-ai.v1') errors.push('wrong schema');
     if (e.source_sha !== p.source_sha) errors.push('wrong source SHA');
     if (!SHA256.test(e.apk_sha256) || e.apk_sha256 !== p.qa_signed_apk_sha256) errors.push('wrong decrypted APK SHA');
