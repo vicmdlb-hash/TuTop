@@ -186,3 +186,29 @@ export function summarizeRetainedOperationalMatches(entries) {
     }))
     .sort((a, b) => a.collection.localeCompare(b.collection));
 }
+
+/**
+ * Aggregate nested retained chat documents without exporting chat paths or
+ * subject IDs as inventory "field" metadata. Actual Firestore reads remain
+ * on the trusted processor; this helper is synthetic and never authorizes
+ * destructive erasure or legal retention.
+ */
+export function summarizeNestedChatResidualCounts(entries) {
+  if (!Array.isArray(entries)) throw new Error('ERASURE_CHAT_NESTED_INVENTORY_INVALID');
+  const allowed = new Set(['messages', 'reads', 'confirmations']);
+  const totals = new Map();
+  for (const item of entries) {
+    if (!item || !allowed.has(item.nested) || !Number.isSafeInteger(item.count)
+      || item.count < 0) throw new Error('ERASURE_CHAT_NESTED_ENTRY_INVALID');
+    const total = (totals.get(item.nested) || 0) + item.count;
+    if (!Number.isSafeInteger(total)) throw new Error('ERASURE_CHAT_NESTED_TOTAL_INVALID');
+    totals.set(item.nested, total);
+  }
+  return [...totals.entries()].filter(([, count]) => count > 0)
+    .map(([nested, count]) => ({
+      collection: `chats/*/${nested}`,
+      field: 'nested_subcollection_inventory',
+      count,
+    }))
+    .sort((a, b) => a.collection.localeCompare(b.collection));
+}

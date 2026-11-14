@@ -1,4 +1,4 @@
-import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary, summarizeRetainedOperationalMatches } from './account-erasure-planner.mjs';
+import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary, summarizeRetainedOperationalMatches, summarizeNestedChatResidualCounts } from './account-erasure-planner.mjs';
 
 const projectId = String(process.env.TUTOP_FIREBASE_PROJECT_ID || '').trim();
 const REQUIRED = 'tutop-beta-vicmdlb-1356585881';
@@ -29,7 +29,7 @@ function fieldString(document, field) {
 const request = await adminGetDocument(`account_deletion_requests/${uid}`);
 if (!request) throw new Error('No existe solicitud de eliminación para ese UID.');
 const status = fieldString(request, 'status');
-if (!['pending', 'processing'].includes(status)) throw new Error(`Solicitud no procesable desde estado ${status || 'desconocido'}.`);
+if (!['pending', 'processing'].includes(status)) throw new Error('ACCOUNT_ERASURE_REQUEST_STATUS_INVALID');
 
 const directDeletes = [
   `user_private/${uid}`,
@@ -132,16 +132,16 @@ for (const collection of ['age_proofs_v2', 'guardian_grants_v2', 'adult_actions_
 // chats may keep message text/images and read/confirmation identifiers, so the
 // residual manifest must count them explicitly even though legal retention still
 // decides how long they remain.
+const nestedChatEvidence = [];
 for (const chatPath of [...retainedChatPaths].sort()) {
   for (const nested of ['messages', 'reads', 'confirmations']) {
     const docs = await adminListDocuments(`${chatPath}/${nested}`, 500);
-    if (docs.length) retained.push({
-      collection: `chats/*/${nested}`,
-      field: chatPath,
-      count: docs.length,
-    });
+    nestedChatEvidence.push({ nested, count: docs.length });
   }
 }
+// Preserve total residual counts without copying per-chat document paths to
+// report metadata. This does not approve retention or unblock --apply.
+retained.push(...summarizeNestedChatResidualCounts(nestedChatEvidence));
 
 // A deletion request may exist while a marketplace operation is still in flight,
 // but destructive erasure must wait until the transaction is terminal. Otherwise

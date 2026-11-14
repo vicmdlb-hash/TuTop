@@ -44,6 +44,15 @@ assert.match(processor, /adminRunCollectionGroupQueryAll\('targets'/);
 assert.match(processor, /ACCOUNT_ERASURE_BLOCK_EDGE_MISMATCH/);
 assert.match(processor, /ACCOUNT_ERASURE_USER_BLOCK_RESIDUAL/);
 assert.match(processor, /queryDeletePaths\.push\(\.\.\.blockPaths\)/);
+
+// The actual staging erasure processor must not emit a chat path as a
+// retained field, or echo an untrusted Firestore status into CI errors.
+assert.match(processor,/summarizeNestedChatResidualCounts\(nestedChatEvidence\)/);
+assert.doesNotMatch(processor,/field:\s*chatPath/);
+assert.match(processor,/ACCOUNT_ERASURE_REQUEST_STATUS_INVALID/);
+assert.doesNotMatch(processor,/Solicitud no procesable desde estado \$\{/);
+assert.match(planner,/export function summarizeNestedChatResidualCounts\(/);
+
 const adminSource = fs.readFileSync('scripts/staging-v2-admin.mjs','utf8');
 assert.match(adminSource, /export async function adminRunCollectionGroupQueryAll/);
 assert.match(adminSource, /allDescendants: true/);

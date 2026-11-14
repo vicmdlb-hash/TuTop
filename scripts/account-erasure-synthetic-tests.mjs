@@ -1,7 +1,37 @@
 import assert from 'node:assert/strict';
-import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary, summarizeRetainedOperationalMatches } from './account-erasure-planner.mjs';
+import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary, summarizeRetainedOperationalMatches, summarizeNestedChatResidualCounts } from './account-erasure-planner.mjs';
 
 const projectId = 'tutop-beta-vicmdlb-1356585881';
+// Nested chat inventory must preserve total counts while omitting all
+// individual chat paths, UIDs and other report-controlled identifiers.
+const nestedSummary = summarizeNestedChatResidualCounts([
+  {nested:'messages',count:3}, {nested:'reads',count:2},
+  {nested:'confirmations',count:0}, {nested:'messages',count:4},
+  {nested:'reads',count:1},
+]);
+assert.deepEqual(nestedSummary, [
+  {collection:'chats/*/messages',field:'nested_subcollection_inventory',count:7},
+  {collection:'chats/*/reads',field:'nested_subcollection_inventory',count:3},
+]);
+const residualPlan = buildAccountErasurePlan({
+  projectId, uid, status:'pending', retained:nestedSummary,
+});
+assert.equal(residualPlan.retained_count,10);
+assert.equal(residualRiskSummary(residualPlan).safe_to_execute_in_staging,false);
+assert.equal(JSON.stringify(nestedSummary).includes(uid),false);
+for (const bad of [
+  null, 'unknown', {}, [{nested:'media',count:1}],
+  [{nested:'messages',count:-1}], [{nested:'reads',count:1.5}],
+  [{nested:'reads',count:'1'}], [{nested:'reads'}],
+]) {
+  assert.throws(()=>summarizeNestedChatResidualCounts(bad),/ERASURE_CHAT_NESTED_/);
+}
+assert.throws(()=>summarizeNestedChatResidualCounts([
+  {nested:'messages',count:Number.MAX_SAFE_INTEGER},
+  {nested:'messages',count:1},
+]),/ERASURE_CHAT_NESTED_TOTAL_INVALID/);
+console.log('PASS nested chat residuals grouped by type, no individual paths or subjects exported');
+
 const uid = 'synthetic-user-001';
 
 const clean = buildAccountErasurePlan({
