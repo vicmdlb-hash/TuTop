@@ -87,9 +87,12 @@ export function validateAppCheckPhysicalEvidence(input, now = Date.now(), expect
   const fingerprints = devices.map((device) => String(device?.profile_fingerprint_sha256 || '').toLowerCase());
   if (fingerprints.some((value) => !SHA256.test(value)) || new Set(fingerprints).size !== devices.length) errors.push('independent_device_fingerprints_required');
   devices.forEach((device) => {
-    if (device?.physical !== true) errors.push(`device_${String(device?.slot || '?')}_not_physical`);
-    if (device?.app_check_token_observed !== true) errors.push(`device_${String(device?.slot || '?')}_token_not_observed`);
-    if (!freshTimestamp(device?.verified_at, now)) errors.push(`device_${String(device?.slot || '?')}_evidence_stale_or_future`);
+    // Device slots come from untrusted QA JSON. Never echo a supplied slot
+    // (it may contain an email, auth token or hardware identifier) into logs.
+    const slot = device?.slot === 'A' || device?.slot === 'B' ? device.slot : 'unknown';
+    if (device?.physical !== true) errors.push(`device_${slot}_not_physical`);
+    if (device?.app_check_token_observed !== true) errors.push(`device_${slot}_token_not_observed`);
+    if (!freshTimestamp(device?.verified_at, now)) errors.push(`device_${slot}_evidence_stale_or_future`);
   });
 
   const verifiedAt = Date.parse(String(input.verified_at || ''));
@@ -119,8 +122,12 @@ export function requireAppCheckPhysicalEvidence(filePath, now = Date.now()) {
   const clean = String(filePath || '').trim();
   if (!clean) throw new Error('APP_CHECK_PHYSICAL_EVIDENCE_REQUIRED');
   const resolved = path.resolve(clean);
-  if (!fs.existsSync(resolved)) throw new Error(`APP_CHECK_PHYSICAL_EVIDENCE_NOT_FOUND:${clean}`);
-  const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+  // File paths and JSON.parse errors can contain private usernames, tokens
+  // or fragments of the evidence. Expose fixed diagnostic categories only.
+  if (!fs.existsSync(resolved)) throw new Error('APP_CHECK_PHYSICAL_EVIDENCE_NOT_FOUND');
+  let parsed;
+  try { parsed = JSON.parse(fs.readFileSync(resolved, 'utf8')); }
+  catch { throw new Error('APP_CHECK_PHYSICAL_EVIDENCE_INPUT_INVALID'); }
   const result = validateAppCheckPhysicalEvidence(parsed, now);
   if (!result.ready) throw new Error(`APP_CHECK_PHYSICAL_EVIDENCE_INVALID:${result.errors.join(',')}`);
   return { ...result, path: resolved };
@@ -129,7 +136,7 @@ export function requireAppCheckPhysicalEvidence(filePath, now = Date.now()) {
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
   try {
     const result = requireAppCheckPhysicalEvidence(process.env.TUTOP_APP_CHECK_PHYSICAL_EVIDENCE_PATH);
-    console.log(`PASS App Check physical evidence gate: ${result.path}`);
+    console.log('PASS App Check physical evidence gate; local path withheld');
   } catch (error) {
     console.error(`DETENIDO: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(2);
