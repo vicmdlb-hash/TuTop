@@ -4,6 +4,7 @@ import fs from 'node:fs';
 const schema = fs.readFileSync('src/lib/listingSchemaV2.ts','utf8');
 const listings = fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8');
 const tx = fs.readFileSync('src/services/canonicalTransactionsBackend.ts','utf8');
+const offers = fs.readFileSync('src/services/canonicalOffersBackend.ts','utf8');
 const card = fs.readFileSync('src/components/ProductCard.tsx','utf8');
 const detail = fs.readFileSync('src/components/ProductDetail.tsx','utf8');
 const store = fs.readFileSync('src/store/useAppStore.ts','utf8');
@@ -11,18 +12,24 @@ const prepare = fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs','utf8')
 const lockRules = fs.readFileSync('scripts/harden-transaction-lock-rules.mjs','utf8');
 
 assert.match(schema, /availability_status\?: 'available' \| 'reserved'/);
-assert.match(listings, /availability_status: data\.availability_status === 'available' \|\| data\.availability_status === undefined \? 'available' : data\.availability_status === 'reserved' \? 'reserved' : 'unverified'/);
+assert.match(listings, /availability_status: !Number\.isSafeInteger\(data\.quantity\)/);
+assert.match(listings, /data\.availability_status === 'available' \|\| data\.availability_status === undefined \? 'available' : data\.availability_status === 'reserved' \? 'reserved' : 'unverified'/);
+assert.match(listings, /stock: Number\.isSafeInteger\(data\.quantity\)/);
 assert.match(listings, /availability_status: 'available' as const/);
 // Exercise the actual canonical projection expression, with no Firebase credentials.
-const availabilityMatch = listings.match(/availability_status: (data\.availability_status[^\n]+),\n\s*punto_encuentro:/);
+const availabilityMatch = listings.match(/availability_status: ([^\n]+),\n\s*punto_encuentro:/);
 assert(availabilityMatch, 'canonical availability projection must remain traceable');
 const projectAvailability = new Function('data', 'return (' + availabilityMatch[1] + ');');
-assert.equal(projectAvailability({ availability_status: 'available' }), 'available');
-assert.equal(projectAvailability({ availability_status: 'reserved' }), 'reserved');
-assert.equal(projectAvailability({}), 'available', 'legacy absent status remains compatible');
-assert.equal(projectAvailability({ availability_status: null }), 'unverified');
-assert.equal(projectAvailability({ availability_status: 'unexpected' }), 'unverified');
-assert.equal(projectAvailability({ availability_status: false }), 'unverified');
+assert.equal(projectAvailability({ quantity: 1, availability_status: 'available' }), 'available');
+assert.equal(projectAvailability({ quantity: 1, availability_status: 'reserved' }), 'reserved');
+assert.equal(projectAvailability({ quantity: 1 }), 'available', 'legacy absent status remains compatible');
+assert.equal(projectAvailability({ quantity: 1, availability_status: null }), 'unverified');
+assert.equal(projectAvailability({ quantity: 1, availability_status: 'unexpected' }), 'unverified');
+assert.equal(projectAvailability({ quantity: 1, availability_status: false }), 'unverified');
+for (const quantity of [undefined, null, 0, -1, 1.5, 100, '1']) {
+  assert.equal(projectAvailability({ quantity, availability_status: 'available' }), 'unverified',
+    'bad stock must never be projected as available');
+}
 
 assert.match(listings, /Number\(a\.availability_status !== 'available'\)/);
 
@@ -43,8 +50,8 @@ const assertActiveListing = new Function(
   stripTypeScriptTypes(activeSource) + '\nreturn assertActiveCanonicalListing;'
 )();
 const offerFixture = {listing_id:'listing-test',seller_id:'seller-test'};
-const reservationClient = (availability) => ({
-  getDocument: async () => ({id:'listing-test',data:{seller_id:'seller-test',status:'active',moderation_status:'approved',availability_status:availability}})
+const reservationClient = (availability, quantity = 1) => ({
+  getDocument: async () => ({id:'listing-test',data:{seller_id:'seller-test',status:'active',moderation_status:'approved',availability_status:availability,quantity}})
 });
 await assertActiveListing(reservationClient('available'),offerFixture);
 await assertActiveListing(reservationClient(undefined),offerFixture);
@@ -52,6 +59,19 @@ await assert.rejects(assertActiveListing(reservationClient('reserved'),offerFixt
 for (const bad of [null, 'unknown', false, 0]) {
   await assert.rejects(assertActiveListing(reservationClient(bad),offerFixture), /LISTING_AVAILABILITY_UNVERIFIED/);
 }
+const offerSource = offers.slice(
+  offers.indexOf('async function assertOfferableListing('),
+  offers.indexOf('\nfunction assertOfferNotExpired(')
+);
+assert(offerSource.startsWith('async function assertOfferableListing('));
+const assertOfferableListing = new Function(stripTypeScriptTypes(offerSource) + '\nreturn assertOfferableListing;')();
+await assertOfferableListing(reservationClient('available', 1),'listing-test','seller-test');
+await assertActiveListing(reservationClient('available', 1),offerFixture);
+for (const quantity of [undefined, null, 0, -1, 1.5, 100, '1']) {
+  await assert.rejects(assertActiveListing(reservationClient('available',quantity),offerFixture), /LISTING_STOCK_UNVERIFIED/);
+  await assert.rejects(assertOfferableListing(reservationClient('available',quantity),'listing-test','seller-test'), /LISTING_STOCK_UNVERIFIED/);
+}
+
 assert.match(schema, /availability_not_verified/);
 assert.match(schema, /product\.availability_status !== 'available'/);
 assert.match(schema, /product\.availability_status !== 'reserved'/);

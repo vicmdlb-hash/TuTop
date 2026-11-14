@@ -41,6 +41,8 @@ async function assertActiveCanonicalListing(client: FirebaseRestClient, offer: O
   if (listing.data.seller_id !== offer.seller_id) throw new Error('SELLER_MISMATCH');
   if (listing.data.status !== 'active') throw new Error('LISTING_NOT_ACTIVE');
   if (listing.data.moderation_status !== 'approved') throw new Error('LISTING_NOT_APPROVED');
+  // Do not accept an offer against malformed or zero canonical inventory.
+  if (!Number.isSafeInteger(listing.data.quantity) || listing.data.quantity < 1 || listing.data.quantity > 99) throw new Error('LISTING_STOCK_UNVERIFIED');
   if (listing.data.availability_status === 'reserved') throw new Error('LISTING_ALREADY_RESERVED');
   // Do not turn an invalid/null Firestore field into a reservation through an
   // older accepted offer. Omitted legacy availability remains supported.

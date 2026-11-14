@@ -114,7 +114,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     descripcion: data.description || undefined,
     precio_mxn: Number(data.price_mxn || 0),
     precio_negociable: data.negotiable,
-    stock: Math.max(1, Number(data.quantity || 1)),
+    stock: Number.isSafeInteger(data.quantity) && data.quantity >= 1 && data.quantity <= 99 ? data.quantity : 0,
     categoria: categoryLabel(data.category_id),
     subcategoria: data.subcategory_id,
     condicion: data.condition as Product['condicion'],
@@ -131,7 +131,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     moderation_status: data.moderation_status === 'flagged' ? 'flagged' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
     // Invalid/null remote availability is not consent to display a listing as offerable.
     // Only missing legacy V2 availability remains available for backwards compatibility.
-    availability_status: data.availability_status === 'available' || data.availability_status === undefined ? 'available' : data.availability_status === 'reserved' ? 'reserved' : 'unverified',
+    availability_status: !Number.isSafeInteger(data.quantity) || data.quantity < 1 || data.quantity > 99 ? 'unverified' : data.availability_status === 'available' || data.availability_status === undefined ? 'available' : data.availability_status === 'reserved' ? 'reserved' : 'unverified',
     punto_encuentro: 'Coordinar por Chat' as MeetingPoint,
     metodos_entrega: data.delivery_methods.map(legacyDelivery),
     shipping_available: data.shipping_available,
