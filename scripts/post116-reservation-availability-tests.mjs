@@ -67,7 +67,7 @@ assert(offerSource.startsWith('async function assertOfferableListing('));
 const assertOfferableListing = new Function(stripTypeScriptTypes(offerSource) + '\nreturn assertOfferableListing;')();
 await assertOfferableListing(reservationClient('available', 1),'listing-test','seller-test');
 await assertActiveListing(reservationClient('available', 1),offerFixture);
-for (const quantity of [undefined, null, 0, -1, 1.5, 100, '1']) {
+for (const quantity of [Number.NaN, null, 0, -1, 1.5, 100, '1']) {
   await assert.rejects(assertActiveListing(reservationClient('available',quantity),offerFixture), /LISTING_STOCK_UNVERIFIED/);
   await assert.rejects(assertOfferableListing(reservationClient('available',quantity),'listing-test','seller-test'), /LISTING_STOCK_UNVERIFIED/);
 }
