@@ -45,12 +45,24 @@ export function evaluateRecoveryRateLimit(attempts: RecoveryAttempt[], now = Dat
     .filter((attempt) => now - attempt.at <= ACCOUNT_RECOVERY_POLICY.attempt_window_ms)
     .sort((a, b) => b.at - a.at);
 
-  const failed = recent.filter((attempt) => attempt.status === 'challenge_failed');
-  if (failed.length >= ACCOUNT_RECOVERY_POLICY.max_attempts_per_window) {
-    const newestFailure = failed[0]?.at || now;
-    const unlockAt = newestFailure + ACCOUNT_RECOVERY_POLICY.temporary_lock_ms;
-    if (unlockAt > now) {
-      return { allowed: false, retry_after_ms: unlockAt - now, recent_attempts: recent.length, reason: 'temporarily_locked' };
+  // The normal attempt window is 15 minutes, but a lock lasts 30.
+  // Looking only at "recent" would accidentally unlock failed challenges
+  // as soon as the first 15 minutes elapsed. Examine the full potential
+  // lock horizon (window + lock), and require that the threshold failures
+  // actually occurred inside ONE attempt window before applying the lock.
+  const failures = attempts
+    .filter((attempt) => attempt.status === 'challenge_failed'
+      && now - attempt.at < ACCOUNT_RECOVERY_POLICY.attempt_window_ms + ACCOUNT_RECOVERY_POLICY.temporary_lock_ms)
+    .sort((a, b) => b.at - a.at);
+  for (let i = 0; i <= failures.length - ACCOUNT_RECOVERY_POLICY.max_attempts_per_window; i += 1) {
+    const newest = failures[i].at;
+    const oldest = failures[i + ACCOUNT_RECOVERY_POLICY.max_attempts_per_window - 1].at;
+    if (newest - oldest <= ACCOUNT_RECOVERY_POLICY.attempt_window_ms) {
+      const remainingMs = newest + ACCOUNT_RECOVERY_POLICY.temporary_lock_ms - now;
+      if (remainingMs > 0) {
+        return { allowed: false, retry_after_ms: remainingMs,
+          recent_attempts: recent.length, reason: 'temporarily_locked' };
+      }
     }
   }
 
