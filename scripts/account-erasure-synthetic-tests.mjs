@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary, summarizeRetainedOperationalMatches, summarizeNestedChatResidualCounts } from './account-erasure-planner.mjs';
 
 const projectId = 'tutop-beta-vicmdlb-1356585881';
+
+const uid = 'synthetic-user-001';
+
 // Nested chat inventory must preserve total counts while omitting all
 // individual chat paths, UIDs and other report-controlled identifiers.
 const nestedSummary = summarizeNestedChatResidualCounts([
@@ -31,8 +34,6 @@ assert.throws(()=>summarizeNestedChatResidualCounts([
   {nested:'messages',count:1},
 ]),/ERASURE_CHAT_NESTED_TOTAL_INVALID/);
 console.log('PASS nested chat residuals grouped by type, no individual paths or subjects exported');
-
-const uid = 'synthetic-user-001';
 
 const clean = buildAccountErasurePlan({
   projectId, uid, status: 'pending',
