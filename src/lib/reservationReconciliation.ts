@@ -24,7 +24,7 @@ export function reservationReconciliationPlan(input: {
     return { kind: 'none', reason: 'reservation_input_invalid' };
   }
   const { transaction, listingStatus } = input;
-  const nowMs = input.nowMs ?? Date.now();
+  const nowMs = input.nowMs === undefined ? Date.now() : input.nowMs;
 
   if (transaction.status === 'completed') {
     // A truthy malformed confirmation is NOT proof of bilateral completion.
