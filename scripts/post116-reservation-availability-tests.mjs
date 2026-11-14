@@ -32,6 +32,32 @@ assert.match(tx, /reservationAvailabilityWrite\(client, offer\.listing_id, 'rese
 assert.match(tx, /reservationAvailabilityWrite\(client, transaction\.listing_id, 'available'/);
 assert.match(tx, /LISTING_ALREADY_RESERVED/);
 
+// Exercise the real canonical reservation precondition with fake reads: no Firebase.
+const { stripTypeScriptTypes } = await import('node:module');
+const activeSource = tx.slice(
+  tx.indexOf('async function assertActiveCanonicalListing('),
+  tx.indexOf('\nfunction assertCancelable(')
+);
+assert(activeSource.startsWith('async function assertActiveCanonicalListing('));
+const assertActiveListing = new Function(
+  stripTypeScriptTypes(activeSource) + '\nreturn assertActiveCanonicalListing;'
+)();
+const offerFixture = {listing_id:'listing-test',seller_id:'seller-test'};
+const reservationClient = (availability) => ({
+  getDocument: async () => ({id:'listing-test',data:{seller_id:'seller-test',status:'active',moderation_status:'approved',availability_status:availability}})
+});
+await assertActiveListing(reservationClient('available'),offerFixture);
+await assertActiveListing(reservationClient(undefined),offerFixture);
+await assert.rejects(assertActiveListing(reservationClient('reserved'),offerFixture), /LISTING_ALREADY_RESERVED/);
+for (const bad of [null, 'unknown', false, 0]) {
+  await assert.rejects(assertActiveListing(reservationClient(bad),offerFixture), /LISTING_AVAILABILITY_UNVERIFIED/);
+}
+assert.match(schema, /availability_not_verified/);
+assert.match(schema, /product\.availability_status !== 'available'/);
+assert.match(schema, /product\.availability_status !== 'reserved'/);
+assert.match(schema, /negotiable: Boolean\(product\.precio_negociable\)/);
+
+
 assert.match(prepare, /availability_status/);
 assert.match(prepare, /affectedKeys\(\)\.hasAny\(\['availability_status'\]\)/);
 assert.match(lockRules, /availability_status == 'reserved'/);
@@ -88,7 +114,6 @@ console.log('PASS seller finalization, mutual cancellation and no-show use curre
 
 // Execute the actual terminal write builder with fake, credential-free Firestore
 // reads. Version guards are assertions on generated writes, not live Firebase E2E.
-const { stripTypeScriptTypes } = await import('node:module');
 function sourceBetween(startToken, endToken) {
   const start = tx.indexOf(startToken);
   const end = tx.indexOf(endToken, start);

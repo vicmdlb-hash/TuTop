@@ -42,6 +42,10 @@ async function assertActiveCanonicalListing(client: FirebaseRestClient, offer: O
   if (listing.data.status !== 'active') throw new Error('LISTING_NOT_ACTIVE');
   if (listing.data.moderation_status !== 'approved') throw new Error('LISTING_NOT_APPROVED');
   if (listing.data.availability_status === 'reserved') throw new Error('LISTING_ALREADY_RESERVED');
+  // Do not turn an invalid/null Firestore field into a reservation through an
+  // older accepted offer. Omitted legacy availability remains supported.
+  if (listing.data.availability_status !== undefined
+    && listing.data.availability_status !== 'available') throw new Error('LISTING_AVAILABILITY_UNVERIFIED');
 }
 
 function assertCancelable(transaction: MarketplaceTransaction, actor: string) {

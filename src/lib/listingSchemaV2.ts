@@ -80,6 +80,10 @@ export function legacyProductToListingV2(product: Product, now = new Date().toIS
   if (!product.vendedor_id) blockers.push('missing_seller_id');
   if (!product.titulo?.trim()) blockers.push('missing_title');
   if (!Number.isFinite(product.precio_mxn) || product.precio_mxn < 0) blockers.push('invalid_price');
+  // Never silently migrate an explicit unknown availability into an offerable listing.
+  if (product.availability_status !== undefined
+    && product.availability_status !== 'available'
+    && product.availability_status !== 'reserved') blockers.push('availability_not_verified');
 
   const photos = (product.imagenes_url?.length ? product.imagenes_url : [product.imagen_url]).filter(Boolean).slice(0, 4);
   if (!photos.length) blockers.push('missing_photo');
@@ -109,7 +113,7 @@ export function legacyProductToListingV2(product: Product, now = new Date().toIS
       description: (product.descripcion || '').trim().slice(0, 3000),
       attributes: cleanAttributes(product.attributes),
       price_mxn: Math.max(0, product.precio_mxn),
-      negotiable: true,
+      negotiable: Boolean(product.precio_negociable),
       quantity: Math.max(1, Math.min(99, product.stock || 1)),
       condition: typeof product.attributes?.condition === 'string' ? product.attributes.condition.slice(0, 80) : undefined,
       delivery_methods,
