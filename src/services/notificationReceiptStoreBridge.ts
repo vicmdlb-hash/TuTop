@@ -7,6 +7,9 @@ if (nationalSchemaEnabled()) {
     markNotificationRead: (notificationId: string) => {
       const state = useAppStore.getState();
       const notification = state.notifications.find((item) => item.id === notificationId);
+      // UI and native events may supply stale IDs from a previous account.
+      // Do not request a remote receipt for an ID absent from the active store.
+      if (!notification) return;
       useAppStore.setState((current) => ({
         notifications: current.notifications.map((item) => item.id === notificationId ? { ...item, read: true } : item),
       }));
@@ -20,6 +23,8 @@ if (nationalSchemaEnabled()) {
     markAllNotificationsRead: () => {
       const state = useAppStore.getState();
       const unread = state.notifications.filter((item) => !item.read);
+      // Avoid an empty remote receipt request on already-read notifications.
+      if (!unread.length) return;
       const chatIds = [...new Set(unread.filter((item) => item.kind === 'message' && item.chat_id).map((item) => item.chat_id as string))];
       useAppStore.setState((current) => ({ notifications: current.notifications.map((item) => ({ ...item, read: true })) }));
       for (const chatId of chatIds) useAppStore.getState().markChatRead(chatId);

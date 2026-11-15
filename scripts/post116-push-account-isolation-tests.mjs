@@ -1,11 +1,72 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
+import { compileTypescriptFixture } from './typescript-fixture-compiler.mjs';
 import './native-notification-router-account-switch-integration-tests.mjs';
 import { canApplyNativeNotificationSnapshot, canRouteNativeNotification } from '../src/lib/nativeNotificationSessionGuard.ts';
 import { isCurrentPushSession } from '../src/lib/pushBackendSessionWitness.ts';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 
+// Exercise the real receipt-store bridge with a synthetic Zustand and backend.
+// Unknown IDs from stale A events must not trigger a write on active B.
+const bridgeFixtureJs = compileTypescriptFixture('src/services/notificationReceiptStoreBridge.ts');
+function receiptBridgeFixture(notifications) {
+  const events = [];
+  const state = {
+    notifications,
+    markChatRead: (id) => events.push('chat:' + id),
+  };
+  const store = {
+    getState: () => state,
+    setState: (updater) => Object.assign(state,
+      typeof updater === 'function' ? updater(state) : updater),
+  };
+  const backend = {
+    markNotificationRead: async (id) => { events.push('remote:' + id); },
+    markAllNotificationsRead: async (ids) => { events.push('remote-batch:' + ids.join(',')); },
+  };
+  const imports = {
+    '../store/useAppStore': { useAppStore: store },
+    './nationalBackend': { nationalSchemaEnabled: () => true },
+    './pushBackend': { pushBackend: backend },
+  };
+  const module = { exports: {} };
+  vm.runInNewContext(bridgeFixtureJs, {
+    module, exports: module.exports, console: { warn: () => events.push('masked-error') },
+    require: (id) => {
+      if (!Object.prototype.hasOwnProperty.call(imports, id)) {
+        throw new Error('Unexpected receipt bridge fixture dependency: ' + id);
+      }
+      return imports[id];
+    },
+  }, { timeout: 1500 });
+  return { state, events };
+}
+{
+  const f = receiptBridgeFixture([
+    { id: 'B-notice', kind: 'message', chat_id: 'B-chat', read: false },
+  ]);
+  f.state.markNotificationRead('A-stale-notice');
+  assert.deepEqual(f.events, [], 'unknown A notification must not call B backend');
+  assert.equal(f.state.notifications[0].read, false, 'unknown id must not alter B state');
+  f.state.markNotificationRead('B-notice');
+  assert.deepEqual(f.events, ['chat:B-chat', 'remote:B-notice']);
+  assert.equal(f.state.notifications[0].read, true);
+  f.state.markAllNotificationsRead();
+  assert.deepEqual(f.events, ['chat:B-chat', 'remote:B-notice'],
+    'already-read batch must not emit any empty remote receipt');
+}
+{
+  const f = receiptBridgeFixture([
+    { id: 'n1', kind: 'system', read: false },
+    { id: 'n2', kind: 'message', chat_id: 'owner-chat', read: false },
+  ]);
+  f.state.markAllNotificationsRead();
+  assert.deepEqual(f.events, ['chat:owner-chat', 'remote-batch:n1,n2'],
+    'known unread batch keeps owner-scoped receipt functionality');
+  assert(f.state.notifications.every(item => item.read === true));
+}
 // Synthetic proof of post-await session isolation, no real credentials.
 const witness={uid:'A',refreshToken:'synthetic-token-A1'};
 assert.equal(isCurrentPushSession(witness,{...witness},{...witness}),true);
