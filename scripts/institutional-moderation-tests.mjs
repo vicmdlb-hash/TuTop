@@ -95,4 +95,20 @@ assert.match(noShowSection, /requireNoShowClaimDecision\(admin, current\.data, s
 assert.match(noShowSection, /NO_SHOW_CLAIM_VERSION_UNVERIFIED/);
 assert.match(noShowSection, /expectedUpdateTime: current\.updateTime/);
 
+// Existing listing and account-erasure administrative writes must also be
+// compare-and-swap, with the stored listing institution as the audit source.
+const listingSection = backendSource.split('async moderateListing(')[1]
+  ?.split('async updateAccountDeletionRequest(')[0];
+assert(listingSection);
+assert.match(listingSection, /LISTING_VERSION_UNVERIFIED/);
+assert.match(listingSection, /expectedUpdateTime: listing\.updateTime/);
+assert.match(listingSection, /institutionId: listingInstitution \|\| undefined/);
+assert.doesNotMatch(listingSection, /institutionId: institutionId \|\| listingInstitution/);
+const erasureSection = backendSource.split('async updateAccountDeletionRequest(')[1]
+  ?.split('async resolveModerationCase(')[0];
+assert(erasureSection);
+assert.match(erasureSection, /ACCOUNT_DELETION_VERSION_UNVERIFIED/);
+assert.match(erasureSection, /expectedUpdateTime: current\.updateTime/);
+assert.match(erasureSection, /ACCOUNT_DELETION_INVALID_TRANSITION/);
+
 console.log('Institutional moderation tests: PASS');
