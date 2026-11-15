@@ -653,15 +653,7 @@ service cloud.firestore {
     }
 
     match /reports/{reportId} {
-      // Reports belong to their reporter and authorized moderation roles only.
-      // Do not rely on a client-supplied institution filter for access control.
-      allow read: if (signedIn() && resource.data.created_by == request.auth.uid)
-        || (isAdmin() && (
-          get(adminDoc()).data.role in ['super_admin', 'trust_safety', 'moderator']
-          || (get(adminDoc()).data.role == 'institution_moderator'
-            && get(adminDoc()).data.institution_id is string
-            && resource.data.institution_id == get(adminDoc()).data.institution_id)
-        ));
+      allow read: if isAdmin() || (signedIn() && resource.data.created_by == request.auth.uid);
       allow create: if signedIn() && notSuspended()
         && request.resource.data.keys().hasOnly(['created_by','target_type','target_id','reason','status','institution_id','priority','created_at','updated_at'])
         && request.resource.data.created_by == request.auth.uid
@@ -672,66 +664,15 @@ service cloud.firestore {
         && request.resource.data.status == 'open'
         && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
       allow update: if isAdmin()
-        && (
-          get(adminDoc()).data.role in ['super_admin', 'trust_safety', 'moderator']
-          || (get(adminDoc()).data.role == 'institution_moderator'
-            && get(adminDoc()).data.institution_id is string
-            && resource.data.institution_id == get(adminDoc()).data.institution_id)
-        )
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','priority','updated_at'])
-        && resource.data.status in ['open','reviewing']
-        && request.resource.data.status in ['reviewing','resolved','dismissed']
-        && !(resource.data.status == 'reviewing' && request.resource.data.status == 'reviewing')
+        && request.resource.data.status in ['open','reviewing','resolved','dismissed']
         && fresh(request.resource.data.updated_at);
       allow delete: if false;
     }
 
-    match /moderation_cases/{caseId} {
-      // Read visibility is scoped independently from the client query.
-      // A general moderator can inspect credential cases but cannot decide them;
-      // a separate reader-kind filter remains for the privacy acceptance gate.
-      allow read: if isAdmin() && (
-        get(adminDoc()).data.role in ['super_admin', 'trust_safety', 'moderator']
-        || (get(adminDoc()).data.role == 'institution_moderator'
-          && get(adminDoc()).data.institution_id is string
-          && resource.data.institution_id == get(adminDoc()).data.institution_id)
-        || (get(adminDoc()).data.role == 'verification_reviewer'
-          && resource.data.kind == 'credential')
-        || (get(adminDoc()).data.role == 'support'
-          && resource.data.kind == 'appeal')
-      );
-      // Only status decisions, never arbitrary field replacements or deletions.
-      // Trusted server issuers remain a separate unsatisfied launch requirement.
-      allow update: if isAdmin() && (
-        get(adminDoc()).data.role in ['super_admin', 'trust_safety']
-        || (get(adminDoc()).data.role == 'moderator'
-          && resource.data.kind != 'credential')
-        || (get(adminDoc()).data.role == 'institution_moderator'
-          && get(adminDoc()).data.institution_id is string
-          && resource.data.institution_id == get(adminDoc()).data.institution_id
-          && resource.data.kind != 'credential')
-        || (get(adminDoc()).data.role == 'verification_reviewer'
-          && resource.data.kind == 'credential')
-        || (get(adminDoc()).data.role == 'support'
-          && resource.data.kind == 'appeal')
-      )
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
-        && resource.data.status in ['open','reviewing']
-        && request.resource.data.status in ['reviewing','resolved','dismissed']
-        && !(resource.data.status == 'reviewing' && request.resource.data.status == 'reviewing')
-        && fresh(request.resource.data.updated_at);
-      allow create, delete: if false;
-    }
+    match /moderation_cases/{caseId} { allow read, write: if isAdmin(); }
     match /audit_log/{entryId} {
-      // Audit visibility must be enforced by Rules, not only UI query filters.
-      // Institution moderators may list only records from their own institution;
-      // verification/support roles cannot directly bypass the client queue.
-      allow read: if isAdmin() && (
-        get(adminDoc()).data.role in ['super_admin', 'trust_safety', 'moderator']
-        || (get(adminDoc()).data.role == 'institution_moderator'
-          && get(adminDoc()).data.institution_id is string
-          && resource.data.institution_id == get(adminDoc()).data.institution_id)
-      );
+      allow read: if isAdmin();
       allow create: if isAdmin() && request.resource.data.admin_uid == request.auth.uid && fresh(request.resource.data.created_at);
       allow update, delete: if false;
     }
