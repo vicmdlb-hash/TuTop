@@ -120,7 +120,11 @@ assert.match(backendReports, /if \(client\.currentSession\?\.uid !== uid\) throw
 assert.match(uiReports, /shown\?\.source !== 'firebase-ai'/);
 assert.match(uiReports, /useAppStore\.getState\(\)\.user\.id !== reporterUid/);
 assert.match(uiReports, /reportPendingRef\.current/);
-assert.match(uiReports, /answer\.source === 'firebase-ai' && <button/);
+assert.match(uiReports, /answer\.source === 'firebase-ai' && answerReportTarget && <button/);
+assert.match(uiReports, /reportTarget = answerReportTarget/);
+assert.match(uiReports, /globalThis\.crypto\?\.randomUUID\?\.\(\)/);
+assert.match(uiReports, /setAnswerReportTarget\(null\)/);
+assert.doesNotMatch(uiReports, /topi-firebase-ai:\$\{shown\.route\}\`/);
 assert.match(uiReports, /onlineBackend\.submitReport\('ai_response',/);
 assert.doesNotMatch(uiReports, /submitReport\('ai_response'[^\n]*(?:answer\.text|question)/);
 console.log('PASS Topi AI answer reporting opt-in, account-bound, guarded and without automatic raw-text capture');
