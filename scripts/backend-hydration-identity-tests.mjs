@@ -281,6 +281,10 @@ runInNewContext(compileTypescriptFixture('src/store/useAppStore.ts'), {
       '../lib/publicDiscovery': { canViewerOpenListing },
       '../lib/backendHydrationIdentity': { isLiveAccountSnapshot },
       '../lib/firebaseSharedSessionGuard': { sameFirebaseSession },
+      '../lib/syncErrorPrivacy': {
+        safeSyncFailureNotice: () =>
+          'No pudimos sincronizar TuTop. Comprueba tu conexión e inténtalo de nuevo.',
+      },
       '../services/nationalBackend': { nationalSchemaEnabled: () => true },
     };
     assert(Object.hasOwn(deps, id), 'Unexpected synthetic store dependency: ' + id);
