@@ -115,11 +115,22 @@ export default function TopiSupportAssistant() {
       setReportMessage('El motivo incluye datos sensibles. Omítelos y vuelve a reportar.');
       return;
     }
+    // A clear human-selected category enables review without importing the
+    // model's full answer/question or inferring sensitive attributes.
+    const categoryOption = window.prompt('Categoría del reporte: 1=Exactitud, 2=Seguridad, 3=Privacidad, 4=Otro')?.trim();
+    const category = ({ '1': 'exactitud', '2': 'seguridad', '3': 'privacidad', '4': 'otro' } as const)[categoryOption as '1'|'2'|'3'|'4'];
+    if (!category) {
+      if (categoryOption) setReportMessage('Selecciona una categoría del 1 al 4 para enviar el reporte.');
+      return;
+    }
+    const classifiedReason = `[${category}] ${reason}`;
+    if (classifiedReason.length > 500
+      || serial !== reportContextSerial.current || useAppStore.getState().user.id !== reporterUid) return;
     reportPendingRef.current = true;
     setReportBusy(true);
     setReportMessage(null);
     try {
-      await onlineBackend.submitReport('ai_response', reportTarget, reason);
+      await onlineBackend.submitReport('ai_response', reportTarget, classifiedReason);
       if (serial === reportContextSerial.current && useAppStore.getState().user.id === reporterUid) {
         setReportMessage('Reporte de respuesta de IA enviado para revisión.');
       }
