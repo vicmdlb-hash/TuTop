@@ -57,7 +57,7 @@ async function seed(band, guardianOverride) {
     });
     if (band !== null) {
       await setDoc(doc(db, 'age_proofs_v2/seller'),
-        typeof band === 'string' ? age(band) : band);
+        typeof band === 'string' ? age(band, guardianOverride ? { guardian: guardianOverride } : {}) : band);
     }
     if (guardianOverride) {
       await setDoc(doc(db, 'guardian_grants_v2/seller'), guardianOverride);
