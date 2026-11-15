@@ -202,8 +202,18 @@ for (const name of ['reports', 'noShowClaims', 'auditLog']) {
 }
 assert.match(moderationDashboard, /<div role="alert" className="mt-4 rounded-2xl/);
 assert.doesNotMatch(moderationDashboard, /\.catch\(\(\) => \[\]\)/);
-assert.match(caseCard, /!closed && canDecide/);
-assert.match(caseCard, /!closed && !canDecide/);
+// Case transitions must match backend workflow: only open -> reviewing.
+assert.match(caseCard, /const status = String\(item\.data\.status \|\| 'unknown'\)/);
+assert.match(caseCard, /const actionable = status === 'open' \|\| status === 'reviewing'/);
+assert.match(caseCard, /actionable && canDecide/);
+assert.match(caseCard, /status === 'open' && <SmallButton/);
+assert.match(caseCard, /actionable && !canDecide/);
+assert.match(caseCard, /!actionable && !closed/);
+assert.match(caseCard, /Estado no verificable/);
+assert.match(moderationDashboard, /const activeReports = reports\.filter\(\(item\) => \['open', 'reviewing'\]/);
+assert.match(moderationDashboard, /const invalidReportCount = reports\.filter/);
+assert.match(moderationDashboard, /item\.data\.status === 'open' && <SmallButton disabled=\{busy===item\.id\}/);
+assert.match(moderationDashboard, /reporte\(s\) con estado no reconocido/);
 console.log('PASS admin queue failures are visible and unauthorized actions are read-only');
 
 console.log('Institutional moderation tests: PASS');
