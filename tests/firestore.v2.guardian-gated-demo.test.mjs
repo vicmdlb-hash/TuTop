@@ -147,7 +147,23 @@ test('teen age alone is insufficient to create an offer', async () => {
 test('teen with current guardian make_offer grant can submit an offer', async () => {
   await seed('teen_13_17', 'adult', grant(['make_offer']));
   await seedChat({ vetted: true });
-  await assertSucceeds(createOffer(verifiedContext(env, 'buyer').firestore()));
+  try {
+    await assertSucceeds(createOffer(verifiedContext(env, 'buyer').firestore()));
+  } catch (error) {
+    // Diagnostic is confined to the disposable DEMO emulator. Keep this
+    // positive contract failing on denial; never print real auth or user data.
+    const url = `http://${hostname}:${Number(portRaw || 8080)}/emulator/v1/projects/${process.env.GCLOUD_PROJECT}:ruleCoverage`;
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      const report = await response.text();
+      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_STATUS', response.status);
+      // Bound output and avoid dumping the entire ruleset/test database.
+      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_TAIL', report.slice(-9500));
+    } catch {
+      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_UNAVAILABLE');
+    }
+    throw error;
+  }
 });
 
 test('under-13 child cannot independently open direct chat even with signed guardian grant', async () => {
