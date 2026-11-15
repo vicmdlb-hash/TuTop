@@ -133,6 +133,7 @@ export const scopedAdminBackend = {
   async reports(limit = 100) {
     const firebase = client();
     const admin = await this.context();
+    if (admin.role === 'institution_moderator' && !admin.institution_id?.trim()) throw new Error('INSTITUTION_SCOPE_REQUIRED');
     const filters = admin.role === 'institution_moderator'
       ? [{ field: 'institution_id', op: 'EQUAL' as const, value: admin.institution_id! }]
       : [];
@@ -144,6 +145,7 @@ export const scopedAdminBackend = {
     const firebase = client();
     const admin = await this.context();
     if (admin.role === 'verification_reviewer' || admin.role === 'support') throw new Error('ROLE_SCOPE_DENIED');
+    if (admin.role === 'institution_moderator' && !admin.institution_id?.trim()) throw new Error('INSTITUTION_SCOPE_REQUIRED');
     const filters = admin.role === 'institution_moderator'
       ? [{ field: 'institution_id', op: 'EQUAL' as const, value: admin.institution_id! }]
       : [];
@@ -153,7 +155,8 @@ export const scopedAdminBackend = {
   async auditLog(limit = 100) {
     const firebase = client();
     const admin = await this.context();
-    if (admin.role === 'institution_moderator' && admin.institution_id) {
+    if (admin.role === 'institution_moderator') {
+      if (!admin.institution_id?.trim()) throw new Error('INSTITUTION_SCOPE_REQUIRED');
       return firebase.runQuery<any>('audit_log', [{ field: 'institution_id', op: 'EQUAL', value: admin.institution_id }], [{ field: 'created_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
     }
     if (admin.role === 'verification_reviewer' || admin.role === 'support') return [];
