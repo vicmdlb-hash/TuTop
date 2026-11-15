@@ -39,13 +39,19 @@ const helper = `    function listingRateLimitConsumed() {
     // the same atomic request; it does not authorize the bucket write.
     function offerRateLimitConsumed() {
       let bucket = /databases/$(database)/documents/rate_limits/$(request.auth.uid + '-offer_create');
+      // Reuse the same before/after snapshots. Every allowed branch still
+      // requires an atomic counter create/increment/reset; the bucket Rules
+      // independently enforce signed UID, action, cap, timestamps and reset.
+      let beforeExists = exists(bucket);
+      let before = beforeExists ? get(bucket).data : null;
+      let after = getAfter(bucket).data;
       return existsAfter(bucket)
         && (
-          (!exists(bucket) && getAfter(bucket).data.count == 1)
+          (!beforeExists && after.count == 1)
           ||
-          (exists(bucket) && (
-            getAfter(bucket).data.count == get(bucket).data.count + 1
-            || (getAfter(bucket).data.count == 1 && getAfter(bucket).data.window_start != get(bucket).data.window_start)
+          (beforeExists && (
+            after.count == before.count + 1
+            || (after.count == 1 && after.window_start != before.window_start)
           ))
         );
     }
