@@ -631,7 +631,7 @@ export class TuTopOnlineBackend {
     }
   }
 
-  async submitReport(targetType: 'product' | 'user' | 'chat', targetId: string, reason: string) {
+  async submitReport(targetType: 'product' | 'user' | 'chat' | 'ai_response', targetId: string, reason: string) {
     const client = this.getClient();
     const uid = client.currentSession?.uid;
     if (!uid) throw new Error('AUTH_REQUIRED');
@@ -642,6 +642,7 @@ export class TuTopOnlineBackend {
     const at = nowIso();
     const report = { created_by: uid, target_type: targetType, target_id: cleanTarget, reason: cleanReason, status: 'open', created_at: at, updated_at: at };
     if (!v2SnapshotMode()) {
+      if (client.currentSession?.uid !== uid) throw new Error('SESSION_CHANGED');
       await client.setDocument(`reports/${reportId}`, report, { exists: false });
       return reportId;
     }
