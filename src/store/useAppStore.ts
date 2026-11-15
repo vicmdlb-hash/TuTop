@@ -143,9 +143,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addProduct: (product) => {
     const actorUid = get().user.id;
+    const actorSession = onlineBackend.session;
     set((state) => ({ products: [product, ...state.products] }));
     void onlineBackend.createProduct(product).catch((error) => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       set((state) => ({ products: state.products.filter((item) => item.id !== product.id) }));
       reportSyncError(set, error);
     });
@@ -192,10 +194,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addChat: (chat) => {
     const actorUid = get().user.id;
+    const actorSession = onlineBackend.session;
     if (!actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)) return;
     set((state) => ({ chats: [chat, ...state.chats] }));
     void onlineBackend.createChat(chat).catch((error) => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       reportSyncError(set, error);
     });
   },
@@ -204,6 +208,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   contactProduct: (productId) => {
     const state = get();
     const actorUid = state.user.id;
+    const actorSession = onlineBackend.session;
     const product = state.products.find((item) => item.id === productId);
     if (!actorUid || !product || product.vendedor_id === actorUid
       || !canViewerOpenListing(product, state.user.id, nationalSchemaEnabled())) return null;
@@ -226,6 +231,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((current) => ({ chats: [chat, ...current.chats] }));
       void onlineBackend.createChat(chat).catch((error) => {
         if (get().user.id !== actorUid) return;
+        if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
         set((current) => ({
           chats: current.chats.filter((item) => item.id !== chatId),
           activeChatId: current.activeChatId === chatId ? null : current.activeChatId,
