@@ -47,6 +47,8 @@ vm.runInNewContext(js, {
       supportNode: (route) => ({ title: route, prompt: 'Ayuda', choices: route === 'root'
         ? [{ id: 'security', next: 'security', label: 'Seguridad' }] : [] }),
     };
+    if (name === '../services/onlineBackend') return { onlineBackend: { submitReport: async () => 'synthetic-report' } };
+    if (name === '../store/useAppStore') return { useAppStore: { getState: () => ({ user: { id: 'synthetic-user' } }) } };
     if (name === '../services/topiConsumerSupport') return mockSupport;
     if (name === './TopiMascot') return { default: () => null };
     throw new Error('Unexpected Topi module ' + name);
