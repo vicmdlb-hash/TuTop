@@ -16,8 +16,17 @@ export function parseFirestoreRunQueryRows(rows) {
       throw new Error('QUERY_SKIPPED_RESULTS_UNSAFE');
     }
     if (!Object.prototype.hasOwnProperty.call(row, 'document')) {
-      if (!('readTime' in row) && !('skippedResults' in row)
-          && !('explainMetrics' in row)) throw new Error('QUERY_RESPONSE_ROW_INVALID');
+      // Only a valid Firestore readTime or the explicit completion marker
+      // proves a metadata-only response. skippedResults=0 and explainMetrics
+      // alone must not masquerade as an exhausted privileged inventory.
+      const hasReadTime = Object.prototype.hasOwnProperty.call(row, 'readTime');
+      const validReadTime = hasReadTime && typeof row.readTime === 'string'
+        && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(row.readTime);
+      if ((hasReadTime && !validReadTime)
+          || (Object.prototype.hasOwnProperty.call(row, 'done') && typeof row.done !== 'boolean')
+          || (!validReadTime && row.done !== true)) {
+        throw new Error('QUERY_RESPONSE_ROW_INVALID');
+      }
       continue;
     }
     const doc = row.document;

@@ -126,6 +126,27 @@ assert.deepEqual(accepted, [{
   fields: { uid: { stringValue: 'synthetic-user' } },
 }]);
 assert.deepEqual(parseFirestoreRunQueryRows([]), []);
+// Metadata-only responses must not falsely prove an empty/exhausted inventory.
+// Firestore documents a valid readTime for zero-result queries and can emit an
+// explicit done=true completion marker; no Firebase/credentials are used.
+assert.deepEqual(parseFirestoreRunQueryRows([{ done: true }]), []);
+assert.deepEqual(parseFirestoreRunQueryRows([
+  { readTime: '2026-11-15T12:00:00.123456789Z', done: true, skippedResults: 0 },
+]), []);
+for (const invalidMetadata of [
+  { skippedResults: 0 },
+  { explainMetrics: {} },
+  { readTime: null },
+  { readTime: '' },
+  { readTime: 'not-a-timestamp' },
+  { done: false },
+  { done: 'true' },
+  { readTime: '2026-11-15T12:00:00Z', done: 'true' },
+]) {
+  assert.throws(() => parseFirestoreRunQueryRows([invalidMetadata]),
+    /QUERY_RESPONSE_ROW_INVALID/,
+    'malformed metadata must not certify a privileged inventory');
+}
 // A nested collection may legitimately be called "documents". The cursor
 // parser must preserve every subsequent path component, never truncate at a
 // second "/documents/" delimiter and falsely certify deletion coverage.
