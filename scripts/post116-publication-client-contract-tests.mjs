@@ -89,6 +89,44 @@ assert.match(legacy, /if \(!stock\) throw new Error\('LISTING_QUANTITY_INVALID'\
 assert.match(legacy, /if \(updates\.stock !== undefined && !legacySaleableStock\(updates\.stock\)\)/);
 assert.match(legacy, /if \(updates\.precio_mxn !== undefined && !legacySaleablePrice\(updates\.precio_mxn\)\)/);
 assert.doesNotMatch(legacy, /stock: product\.stock \|\| 1/);
+// Exercise the real legacy update method against a fake Firestore client.
+const updateStart = legacy.indexOf('  async updateProduct(productId: string, updates: Partial<Product>) {');
+const updateEnd = legacy.indexOf('\n  async createChat(', updateStart);
+assert(updateStart >= 0 && updateEnd > updateStart);
+const updateMethodJs = stripTypeScriptTypes('({ getClient() { return client; }, ' + legacy.slice(updateStart, updateEnd) + '\n})');
+const makeUpdater = new Function('client', 'sameFirebaseSession', 'legacySaleableStock', 'legacySaleablePrice', 'nowIso', 'return ' + updateMethodJs);
+const sameSession = (a, b) => Boolean(a && b && a.uid === b.uid && a.idToken === b.idToken && a.refreshToken === b.refreshToken);
+const ownerSession = { uid: 'seller-A', idToken: 'synthetic-id-A', refreshToken: 'synthetic-refresh-A' };
+function updaterFixture({ seller = 'seller-A', version = 'version-1', switchSession = false, exists = true } = {}) {
+  const writes = [];
+  const client = {
+    currentSession: ownerSession,
+    getDocument: async () => { if (switchSession) client.currentSession = { uid: 'seller-A', idToken: 'new-id', refreshToken: 'new-refresh' };
+      return exists ? { data: { vendedor_id: seller }, updateTime: version } : null; },
+    setDocument: async (path, payload, options) => { writes.push({path, payload, options}); },
+  };
+  const runner = makeUpdater(client, sameSession, legacySaleableStock, legacySaleablePrice, () => '2026-11-14T00:00:00.000Z');
+  return { runner, writes };
+}
+{ const {runner,writes} = updaterFixture();
+  await runner.updateProduct('legacy-1',{ stock: 2, precio_mxn: 10 });
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].options.updateTime, 'version-1');
+  assert.equal(writes[0].options.merge, true);
+}
+for (const fixture of [
+  [{ seller: 'seller-B' }, /SELLER_REQUIRED/],
+  [{ version: undefined }, /LISTING_VERSION_REQUIRED/],
+  [{ switchSession: true }, /AUTH_SESSION_CHANGED/],
+  [{ exists: false }, /LISTING_NOT_FOUND/],
+]) {
+  const [settings, reason] = fixture;
+  const {runner,writes} = updaterFixture(settings);
+  await assert.rejects(runner.updateProduct('legacy-1',{ stock: 2 }), reason);
+  assert.equal(writes.length, 0, 'denied legacy edit must not reach Firestore write');
+}
+assert.match(legacy, /merge: true, updateTime: snapshot\.updateTime/);
+
 
 
 

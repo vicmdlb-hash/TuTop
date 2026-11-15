@@ -1,4 +1,5 @@
 import { FirebaseRestClient, type AuthSession, type FirestoreDocument } from './firebaseRest';
+import { sameFirebaseSession } from '../lib/firebaseSharedSessionGuard';
 import { getFirebaseConfig } from './runtimeConfig';
 import { nextReportRateBucket, type ReportRateBucket } from '../lib/reportRateBudget';
 import { MARKETPLACE_CATEGORIES, VALID_MEETING_POINTS, normalizeCategory, sellerLevelFor } from '../lib/productAssistant';
@@ -445,6 +446,9 @@ export class TuTopOnlineBackend {
   }
 
   async updateProduct(productId: string, updates: Partial<Product>) {
+    const client = this.getClient();
+    const requestSession = client.currentSession;
+    if (!requestSession?.uid) throw new Error('AUTH_REQUIRED');
     if (updates.stock !== undefined && !legacySaleableStock(updates.stock))
       throw new Error('LISTING_QUANTITY_INVALID');
     if (updates.precio_mxn !== undefined && !legacySaleablePrice(updates.precio_mxn))
@@ -453,7 +457,15 @@ export class TuTopOnlineBackend {
     const data: Record<string, unknown> = {};
     for (const key of allowed) if (updates[key] !== undefined) data[key] = updates[key];
     data.updated_at = nowIso();
-    await this.getClient().setDocument(`products/${productId}`, data, { merge: true });
+    const snapshot = await client.getDocument<any>(`products/${productId}`);
+    if (!snapshot) throw new Error('LISTING_NOT_FOUND');
+    if (String(snapshot.data.vendedor_id || snapshot.data.seller_id || '') !== requestSession.uid)
+      throw new Error('SELLER_REQUIRED');
+    // A same-UID login after logout is still a different session; refuse stale edits.
+    if (!sameFirebaseSession(requestSession, client.currentSession)) throw new Error('AUTH_SESSION_CHANGED');
+    if (!snapshot.updateTime) throw new Error('LISTING_VERSION_REQUIRED');
+    // Firestore REST also validates the persisted session before sending the write.
+    await client.setDocument(`products/${productId}`, data, { merge: true, updateTime: snapshot.updateTime });
   }
 
   async createChat(chat: Chat) {
