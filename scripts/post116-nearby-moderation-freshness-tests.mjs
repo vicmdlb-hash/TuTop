@@ -115,3 +115,93 @@ cleanup();
 events.dispatchEvent({ type: 'online' });
 assert.equal(deferredReads.length, 3, 'cleanup removes reconnect handler');
 console.log('PASS base listing refresh: overlapping online event is replayed exactly once; A→B→A stays isolated');
+
+// Nearby stale-injection guard: exercise the actual React hydrator using
+// synthetic Firestore results. A refresh error must evict only Nearby-injected
+// items, without discarding the authoritative base catalog or a newer query.
+const nearModule = { exports: {} };
+const nearListeners = new Map();
+const nearCallbacks = new Set();
+const nearPending = [];
+const nearState = {
+  user: { id: 'synthetic-A' },
+  products: [{ id: 'base', updated_at: '2026-11-15T07:00:00Z', source: 'base-old' }],
+};
+let nearCleanup = () => {};
+const nearStore = selector => selector(nearState);
+nearStore.getState = () => nearState;
+nearStore.setState = patch => {
+  Object.assign(nearState, patch);
+  for (const callback of nearCallbacks) callback(nearState);
+};
+nearStore.subscribe = callback => {
+  nearCallbacks.add(callback);
+  return () => nearCallbacks.delete(callback);
+};
+const nearWindow = {
+  addEventListener(type, callback) {
+    nearListeners.set(type, [...(nearListeners.get(type) || []), callback]);
+  },
+  removeEventListener(type, callback) {
+    nearListeners.set(type, (nearListeners.get(type) || []).filter(fn => fn !== callback));
+  },
+  dispatchEvent(event) {
+    for (const callback of nearListeners.get(event.type) || []) callback(event);
+  },
+};
+const nearLocation = {
+  latitude: 19.31, longitude: -98.25, captured_at: '2026-11-15T07:00:00Z', source: 'cache',
+  owner_uid: 'synthetic-A',
+};
+runInNewContext(compileTypescriptFixture('src/components/V2NearbyListingsHydrator.tsx'), {
+  module: nearModule, exports: nearModule.exports,
+  require(name) {
+    if (name === 'react') return { useEffect(effect) { nearCleanup = effect(); } };
+    if (name === '../lib/nearbyMarketplace') return {
+      getCachedApproxLocation: () => nearLocation,
+      nearbyGeoCells: () => ['g1:109:81'],
+      NEARBY_LOCATION_EVENT: 'tutop:approx-location',
+      NEARBY_LOCATION_CLEARED_EVENT: 'tutop:approx-location-cleared',
+    };
+    if (name === '../services/canonicalListingsBackend') return {
+      canonicalListingsBackend: {
+        loadNearbyProducts: () => new Promise((resolve, reject) => nearPending.push({ resolve, reject })),
+      },
+    };
+    if (name === '../store/useAppStore') return { useAppStore: nearStore };
+    if (name === './V2ListingsHydrator') return {
+      V2_LISTINGS_BASE_HYDRATED_EVENT: 'tutop:v2-listings-base-hydrated',
+    };
+    throw new Error('Unexpected Nearby hydrator dependency: ' + name);
+  },
+  window: nearWindow, Date, Promise, Set, Map, Number, console,
+}, { timeout: 2500 });
+nearModule.exports.default();
+assert.equal(nearPending.length, 1, 'Nearby should load cached location once');
+nearPending[0].resolve([
+  { id: 'base', updated_at: '2026-11-15T07:00:00Z', source: 'fresh-nearby' },
+  { id: 'near-only', updated_at: '2026-11-15T07:00:00Z' },
+]);
+await flushRead();
+assert.equal(nearState.products.find(x => x.id === 'base')?.source, 'fresh-nearby',
+  'fresh Nearby data should win a timestamp tie against a stale local copy');
+assert(nearState.products.some(x => x.id === 'near-only'));
+nearWindow.dispatchEvent({ type: 'tutop:approx-location', detail: nearLocation });
+assert.equal(nearPending.length, 2);
+nearPending[1].reject(new Error('SYNTHETIC_QUERY_UNAVAILABLE'));
+await flushRead();
+assert.deepEqual(nearState.products.map(x => x.id), ['base'],
+  'failed Nearby refresh must not leave injected stale approved listings visible');
+// A stale failed request must not remove newer records after another query wins.
+nearWindow.dispatchEvent({ type: 'tutop:approx-location', detail: nearLocation });
+nearWindow.dispatchEvent({ type: 'tutop:approx-location', detail: nearLocation });
+assert.equal(nearPending.length, 4);
+nearPending[3].resolve([{ id: 'fresh-near-only', updated_at: '2026-11-15T07:01:00Z' }]);
+await flushRead();
+nearPending[2].reject(new Error('SYNTHETIC_STALE_REQUEST'));
+await flushRead();
+assert(nearState.products.some(x => x.id === 'fresh-near-only'),
+  'obsolete failed query must not delete latest Nearby results');
+nearCleanup();
+console.log('PASS Nearby stale-injection guard: refresh failure evicts only injected rows; timestamp tie and request epoch remain safe');
+
