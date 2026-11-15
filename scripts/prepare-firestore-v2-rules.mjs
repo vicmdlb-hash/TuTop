@@ -293,6 +293,11 @@ const strictModerationAndPrivacy = `    match /moderation_cases/{caseId} {
         && request.resource.data.target_type == resource.data.target_type
         && request.resource.data.target_id == resource.data.target_id
         && (!('institution_id' in resource.data) || request.resource.data.institution_id == resource.data.institution_id)
+        // Keep provenance immutable, including an absent institution_id on legacy cases.
+        // Only these workflow fields may change; the target and audit origin cannot.
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status','priority','assigned_to','evidence_refs','action','reason','internal_notes','result','updated_at'
+        ])
         && resource.data.status in ['open','reviewing']
         && request.resource.data.status in ['open','reviewing','resolved','dismissed']
         && (
