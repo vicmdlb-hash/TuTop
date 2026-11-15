@@ -36,7 +36,7 @@ const response = await fetch(url, {
   }),
 });
 if (!response.ok) throw new Error(`MODERATION_AUDIT_HTTP_${response.status}`);
-const summary = summarizeModerationAdminInventory(await response.json());
+const summary = summarizeModerationAdminInventory(await response.json(), PROJECT);
 console.log(JSON.stringify({
   status: 'READ_ONLY',
   project_id: PROJECT,

@@ -1,3 +1,5 @@
+import { parseFirestoreRunQueryRows } from './firestore-query-pagination.mjs';
+
 // Pure, source-only moderation-admin inventory summary. No Auth, Firebase or I/O.
 // Do not expose document paths, email addresses or raw UID in logs.
 const ALLOWED_ROLES = Object.freeze([
@@ -6,21 +8,26 @@ const ALLOWED_ROLES = Object.freeze([
 ]);
 const PAGE_CAP = 1000;
 
-export function summarizeModerationAdminInventory(rows) {
+export function summarizeModerationAdminInventory(rows, expectedProjectId) {
   if (!Array.isArray(rows)) throw new Error('MODERATION_ADMIN_INVENTORY_INVALID');
+  // Share the privileged parser's zero-result and exact project/database
+  // boundary validation. A malformed remote page is NOT an empty admin list.
+  let documents;
+  try {
+    documents = parseFirestoreRunQueryRows(rows, expectedProjectId);
+  } catch {
+    throw new Error('MODERATION_ADMIN_INVENTORY_ERROR');
+  }
   const counts = Object.fromEntries(ALLOWED_ROLES.map((role) => [role, 0]));
   let adminsTotal = 0;
   let activeAdmins = 0;
   let activeValidRoleAdmins = 0;
   let activeInvalidRoleAdmins = 0;
   let activeInstitutionModeratorsMissingScope = 0;
-  for (const row of rows) {
-    if (row?.error || (row && typeof row !== 'object')) {
-      throw new Error('MODERATION_ADMIN_INVENTORY_ERROR');
-    }
-    const doc = row?.document;
-    if (!doc) continue; // Firestore may include a readTime-only terminal row.
-    if (!doc.fields || typeof doc.fields !== 'object') {
+  for (const doc of documents) {
+    // A response with another collection ID cannot certify moderators.
+    if (!/^admins\/[^/]+$/.test(doc.path)
+        || !doc.fields || typeof doc.fields !== 'object' || Array.isArray(doc.fields)) {
       throw new Error('MODERATION_ADMIN_DOCUMENT_INVALID');
     }
     adminsTotal += 1;

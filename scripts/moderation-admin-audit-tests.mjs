@@ -4,7 +4,7 @@ import { summarizeModerationAdminInventory } from './moderation-admin-audit-lib.
 
 function admin({ active = true, role = 'moderator', institution = '' } = {}) {
   return { document: {
-    name: 'projects/demo/documents/admins/secret-synthetic-uid',
+    name: 'projects/demo/databases/(default)/documents/admins/secret-synthetic-uid',
     fields: {
       active: { booleanValue: active },
       role: { stringValue: role },
@@ -13,15 +13,31 @@ function admin({ active = true, role = 'moderator', institution = '' } = {}) {
     },
   } };
 }
-const empty = summarizeModerationAdminInventory([{ readTime: 'synthetic' }]);
+const empty = summarizeModerationAdminInventory([{ readTime: '2026-11-15T12:00:00Z' }]);
 assert.equal(empty.admins_total, 0);
 assert.equal(empty.first_admin_record_needed, true);
 assert.equal(empty.structurally_valid_active_admin_present, false);
 assert.equal(empty.human_identity_legitimacy_proven, false);
 
+// Neither an object without proof of completion nor skipped/explain-only
+// metadata may certify the absence of moderators.
+for (const malformed of [null, {}, { skippedResults: 0 }, { explainMetrics: {} },
+  { readTime: 'invalid' }, { done: false }]) {
+  assert.throws(() => summarizeModerationAdminInventory([malformed], 'demo'),
+    /MODERATION_ADMIN_INVENTORY_ERROR/,
+    'malformed metadata must not report false zero-admin readiness');
+}
+assert.throws(() => summarizeModerationAdminInventory([
+  { document: admin().document },
+], 'foreign-project'), /MODERATION_ADMIN_INVENTORY_ERROR/,
+'cross-project admin response must never certify the requested staging project');
+assert.throws(() => summarizeModerationAdminInventory([
+  { document: { ...admin().document, name: 'projects/demo/databases/(default)/documents/users/not-an-admin' } },
+], 'demo'), /MODERATION_ADMIN_DOCUMENT_INVALID/,
+'non-admin collections must not count as moderation authority');
 const valid = summarizeModerationAdminInventory([
   admin({ role: 'moderator' }), admin({ role: 'institution_moderator', institution: 'institution-1' }),
-  admin({ active: false, role: 'unknown' }), { readTime: 'synthetic' },
+  admin({ active: false, role: 'unknown' }), { readTime: '2026-11-15T12:00:00Z' },
 ]);
 assert.equal(valid.admins_total, 3);
 assert.equal(valid.active_admins, 2);
@@ -42,9 +58,15 @@ assert.equal(badInstitution.structurally_valid_active_admin_present, false);
 
 assert.throws(() => summarizeModerationAdminInventory({ admins: [] }), /MODERATION_ADMIN_INVENTORY_INVALID/);
 assert.throws(() => summarizeModerationAdminInventory([{ error: { code: 403 } }]), /MODERATION_ADMIN_INVENTORY_ERROR/);
-assert.throws(() => summarizeModerationAdminInventory([{ document: { fields: null } }]), /MODERATION_ADMIN_DOCUMENT_INVALID/);
-assert.throws(() => summarizeModerationAdminInventory([{ document: { fields: { role: { stringValue: 'moderator' } } } }]), /MODERATION_ADMIN_ACTIVE_FLAG_UNVERIFIED/);
-assert.throws(() => summarizeModerationAdminInventory([{ document: { fields: { active: { stringValue: 'true' } } } }]), /MODERATION_ADMIN_ACTIVE_FLAG_UNVERIFIED/);
+assert.throws(() => summarizeModerationAdminInventory([{
+  document: { name: admin().document.name, fields: null },
+}]), /MODERATION_ADMIN_INVENTORY_ERROR/);
+assert.throws(() => summarizeModerationAdminInventory([{
+  document: { name: admin().document.name, fields: { role: { stringValue: 'moderator' } } },
+}]), /MODERATION_ADMIN_ACTIVE_FLAG_UNVERIFIED/);
+assert.throws(() => summarizeModerationAdminInventory([{
+  document: { name: admin().document.name, fields: { active: { stringValue: 'true' } } },
+}]), /MODERATION_ADMIN_ACTIVE_FLAG_UNVERIFIED/);
 assert.equal(summarizeModerationAdminInventory(Array.from({ length: 999 }, () => admin({ active: false }))).admins_total, 999);
 assert.throws(
   () => summarizeModerationAdminInventory(Array.from({ length: 1000 }, () => admin())),
@@ -59,7 +81,7 @@ assert.match(source, /firestore\.googleapis\.com/);
 assert.match(source, /documents:runQuery/);
 assert.match(source, /method: 'POST'/);
 assert.match(source, /fields:\s*\[/);
-assert.match(source, /summarizeModerationAdminInventory\(await response\.json\(\)\)/);
+assert.match(source, /summarizeModerationAdminInventory\(await response\.json\(\), PROJECT\)/);
 assert.doesNotMatch(source, /documents:commit|batchWrite|firebase:deploy|--apply|createAdmin|deleteAdmin|patchAdmin/i);
 assert(source.indexOf('STAGING_PROJECT_REQUIRED') < source.indexOf('firebaseCiAccessToken()'));
 assert(source.indexOf('GITHUB_ACTIONS_REQUIRED') < source.indexOf('firebaseCiAccessToken()'));
