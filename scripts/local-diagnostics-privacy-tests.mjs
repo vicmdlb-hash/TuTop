@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { safeSyncFailureNotice } from '../src/lib/syncErrorPrivacy.ts';
 import { recordDiagnostic, readLocalDiagnostics, clearLocalDiagnostics } from '../src/services/localDiagnostics.ts';
 
 const oldLocalStorage = globalThis.localStorage;
@@ -75,6 +77,22 @@ try {
   assert.deepEqual(readLocalDiagnostics(), []);
   assert.equal(memory.has(key), false);
 
+  // A backend error can carry an auth header or Firebase request path.
+  // UI state and console must display a fixed user-safe notice only.
+  const hostileSyncError = new Proxy({}, {
+    get() { throw new Error('synthetic secret token must not be inspected'); },
+  });
+  assert.equal(safeSyncFailureNotice(hostileSyncError),
+    'No pudimos sincronizar TuTop. Comprueba tu conexión e inténtalo de nuevo.');
+  const storeSource = fs.readFileSync('src/store/useAppStore.ts', 'utf8');
+  const reportStart = storeSource.indexOf('function reportSyncError(');
+  const reportEnd = storeSource.indexOf('export const useAppStore', reportStart);
+  assert(reportStart >= 0 && reportEnd > reportStart);
+  const reporting = storeSource.slice(reportStart, reportEnd);
+  assert.match(reporting, /safeSyncFailureNotice\(error\)/);
+  assert.doesNotMatch(reporting, /console\.(?:log|error|warn)\([^\n]*,\s*error\b/);
+  assert.doesNotMatch(reporting, /error\.message|String\(error\)/);
+  console.log('PASS sync failures never inspect/log untrusted exceptions or publish raw messages');
   console.log('PASS local diagnostics context retains only explicitly allowed booleans, bounded counts and safe enums');
   console.log('PASS local diagnostics reject unknown identifiers and arbitrary strings without network');
 } finally {

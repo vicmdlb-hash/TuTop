@@ -5,6 +5,7 @@ import { feedbackMessage } from '../lib/feedback';
 import { canViewerOpenListing } from '../lib/publicDiscovery';
 import { isLiveAccountSnapshot } from '../lib/backendHydrationIdentity';
 import { sameFirebaseSession } from '../lib/firebaseSharedSessionGuard';
+import { safeSyncFailureNotice } from '../lib/syncErrorPrivacy';
 import { nationalSchemaEnabled } from '../services/nationalBackend';
 import type { AppNotification, AppTab, Chat, Product, Review, User, WalletTransaction } from '../types';
 
@@ -94,9 +95,10 @@ function localId(prefix: string) {
 }
 
 function reportSyncError(set: (partial: Partial<AppState>) => void, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error('[TuTop online sync]', error);
-  set({ syncError: message });
+  // Transport exceptions can contain bearer tokens, request URLs and UIDs.
+  // Neither logs nor UI state may receive the raw untrusted exception.
+  console.warn('[TuTop online sync] failed');
+  set({ syncError: safeSyncFailureNotice(error) });
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
