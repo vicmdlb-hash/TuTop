@@ -32,6 +32,11 @@ beforeEach(async () => {
       subjectUid: 'child', actorUid: 'guardian', capability: 'share_personal_info',
       authorized: true, issuer: 'trusted_server',
     });
+    await setDoc(doc(db, 'ugc_consents_v2/child'), {
+      subjectUid: 'child', issuer: 'trusted_server',
+      rulesVersion: 'ugc-beta-draft-2026-11-14-v1', granted: true, revoked: false,
+      guardianConsentVersion: 'families-v1',
+    });
   });
 });
 
@@ -39,6 +44,7 @@ const paths = [
   'age_proofs_v2/child',
   'guardian_grants_v2/child',
   'adult_actions_v2/child',
+  'ugc_consents_v2/child',
 ];
 
 test('only the exact child account can read trusted evidence documents', async () => {
@@ -73,7 +79,7 @@ test('no signed-in client, including subject and admin-role client, may issue or
 test('list enumeration is denied even to the document subject', async () => {
   const child = verifiedContext(env, 'child').firestore();
   const clientAdmin = verifiedContext(env, 'operator').firestore();
-  for (const prefix of ['age_proofs_v2', 'guardian_grants_v2', 'adult_actions_v2']) {
+  for (const prefix of ['age_proofs_v2', 'guardian_grants_v2', 'adult_actions_v2', 'ugc_consents_v2']) {
     await assertFails(getDocs(collection(child, prefix)));
     await assertFails(getDocs(collection(clientAdmin, prefix)));
   }
@@ -84,12 +90,15 @@ test('backend revocation is visible to subject and cannot be reversed from an ap
     await updateDoc(doc(ctx.firestore(), 'age_proofs_v2/child'), { revoked: true });
     await updateDoc(doc(ctx.firestore(), 'guardian_grants_v2/child'), { active: false });
     await updateDoc(doc(ctx.firestore(), 'adult_actions_v2/child'), { authorized: false });
+    await updateDoc(doc(ctx.firestore(), 'ugc_consents_v2/child'), { revoked: true });
   });
   const child = verifiedContext(env, 'child').firestore();
   assert.equal((await assertSucceeds(getDoc(doc(child, paths[0])))).data().revoked, true);
   assert.equal((await assertSucceeds(getDoc(doc(child, paths[1])))).data().active, false);
   assert.equal((await assertSucceeds(getDoc(doc(child, paths[2])))).data().authorized, false);
+  assert.equal((await assertSucceeds(getDoc(doc(child, paths[3])))).data().revoked, true);
   await assertFails(updateDoc(doc(child, paths[0]), { revoked: false }));
   await assertFails(updateDoc(doc(child, paths[1]), { active: true }));
   await assertFails(updateDoc(doc(child, paths[2]), { authorized: true }));
+  await assertFails(updateDoc(doc(child, paths[3]), { revoked: false }));
 });
