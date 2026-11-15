@@ -5,7 +5,8 @@ const none = sellerReputationEvidence('seller-1', [], []);
 assert.equal(none.hasEvidence, false);
 assert.equal(none.positiveRate, null);
 assert.equal(none.completedSales, 0);
-assert.equal(none.label, 'Sin historial todavía');
+assert.equal(none.label, 'Sin evidencia visible');
+assert.match(none.detail, /no inventa puntuaciones/);
 
 const reviews = sellerReputationEvidence('seller-1', [
   { evaluado_id: 'seller-1', calificacion: 'positive' },
@@ -19,7 +20,8 @@ assert.equal(reviews.reviewCount, 3);
 assert.equal(reviews.positiveReviews, 2);
 assert.equal(reviews.positiveRate, 67);
 assert.equal(reviews.completedSales, 1);
-assert.equal(reviews.label, '67% cumplió · 3 reseñas');
+assert.equal(reviews.label, '67% en evidencia visible · 3 reseñas');
+assert.match(reviews.detail, /no representa necesariamente la reputación pública completa/);
 
 const deliveriesOnly = sellerReputationEvidence('seller-2', [], [
   { vendedor_id: 'seller-2', entrega_confirmada: true },
@@ -28,7 +30,8 @@ const deliveriesOnly = sellerReputationEvidence('seller-2', [], [
 ]);
 assert.equal(deliveriesOnly.reviewCount, 0);
 assert.equal(deliveriesOnly.completedSales, 2);
-assert.equal(deliveriesOnly.label, '2 entregas confirmadas');
+assert.equal(deliveriesOnly.label, '2 entregas visibles');
+assert.match(deliveriesOnly.detail, /no se presenta como reputación pública completa/);
 assert.equal(deliveriesOnly.hasEvidence, true);
 
 console.log('Evidence-based reputation tests passed.');
