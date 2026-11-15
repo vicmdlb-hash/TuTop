@@ -19,6 +19,20 @@ assert.equal(new Set(result.map((item) => item.name)).size, 2505);
 assert.equal(result[0].name, docs[0].name);
 assert.equal(result.at(-1).name, docs.at(-1).name);
 assert.equal(calls, 6, '2505 rows at pageSize=500 should use six cursor pages');
+// The real cursor helper must reject fractional/ambiguous limits rather than
+// reporting a fractional "short" page as an exhaustive erasure inventory.
+for (const badPageSize of [0, -1, 1.5, Number.NaN, Infinity, '500', 1001]) {
+  await assert.rejects(
+    collectCursorPages(async () => { throw new Error('UNREACHABLE'); }, { pageSize: badPageSize }),
+    /QUERY_PAGE_OPTIONS_INVALID/,
+  );
+}
+for (const badMaxPages of [0, -1, 1.5, Number.NaN, Infinity, '3', 100001]) {
+  await assert.rejects(
+    collectCursorPages(async () => { throw new Error('UNREACHABLE'); }, { maxPages: badMaxPages }),
+    /QUERY_PAGE_OPTIONS_INVALID/,
+  );
+}
 
 await assert.rejects(
   collectCursorPages(async ({ afterName }) => [{ name: afterName || docs[0].name }], { pageSize: 1, maxPages: 3 }),
@@ -60,6 +74,14 @@ await assert.rejects(
   collectTokenPages(async () => ({ documents: [], nextPageToken: 123 })),
   /LIST_PAGE_TOKEN_INVALID/,
 );
+await assert.rejects(
+  collectTokenPages(async () => ({ documents: [listDocs[0]], nextPageToken: null })),
+  /LIST_PAGE_TOKEN_INVALID/,
+  'null is a malformed token and cannot certify inventory exhaustion',
+);
+assert.deepEqual(await collectTokenPages(async () => ({ documents: [] })), [],
+  'omitted token still represents an ordinary empty final page');
+
 await assert.rejects(
   collectCursorPages(async () => [docs[2], docs[1]], { pageSize: 2 }),
   /QUERY_PAGE_OUT_OF_ORDER/,
