@@ -3,6 +3,7 @@ import { BellRing, ChevronDown, ChevronUp, ExternalLink, KeyRound, Loader2, Shie
 import { DEFAULT_NOTIFICATION_PREFERENCES, NOTIFICATION_PRIORITY, type NotificationPreferenceKey, type NotificationPreferences } from '../lib/notificationPreferences.ts';
 import { nationalSchemaEnabled } from '../services/nationalBackend.ts';
 import { disableNativePushNotifications, enableNativePushNotifications, nativePushPermission } from '../services/nativeFirebaseSecurity.ts';
+import type { AgeBand } from '../lib/guardianCapabilities.ts';
 import { hasTrustedAccountDeletionCompletion } from '../lib/accountDeletionCompletionTruth.ts';
 import { nationalUserSettings, type AccountDeletionRequest } from '../services/nationalUserSettings.ts';
 import { verifiedEmailBetaAuth } from '../services/verifiedEmailBetaAuth.ts';
@@ -48,6 +49,8 @@ function AccountControlsForOwner({ ownerUid }: { ownerUid: string }) {
   const [preferences, setPreferences] = useState<NotificationPreferences>({ ...DEFAULT_NOTIFICATION_PREFERENCES });
   const [busyKey, setBusyKey] = useState<NotificationPreferenceKey | null>(null);
   const [deletion, setDeletion] = useState<AccountDeletionRequest | null>(null);
+  // No client-declared age, and never persist a prior account's status.
+  const [trustedAgeBand, setTrustedAgeBand] = useState<AgeBand>('unknown');
   const [deletionBusy, setDeletionBusy] = useState(false);
   const [pushPermission, setPushPermission] = useState<DevicePushPermission>('unavailable');
   const [pushBusy, setPushBusy] = useState(false);
@@ -64,11 +67,13 @@ function AccountControlsForOwner({ ownerUid }: { ownerUid: string }) {
       nationalUserSettings.loadNotificationPreferences().catch(() => ({ ...DEFAULT_NOTIFICATION_PREFERENCES })),
       nationalUserSettings.accountDeletionStatus().catch(() => null),
       nativePushPermission().catch(() => 'unavailable' as const),
-    ]).then(([prefs, request, permission]) => {
+      nationalUserSettings.readTrustedAgeBand().catch(() => 'unknown' as AgeBand),
+    ]).then(([prefs, request, permission, verifiedAge]) => {
       if (!active || !stillCurrent() || (request && request.uid !== ownerUid)) return;
       setPreferences(prefs);
       setDeletion(request);
       setPushPermission(permission as DevicePushPermission);
+      setTrustedAgeBand(verifiedAge);
     });
     return () => { active = false; };
   }, [enabled]);
@@ -197,6 +202,19 @@ function AccountControlsForOwner({ ownerUid }: { ownerUid: string }) {
         <div className="rounded-xl border border-sky-400/10 bg-sky-500/[0.035] p-3">
           <button type="button" aria-expanded={passwordOpen} onClick={() => setPasswordOpen((value) => !value)} className="flex w-full items-center gap-2 text-left"><KeyRound className="h-4 w-4 text-sky-300"/><span className="flex-1"><strong className="block text-[10px] text-slate-200">Cambiar Clave TuTop</strong><small className="text-[8px] text-slate-500">Disponible mientras tienes una sesión válida.</small></span>{passwordOpen ? <ChevronUp className="h-4 w-4 text-slate-500"/> : <ChevronDown className="h-4 w-4 text-slate-500"/>}</button>
           {passwordOpen && <div className="mt-3 space-y-2"><input type="password" autoComplete="new-password" value={nextPassword} onChange={(event) => setNextPassword(event.target.value)} placeholder="Nueva clave · mínimo 8 caracteres" className="w-full rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[10px] text-white outline-none placeholder:text-slate-600"/><input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite la nueva clave" className="w-full rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5 text-[10px] text-white outline-none placeholder:text-slate-600"/><button type="button" onClick={() => void rotatePassword()} disabled={passwordBusy || nextPassword.length < 8 || nextPassword !== confirmPassword} className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-sky-500/10 text-[9px] font-black text-sky-200 disabled:opacity-40">{passwordBusy && <Loader2 className="h-3.5 w-3.5 animate-spin"/>}Actualizar clave</button><p className="text-[8px] leading-4 text-slate-600">Esto cambia la clave de una cuenta ya autenticada. Recuperar una clave olvidada todavía requiere un canal de verificación de identidad; TuTop no fingirá que el número está verificado por SMS mientras esa capacidad no esté activada.</p></div>}
+        </div>
+
+        <div className="rounded-xl border border-sky-400/10 bg-sky-500/[0.035] p-3" aria-label="Estado de verificación de edad">
+          <strong className="block text-[10px] text-slate-200">Verificación de edad del servidor</strong>
+          <p className="mt-1 text-[9px] text-slate-400">
+            {trustedAgeBand === 'adult' ? 'Prueba vigente: persona adulta.'
+              : trustedAgeBand === 'teen_13_17' ? 'Prueba vigente: adolescente. Funciones sensibles requieren autorizaciones independientes del tutor.'
+              : trustedAgeBand === 'under_13' ? 'Prueba vigente: menor de 13 años. Chat directo y ofertas independientes no están habilitados.'
+              : 'Sin prueba de edad vigente. No se puede acreditar la edad desde esta pantalla.'}
+          </p>
+          <p className="mt-2 text-[8px] leading-4 text-amber-200/70">
+            Este panel solo informa; no concede acceso ni prueba que la política de tutela esté desplegada. La emisión, revocación y admisión real del servidor siguen pendientes.
+          </p>
         </div>
 
         <p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Importantes</p>
