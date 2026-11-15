@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { canModerateItem, moderationQueueFor } from '../src/lib/institutionalModeration.ts';
+import { canModerateItem, moderationQueueFor, requireModerationCaseTransition } from '../src/lib/institutionalModeration.ts';
 
 const items = [
   { id: 'uatx-urgent', institution_id: 'uatx', status: 'open', priority: 'urgent' },
@@ -24,4 +24,34 @@ console.log('PASS institution moderators see only their institution');
 console.log('PASS unscoped reports stay out of institution queues');
 console.log('PASS global moderation can see all active queues');
 console.log('PASS queues prioritize urgent/high reports');
+// Synthetic defense-in-depth: a caller may not write another institution or
+// reopen/overwrite closed cases, even if the UI already filtered the queue.
+const actor = (role, institution_id) => ({ active: true, role, institution_id });
+const record = (kind, institution_id = 'uatx', status = 'open') =>
+  ({ kind, institution_id, status });
+const checkDeny = (reason, admin, item, status = 'resolved') =>
+  assert.throws(() => requireModerationCaseTransition(admin, item, status),
+    { message: reason });
+assert.equal(requireModerationCaseTransition(actor('institution_moderator', 'uatx'),
+  record('product'), 'reviewing'), 'uatx');
+assert.equal(requireModerationCaseTransition(actor('verification_reviewer'),
+  record('credential'), 'resolved'), 'uatx');
+assert.equal(requireModerationCaseTransition(actor('support'),
+  record('appeal', ''), 'dismissed'), undefined);
+checkDeny('INSTITUTION_SCOPE_DENIED', actor('institution_moderator', 'uatx'),
+  record('product', 'buap'));
+checkDeny('INSTITUTION_SCOPE_DENIED', actor('institution_moderator', 'uatx'),
+  record('product', ''));
+checkDeny('ROLE_SCOPE_DENIED', actor('verification_reviewer'), record('product'));
+checkDeny('ROLE_SCOPE_DENIED', actor('support'), record('user'));
+checkDeny('ROLE_SCOPE_DENIED', actor('unknown'), record('credential'));
+checkDeny('ADMIN_REQUIRED', { ...actor('moderator'), active: false }, record('product'));
+checkDeny('MODERATION_CASE_KIND_INVALID', actor('moderator'), record('unknown'));
+checkDeny('MODERATION_CASE_INVALID_TRANSITION', actor('moderator'),
+  record('product', 'uatx', 'resolved'));
+checkDeny('MODERATION_CASE_INVALID_TRANSITION', actor('moderator'),
+  record('product', 'uatx', 'reviewing'), 'reviewing');
+assert.equal(requireModerationCaseTransition(actor('trust_safety'),
+  record('urgent_incident', ''), 'resolved'), undefined);
+
 console.log('Institutional moderation tests: PASS');
