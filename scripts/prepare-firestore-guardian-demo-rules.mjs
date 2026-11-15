@@ -52,16 +52,13 @@ const helpers = `
       let proof = get(guardianAgeDoc(uid)).data;
       return signedIn() && uid is string
         && guardianAgeDataAllowed(uid, ['adult','teen_13_17'], proof)
-        && (proof.band == 'adult' || guardianValidGrant(uid, cap));
+        && (proof.band == 'adult' || guardianValidGrant(uid, cap, proof.guardian));
     }
-    function guardianValidGrant(uid, cap) {
-      // DEMO architecture trial: server owns a single atomic age+guardian
-      // proof at age_proofs_v2/{uid}. Revocation updates this very document;
-      // legacy guardian_grants_v2 is NOT authoritative in this candidate.
-      // Reuses the age document already evaluated by the parent guard,
-      // avoiding an independent grant read at the offer write budget boundary.
-      // Not usable in production until trusted issuance and migrations exist.
-      let proof = get(guardianAgeDoc(uid)).data.guardian;
+    function guardianValidGrant(uid, cap, proof) {
+      // DEMO: re-use the exact same server-read age+guardian snapshot instead
+      // of evaluating another get() in the critical publication/offer budget.
+      // Legacy guardian_grants_v2 alone is NEVER authoritative. Issuance and
+      // revocation of the embedded proof remain trusted-backend obligations.
       return proof.keys().hasAll([
           'childUid','guardianUid','issuer','active','consentVersion',
           'approvedCapabilities','expires_at'
@@ -121,13 +118,13 @@ const helpers = `
         && data.buyer_id == chat.buyer_id
         && data.seller_id == chat.seller_id;
     }
-    // DEMO-only server-issued UGC revision and guardian consent epoch.
-    // UGC proof collection is client read-only in V2; no app checkbox can
-    // create, revise or revive this grant. Backend MUST enforce on every
-    // actual create once audited trusted issuance exists.
-    function guardianUgcConsentReady(uid) {
-      let consent = get(/databases/$(database)/documents/ugc_consents_v2/$(uid)).data;
-      let age = get(guardianAgeDoc(uid)).data;
+    // DEMO admission reads one server-owned age_proofs_v2 snapshot containing
+    // BOTH age, guardian and UGC revision. No second Firestore lookup or
+    // mixed-revision race, and the app cannot author this snapshot. Separate
+    // ugc_consents_v2 is reserved for issuer/audit; its mere existence never
+    // confers admission. Production issuer and rollout are NOT implemented.
+    function guardianUgcConsentReady(uid, age) {
+      let consent = age.ugc;
       return signedIn() && uid is string
         && consent.keys().hasAll(['subjectUid','issuer','rulesVersion','granted','revoked','expires_at'])
         && consent.subjectUid == uid
@@ -144,12 +141,12 @@ const helpers = `
             && consent.guardianConsentVersion == age.guardian.consentVersion));
     }
     function guardianCanPublish(uid) {
-      // One age proof read, then one grant read only for the under13 branch.
       let proof = get(guardianAgeDoc(uid)).data;
       return signedIn() && uid is string
         && guardianAgeDataAllowed(uid, ['adult','teen_13_17','under_13'], proof)
         && (proof.band == 'adult'
-          || guardianValidGrant(uid, 'publish_listing'));
+          || guardianValidGrant(uid, 'publish_listing', proof.guardian))
+        && guardianUgcConsentReady(uid, proof);
     }
 `;
 rules = rules.replace(signedIn, signedIn + helpers);
@@ -181,7 +178,7 @@ function guardSection(start, end, old, guard, name) {
 
 guardSection('    match /listings_v2/{listingId} {', '    match /offers/{offerId} {',
   'allow create: if signedIn() && notSuspended()',
-  'guardianCanPublish(request.auth.uid) && guardianUgcConsentReady(request.auth.uid)', 'listing create');
+  'guardianCanPublish(request.auth.uid)', 'listing create');
 // Read old conversations only when their server-vetted pair grant is live.
 // Moderator access remains explicitly separate for abuse/safety review.
 guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
