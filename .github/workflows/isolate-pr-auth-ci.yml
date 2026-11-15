@@ -38,6 +38,9 @@ jobs:
         run: npm run typecheck
       - name: Build local web bundle using TypeScript 7 (no network)
         run: npm run build
+      - name: WebView 83 compatibility of built JS (source-only, no deploy)
+        if: github.ref_name == 'integration/tutop-121-122-fcm-owner-ci-20261022'
+        run: node scripts/webview83-bundle-compat-tests.mjs
       - name: Synthetic auth/notification tests only (no external services)
         shell: bash
         run: |
