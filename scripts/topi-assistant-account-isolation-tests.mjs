@@ -233,6 +233,8 @@ assert(!submittedAiReports[0].join(' ').includes('RESPUESTA_AI_SINTETICA'),
   'the full provider answer must not be silently uploaded');
 await Promise.resolve();
 await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(hooks[6], 'Reporte de respuesta de IA enviado para revisión.');
 assert(content(render()).includes('Reporte de respuesta de IA enviado'),
   'only an explicit submitted AI report can show success');
 
