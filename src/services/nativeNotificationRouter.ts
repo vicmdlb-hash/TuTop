@@ -59,9 +59,10 @@ function route(intent: NativeNotificationIntent, markRead = true) {
   }
   if (intent.listing_id) {
     state.setActiveTab('feed');
+    // Even a cached "approved" listing can have been remoderated since its
+    // last refresh. Never show it on a push tap before a trusted snapshot.
+    if (markRead) return false;
     state.openProduct(intent.listing_id);
-    // At cold start the listing may not be hydrated yet, or moderation may
-    // have withdrawn it. Only report a resolved target if visibility passed.
     return useAppStore.getState().selectedProductId === intent.listing_id;
   }
   if (intent.transaction_id) {
