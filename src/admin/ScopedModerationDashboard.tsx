@@ -46,11 +46,20 @@ export default function ScopedModerationDashboard() {
       // Never report an unavailable security queue as an empty verified queue.
       // Keep successful sections visible while naming exactly which reads failed.
       const failedSections: string[] = [];
+      // Verification and support roles are not entitled to reports/no-show.
+      // Skip deliberately inaccessible queues: forbidden != network failure.
+      const canReadIncidentQueues = admin.role !== 'verification_reviewer' && admin.role !== 'support';
       const [caseDocs, reportDocs, claimDocs, auditDocs] = await Promise.all([
         scopedAdminBackend.moderationCases(undefined, 200).catch(() => { failedSections.push('casos'); return []; }),
-        scopedAdminBackend.reports(200).catch(() => { failedSections.push('reportes'); return []; }),
-        scopedAdminBackend.noShowClaims(200).catch(() => { failedSections.push('reclamos no-show'); return []; }),
-        scopedAdminBackend.auditLog(80).catch(() => { failedSections.push('auditoría'); return []; }),
+        canReadIncidentQueues
+          ? scopedAdminBackend.reports(200).catch(() => { failedSections.push('reportes'); return []; })
+          : Promise.resolve([]),
+        canReadIncidentQueues
+          ? scopedAdminBackend.noShowClaims(200).catch(() => { failedSections.push('reclamos no-show'); return []; })
+          : Promise.resolve([]),
+        canReadIncidentQueues
+          ? scopedAdminBackend.auditLog(80).catch(() => { failedSections.push('auditoría'); return []; })
+          : Promise.resolve([]),
       ]);
       setCases(caseDocs as AdminDoc[]);
       setReports(reportDocs as AdminDoc[]);
@@ -100,7 +109,7 @@ export default function ScopedModerationDashboard() {
         </div>
 
         {context?.role === 'institution_moderator' && <div className="mt-4 rounded-2xl border border-sky-400/15 bg-sky-400/[0.05] p-4 text-sm text-sky-100/70"><ShieldCheck className="mr-2 inline h-4 w-4 text-sky-300"/>Tu sesión está limitada por Rules y consultas a <strong>{context.institution_id}</strong>. No se cargan casos de otras universidades.</div>}
-        {error && <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/[0.06] p-4 text-sm text-rose-200"><AlertTriangle className="mr-2 inline h-4 w-4"/>{error}</div>}
+        {error && <div role="alert" className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/[0.06] p-4 text-sm text-rose-200"><AlertTriangle className="mr-2 inline h-4 w-4"/>{error}</div>}
 
         <div className="mt-6 flex gap-2 overflow-x-auto pb-2">
           {queues.map((item) => <button key={item.key} onClick={() => setQueue(item.key)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-black ${queue === item.key ? 'bg-violet-500 text-white' : 'border border-white/[0.07] bg-[#0b111c] text-slate-400'}`}>{item.label} <span className="ml-1 opacity-70">{queueCount(item.key)}</span></button>)}
