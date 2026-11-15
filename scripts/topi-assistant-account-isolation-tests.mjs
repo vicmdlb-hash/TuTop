@@ -35,6 +35,7 @@ let currentUid = 'synthetic-user';
 let reportNonceSequence = 0;
 let switchUidDuringPrompt = false;
 let promptReason = 'Esta respuesta es imprecisa';
+let promptCategory = '1';
 let dictationStops = 0;
 let unmount = () => {};
 const mockSupport = {
@@ -63,9 +64,9 @@ vm.runInNewContext(js, {
   },
   console,
   crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(++reportNonceSequence).padStart(12, '0') },
-  window: { prompt: () => {
+  window: { prompt: (message) => {
     if (switchUidDuringPrompt) currentUid = 'synthetic-other';
-    return promptReason;
+    return message.startsWith('Categoría del reporte') ? promptCategory : promptReason;
   } },
 }, { timeout: 4000 });
 const Topi = module.exports.default;
@@ -236,13 +237,18 @@ assert.equal(submittedAiReports.length, 0, 'sensitive report reason must not rea
 assert(content(render()).includes('El motivo incluye datos sensibles'),
   'show a useful correction without rendering the pasted private data');
 promptReason = 'Esta respuesta es imprecisa';
+promptCategory = '9';
+button(render(), 'Reportar respuesta de IA').props.onClick();
+assert.equal(submittedAiReports.length, 0, 'invalid classification must never be sent');
+assert(content(render()).includes('Selecciona una categoría del 1 al 4'));
+promptCategory = '1';
 dialog = render();
 button(dialog, 'Reportar respuesta de IA').props.onClick();
 button(dialog, 'Reportar respuesta de IA').props.onClick();
 assert.equal(submittedAiReports.length, 1, 'same-tick duplicate AI reports must be suppressed');
 assert.equal(submittedAiReports[0][0], 'ai_response');
 assert.equal(submittedAiReports[0][1], 'topi-firebase-ai:root:00000000-0000-4000-8000-000000000001');
-assert.equal(submittedAiReports[0][2], 'Esta respuesta es imprecisa');
+assert.equal(submittedAiReports[0][2], '[exactitud] Esta respuesta es imprecisa');
 assert(!submittedAiReports[0].join(' ').includes('RESPUESTA_AI_SINTETICA'),
   'the full provider answer must not be silently uploaded');
 await Promise.resolve();
@@ -264,8 +270,10 @@ pending[7].resolve({ source: 'firebase-ai', route: 'root', text: 'OTRA_RESPUESTA
 await Promise.resolve();
 await Promise.resolve();
 await new Promise((resolve) => setImmediate(resolve));
+promptCategory = '3';
 button(render(), 'Reportar respuesta de IA').props.onClick();
 assert.equal(submittedAiReports.length, 2);
+assert(submittedAiReports[1][2].startsWith('[privacidad] '));
 assert.equal(submittedAiReports[1][1], 'topi-firebase-ai:root:00000000-0000-4000-8000-000000000002');
 assert.notEqual(submittedAiReports[0][1], submittedAiReports[1][1],
   'different provider answers cannot share a moderation target');
