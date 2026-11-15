@@ -121,6 +121,28 @@ const helpers = `
         && data.buyer_id == chat.buyer_id
         && data.seller_id == chat.seller_id;
     }
+    // DEMO-only server-issued UGC revision and guardian consent epoch.
+    // UGC proof collection is client read-only in V2; no app checkbox can
+    // create, revise or revive this grant. Backend MUST enforce on every
+    // actual create once audited trusted issuance exists.
+    function guardianUgcConsentReady(uid) {
+      let consent = get(/databases/$(database)/documents/ugc_consents_v2/$(uid)).data;
+      let age = get(guardianAgeDoc(uid)).data;
+      return signedIn() && uid is string
+        && consent.keys().hasAll(['subjectUid','issuer','rulesVersion','granted','revoked','expires_at'])
+        && consent.subjectUid == uid
+        && consent.issuer == 'trusted_server'
+        && consent.rulesVersion == 'ugc-beta-draft-2026-11-14-v1'
+        && consent.granted == true && consent.revoked == false
+        && consent.expires_at is timestamp
+        && consent.expires_at > request.time
+        && (age.band == 'adult'
+          || ('guardianConsentVersion' in consent
+            && 'guardian' in age
+            && consent.guardianConsentVersion is string
+            && consent.guardianConsentVersion.size() > 0
+            && consent.guardianConsentVersion == age.guardian.consentVersion));
+    }
     function guardianCanPublish(uid) {
       // One age proof read, then one grant read only for the under13 branch.
       let proof = get(guardianAgeDoc(uid)).data;
@@ -159,7 +181,7 @@ function guardSection(start, end, old, guard, name) {
 
 guardSection('    match /listings_v2/{listingId} {', '    match /offers/{offerId} {',
   'allow create: if signedIn() && notSuspended()',
-  'guardianCanPublish(request.auth.uid)', 'listing create');
+  'guardianCanPublish(request.auth.uid) && guardianUgcConsentReady(request.auth.uid)', 'listing create');
 // Read old conversations only when their server-vetted pair grant is live.
 // Moderator access remains explicitly separate for abuse/safety review.
 guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
