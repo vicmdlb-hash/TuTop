@@ -37,9 +37,11 @@ export function prepareGuardianRevocation(input) {
 
   // Conservative server transaction budget, not a published product limit.
   // Any fanout above this bound needs a different deny-first architecture.
-  // Revoke the independent trusted adult-action proof too: otherwise an
-  // authorization issued before consent withdrawal could remain valid.
-  const numberOfWrites = chats.length + 3;
+  // Revoke independent adult-action and UGC consent proof too: otherwise
+  // authorization issued before consent withdrawal could survive reissuance.
+  // Revoke the UGC proof in the SAME server operation. Otherwise a later
+  // age-proof reissue could resurrect an old consent/version without approval.
+  const numberOfWrites = chats.length + 4;
   requireValid(numberOfWrites <= 400, 'cannot_atomically_revoke_all_chats');
   const seen = new Set();
   for (const chat of chats) {
@@ -56,6 +58,12 @@ export function prepareGuardianRevocation(input) {
     { path: 'age_proofs_v2/' + subjectUid, changes: { revoked: true } },
     { path: 'guardian_grants_v2/' + subjectUid, changes: { active: false } },
     { path: 'adult_actions_v2/' + subjectUid, changes: { authorized: false } },
+    // If no UGC record exists, the privileged writer must CREATE a deny
+    // tombstone rather than fail an update of a missing document. This is
+    // not an executable instruction and cannot grant publication.
+    { path: 'ugc_consents_v2/' + subjectUid,
+      writeMode: 'server_upsert_tombstone',
+      changes: { revoked: true, granted: false } },
     ...chats.map(chat => ({
       path: 'chats/' + chat.id,
       changes: { guardian_pair_revoked: true, guardian_pair_vetted: false },
