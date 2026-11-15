@@ -52,8 +52,13 @@ export function assertAdminDocumentResponse(document, expectedName) {
 
 export async function collectCursorPages(fetchPage, { pageSize = 500, maxPages = 10000 } = {}) {
   if (typeof fetchPage !== 'function') throw new Error('FETCH_PAGE_REQUIRED');
-  const size = Math.max(1, Math.min(1000, Number(pageSize) || 500));
-  const pageCap = Math.max(1, Math.min(100000, Number(maxPages) || 10000));
+  // Fractional/invalid cursor limits can make a short page look exhausted,
+  // silently truncating a privileged deletion inventory. Reject, don't coerce.
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 1000
+      || !Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 100000)
+    throw new Error('QUERY_PAGE_OPTIONS_INVALID');
+  const size = pageSize;
+  const pageCap = maxPages;
   const results = [];
   const seen = new Set();
   let afterName = '';
@@ -114,7 +119,9 @@ export async function collectTokenPages(fetchPage, { pageSize = 300, maxPages = 
       seenNames.add(name);
       results.push(doc);
     }
-    const next = raw.nextPageToken ?? '';
+    // Only an omitted or empty token proves the last page. An explicit null
+    // token is malformed and must never be treated as an exhaustive inventory.
+    const next = raw.nextPageToken === undefined ? '' : raw.nextPageToken;
     if (typeof next !== 'string') throw new Error('LIST_PAGE_TOKEN_INVALID');
     if (!next) return results;
     if (next === pageToken || seenTokens.has(next))
