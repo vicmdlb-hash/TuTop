@@ -126,6 +126,13 @@ assert.deepEqual(accepted, [{
   fields: { uid: { stringValue: 'synthetic-user' } },
 }]);
 assert.deepEqual(parseFirestoreRunQueryRows([]), []);
+// A nested collection may legitimately be called "documents". The cursor
+// parser must preserve every subsequent path component, never truncate at a
+// second "/documents/" delimiter and falsely certify deletion coverage.
+const nestedDocumentsName = 'projects/demo/databases/(default)/documents/chats/chat1/documents/nested1';
+assert.deepEqual(parseFirestoreRunQueryRows([
+  { document: { name: nestedDocumentsName, fields: {} } },
+]), [{ name: nestedDocumentsName, path: 'chats/chat1/documents/nested1', fields: {} }]);
 // A successful HTTP response can still skip results; never treat it as a
 // complete deletion inventory. This test is pure and makes no Firebase calls.
 assert.throws(() => parseFirestoreRunQueryRows([
