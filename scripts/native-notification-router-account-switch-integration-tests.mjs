@@ -238,4 +238,47 @@ function harness(initialUid = 'B') {
     'legitimate B notification must still mark as read and route to B chat');
 }
 
-console.log('PASS 16 native notification router integration scenarios with mock Auth/store/snapshots, no Firebase');
+// Delivery is not a read receipt, even when the cached chat belongs to B.
+{
+  const h = harness('B');
+  h.state.notifications.push({ id: 'B-unread-delivery', chat_id: 'chat-b', kind: 'message' });
+  h.send({
+    source: 'received', recipient_uid: 'B', chat_id: 'chat-b',
+    notification_id: 'B-unread-delivery',
+  });
+  await h.flush();
+  assert.deepEqual(h.operations, ['hydrate:B'],
+    'a delivered notification must remain unread until a user action');
+}
+// The account switch can leave an A-owned offer/system notification without
+// chat_id in the B store. A B-addressed push must not mark that stale row read.
+{
+  const h = harness('B');
+  h.state.notifications.push({ id: 'A-stale-chatless', kind: 'offer' });
+  h.send({
+    source: 'action', recipient_uid: 'B', notification_id: 'A-stale-chatless',
+    kind: 'offer_received',
+  });
+  await h.flush();
+  assert.deepEqual(h.operations, ['tab:inbox', 'hydrate:B'],
+    'B cannot mark an A-owned cached chatless notification read');
+}
+// A real B-owned chatless notification remains readable when a fresh,
+// owner-verified online snapshot proves that it belongs to B.
+{
+  const h = harness('B');
+  h.state.notifications.push({ id: 'B-owned-chatless', kind: 'offer' });
+  h.backend.loadSnapshot = async () => ({
+    user: { id: 'B' },
+    notifications: [{ id: 'B-owned-chatless', kind: 'offer' }],
+  });
+  h.send({
+    source: 'action', recipient_uid: 'B', notification_id: 'B-owned-chatless',
+    kind: 'offer_received',
+  });
+  await h.flush();
+  assert.deepEqual(h.operations, ['tab:inbox', 'hydrate:B', 'read:B-owned-chatless'],
+    'owner-verified B snapshot should mark the right chatless notification read');
+}
+
+console.log('PASS native notification router account/session/read-ownership integration, no Firebase');
