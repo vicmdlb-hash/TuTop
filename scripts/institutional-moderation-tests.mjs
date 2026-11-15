@@ -132,19 +132,18 @@ assert.match(auditQuery, /field: 'institution_id', op: 'EQUAL', value: admin\.in
 assert.doesNotMatch(auditQuery, /if \(admin\.role === 'institution_moderator' && admin\.institution_id\)/);
 console.log('PASS missing institutional scope cannot request cross-institution admin queues');
 
-// The Firestore authorization barrier must not accept the old all-admin read
-// policy, even if UI queries are filtered. The emulator gate tests deployment
-// compatibility separately; these are exact source regression anchors.
-const firestoreRules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
-const auditRules = firestoreRules.split('match /audit_log/{entryId} {')[1]
-  ?.split('match /reputation/{uid}')[0];
-assert(auditRules, 'audit_log Rules block must exist');
-assert.doesNotMatch(auditRules, /allow read: if isAdmin\(\);/);
-assert.match(auditRules, /data\.role in \['super_admin', 'trust_safety', 'moderator'\]/);
-assert.match(auditRules, /data\.role == 'institution_moderator'/);
-assert.match(auditRules, /data\.institution_id is string/);
-assert.match(auditRules, /resource\.data\.institution_id == get\(adminDoc\(\)\)\.data\.institution_id/);
-console.log('PASS audit Rules role and institution scope are enforced in source');
+// The V2 template is intentionally permissive input to a fail-closed
+// generator; release security must be checked in the generated-policy source.
+const firestoreTemplate = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
+const prepareGenerator = fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs', 'utf8');
+assert(firestoreTemplate.includes("match /moderation_cases/{caseId} { allow read, write: if isAdmin(); }"));
+assert(prepareGenerator.includes("requireOnce(generated, permissiveModeration, 'moderation_cases permisivo')"));
+const auditGenerator = prepareGenerator.split("  '    match /audit_log/{entryId} {'")[1]
+  ?.split("  'audit log scope',")[0];
+assert(auditGenerator, 'audit_log generator transform must exist');
+assert(auditGenerator.includes("allow read: if globalModerationAdmin() || institutionModeratorFor(resource.data);"));
+assert(auditGenerator.includes("institutionModeratorFor(request.resource.data)"));
+console.log('PASS audit least-privilege transform is present in V2 generator');
 
 // Role separation must agree with marketplaceGovernance.canModerateCase.
 checkDeny('ROLE_SCOPE_DENIED', actor('moderator'), record('credential'));
@@ -152,29 +151,25 @@ checkDeny('ROLE_SCOPE_DENIED', actor('institution_moderator', 'uatx'), record('c
 assert.equal(requireModerationCaseTransition(actor('moderator'), record('chat'), 'resolved'), 'uatx');
 assert.equal(requireModerationCaseTransition(actor('verification_reviewer'), record('credential'), 'resolved'), 'uatx');
 
-// The V2 Rules are a separate security boundary from the admin client.
-// This source contract is necessary, not a substitute for emulator allow/deny.
-const reportRules = firestoreRules.split('match /reports/{reportId} {')[1]
-  ?.split('match /moderation_cases/{caseId} {')[0];
-const moderationRules = firestoreRules.split('match /moderation_cases/{caseId} {')[1]
-  ?.split('match /audit_log/{entryId} {')[0];
-assert(reportRules, 'reports Rules block must exist');
-assert(moderationRules, 'moderation_cases Rules block must exist');
-assert.doesNotMatch(reportRules, /allow read: if isAdmin\(\) \|\|/);
-assert.match(reportRules, /data\.role == 'institution_moderator'/);
-assert.match(reportRules, /resource\.data\.institution_id == get\(adminDoc\(\)\)\.data\.institution_id/);
-assert.match(reportRules, /resource\.data\.status in \['open','reviewing'\]/);
-assert.match(reportRules, /request\.resource\.data\.status in \['reviewing','resolved','dismissed'\]/);
-assert.doesNotMatch(moderationRules, /allow read, write: if isAdmin\(\);/);
-assert.match(moderationRules, /allow create, delete: if false;/);
-assert.match(moderationRules, /allow update: if isAdmin\(\)/);
-assert.match(moderationRules, /data\.role == 'institution_moderator'/);
-assert.match(moderationRules, /data\.role == 'verification_reviewer'/);
-assert.match(moderationRules, /data\.role == 'support'/);
-assert.match(moderationRules, /resource\.data\.institution_id == get\(adminDoc\(\)\)\.data\.institution_id/);
-assert.match(moderationRules, /resource\.data\.kind != 'credential'/);
-assert.match(moderationRules, /affectedKeys\(\)\.hasOnly\(\['status','updated_at'\]\)/);
-assert.match(moderationRules, /request\.resource\.data\.status in \['reviewing','resolved','dismissed'\]/);
-console.log('PASS moderation cases/reports scoped Rules source contracts');
+// The generator, not its input template, owns the actual V2 rules used by
+// the emulator. These contracts guard strict role-scoped output construction.
+const reportTransform = prepareGenerator.split("  '    match /reports/{reportId} {'")[1]
+  ?.split("  'reports institutional scope',")[0];
+const moderationOutput = prepareGenerator.split('const strictModerationAndPrivacy = `')[1]
+  ?.split('`;' + '\n' + 'requireOnce(generated, permissiveModeration')[0];
+assert(reportTransform, 'reports scoped rule transformer must exist');
+assert(moderationOutput, 'generated moderation rules must exist');
+assert(reportTransform.includes("canModerateInstitution(resource.data)"));
+assert(reportTransform.includes("resource.data.status in ['open','reviewing']"));
+assert(reportTransform.includes("request.resource.data.status != resource.data.status"));
+assert(moderationOutput.includes("allow read: if canHandleModerationCase(resource.data)"));
+assert(moderationOutput.includes("allow create: if canDecideModerationCase(request.resource.data)"));
+assert(moderationOutput.includes("allow update: if canDecideModerationCase(resource.data)"));
+assert(moderationOutput.includes("resource.data.status in ['open','reviewing']"));
+assert(moderationOutput.includes("request.resource.data.status != resource.data.status"));
+assert(moderationOutput.includes("allow delete: if false;"));
+assert(prepareGenerator.includes("function canDecideModerationCase(data)"));
+assert(prepareGenerator.includes("institutionModeratorFor(data) && ('kind' in data) && data.kind != 'credential'"));
+console.log('PASS generated moderation/report Rules role and transition contracts');
 
 console.log('Institutional moderation tests: PASS');
