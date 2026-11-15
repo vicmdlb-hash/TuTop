@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
 
 const schema = fs.readFileSync('src/lib/listingSchemaV2.ts','utf8');
 const listings = fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8');
@@ -19,8 +20,12 @@ assert.match(listings, /availability_status: 'available' as const/);
 // Exercise the actual canonical projection expression, with no Firebase credentials.
 const availabilityMatch = listings.match(/availability_status: ([^\n]+),\n\s*punto_encuentro:/);
 assert(availabilityMatch, 'canonical availability projection must remain traceable');
-const projectAvailability = new Function('data', 'return (' + availabilityMatch[1] + ');');
+const projectAvailability = new Function('data', 'validPrice = true', 'return (' + availabilityMatch[1] + ');');
 assert.equal(projectAvailability({ quantity: 1, availability_status: 'available' }), 'available');
+assert.equal(projectAvailability({ quantity: 1, availability_status: 'available' }, false), 'unverified',
+  'a listing with a malformed price may not appear immediately offerable');
+assert.match(listings, /const validPrice = typeof data\.price_mxn === 'number' && Number\.isFinite\(data\.price_mxn\)/);
+assert.match(listings, /estado: validPrice \? legacyStatus\(data\.status\) : 'Pausado'/);
 assert.equal(projectAvailability({ quantity: 1, availability_status: 'reserved' }), 'reserved');
 assert.equal(projectAvailability({ quantity: 1 }), 'available', 'legacy absent status remains compatible');
 assert.equal(projectAvailability({ quantity: 1, availability_status: null }), 'unverified');
@@ -32,6 +37,55 @@ for (const quantity of [undefined, null, 0, -1, 1.5, 100, '1']) {
 }
 
 assert.match(listings, /Number\(a\.availability_status !== 'available'\)/);
+
+// Unknown canonical lifecycle states must not be projected as public Activo.
+// Verify the actual TypeScript status conversion instead of a replicated model.
+function sourceFunction(name, nextName) {
+  const start = listings.indexOf('function ' + name + '(');
+  const end = listings.indexOf('\nfunction ' + nextName + '(', start);
+  assert(start >= 0 && end > start, 'missing status projection source ' + name);
+  return new Function(stripTypeScriptTypes(listings.slice(start, end)) + '\nreturn ' + name + ';')();
+}
+const toLegacyStatus = sourceFunction('legacyStatus', 'canonicalStatus');
+const toCanonicalStatus = sourceFunction('canonicalStatus', 'legacyDelivery');
+assert.equal(toLegacyStatus('active'), 'Activo');
+assert.equal(toLegacyStatus('sold_out'), 'Vendido');
+assert.equal(toLegacyStatus('paused'), 'Pausado');
+assert.equal(toLegacyStatus(undefined), 'Pausado');
+assert.equal(toLegacyStatus('UNKNOWN_FROM_FIRESTORE'), 'Pausado');
+assert.equal(toCanonicalStatus('Activo'), 'active');
+assert.equal(toCanonicalStatus('Reservado'), 'active', 'legacy transaction reservation remains compatible');
+assert.equal(toCanonicalStatus('Pausado'), 'paused');
+assert.equal(toCanonicalStatus(undefined), 'paused');
+assert.equal(toCanonicalStatus('UNKNOWN_FROM_UI'), 'paused');
+
+
+// Execute the real offer precondition with credential-free synthetic reads.
+// A corrupt price cannot be allowed merely because status and stock look valid.
+const offerableStart = offers.indexOf('async function assertOfferableListing(');
+const offerableEnd = offers.indexOf('\nfunction assertOfferNotExpired(', offerableStart);
+assert(offerableStart >= 0 && offerableEnd > offerableStart);
+const assertOfferableListing = new Function(
+  stripTypeScriptTypes(offers.slice(offerableStart, offerableEnd))
+  + '\nreturn assertOfferableListing;'
+)();
+const safeListing = {
+  seller_id: 'synthetic-seller', status: 'active',
+  moderation_status: 'approved', quantity: 1,
+  availability_status: 'available', price_mxn: 0,
+};
+const clientWithListing = listing => ({
+  getDocument: async () => ({ data: listing }),
+});
+await assert.doesNotReject(assertOfferableListing(clientWithListing(safeListing), 'listing-test', 'synthetic-seller'),
+  'explicit free (0 MXN) listings remain supported');
+for (const invalidPrice of [-1, Number.NaN, Infinity, '250', null, undefined]) {
+  await assert.rejects(
+    assertOfferableListing(clientWithListing({ ...safeListing, price_mxn: invalidPrice }), 'listing-test', 'synthetic-seller'),
+    /LISTING_PRICE_UNVERIFIED/,
+    'invalid canonical prices must fail closed before offer submission',
+  );
+}
 
 assert.match(tx, /reservationAvailabilityWrite/);
 assert.match(tx, /availability_status: availability/);
