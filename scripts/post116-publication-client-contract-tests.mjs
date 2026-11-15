@@ -116,7 +116,7 @@ function updaterFixture({ seller = 'seller-A', version = 'version-1', switchSess
 }
 for (const fixture of [
   [{ seller: 'seller-B' }, /SELLER_REQUIRED/],
-  [{ version: undefined }, /LISTING_VERSION_REQUIRED/],
+  [{ version: null }, /LISTING_VERSION_REQUIRED/],
   [{ switchSession: true }, /AUTH_SESSION_CHANGED/],
   [{ exists: false }, /LISTING_NOT_FOUND/],
 ]) {
