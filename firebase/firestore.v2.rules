@@ -653,7 +653,7 @@ service cloud.firestore {
       allow create: if signedIn() && notSuspended()
         && request.resource.data.keys().hasOnly(['created_by','target_type','target_id','reason','status','institution_id','priority','created_at','updated_at'])
         && request.resource.data.created_by == request.auth.uid
-        && request.resource.data.target_type in ['product','user','chat','offer','transaction','demand_request']
+        && request.resource.data.target_type in ['product','user','chat','ai_response','offer','transaction','demand_request']
         && request.resource.data.target_id is string && request.resource.data.target_id.size() >= 2 && request.resource.data.target_id.size() <= 180
         && request.resource.data.reason is string && request.resource.data.reason.size() >= 3 && request.resource.data.reason.size() <= 500
         && (!('priority' in request.resource.data) || request.resource.data.priority in ['normal','high','urgent'])
