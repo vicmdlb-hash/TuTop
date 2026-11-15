@@ -46,8 +46,10 @@ export default function V2ListingsHydrator() {
           useAppStore.setState({ products });
           window.dispatchEvent(new Event(V2_LISTINGS_BASE_HYDRATED_EVENT));
         }
-      } catch (error) {
-        console.warn('[TuTop V2 listings sync]', error);
+      } catch {
+        // Firestore/transport exceptions may contain private account paths,
+        // request URLs or headers. Never export the raw exception to logs.
+        console.warn('[TuTop V2 listings sync] failed');
       } finally {
         inFlight = false;
         const replay = queuedRefresh && active && navigator.onLine

@@ -114,6 +114,45 @@ assert.deepEqual(current.products.map((x) => x.id), ['new-approved-listing'],
 cleanup();
 events.dispatchEvent({ type: 'online' });
 assert.equal(deferredReads.length, 3, 'cleanup removes reconnect handler');
+// On a failed authenticated catalog fetch, the real component must not
+// export raw transport errors into QA logs (URLs, account identifiers, tokens).
+const errorVm = { exports: {} };
+const capturedWarnings = [];
+const isolatedErrorBackend = {
+  loadMarketplaceProducts: () =>
+    Promise.reject(new Error('secret synthetic token=private-uid-A https://example.test/query?token=test-private')),
+};
+const errorStore = (selector) => selector(current);
+errorStore.getState = () => current;
+errorStore.setState = () => {};
+errorStore.subscribe = () => () => {};
+runInNewContext(rendered, {
+  module: errorVm, exports: errorVm.exports,
+  require(name) {
+    if (name === 'react') return { useEffect(effect) { effect(); } };
+    if (name === '../services/canonicalListingsBackend') return { canonicalListingsBackend: isolatedErrorBackend };
+    if (name === '../services/nationalBackend') return { nationalSchemaEnabled: () => true };
+    if (name === '../store/useAppStore') return { useAppStore: errorStore };
+    throw new Error('Unexpected error-privacy dependency ' + name);
+  },
+  window: events,
+  document: {
+    visibilityState: 'visible',
+    addEventListener: events.addEventListener.bind(events),
+    removeEventListener: events.removeEventListener.bind(events),
+  },
+  navigator: { onLine: true },
+  Event: class { constructor(type) { this.type = type; } },
+  Date, Promise, Set,
+  console: { warn: (...args) => capturedWarnings.push(args) },
+}, { timeout: 2500 });
+errorVm.exports.default();
+await flushRead();
+assert.equal(capturedWarnings.length, 1,
+  'failed listing sync should produce one bounded diagnostic');
+assert.deepEqual(capturedWarnings[0],
+  ['[TuTop V2 listings sync] failed'],
+  'never log untrusted Firebase exception or account-bearing URL');
 console.log('PASS base listing refresh: overlapping online event is replayed exactly once; A→B→A stays isolated');
 
 // Nearby stale-injection guard: exercise the actual React hydrator using
