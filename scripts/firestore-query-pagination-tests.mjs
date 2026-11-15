@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse, collectAuthAccountPages } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse, collectAuthAccountPages, firestoreListDocumentPath } from './firestore-query-pagination.mjs';
 
 const docs = Array.from({ length: 2505 }, (_, index) => ({
   name: `projects/demo/databases/(default)/documents/items/${String(index).padStart(5, '0')}`,
@@ -106,6 +106,30 @@ assert.match(admin, /from: \[\{ collectionId: clean, allDescendants: true \}\]/)
 const reset = fs.readFileSync('scripts/reset-staging-accounts.mjs', 'utf8');
 assert.match(reset, /adminListCollectionGroupDocuments\(subcollection\)/);
 assert.match(admin, /collectTokenPages/);
+// The actual privileged listDocuments mapping must use the pure scoped
+// parser, not a split() that truncates a nested collection named "documents".
+assert.match(admin, /path: firestoreListDocumentPath\\(document\\.name, projectId, collectionPath\\)/);
+assert.doesNotMatch(admin, /document\\.name\\.split\\('\\/documents\\/'\\)/);
+const listRoot = 'projects/demo/databases/(default)/documents/';
+assert.equal(
+  firestoreListDocumentPath(listRoot + 'chats/chat1/documents/nested1',
+    'demo', 'chats/chat1/documents'),
+  'chats/chat1/documents/nested1',
+);
+assert.equal(firestoreListDocumentPath(listRoot + 'chats/chat1', 'demo', 'chats'),
+  'chats/chat1');
+for (const [resource, project, collection] of [
+  [listRoot + 'chats/chat1/documents/nested1', 'demo', 'chats'],
+  [listRoot + 'chats/chat1', 'other-project', 'chats'],
+  [listRoot + 'chats/chat1/messages/item1', 'demo', 'chats/chat1/documents'],
+  [listRoot + 'chats/chat1/', 'demo', 'chats'],
+  [listRoot + 'chats/chat1', 'demo', 'chats/chat1'],
+  [listRoot + 'chats/chat1', 'demo', 'chats/'],
+]) {
+  assert.throws(() => firestoreListDocumentPath(resource, project, collection),
+    /LIST_DOCUMENT_PATH_INVALID/,
+    'listDocuments inventory must refuse cross-scope or malformed paths');
+}
 assert.match(admin, /fieldPath: '__name__'/);
 assert.match(admin, /startAt: \{ values: \[\{ referenceValue: afterName \}\], before: false \}/);
 assert.doesNotMatch(admin, /offset:/);

@@ -1,6 +1,6 @@
 import { assertAuthBatchDeleteResponse, assertAuthAccountAbsent } from './auth-batch-delete-proof.mjs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse, collectAuthAccountPages } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse, collectAuthAccountPages, firestoreListDocumentPath } from './firestore-query-pagination.mjs';
 import { buildAccountErasureFinalCommit } from './account-erasure-atomic-commit.mjs';
 import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
 
@@ -140,7 +140,7 @@ export async function adminListDocuments(collectionPath, pageSize = 300) {
   }, { pageSize: size });
   return documents.map(document => ({
     name: document.name,
-    path: document.name.split('/documents/')[1] || '',
+    path: firestoreListDocumentPath(document.name, projectId, collectionPath),
     fields: document.fields || {},
   }));
 }

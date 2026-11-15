@@ -102,6 +102,29 @@ export async function collectCursorPages(fetchPage, { pageSize = 500, maxPages =
 }
 
 /**
+ * Fail closed on a listDocuments response outside its requested collection.
+ * Parse the full root once: a nested subcollection may itself be named
+ * "documents", so splitting at every /documents/ loses the real document path.
+ * This is a pure source helper, never an admin operation.
+ */
+export function firestoreListDocumentPath(name, projectId, collectionPath) {
+  if (typeof name !== 'string' || typeof projectId !== 'string'
+      || !/^[A-Za-z0-9_-]+$/.test(projectId)
+      || typeof collectionPath !== 'string') {
+    throw new Error('LIST_DOCUMENT_PATH_INVALID');
+  }
+  const segments = collectionPath.split('/');
+  if (segments.length % 2 !== 1 || segments.some(segment => !segment)) {
+    throw new Error('LIST_DOCUMENT_PATH_INVALID');
+  }
+  const prefix = `projects/${projectId}/databases/(default)/documents/${collectionPath}/`;
+  if (!name.startsWith(prefix)) throw new Error('LIST_DOCUMENT_PATH_INVALID');
+  const documentId = name.slice(prefix.length);
+  if (!documentId || documentId.includes('/')) throw new Error('LIST_DOCUMENT_PATH_INVALID');
+  return `${collectionPath}/${documentId}`;
+}
+
+/**
  * Firestore listDocuments uses opaque page tokens, unlike runQuery __name__
  * cursors. Stop on malformed pages, repeated tokens/documents or excessive
  * pagination: a truncated deletion inventory must never appear exhaustive.
