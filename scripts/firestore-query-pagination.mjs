@@ -27,7 +27,11 @@ export function parseFirestoreRunQueryRows(rows) {
         || !name.startsWith('projects/') || !name.includes('/databases/') || !name.includes('/documents/')) {
       throw new Error('QUERY_DOCUMENT_INVALID');
     }
-    const relativePath = name.split('/documents/')[1];
+    // Split only at the first Firestore API root delimiter. A legitimate
+    // nested collection can itself be named "documents"; splitting at every
+    // occurrence would silently shorten its path in an erasure inventory.
+    const delimiter = '/documents/';
+    const relativePath = name.slice(name.indexOf(delimiter) + delimiter.length);
     if (!relativePath || relativePath.split('/').length % 2 !== 0
         || (doc.fields !== undefined
             && (!doc.fields || typeof doc.fields !== 'object' || Array.isArray(doc.fields)))) {
