@@ -111,4 +111,25 @@ assert.match(erasureSection, /ACCOUNT_DELETION_VERSION_UNVERIFIED/);
 assert.match(erasureSection, /expectedUpdateTime: current\.updateTime/);
 assert.match(erasureSection, /ACCOUNT_DELETION_INVALID_TRANSITION/);
 
+// Regression: missing institution scope must never fall through to a global
+// query. The actual Firestore security rules remain a separate server gate.
+const reportsQuery = backendSource.split('async reports(')[1]
+  ?.split('async noShowClaims(')[0];
+const claimsQuery = backendSource.split('async noShowClaims(')[1]
+  ?.split('async auditLog(')[0];
+const auditQuery = backendSource.split('async auditLog(')[1]
+  ?.split('async moderateListing(')[0];
+for (const [name, query] of [['reports', reportsQuery], ['claims', claimsQuery]]) {
+  assert(query, name + ' query must exist');
+  assert.match(query, /admin\.role === 'institution_moderator' && !admin\.institution_id\?\.trim\(\)/);
+  assert.match(query, /INSTITUTION_SCOPE_REQUIRED/);
+  assert.match(query, /field: 'institution_id', op: 'EQUAL'/);
+}
+assert(auditQuery, 'audit query must exist');
+assert.match(auditQuery, /if \(admin\.role === 'institution_moderator'\) \{/);
+assert.match(auditQuery, /if \(!admin\.institution_id\?\.trim\(\)\) throw new Error\('INSTITUTION_SCOPE_REQUIRED'\)/);
+assert.match(auditQuery, /field: 'institution_id', op: 'EQUAL', value: admin\.institution_id/);
+assert.doesNotMatch(auditQuery, /if \(admin\.role === 'institution_moderator' && admin\.institution_id\)/);
+console.log('PASS missing institutional scope cannot request cross-institution admin queues');
+
 console.log('Institutional moderation tests: PASS');
