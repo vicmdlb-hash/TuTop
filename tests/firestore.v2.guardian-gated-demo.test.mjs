@@ -157,8 +157,31 @@ test('teen with current guardian make_offer grant can submit an offer', async ()
       const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
       const report = await response.text();
       console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_STATUS', response.status);
-      // Bound output and avoid dumping the entire ruleset/test database.
-      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_TAIL', report.slice(-9500));
+      // Inspect ONLY the relevant offer-create source lines; never dump
+      // full rule expressions, raw test documents, paths or auth credentials.
+      const coverage = JSON.parse(report);
+      const relevant = [];
+      const visit = (node) => {
+        if (!node || typeof node !== 'object') return;
+        const line = node.sourcePosition?.line;
+        if (Number.isInteger(line) && line >= 815 && line <= 860
+          && Array.isArray(node.values) && node.values.length) {
+          const summary = JSON.stringify(node.values);
+          relevant.push({
+            line, column: node.sourcePosition.column,
+            evaluated: node.values.length,
+            error: /errorValue|Null value error|Service call error|Unable to evaluate/.test(summary),
+            denied: /boolValue\":false/.test(summary),
+          });
+        }
+        for (const value of Object.values(node)) {
+          if (Array.isArray(value)) for (const child of value) visit(child);
+          else if (value && typeof value === 'object') visit(value);
+        }
+      };
+      visit(coverage);
+      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_LINE_815_860',
+        JSON.stringify(relevant.slice(0, 45)));
     } catch {
       console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_UNAVAILABLE');
     }
