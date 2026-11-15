@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { decideCapability } from '../src/lib/guardianCapabilities.ts';
+import fs from 'node:fs';
+import { decideCapability, trustedAgeBandFromServerRecord } from '../src/lib/guardianCapabilities.ts';
 
 const nowMs = 1_760_000_000_000;
 const age = (band, extras = {}) => ({
@@ -138,4 +139,31 @@ denied(check('share_personal_info', 'teen_13_17', {
 denied(check('share_personal_info', 'teen_13_17', {
   adultAction: adultAction({ actorUid: '  ' }),
 }), 'requires_guardian_action');
+// Neutral age-status presentation must not trust an input field or a previous
+// user's proof. REST decoded server-only timestamps are ISO strings.
+const record = (band = 'adult', overrides = {}) => ({
+  subjectUid: 'child', band, issuer: 'trusted_server',
+  revoked: false, expires_at: new Date(nowMs + 60_000).toISOString(), ...overrides,
+});
+for (const band of ['adult', 'under_13', 'teen_13_17']) {
+  assert.equal(trustedAgeBandFromServerRecord('child', record(band), nowMs), band);
+}
+for (const bad of [null, {}, record('unknown'), record('adult', { revoked: true }),
+  record('adult', { issuer: 'client' }), record('adult', { subjectUid: 'other' }),
+  record('adult', { expires_at: new Date(nowMs).toISOString() }),
+  record('adult', { expires_at: 'not-a-date' }),
+  record('adult', { expires_at: 99999999999999 }), record('adult', { band: 'untrusted' })]) {
+  assert.equal(trustedAgeBandFromServerRecord('child', bad, nowMs), 'unknown');
+}
+assert.equal(trustedAgeBandFromServerRecord('other', record(), nowMs), 'unknown');
+const agePanel = fs.readFileSync('src/components/NationalAccountControls.tsx', 'utf8');
+const ageSettings = fs.readFileSync('src/services/nationalUserSettings.ts', 'utf8');
+assert.match(agePanel, /trustedAgeBand, setTrustedAgeBand/);
+assert.match(agePanel, /readTrustedAgeBand\(\)\.catch\(\(\) => 'unknown'/);
+assert.match(agePanel, /Verificación de edad del servidor/);
+assert.match(agePanel, /Este panel solo informa; no concede acceso/);
+assert.match(ageSettings, /age_proofs_v2\/\$\{ownerUid\}/);
+assert.match(ageSettings, /firebase\.currentSession\?\.uid !== ownerUid/);
+assert.doesNotMatch(agePanel, /setTrustedAgeBand\(event\.target\.value\)/);
+console.log('PASS neutral server-age presentation unknown fail-closed; account/session binding; no self-declared authority');
 console.log('PASS guardian strict runtime-proof rejection cases (synthetic; backend authority still pending)');
