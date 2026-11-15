@@ -190,7 +190,9 @@ nearWindow.dispatchEvent({ type: 'tutop:approx-location', detail: nearLocation }
 assert.equal(nearPending.length, 2);
 nearPending[1].reject(new Error('SYNTHETIC_QUERY_UNAVAILABLE'));
 await flushRead();
-assert.deepEqual(nearState.products.map(x => x.id), ['base'],
+// VM-created arrays have a different prototype: copy into the host realm
+// before deepStrictEqual so matching IDs do not produce a false regression.
+assert.deepEqual(Array.from(nearState.products, x => x.id), ['base'],
   'failed Nearby refresh must not leave injected stale approved listings visible');
 // A stale failed request must not remove newer records after another query wins.
 nearWindow.dispatchEvent({ type: 'tutop:approx-location', detail: nearLocation });
