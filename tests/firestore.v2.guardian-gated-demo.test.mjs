@@ -63,7 +63,8 @@ async function seed(buyerAge = null, sellerAge = 'adult', buyerGrant = null) {
       schema_version: 2, seller_id: 'seller', status: 'active',
       moderation_status: 'approved',
     });
-    if (buyerAge) await setDoc(doc(db, 'age_proofs_v2/buyer'), age('buyer', buyerAge));
+    if (buyerAge) await setDoc(doc(db, 'age_proofs_v2/buyer'),
+      age('buyer', buyerAge, buyerGrant ? { guardian: buyerGrant } : {}));
     if (sellerAge) await setDoc(doc(db, 'age_proofs_v2/seller'), age('seller', sellerAge));
     if (buyerGrant) await setDoc(doc(db, 'guardian_grants_v2/buyer'), buyerGrant);
   });
@@ -141,6 +142,22 @@ test('teen requires a current, capability-specific trusted guardian grant for ch
 test('teen age alone is insufficient to create an offer', async () => {
   await seed('teen_13_17');
   await seedChat({ vetted: true });
+  await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
+test('legacy guardian grant alone cannot authorize a teen offer without atomic age proof', async () => {
+  await seed('teen_13_17', 'adult');
+  await env.withSecurityRulesDisabled(async (ctx) =>
+    setDoc(doc(ctx.firestore(), 'guardian_grants_v2/buyer'), grant(['make_offer'])));
+  await seedChat({ vetted: true });
+  await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
+test('revoked atomic guardian proof cannot authorize offer even when legacy grant remains active', async () => {
+  await seed('teen_13_17', 'adult', grant(['make_offer']));
+  await seedChat({ vetted: true });
+  await env.withSecurityRulesDisabled(async (ctx) =>
+    updateDoc(doc(ctx.firestore(), 'age_proofs_v2/buyer'), { 'guardian.active': false }));
   await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
 });
 
