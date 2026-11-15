@@ -65,6 +65,20 @@ await assert.rejects(
   collectTokenPages(async () => ({ documents: [listDocs[0], listDocs[0]] }),
     { pageSize: 300 }), /LIST_DOCUMENT_DUPLICATE/,
 );
+// A malformed success envelope must not convert an unknown or corrupt field
+// map into an apparently empty privileged listDocuments inventory.
+for (const badFields of [null, 'not-a-map', [], 12, true]) {
+  await assert.rejects(
+    collectTokenPages(async () => ({ documents: [{ name: listDocs[0].name, fields: badFields }] })),
+    /LIST_DOCUMENT_FIELDS_INVALID/,
+  );
+}
+assert.equal((await collectTokenPages(async () => ({
+  documents: [{ name: listDocs[0].name, fields: {} }],
+}))).length, 1);
+assert.equal((await collectTokenPages(async () => ({
+  documents: [{ name: listDocs[0].name }],
+}))).length, 1);
 await assert.rejects(collectTokenPages(async () => null), /LIST_PAGE_INVALID/);
 await assert.rejects(
   collectTokenPages(async () => ({ documents: 'malformed' })),

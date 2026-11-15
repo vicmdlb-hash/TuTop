@@ -151,6 +151,13 @@ export async function collectTokenPages(fetchPage, { pageSize = 300, maxPages = 
       const name = doc?.name;
       if (typeof name !== 'string' || !name.includes('/documents/'))
         throw new Error('LIST_DOCUMENT_NAME_INVALID');
+      // An existing document may legitimately have no fields; an explicitly
+      // null/array/scalar "fields" is a malformed remote envelope, not empty
+      // data. Never allow an inventory consumer to coerce it to {}.
+      if (Object.hasOwn(doc, 'fields')
+          && (!doc.fields || typeof doc.fields !== 'object' || Array.isArray(doc.fields))) {
+        throw new Error('LIST_DOCUMENT_FIELDS_INVALID');
+      }
       if (seenNames.has(name)) throw new Error('LIST_DOCUMENT_DUPLICATE');
       seenNames.add(name);
       results.push(doc);
