@@ -36,6 +36,18 @@ const getToken = generate.indexOf('getNativeAppCheckToken(false)');
 const invokeRemote = generate.indexOf('ai.generate(');
 assert(gate >= 0 && getPlugin > gate && getToken > gate && invokeRemote > gate,
   'native bridge must fail closed before acquiring plugin/tokens and invoking remote provider');
+// The lowest native transport boundary must sanitize even if a caller forgets
+// its own privacy filter; secrets crossing the payload limit are not exempt.
+const redactInGenerate = generate.indexOf('redactTopiRemoteText(prompt, 6000)');
+const passClean = generate.indexOf('ai.generate({ prompt: clean, model })');
+assert(redactInGenerate > getPlugin && passClean > redactInGenerate,
+  'native AI must redact the complete prompt before limiting the provider payload');
+assert.doesNotMatch(generate, /const clean = prompt\.replace\(/);
+const boundaryPrompt = redactTopiRemoteText('P'.repeat(5995) + ' usuario@example.com', 6000);
+assert(boundaryPrompt.redactions.includes('email'));
+assert(!boundaryPrompt.text?.includes('usuario@'),
+  'a clipped email must not reach the native AI provider even as a prefix');
+
 const nativeAvail = source.slice(source.indexOf('export function nativeTopiAIAvailable()'),
   source.indexOf('export function nativeTopiAIStatus()'));
 assert.match(nativeAvail, /topiRemoteProviderAudienceGate\(\)\.allowed/);
