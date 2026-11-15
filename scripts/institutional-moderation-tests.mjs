@@ -193,6 +193,14 @@ assert(caseCard, 'dashboard must render case cards');
 assert.match(moderationDashboard, /canModerateCase\(context,/);
 assert.match(moderationDashboard, /failedSections\.length\) setError/);
 assert.match(moderationDashboard, /No se pudo verificar la cola completa/);
+// Denied-by-design sections are not broken network reads: verification and
+// support can access their own case queue without bogus incident warnings.
+assert.match(moderationDashboard, /const canReadIncidentQueues = admin\.role !== 'verification_reviewer' && admin\.role !== 'support'/);
+for (const name of ['reports', 'noShowClaims', 'auditLog']) {
+  assert(moderationDashboard.includes(`? scopedAdminBackend.${name}(`),
+    `forbidden ${name} request must be skipped before the backend rejects it`);
+}
+assert.match(moderationDashboard, /<div role="alert" className="mt-4 rounded-2xl/);
 assert.doesNotMatch(moderationDashboard, /\.catch\(\(\) => \[\]\)/);
 assert.match(caseCard, /!closed && canDecide/);
 assert.match(caseCard, /!closed && !canDecide/);
