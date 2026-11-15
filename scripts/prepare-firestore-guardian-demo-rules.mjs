@@ -55,9 +55,13 @@ const helpers = `
         && (proof.band == 'adult' || guardianValidGrant(uid, cap));
     }
     function guardianValidGrant(uid, cap) {
-      // Load once instead of repeatedly re-evaluating get() and keys().
-      // A missing field denies; it never promotes client-provided grants.
-      let proof = get(guardianGrantDoc(uid)).data;
+      // DEMO architecture trial: server owns a single atomic age+guardian
+      // proof at age_proofs_v2/{uid}. Revocation updates this very document;
+      // legacy guardian_grants_v2 is NOT authoritative in this candidate.
+      // Reuses the age document already evaluated by the parent guard,
+      // avoiding an independent grant read at the offer write budget boundary.
+      // Not usable in production until trusted issuance and migrations exist.
+      let proof = get(guardianAgeDoc(uid)).data.guardian;
       return proof.keys().hasAll([
           'childUid','guardianUid','issuer','active','consentVersion',
           'approvedCapabilities','expires_at'
