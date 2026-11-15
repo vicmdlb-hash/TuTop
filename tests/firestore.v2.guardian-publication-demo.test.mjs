@@ -60,19 +60,23 @@ async function seed(band, guardianOverride, ugcOverride = undefined) {
       uid: 'seller', nombre: 'Seller', institution_id: 'uatx',
       campus_id: 'riberena', created_at: at(), updated_at: at(),
     });
+    // The trusted issuer must atomically version/revoke this bundled proof.
+    // Standalone UGC records remain a server-only audit source but can NEVER
+    // grant publication when the atomic proof is absent or revoked.
+    const trustedUgc = ugcOverride === undefined
+      ? ugc(guardianOverride ? { guardianConsentVersion: guardianOverride.consentVersion } : {})
+      : ugcOverride;
     if (band !== null) {
-      await setDoc(doc(db, 'age_proofs_v2/seller'),
-        typeof band === 'string' ? age(band, guardianOverride ? { guardian: guardianOverride } : {}) : band);
+      await setDoc(doc(db, 'age_proofs_v2/seller'), typeof band === 'string'
+        ? age(band, {
+          ...(guardianOverride ? { guardian: guardianOverride } : {}),
+          ...(trustedUgc ? { ugc: trustedUgc } : {}),
+        }) : band);
     }
     if (guardianOverride) {
       await setDoc(doc(db, 'guardian_grants_v2/seller'), guardianOverride);
     }
-    // undefined: valid trusted synthetic consent by default; null: absent.
-    if (ugcOverride !== null) {
-      await setDoc(doc(db, 'ugc_consents_v2/seller'),
-        ugcOverride === undefined ? ugc(guardianOverride
-          ? { guardianConsentVersion: guardianOverride.consentVersion } : {}) : ugcOverride);
-    }
+    if (trustedUgc) await setDoc(doc(db, 'ugc_consents_v2/seller'), trustedUgc);
   });
 }
 function publish(suffix) {
@@ -120,6 +124,14 @@ test('adult with expired, revoked, client-forged or stale-version UGC proof cann
     await seed('adult', null, proof);
     await assertFails(publish('ugc-' + name));
   }
+});
+test('standalone legacy consent cannot reauthorize after atomic UGC proof is revoked', async () => {
+  await seed('teen_13_17', guardian(), ugc({ revoked: true, guardianConsentVersion: 'families-2026-v1' }));
+  // Synthetic issuer changes the legacy standalone receipt, not the embedded proof.
+  await env.withSecurityRulesDisabled(async (ctx) =>
+    setDoc(doc(ctx.firestore(), 'ugc_consents_v2/seller'),
+      ugc({ guardianConsentVersion: 'families-2026-v1' })));
+  await assertFails(publish('ugc-standalone-replay'));
 });
 test('teen with older guardian consent version cannot publish', async () => {
   await seed('teen_13_17', guardian(), ugc({ guardianConsentVersion: 'old-families-v0' }));
