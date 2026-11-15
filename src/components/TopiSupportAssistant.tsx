@@ -16,6 +16,8 @@ export default function TopiSupportAssistant() {
   const inputRef = useRef<HTMLInputElement>(null);
   // A delayed AI/support reply must never hydrate another decision-tree route.
   const requestSerial = useRef(0);
+  // A ref closes the same-tick double-submit gap before React commits busy=true.
+  const requestPendingRef = useRef(false);
   const dictationSerial = useRef(0);
   const stopDictation = useRef<(() => void) | null>(null);
   const guidedBeta = String(import.meta.env.VITE_TUTOP_TOPI_GUIDED_BETA || '').toLowerCase() === 'true'
@@ -37,6 +39,7 @@ export default function TopiSupportAssistant() {
     if (open) inputRef.current?.focus();
     return () => {
       requestSerial.current += 1;
+      requestPendingRef.current = false;
       dictationSerial.current += 1;
       stopDictation.current?.();
       stopDictation.current = null;
@@ -45,6 +48,7 @@ export default function TopiSupportAssistant() {
 
   const invalidatePendingAnswer = () => {
     requestSerial.current += 1;
+    requestPendingRef.current = false;
     cancelDictation();
     setBusy(false);
   };
@@ -80,7 +84,8 @@ export default function TopiSupportAssistant() {
 
   const ask = async () => {
     const clean = question.trim();
-    if (clean.length < 3 || busy) return;
+    if (clean.length < 3 || busy || requestPendingRef.current) return;
+    requestPendingRef.current = true;
     const serial = ++requestSerial.current;
     // A submitted question must also terminate native microphone listening.
     cancelDictation();
@@ -102,7 +107,10 @@ export default function TopiSupportAssistant() {
         });
       }
     } finally {
-      if (serial === requestSerial.current) setBusy(false);
+      if (serial === requestSerial.current) {
+        requestPendingRef.current = false;
+        setBusy(false);
+      }
     }
   };
 

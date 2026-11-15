@@ -88,7 +88,9 @@ assert.match(String(input(dialog)?.props.className), /min-h-12/,
 input(dialog).props.onChange({ target: { value: 'Primera pregunta privada' } });
 dialog = render();
 button(dialog, 'Preguntar a Topi').props.onClick();
-assert.equal(pending.length, 1);
+// Same render/same tick, before busy is committed, must not send again.
+button(dialog, 'Preguntar a Topi').props.onClick();
+assert.equal(pending.length, 1, 'Topi must suppress double taps before the React busy render');
 assert.equal(pending[0].route, 'root');
 
 // Navigate while first result is still pending; old result must be discarded.
