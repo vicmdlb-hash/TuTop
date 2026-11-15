@@ -32,6 +32,7 @@ const pending = [];
 const dictations = [];
 const submittedAiReports = [];
 let currentUid = 'synthetic-user';
+let reportNonceSequence = 0;
 let switchUidDuringPrompt = false;
 let dictationStops = 0;
 let unmount = () => {};
@@ -57,6 +58,7 @@ vm.runInNewContext(js, {
     throw new Error('Unexpected Topi module ' + name);
   },
   console,
+  crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(++reportNonceSequence).padStart(12, '0') },
   window: { prompt: () => {
     if (switchUidDuringPrompt) currentUid = 'synthetic-other';
     return 'Esta respuesta es imprecisa';
@@ -227,7 +229,7 @@ button(dialog, 'Reportar respuesta de IA').props.onClick();
 button(dialog, 'Reportar respuesta de IA').props.onClick();
 assert.equal(submittedAiReports.length, 1, 'same-tick duplicate AI reports must be suppressed');
 assert.equal(submittedAiReports[0][0], 'ai_response');
-assert.equal(submittedAiReports[0][1], 'topi-firebase-ai:root');
+assert.equal(submittedAiReports[0][1], 'topi-firebase-ai:root:00000000-0000-4000-8000-000000000001');
 assert.equal(submittedAiReports[0][2], 'Esta respuesta es imprecisa');
 assert(!submittedAiReports[0].join(' ').includes('RESPUESTA_AI_SINTETICA'),
   'the full provider answer must not be silently uploaded');
@@ -237,6 +239,25 @@ await new Promise((resolve) => setImmediate(resolve));
 assert.equal(hooks[6], 'Reporte de respuesta de IA enviado para revisión.');
 assert(content(render()).includes('Reporte de respuesta de IA enviado'),
   'only an explicit submitted AI report can show success');
+
+// A separate generated answer gets a distinct opaque ID. A pending second
+// request must instantly hide the previous report button, not accept stale UX.
+dialog = render();
+input(dialog).props.onChange({ target: { value: 'Segunda respuesta generada' } });
+button(render(), 'Preguntar a Topi').props.onClick();
+assert.equal(pending.length, 8);
+assert(!button(render(), 'Reportar respuesta de IA'),
+  'old generated answer must not be reportable during the next request');
+pending[7].resolve({ source: 'firebase-ai', route: 'root', text: 'OTRA_RESPUESTA_PRIVADA' });
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+button(render(), 'Reportar respuesta de IA').props.onClick();
+assert.equal(submittedAiReports.length, 2);
+assert.equal(submittedAiReports[1][1], 'topi-firebase-ai:root:00000000-0000-4000-8000-000000000002');
+assert.notEqual(submittedAiReports[0][1], submittedAiReports[1][1],
+  'different provider answers cannot share a moderation target');
+assert(!submittedAiReports[1].join(' ').includes('OTRA_RESPUESTA_PRIVADA'));
 
 // Logout/UID remount must also stop active native/Web Speech capture.
 dialog = render();
