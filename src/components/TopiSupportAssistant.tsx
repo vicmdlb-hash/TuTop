@@ -15,6 +15,8 @@ export default function TopiSupportAssistant() {
   const [busy, setBusy] = useState(false);
   const [reportBusy, setReportBusy] = useState(false);
   const [reportMessage, setReportMessage] = useState<string | null>(null);
+  // Per-answer correlation ID, without retaining the provider answer or question.
+  const [answerReportTarget, setAnswerReportTarget] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +61,7 @@ export default function TopiSupportAssistant() {
     reportPendingRef.current = false;
     setReportBusy(false);
     setReportMessage(null);
+    setAnswerReportTarget(null);
     requestSerial.current += 1;
     requestPendingRef.current = false;
     cancelDictation();
@@ -99,7 +102,8 @@ export default function TopiSupportAssistant() {
   const reportAiAnswer = async () => {
     const shown = answer;
     const reporterUid = useAppStore.getState().user.id;
-    if (shown?.source !== 'firebase-ai' || !reporterUid || reportPendingRef.current) return;
+    const reportTarget = answerReportTarget;
+    if (shown?.source !== 'firebase-ai' || !reportTarget || !reporterUid || reportPendingRef.current) return;
     const serial = reportContextSerial.current;
     const reason = window.prompt('¿Qué problema tiene esta respuesta de IA? Describe el problema sin incluir datos personales.')?.trim();
     if (!reason || reason.length < 3 || reason.length > 500) return;
@@ -108,7 +112,7 @@ export default function TopiSupportAssistant() {
     setReportBusy(true);
     setReportMessage(null);
     try {
-      await onlineBackend.submitReport('ai_response', `topi-firebase-ai:${shown.route}`, reason);
+      await onlineBackend.submitReport('ai_response', reportTarget, reason);
       if (serial === reportContextSerial.current && useAppStore.getState().user.id === reporterUid) {
         setReportMessage('Reporte de respuesta de IA enviado para revisión.');
       }
@@ -129,6 +133,9 @@ export default function TopiSupportAssistant() {
     if (clean.length < 3 || busy || requestPendingRef.current) return;
     reportContextSerial.current += 1;
     setReportMessage(null);
+    // The previous answer must not remain reportable while a new request is in flight.
+    setAnswer(null);
+    setAnswerReportTarget(null);
     requestPendingRef.current = true;
     const serial = ++requestSerial.current;
     // A submitted question must also terminate native microphone listening.
@@ -138,6 +145,9 @@ export default function TopiSupportAssistant() {
       const result = await answerConsumerSupport(clean, currentId);
       // Route changed or dialog closed before the network/AI response arrived.
       if (serial !== requestSerial.current) return;
+      const reportNonce = result.source === 'firebase-ai' ? globalThis.crypto?.randomUUID?.() : null;
+      // Fail closed if secure random UUIDs are not available on this WebView.
+      setAnswerReportTarget(reportNonce ? `topi-firebase-ai:${result.route}:${reportNonce}` : null);
       setAnswer(result);
       if (result.route !== 'root' && result.route !== currentId) setRoute((current) => [...current, result.route]);
     } catch {
@@ -228,7 +238,7 @@ export default function TopiSupportAssistant() {
               {answer.source === 'guided' && <p className="mt-2 text-[8px] leading-4 text-slate-600">Esta respuesta viene del árbol seguro de TuTop; no se presenta como respuesta generada por IA.</p>}
               {answer.source === 'firebase-ai' && answer.privacyRedactions?.length ? <p className="mt-2 text-[8px] leading-4 text-emerald-200/70">Antes de enviar la pregunta a Firebase AI, TuTop omitió datos de contacto o códigos sensibles detectados.</p> : null}
               {answer.source === 'unavailable' && <p className="mt-2 text-[8px] leading-4 text-rose-200/70">Esta beta no sustituye una falla de Firebase AI con una respuesta local silenciosa.</p>}
-              {answer.source === 'firebase-ai' && <button type="button" disabled={reportBusy} onClick={() => void reportAiAnswer()} className="mt-3 inline-flex min-h-12 items-center gap-2 rounded-xl border border-amber-400/20 px-3 py-2 text-[10px] font-semibold text-amber-200 disabled:opacity-50" aria-label="Reportar respuesta de IA"><Flag className="h-4 w-4" />{reportBusy ? 'Enviando reporte…' : 'Reportar respuesta de IA'}</button>}
+              {answer.source === 'firebase-ai' && answerReportTarget && <button type="button" disabled={reportBusy} onClick={() => void reportAiAnswer()} className="mt-3 inline-flex min-h-12 items-center gap-2 rounded-xl border border-amber-400/20 px-3 py-2 text-[10px] font-semibold text-amber-200 disabled:opacity-50" aria-label="Reportar respuesta de IA"><Flag className="h-4 w-4" />{reportBusy ? 'Enviando reporte…' : 'Reportar respuesta de IA'}</button>}
               {reportMessage && <p role="status" aria-live="polite" className="mt-2 text-[9px] text-amber-100">{reportMessage}</p>}
             </div>
           )}
