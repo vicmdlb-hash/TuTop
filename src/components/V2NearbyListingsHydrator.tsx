@@ -14,7 +14,9 @@ function mergeProducts(current: Product[], nearby: Product[]) {
   const byId = new Map<string, Product>();
   for (const product of [...nearby, ...current]) {
     const previous = byId.get(product.id);
-    if (!previous || timestamp(product) >= timestamp(previous)) byId.set(product.id, product);
+    // A newly fetched Nearby row wins a timestamp tie; a stale local row
+    // cannot overwrite its moderation status when updated_at did not change.
+    if (!previous || timestamp(product) > timestamp(previous)) byId.set(product.id, product);
   }
   return [...byId.values()];
 }
@@ -56,7 +58,16 @@ export default function V2NearbyListingsHydrator() {
         nearbyInjectedIds = new Set([...currentNearbyIds].filter((id) => !baseProductIds.has(id)));
         useAppStore.setState({ products: mergeProducts(retained, nearby) });
       } catch {
-        // Nearby is additive. Existing campus/city/national snapshot remains usable.
+        // A failed refresh cannot prove previously injected Nearby-only rows
+        // are still approved. Evict those rows, but preserve base catalog rows.
+        // Ignore obsolete A/B sessions and older overlapping requests.
+        if (!active || serial !== requestSerial || useAppStore.getState().user.id !== requestUid) return;
+        if (!nearbyInjectedIds.size) return;
+        const retained = useAppStore.getState().products.filter((product) =>
+          !nearbyInjectedIds.has(product.id) || baseProductIds.has(product.id)
+        );
+        nearbyInjectedIds.clear();
+        useAppStore.setState({ products: retained });
       }
     };
 
