@@ -234,7 +234,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     return chatId;
   },
 
-  openChat: (chatId) => { set({ activeChatId: chatId, activeTab: 'inbox' }); get().markChatRead(chatId); },
+  openChat: (chatId) => {
+    const state = get();
+    const uid = state.user.id;
+    // A deep link or stale UI callback is not proof of chat membership.
+    const owned = Boolean(uid && state.chats.some((chat) =>
+      chat.id === chatId && (chat.comprador_id === uid || chat.vendedor_id === uid)));
+    if (!owned) return;
+    set({ activeChatId: chatId, activeTab: 'inbox' });
+    get().markChatRead(chatId);
+  },
   closeChat: () => set({ activeChatId: null }),
 
   sendMessage: (chatId, text) => {
