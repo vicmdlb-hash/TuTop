@@ -4,6 +4,7 @@ import { onlineBackend, type OnlineSnapshot } from '../services/onlineBackend';
 import { feedbackMessage } from '../lib/feedback';
 import { canViewerOpenListing } from '../lib/publicDiscovery';
 import { isLiveAccountSnapshot } from '../lib/backendHydrationIdentity';
+import { sameFirebaseSession } from '../lib/firebaseSharedSessionGuard';
 import { nationalSchemaEnabled } from '../services/nationalBackend';
 import type { AppNotification, AppTab, Chat, Product, Review, User, WalletTransaction } from '../types';
 
@@ -169,6 +170,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   updateProduct: (id, updates) => {
     const actorUid = get().user.id;
+    const actorSession = onlineBackend.session;
     const mutationKey = `${actorUid}:${id}`;
     const version = (productMutationVersion.get(mutationKey) || 0) + 1;
     productMutationVersion.set(mutationKey, version);
@@ -176,6 +178,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({ products: state.products.map((product) => product.id === id ? { ...product, ...updates } : product) }));
     void onlineBackend.updateProduct(id, updates).catch((error) => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       // A stale failed edit must never undo a later edit to this account's listing.
       if (productMutationVersion.get(mutationKey) !== version) return;
       if (before) set((state) => ({ products: state.products.map((product) => product.id === id ? before : product) }));
@@ -298,6 +301,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   markChatRead: (chatId) => {
     const actorUid = get().user.id;
+    const actorSession = onlineBackend.session;
     const before = get().chats.find((chat) => chat.id === chatId);
     if (!before || !actorUid || (before.comprador_id !== actorUid && before.vendedor_id !== actorUid)
       || (before.sin_leer || 0) === 0) return;
@@ -307,6 +311,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, sin_leer: 0 } : chat) }));
     void onlineBackend.markChatRead(chatId).catch((error) => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       if (chatReadMutationVersion.get(mutationKey) !== version) return;
       // Recover the unread counter only. Do not replace messages or a newer nonzero count.
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId && (chat.sin_leer || 0) === 0
@@ -384,6 +389,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleFavorite: (productId) => {
     const state = get();
     const actorUid = state.user.id;
+    const actorSession = onlineBackend.session;
     const mutationKey = `${actorUid}:${productId}`;
     const wasFavorite = state.favorites.includes(productId);
     const shouldFavorite = !wasFavorite;
@@ -392,8 +398,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ favorites: favoriteState(state.favorites, productId, shouldFavorite) });
 
     void onlineBackend.toggleFavorite(productId, shouldFavorite).catch((error) => {
-      // An expired request from A must not roll back B's favorites or show B A's error.
+      // An expired request from A (even A's previous login) must not roll back
+      // another authenticated session's favorites or show a stale error.
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       if (favoriteMutationVersion.get(mutationKey) === version) {
         set((current) => ({ favorites: favoriteState(current.favorites, productId, wasFavorite) }));
       }
