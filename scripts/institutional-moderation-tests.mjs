@@ -146,4 +146,35 @@ assert.match(auditRules, /data\.institution_id is string/);
 assert.match(auditRules, /resource\.data\.institution_id == get\(adminDoc\(\)\)\.data\.institution_id/);
 console.log('PASS audit Rules role and institution scope are enforced in source');
 
+// Role separation must agree with marketplaceGovernance.canModerateCase.
+checkDeny('ROLE_SCOPE_DENIED', actor('moderator'), record('credential'));
+checkDeny('ROLE_SCOPE_DENIED', actor('institution_moderator', 'uatx'), record('credential'));
+assert.equal(requireModerationCaseTransition(actor('moderator'), record('chat'), 'resolved'), 'uatx');
+assert.equal(requireModerationCaseTransition(actor('verification_reviewer'), record('credential'), 'resolved'), 'uatx');
+
+// The V2 Rules are a separate security boundary from the admin client.
+// This source contract is necessary, not a substitute for emulator allow/deny.
+const reportRules = firestoreRules.split('match /reports/{reportId} {')[1]
+  ?.split('match /moderation_cases/{caseId} {')[0];
+const moderationRules = firestoreRules.split('match /moderation_cases/{caseId} {')[1]
+  ?.split('match /audit_log/{entryId} {')[0];
+assert(reportRules, 'reports Rules block must exist');
+assert(moderationRules, 'moderation_cases Rules block must exist');
+assert.doesNotMatch(reportRules, /allow read: if isAdmin\(\) \|\|/);
+assert.match(reportRules, /data\.role == 'institution_moderator'/);
+assert.match(reportRules, /resource\.data\.institution_id == get\(adminDoc\(\)\)\.data\.institution_id/);
+assert.match(reportRules, /resource\.data\.status in \['open','reviewing'\]/);
+assert.match(reportRules, /request\.resource\.data\.status in \['reviewing','resolved','dismissed'\]/);
+assert.doesNotMatch(moderationRules, /allow read, write: if isAdmin\(\);/);
+assert.match(moderationRules, /allow create, delete: if false;/);
+assert.match(moderationRules, /allow update: if isAdmin\(\)/);
+assert.match(moderationRules, /data\.role == 'institution_moderator'/);
+assert.match(moderationRules, /data\.role == 'verification_reviewer'/);
+assert.match(moderationRules, /data\.role == 'support'/);
+assert.match(moderationRules, /resource\.data\.institution_id == get\(adminDoc\(\)\)\.data\.institution_id/);
+assert.match(moderationRules, /resource\.data\.kind != 'credential'/);
+assert.match(moderationRules, /affectedKeys\(\)\.hasOnly\(\['status','updated_at'\]\)/);
+assert.match(moderationRules, /request\.resource\.data\.status in \['reviewing','resolved','dismissed'\]/);
+console.log('PASS moderation cases/reports scoped Rules source contracts');
+
 console.log('Institutional moderation tests: PASS');
