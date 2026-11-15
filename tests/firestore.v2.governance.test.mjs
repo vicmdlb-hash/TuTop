@@ -133,6 +133,49 @@ test('moderador institucional sólo puede leer y resolver reportes de su institu
   await assertFails(updateDoc(doc(uatx, 'reports/r-buap'), { status: 'reviewing', updated_at: now() }));
 });
 
+test('moderation_cases protege institución, kind, rol y finalización contra escrituras directas', async () => {
+  await seedBase();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'admins/moderator'), { active: true, role: 'moderator' });
+    const base = { target_type: 'product', target_id: 'item', status: 'open', priority: 'normal', created_at: now(), updated_at: now() };
+    await setDoc(doc(db, 'moderation_cases/uatx-product'), { ...base, kind: 'product', institution_id: 'uatx' });
+    await setDoc(doc(db, 'moderation_cases/buap-product'), { ...base, kind: 'product', institution_id: 'buap' });
+    await setDoc(doc(db, 'moderation_cases/uatx-credential'), { ...base, kind: 'credential', institution_id: 'uatx' });
+    await setDoc(doc(db, 'moderation_cases/global-appeal'), { ...base, kind: 'appeal' });
+  });
+  const inst = verifiedContext(env, 'uatxmod').firestore();
+  const other = verifiedContext(env, 'buapmod').firestore();
+  const mod = verifiedContext(env, 'moderator').firestore();
+  const verify = verifiedContext(env, 'verify').firestore();
+  const support = verifiedContext(env, 'support').firestore();
+  const global = verifiedContext(env, 'global').firestore();
+  const legacy = verifiedContext(env, 'legacy').firestore();
+
+  await assertSucceeds(getDoc(doc(inst, 'moderation_cases/uatx-product')));
+  await assertFails(getDoc(doc(inst, 'moderation_cases/buap-product')));
+  await assertSucceeds(getDoc(doc(other, 'moderation_cases/buap-product')));
+  await assertFails(getDoc(doc(legacy, 'moderation_cases/uatx-product')));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/buap-product'), { status: 'reviewing', updated_at: now() }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { kind: 'credential', status: 'reviewing', updated_at: now() }));
+  await assertSucceeds(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'reviewing', updated_at: now() }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'reviewing', updated_at: now() }));
+  await assertSucceeds(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'resolved', updated_at: now() }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'reviewing', updated_at: now() }));
+
+  // Queue visibility does not confer credential decision authority.
+  await assertSucceeds(getDoc(doc(mod, 'moderation_cases/uatx-credential')));
+  await assertFails(updateDoc(doc(mod, 'moderation_cases/uatx-credential'), { status: 'resolved', updated_at: now() }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-credential'), { status: 'resolved', updated_at: now() }));
+  await assertSucceeds(getDoc(doc(verify, 'moderation_cases/uatx-credential')));
+  await assertSucceeds(updateDoc(doc(verify, 'moderation_cases/uatx-credential'), { status: 'resolved', updated_at: now() }));
+  await assertFails(getDoc(doc(verify, 'moderation_cases/uatx-product')));
+  await assertFails(getDoc(doc(support, 'moderation_cases/uatx-product')));
+  await assertSucceeds(getDoc(doc(support, 'moderation_cases/global-appeal')));
+  await assertSucceeds(updateDoc(doc(support, 'moderation_cases/global-appeal'), { status: 'dismissed', updated_at: now() }));
+  await assertSucceeds(getDoc(doc(global, 'moderation_cases/buap-product')));
+});
+
 test('trust safety conserva alcance global; admins sin rol válido fallan cerrado', async () => {
   await seedBase();
   const global = verifiedContext(env, 'global').firestore();
