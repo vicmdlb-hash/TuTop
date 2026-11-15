@@ -57,7 +57,9 @@ assert.match(app, /!activeChatId && <TopiSupportAssistant key=\{user\.id\} \/>/)
 assert.match(ui, /const requestSerial = useRef\(0\)/);
 assert.match(ui, /const serial = \+\+requestSerial\.current/);
 assert.match(ui, /if \(serial !== requestSerial\.current\) return/);
-assert.match(ui, /if \(serial === requestSerial\.current\) setBusy\(false\)/);
+assert.match(ui, /if \(serial === requestSerial\.current\) \{/);
+assert.match(ui, /requestPendingRef\.current = false;[\s\S]*setBusy\(false\)/);
+assert.match(ui, /if \(clean\.length < 3 \|\| busy \|\| requestPendingRef\.current\) return/);
 assert.match(ui, /invalidatePendingAnswer\(\)/);
 assert.match(ui, /onClick=\{close\}/);
 
