@@ -69,6 +69,14 @@ deny('POLICY_NOT_APPROVED', input({
 }));
 deny('INVALID_SUBJECT_OR_CLOCK', input({ subjectUid: '../bad' }));
 deny('INVALID_SUBJECT_OR_CLOCK', input({ nowMs: Number.NaN }));
+// Number.isSafeInteger alone permits dates outside the JS Date range.
+// A malformed but future-expiring proof must fail closed, not throw.
+const beyondDateRange = 8_640_000_000_000_001;
+deny('EXPIRY_INVALID', input({
+  nowMs: 8_640_000_000_000_000,
+  ageProof: age('adult', { expiresAtMs: beyondDateRange }),
+  consentProof: ugc({ expiresAtMs: beyondDateRange }),
+}));
 deny('AGE_PROOF_UNVERIFIED', input({ ageProof: null }));
 deny('AGE_PROOF_UNVERIFIED', input({ ageProof: age('unknown') }));
 deny('UGC_PROOF_UNVERIFIED', input({ consentProof: null }));
