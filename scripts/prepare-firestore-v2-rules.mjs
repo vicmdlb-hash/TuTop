@@ -255,7 +255,18 @@ generated = replaceSection(
   '    match /moderation_cases/{caseId}',
   (section) => section
     .replace('allow read: if isAdmin() || (signedIn() && resource.data.created_by == request.auth.uid);', 'allow read: if (signedIn() && resource.data.created_by == request.auth.uid) || canModerateInstitution(resource.data);')
-    .replace('allow update: if isAdmin()', 'allow update: if canModerateInstitution(resource.data)'),
+    // A closed report cannot be silently re-opened by a stale admin client.
+    // Priority-only changes stay possible while open/reviewing. Status
+    // transitions must advance, never loop or regress.
+    .replace('allow update: if isAdmin()', `allow update: if canModerateInstitution(resource.data)
+        && resource.data.status in ['open','reviewing']
+        && (
+          (request.resource.data.status == resource.data.status
+            && request.resource.data.diff(resource.data).affectedKeys().hasAny(['priority']))
+          ||
+          (request.resource.data.status in ['reviewing','resolved','dismissed']
+            && request.resource.data.status != resource.data.status)
+        )`),
   'reports institutional scope',
 );
 
