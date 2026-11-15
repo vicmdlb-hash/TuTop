@@ -144,7 +144,14 @@ assert.match(moderatorUi, /resolveReport\(item\.id,'resolved',item\.data\.instit
 assert.match(moderatorUi, /resolveReport\(item\.id,'dismissed',item\.data\.institution_id\)/);
 assert.match(moderatorBackend, /moderationQueryScope\(admin, kind\)/);
 assert.match(moderatorBackend, /return firebase\.runQuery<any>\('reports', filters/);
-assert.match(moderatorBackend, /await auditedPatch\(\{ path: `reports\/\$\{reportId\}`/);
+assert.match(moderatorBackend, /if \(admin\.role === 'verification_reviewer' \|\| admin\.role === 'support'\)/);
+assert.match(moderatorBackend, /admin\.institution_id !== reportInstitution/);
+assert.match(moderatorBackend, /REPORT_INVALID_TRANSITION/);
+assert.match(moderatorBackend, /REPORT_VERSION_UNVERIFIED/);
+assert.match(moderatorBackend, /currentDocument: \{ updateTime: expectedUpdateTime \}/);
+assert.match(moderatorBackend, /expectedUpdateTime: current\.updateTime/);
+assert.match(moderatorBackend, /institutionId: reportInstitution \|\| undefined/);
+assert.match(moderatorBackend, /await auditedPatch\(\{[\s\S]*?path: `reports\/\$\{reportId\}`/);
 console.log('PASS AI report moderation view uses existing scoped backend and auditable review/resolve/dismiss path');
 
 console.log('PASS Topi AI answer reporting opt-in, account-bound, guarded and without automatic raw-text capture');
