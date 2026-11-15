@@ -122,6 +122,8 @@ assert.match(uiReports, /useAppStore\.getState\(\)\.user\.id !== reporterUid/);
 assert.match(uiReports, /reportPendingRef\.current/);
 assert.match(uiReports, /answer\.source === 'firebase-ai' && answerReportTarget && <button/);
 assert.match(uiReports, /reportTarget = answerReportTarget/);
+assert.match(uiReports, /redactTopiRemoteText\(reason, 500\)\.redactions\.length > 0/);
+assert.match(uiReports, /El motivo incluye datos sensibles/);
 assert.match(uiReports, /globalThis\.crypto\?\.randomUUID\?\.\(\)/);
 assert.match(uiReports, /setAnswerReportTarget\(null\)/);
 assert.doesNotMatch(uiReports, /topi-firebase-ai:\$\{shown\.route\}\`/);
