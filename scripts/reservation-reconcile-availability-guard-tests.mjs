@@ -20,7 +20,7 @@ assert(!source.includes('verifyWrite(') && !source.includes('verify:'), 'Firesto
 // reconciliation. Exercise the pure production validator, no credentials.
 const scope = { projectId: 'tutop-beta-vicmdlb-1356585881', collectionId: 'transactions_v2', limit: 3 };
 const syntheticTransaction = {
-  document: { name: 'projects/tutop-beta-vicmdlb-1356585881/databases/(default)/documents/transactions_v2/syntheticTx1' },
+  document: { name: 'projects/tutop-beta-vicmdlb-1356585881/databases/(default)/documents/transactions_v2/syntheticTx1', fields: {} },
 };
 assert.equal(validateReconciliationInventoryPage([syntheticTransaction], scope).length, 1);
 assert.deepEqual(validateReconciliationInventoryPage([{ readTime: '2026-11-08T00:00:00Z', skippedResults: 0 }], scope), []);
