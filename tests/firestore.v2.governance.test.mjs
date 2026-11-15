@@ -153,6 +153,23 @@ test('moderation_cases protege institución, kind, rol y finalización contra es
   const global = verifiedContext(env, 'global').firestore();
   const legacy = verifiedContext(env, 'legacy').firestore();
 
+  // New cases must start open; no client may forge completed decisions at creation.
+  const newCase = {
+    kind: 'product', target_type: 'product', target_id: 'new-item',
+    institution_id: 'uatx', status: 'open', priority: 'normal',
+    created_at: now(), updated_at: now(),
+  };
+  await assertFails(setDoc(doc(global, 'moderation_cases/forged-resolved'), {
+    ...newCase, status: 'resolved',
+  }));
+  await assertFails(setDoc(doc(global, 'moderation_cases/forged-dismissed'), {
+    ...newCase, status: 'dismissed',
+  }));
+  await assertFails(setDoc(doc(global, 'moderation_cases/forged-reviewing'), {
+    ...newCase, status: 'reviewing',
+  }));
+  await assertSucceeds(setDoc(doc(global, 'moderation_cases/new-open'), newCase));
+
   await assertSucceeds(getDoc(doc(inst, 'moderation_cases/uatx-product')));
   await assertFails(getDoc(doc(inst, 'moderation_cases/buap-product')));
   await assertSucceeds(getDoc(doc(other, 'moderation_cases/buap-product')));
