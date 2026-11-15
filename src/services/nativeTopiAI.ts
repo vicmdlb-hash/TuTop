@@ -30,6 +30,13 @@ function classifyFailure(error: unknown): NativeTopiAIFailureKind {
   return 'native-request';
 }
 
+function shouldRetryNativeAiFailure(kind: NativeTopiAIFailureKind) {
+  // Only a genuinely transient network/timeout failure permits an automatic
+  // retry. Auth, App Check, invalid config, quota, and unknown native failures
+  // must not silently trigger duplicate provider calls.
+  return kind === 'timeout' || kind === 'network';
+}
+
 function setReason(reason: NativeTopiAIReason, context?: Record<string, unknown>, failureKind: NativeTopiAIFailureKind = 'none') {
   lastReason = reason;
   lastFailureKind = failureKind;
@@ -157,9 +164,11 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
           return { text, model: lastModel, provider: 'firebase-ai-logic' };
         }
         setReason('empty-response', { fallback_model: index > 0, retry: attempt > 0 });
+        return null; // An empty billed generation must not auto-trigger another.
       } catch (error) {
         const failureKind = classifyFailure(error);
         setReason('request-failed', { fallback_model: index > 0, retry: attempt > 0, failure_kind: failureKind, app_check: nativeAppCheckStatus() }, failureKind);
+        if (!shouldRetryNativeAiFailure(failureKind)) return null;
       }
       if (attempt + 1 < attempts) await delay(AI_TRANSIENT_RETRY_DELAY_MS);
     }

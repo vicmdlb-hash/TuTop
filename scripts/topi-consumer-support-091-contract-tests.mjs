@@ -6,6 +6,7 @@ const service = fs.readFileSync('src/services/topiConsumerSupport.ts', 'utf8');
 const ui = fs.readFileSync('src/components/TopiSupportAssistant.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const voice = fs.readFileSync('src/lib/topiVoice.ts', 'utf8');
+const nativeAI = fs.readFileSync('src/services/nativeTopiAI.ts', 'utf8');
 
 for (const route of ['Cuenta y perfil', 'Publicar con Topi', 'Comprar o vender', 'Mensajes y avisos', 'UCoins', 'Ubicación, cámara o micrófono', 'Seguridad', 'Problema técnico']) {
   assert.match(tree, new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -22,6 +23,18 @@ assert.match(tree, /ubicación aproximada/i);
 assert.match(tree, /no necesita ubicación en segundo plano/i);
 
 assert.match(service, /generateNativeTopiText/);
+// Actual retry policy evaluated without Android, App Check, or any remote API.
+const retryStart = nativeAI.indexOf('function shouldRetryNativeAiFailure(');
+const retryEnd = nativeAI.indexOf('\nfunction setReason(', retryStart);
+assert(retryStart >= 0 && retryEnd > retryStart, 'native AI retry policy must exist');
+const { stripTypeScriptTypes } = await import('node:module');
+const shouldRetry = new Function(stripTypeScriptTypes(nativeAI.slice(retryStart, retryEnd)) + '\nreturn shouldRetryNativeAiFailure;')();
+for (const kind of ['timeout', 'network']) assert.equal(shouldRetry(kind), true);
+for (const kind of ['app-check', 'firebase-config-rejected', 'capacity', 'native-request', 'none']) {
+  assert.equal(shouldRetry(kind), false, 'definitive or unclassified errors must not spend another request');
+}
+assert.match(nativeAI, /if \(!shouldRetryNativeAiFailure\(failureKind\)\) return null/);
+assert.match(nativeAI, /return null; \/\/ An empty billed generation must not auto-trigger another/);
 assert.match(service, /source: 'guided' \| 'firebase-ai'/);
 assert.match(service, /No inventes políticas, reembolsos, soporte humano, garantías/);
 assert.match(service, /Nunca solicites contraseñas, códigos de verificación, tokens/);
