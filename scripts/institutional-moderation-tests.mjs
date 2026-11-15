@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { canModerateItem, moderationQueueFor, requireModerationCaseTransition } from '../src/lib/institutionalModeration.ts';
 
 const items = [
@@ -53,5 +54,16 @@ checkDeny('MODERATION_CASE_INVALID_TRANSITION', actor('moderator'),
   record('product', 'uatx', 'reviewing'), 'reviewing');
 assert.equal(requireModerationCaseTransition(actor('trust_safety'),
   record('urgent_incident', ''), 'resolved'), undefined);
+
+// Verify the privileged client wrapper actually invokes the policy check
+// and uses a stored document version, rather than trusting a UI argument.
+const backendSource = fs.readFileSync('src/services/scopedAdminBackend.ts', 'utf8');
+const actionSection = backendSource.split('async resolveModerationCase(')[1]
+  ?.split('async resolveReport(')[0];
+assert(actionSection, 'moderation action wrapper must exist');
+assert.match(actionSection, /requireModerationCaseTransition\(admin, current\.data, status\)/);
+assert.match(actionSection, /MODERATION_CASE_VERSION_UNVERIFIED/);
+assert.match(actionSection, /expectedUpdateTime: current\.updateTime/);
+assert.match(actionSection, /const current = await firebase\.getDocument/);
 
 console.log('Institutional moderation tests: PASS');
