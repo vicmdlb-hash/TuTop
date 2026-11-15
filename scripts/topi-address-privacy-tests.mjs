@@ -14,6 +14,25 @@ for (const [input, secret] of samples) {
   assert(output.redactions.includes('address'), 'address redaction must be observable without logging PII');
 }
 
+// A Mexican interbank CLABE need not pass Luhn: do not let bank-account
+// numbers enter a remote AI prompt merely because they are not card PANs.
+const bankDetails = [
+  ['Mi CLABE interbancaria: 032180000118359719, para el depósito', '032180000118359719'],
+  ['Cuenta bancaria es 012345678901234567; no compartir', '012345678901234567'],
+  ['Número de cuenta: 1234567890, para transferencias', '1234567890'],
+];
+for (const [input, secret] of bankDetails) {
+  const redacted = redactTopiRemoteText(input);
+  assert(!redacted.text?.includes(secret), 'labeled bank details must not enter remote Topi');
+  assert(redacted.redactions.includes('card'), 'bank detail redaction must have privacy evidence');
+}
+for (const ordinary of [
+  'Vendo un equipo con serie 123456789012345678',
+  'Vendo memoria de 128 GB y batería de 5000 mAh',
+]) {
+  assert.equal(redactTopiRemoteText(ordinary).text, ordinary,
+    'bank-details protection must preserve ordinary product details');
+}
 const productFacts = 'Vendo iPhone 13 de 128 GB en $12,500, batería 88%';
 assert.equal(redactTopiRemoteText(productFacts).text, productFacts, 'ordinary product facts must remain');
 

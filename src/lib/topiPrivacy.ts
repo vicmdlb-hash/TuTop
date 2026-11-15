@@ -51,6 +51,12 @@ export function redactTopiRemoteText(value: unknown, max = 1200): TopiRemoteText
     return '[tarjeta omitida]';
   });
 
+  // CLABE/account numbers are not payment cards and may fail Luhn.
+  // The explicit banking label is required to preserve ordinary model IDs,
+  // quantities, prices, and other 10–18 digit product facts.
+  replace(/\b(?:clabe(?:\s+interbancaria)?|cuenta\s+bancaria|n[uú]mero\s+de\s+cuenta)\s*(?:(?:[:=-]|\bes\b)\s*)?(?:\d[ -]?){9,17}\d(?!\d)/giu,
+    'card', '[dato bancario omitido]');
+
   // Phone redaction is deliberately conservative: redact international MX numbers,
   // formatted 10-digit numbers, or plain numbers only when introduced as contact data.
   replace(/\+?52[\s.-]?(?:\d[\s().-]?){10}(?!\d)/g, 'phone', '[teléfono omitido]');
