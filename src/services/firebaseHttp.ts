@@ -28,6 +28,9 @@ export async function firebaseFetch(
   const boundedTimeout = Math.max(1, Math.floor(timeoutMs));
   const controller = new AbortController();
   const upstream = init.signal;
+  // Abort before touching the transport: some native adapters ignore an
+  // already-aborted signal and could still start a stale account request.
+  if (upstream?.aborted) throw upstream.reason ?? new Error('FIREBASE_REQUEST_CANCELLED');
 
   // Caller cancellation must settle even if a transport ignores AbortSignal.
   // Do not misreport an upstream cancel as a Firebase network timeout.
@@ -37,8 +40,7 @@ export async function firebaseFetch(
     controller.abort(upstream?.reason);
     rejectCallerAbort?.(controller.signal.reason);
   };
-  if (upstream?.aborted) relayAbort();
-  else upstream?.addEventListener('abort', relayAbort, { once: true });
+  upstream?.addEventListener('abort', relayAbort, { once: true });
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
