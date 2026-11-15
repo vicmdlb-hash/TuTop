@@ -48,7 +48,11 @@ export function prepareTrustedUgcIssuerPreview(input) {
   const deadline = Math.min(ageProof.expiresAtMs, consentProof.expiresAtMs,
     minor ? guardianProof.expiresAtMs : Number.MAX_SAFE_INTEGER);
   if (!Number.isSafeInteger(deadline) || deadline <= nowMs) return deny('EXPIRY_INVALID');
-  const expires_at = new Date(deadline).toISOString();
+  // A safe integer can still exceed the JavaScript Date range. Refuse it
+  // rather than throw during this read-only review and bypass its denial result.
+  const expiryDate = new Date(deadline);
+  if (!Number.isFinite(expiryDate.getTime())) return deny('EXPIRY_INVALID');
+  const expires_at = expiryDate.toISOString();
   const ageRecord = {
     subjectUid, band: ageProof.band, issuer: 'trusted_server',
     revoked: false, expires_at,
