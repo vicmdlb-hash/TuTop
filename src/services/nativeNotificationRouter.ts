@@ -60,7 +60,9 @@ function route(intent: NativeNotificationIntent, markRead = true) {
   if (intent.listing_id) {
     state.setActiveTab('feed');
     state.openProduct(intent.listing_id);
-    return true;
+    // At cold start the listing may not be hydrated yet, or moderation may
+    // have withdrawn it. Only report a resolved target if visibility passed.
+    return useAppStore.getState().selectedProductId === intent.listing_id;
   }
   if (intent.transaction_id) {
     const chat = state.chats.find((item: any) => item.transaction_id === intent.transaction_id);
@@ -119,7 +121,7 @@ export function installNativeNotificationRouter() {
         useAppStore.getState().markNotificationRead(intent.notification_id);
       }
       if (!exactTargetResolved && intent.source === 'action'
-        && (intent.chat_id || intent.transaction_id)) route(intent, false);
+        && (intent.chat_id || intent.transaction_id || intent.listing_id)) route(intent, false);
     }).catch(() => undefined);
   }) as EventListener);
 }
