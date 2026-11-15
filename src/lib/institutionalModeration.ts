@@ -69,3 +69,30 @@ export function requireModerationCaseTransition(
   }
   return institution || undefined;
 }
+
+
+/**
+ * Client-only defense for no-show decisions. The server and Firestore Rules
+ * must also authenticate role/scope and enforce an atomic final transition.
+ */
+export function requireNoShowClaimDecision(
+  admin: Parameters<typeof requireModerationCaseTransition>[0],
+  current: { institution_id?: unknown; status?: unknown },
+  next: 'upheld' | 'dismissed',
+): string | undefined {
+  if (!admin?.active) throw new Error('ADMIN_REQUIRED');
+  if (!['super_admin', 'trust_safety', 'moderator', 'institution_moderator'].includes(admin.role)) {
+    throw new Error('ROLE_SCOPE_DENIED');
+  }
+  if (!current || typeof current !== 'object') throw new Error('NO_SHOW_CLAIM_INVALID');
+  const institution = typeof current.institution_id === 'string'
+    ? current.institution_id.trim() : '';
+  if (admin.role === 'institution_moderator'
+    && (!admin.institution_id || admin.institution_id !== institution)) {
+    throw new Error('INSTITUTION_SCOPE_DENIED');
+  }
+  if (current.status !== 'open' || !['upheld', 'dismissed'].includes(next)) {
+    throw new Error('NO_SHOW_INVALID_TRANSITION');
+  }
+  return institution || undefined;
+}
