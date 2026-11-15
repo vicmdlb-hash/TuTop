@@ -18,8 +18,12 @@ function normalizeRole(value: unknown): AdminRole {
   throw new Error('ADMIN_ROLE_INVALID');
 }
 
-function patchWrite(firebase: FirebaseRestClient, path: string, data: Record<string, unknown>) {
-  return { update: firebase.encodeDocumentForWrite(path, data), updateMask: { fieldPaths: Object.keys(data) } };
+function patchWrite(firebase: FirebaseRestClient, path: string, data: Record<string, unknown>, expectedUpdateTime?: string) {
+  return {
+    update: firebase.encodeDocumentForWrite(path, data),
+    updateMask: { fieldPaths: Object.keys(data) },
+    ...(expectedUpdateTime ? { currentDocument: { updateTime: expectedUpdateTime } } : {}),
+  };
 }
 
 function createWrite(firebase: FirebaseRestClient, path: string, data: Record<string, unknown>) {
@@ -63,6 +67,7 @@ async function auditedPatch(input: {
   targetType: string;
   targetId: string;
   institutionId?: string;
+  expectedUpdateTime?: string;
 }) {
   const firebase = client();
   const admin = await scopedAdminBackend.context();
@@ -78,7 +83,7 @@ async function auditedPatch(input: {
     created_at: at,
   };
   await firebase.commit([
-    patchWrite(firebase, input.path, { ...input.patch, updated_at: at }),
+    patchWrite(firebase, input.path, { ...input.patch, updated_at: at }, input.expectedUpdateTime),
     createWrite(firebase, `audit_log/${auditId(input.action, input.targetId)}`, audit),
   ]);
 }
@@ -199,8 +204,31 @@ export const scopedAdminBackend = {
     await auditedPatch({ path: `moderation_cases/${caseId}`, patch: { status }, action: `moderation_case_${status}`, targetType: 'moderation_case', targetId: caseId, institutionId });
   },
 
-  async resolveReport(reportId: string, status: 'reviewing' | 'resolved' | 'dismissed', institutionId?: string) {
-    await auditedPatch({ path: `reports/${reportId}`, patch: { status }, action: `report_${status}`, targetType: 'report', targetId: reportId, institutionId });
+  async resolveReport(reportId: string, status: 'reviewing' | 'resolved' | 'dismissed', _institutionId?: string) {
+    const firebase = client();
+    const admin = await this.context();
+    if (admin.role === 'verification_reviewer' || admin.role === 'support') throw new Error('ROLE_SCOPE_DENIED');
+    if (!reportId || reportId.includes('/') || reportId.length > 180) throw new Error('REPORT_ID_INVALID');
+    const current = await firebase.getDocument<any>(`reports/${reportId}`);
+    if (!current) throw new Error('REPORT_NOT_FOUND');
+    const reportInstitution = String(current.data.institution_id || '');
+    if (admin.role === 'institution_moderator'
+      && (!admin.institution_id || admin.institution_id !== reportInstitution)) {
+      throw new Error('INSTITUTION_SCOPE_DENIED');
+    }
+    const previous = String(current.data.status || '');
+    if (!['open', 'reviewing'].includes(previous) || (previous === 'reviewing' && status === 'reviewing')) {
+      throw new Error('REPORT_INVALID_TRANSITION');
+    }
+    // Never trust a caller-supplied institution for audit routing; snapshot
+    // updateTime prevents two reviewers from silently overwriting each other.
+    if (!current.updateTime) throw new Error('REPORT_VERSION_UNVERIFIED');
+    await auditedPatch({
+      path: `reports/${reportId}`, patch: { status }, action: `report_${status}`,
+      targetType: 'report', targetId: reportId,
+      institutionId: reportInstitution || undefined,
+      expectedUpdateTime: current.updateTime,
+    });
   },
 
   async resolveNoShowClaim(claimId: string, status: 'upheld' | 'dismissed', institutionId: string) {
