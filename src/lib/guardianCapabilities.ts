@@ -32,6 +32,18 @@ export type GuardianProof = {
   consentVersion: string;
   approvedCapabilities: Capability[];
 };
+/** Trusted, server-issued acknowledgement proof for a SPECIFIC UGC policy
+ * revision. This is a SOURCE-ONLY contract, not a live backend permission. */
+export type TrustedUgcConsentProof = {
+  subjectUid: string;
+  issuer: 'trusted_server';
+  rulesVersion: string;
+  granted: boolean;
+  revoked: boolean;
+  expiresAtMs: number;
+  guardianConsentVersion?: string;
+};
+
 export type TopiRuntimeApproval = {
   audience: 'all_ages' | 'adults_only';
   approved: boolean;
@@ -181,4 +193,37 @@ export function decideCapability(input: {
   if (!trustedGuardian(uid, input.guardian || null, capability, nowMs))
     return DENIED('guardian_missing');
   return ALLOWED;
+}
+
+/**
+ * Precondition contract ONLY. Firestore/privileged backend MUST perform this
+ * check independently using server-write-only proofs at commit time. A
+ * client-supplied object or a checkbox must never grant UGC capabilities.
+ */
+export function trustedUgcConsentReady(input: {
+  uid: string;
+  rulesVersion: string;
+  nowMs: number;
+  age: TrustedAgeProof | null;
+  guardian?: GuardianProof | null;
+  consent: TrustedUgcConsentProof | null;
+}): boolean {
+  if (!input || typeof input !== 'object') return false;
+  const { uid, rulesVersion, nowMs, consent } = input;
+  if (typeof uid !== 'string' || !uid.trim()
+    || typeof rulesVersion !== 'string' || !rulesVersion.trim()
+    || !Number.isSafeInteger(nowMs) || nowMs <= 0
+    || !consent || consent.issuer !== 'trusted_server'
+    || consent.subjectUid !== uid
+    || consent.rulesVersion !== rulesVersion
+    || consent.granted !== true || consent.revoked !== false
+    || !Number.isSafeInteger(consent.expiresAtMs) || consent.expiresAtMs <= nowMs) return false;
+  const band = trustedAge(uid, input.age, nowMs);
+  if (band === 'unknown') return false;
+  if (band === 'adult') return true;
+  const guardian = input.guardian || null;
+  return trustedGuardian(uid, guardian, 'publish_listing', nowMs)
+    && typeof consent.guardianConsentVersion === 'string'
+    && consent.guardianConsentVersion.length > 0
+    && consent.guardianConsentVersion === guardian?.consentVersion;
 }
