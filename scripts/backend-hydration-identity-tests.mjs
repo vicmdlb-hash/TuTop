@@ -400,3 +400,40 @@ assert.equal(syntheticStore.getState().syncError, null,
   'old same-UID login failure cannot show a stale error in the current login');
 console.log('PASS same-UID relogin fences optimistic favorite, product and chat-read rollbacks');
 
+// Same UID, different Firebase refresh token: old create attempts can fail
+// *after* the new login contains the same product/chat identifier. They must
+// never delete the new login's legitimate view or report its old errors.
+fakeBackend.session = sessionB('create-old');
+let rejectOldProductCreate;
+const rejectOldChatCreates = [];
+fakeBackend.createProduct = () => new Promise((_, reject) => { rejectOldProductCreate = reject; });
+fakeBackend.createChat = () => new Promise((_, reject) => rejectOldChatCreates.push(reject));
+const sellerListing = { ...testProduct('seller-listing'), vendedor_id: 'other-seller', vendedor_nombre: 'Demo' };
+syntheticStore.setState({ products: [sellerListing], chats: [], syncError: null });
+syntheticStore.getState().addProduct({ ...testProduct('new-B-product'), vendedor_id: 'synthetic-B' });
+syntheticStore.getState().addChat(testChat('new-B-chat', 'synthetic-B'));
+const contactId = syntheticStore.getState().contactProduct('seller-listing');
+assert.equal(contactId, 'chat-synthetic-B-seller-listing');
+assert.equal(rejectOldChatCreates.length, 2);
+fakeBackend.session = sessionB('create-new');
+syntheticStore.setState({
+  products: [sellerListing, { ...testProduct('new-B-product'), titulo: 'New session listing', vendedor_id: 'synthetic-B' }],
+  chats: [testChat('new-B-chat', 'synthetic-B'), {
+    ...testChat(contactId, 'synthetic-B'), producto_id: 'seller-listing',
+  }],
+  activeChatId: contactId,
+  syncError: null,
+});
+rejectOldProductCreate(new Error('SYNTHETIC_OLD_CREATE'));
+for (const reject of rejectOldChatCreates) reject(new Error('SYNTHETIC_OLD_CREATE'));
+await Promise.resolve(); await Promise.resolve();
+assert(syntheticStore.getState().products.some(p => p.id === 'new-B-product'
+  && p.titulo === 'New session listing'), 'old product creation may not remove a new-login same-ID product');
+assert(syntheticStore.getState().chats.some(c => c.id === contactId),
+  'old contactProduct rejection may not remove a new-login same-ID chat');
+assert.equal(syntheticStore.getState().activeChatId, contactId,
+  'old contactProduct rejection may not close the new-login active chat');
+assert.equal(syntheticStore.getState().syncError, null,
+  'old create failures cannot surface under the reauthenticated account');
+console.log('PASS same-UID relogin fences stale create-product, create-chat and contact-product effects');
+
