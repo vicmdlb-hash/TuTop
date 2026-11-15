@@ -26,6 +26,8 @@ import TopiMascot from './TopiMascot';
 
 const FALLBACK_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"><rect width="900" height="600" fill="#111827"/><text x="450" y="310" text-anchor="middle" fill="#c4b5fd" font-size="42" font-family="Arial">TuTop</text></svg>')}`;
 const PUBLISH_DRAFT_PREFIX = 'tutop.publish.draft.v1.';
+// Source-only beta content acknowledgement. Not legal terms or trusted-server consent.
+const UGC_BETA_RULES_VERSION = 'ugc-beta-draft-2026-11-14-v1';
 
 type PublishDraft = {
   operationId?: string;
@@ -128,6 +130,8 @@ export default function NationalPublishScreen() {
   const locationRequestSerial = useRef(0);
   const locationPublicationRevocationEpoch = useRef(0);
   const topiRequestSerial = useRef(0);
+  const ugcConsentEpoch = useRef(0);
+  const ugcAcceptedVersionRef = useRef<string | null>(null);
   const nativeDevice = isNativeDeviceRuntime();
   const videoInfraEnabled = mediaStorageEnabled();
   const initialDraft = useMemo(() => readPublishDraft(user.id), [user.id]);
@@ -149,6 +153,8 @@ export default function NationalPublishScreen() {
   const [images, setImages] = useState<string[]>(initialDraft?.images?.slice(0, 4) || []);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  // Never hydrate UGC acknowledgements from saved drafts or another account.
+  const [ugcRulesAccepted, setUgcRulesAccepted] = useState(false);
   const [topiBusy, setTopiBusy] = useState(false);
   const [topiSource, setTopiSource] = useState<'local' | 'topi-endpoint' | null>(null);
   const [topiProvider, setTopiProvider] = useState<'firebase-ai-logic' | 'private-endpoint' | null>(null);
@@ -167,6 +173,10 @@ export default function NationalPublishScreen() {
   const topiDraftVersionRef = useRef(topiDraftVersion);
   topiDraftVersionRef.current = topiDraftVersion;
   useEffect(() => () => { topiRequestSerial.current += 1; }, [user.id]);
+  useEffect(() => () => {
+    ugcConsentEpoch.current += 1;
+    ugcAcceptedVersionRef.current = null;
+  }, [user.id]);
 
   // Invalidate in-flight geolocation when the form unmounts or its UID changes.
   // The App keys Publish by UID, but a pending browser/native callback can outlive it.
@@ -202,6 +212,7 @@ export default function NationalPublishScreen() {
   const hasValidTitle = title.trim().length >= 2;
   const shippingAvailable = deliveryMethods.includes('shipping');
   const prohibitedDraft = isForbiddenProductText(`${title} ${description}`);
+  const ugcConsentReady = ugcRulesAccepted && ugcAcceptedVersionRef.current === UGC_BETA_RULES_VERSION;
   const publishIssues: string[] = [];
   if (!institutionId || !campusId) publishIssues.push('universidad/campus');
   if (!hasValidTitle) publishIssues.push('título de al menos 2 caracteres');
@@ -209,6 +220,7 @@ export default function NationalPublishScreen() {
   if (!hasValidPrice) publishIssues.push('precio entre $0.01 y $1,000,000');
   if (!hasValidQuantity) publishIssues.push('cantidad entera entre 1 y 99');
   if (!deliveryMethods.length) publishIssues.push('forma de entrega');
+  if (!ugcConsentReady) publishIssues.push('confirmar las reglas de contenido beta');
   if (prohibitedDraft) publishIssues.push('artículo o servicio no permitido');
   if (missing.length) publishIssues.push(`campos obligatorios: ${missingLabels.join(', ')}`);
   if (videoFile && !videoInfraEnabled) publishIssues.push('video no disponible en esta beta');
@@ -474,6 +486,9 @@ export default function NationalPublishScreen() {
   };
 
   const publish = async () => {
+    const consentEpochAtPublish = ugcConsentEpoch.current;
+    const consentStillValid = () => ugcAcceptedVersionRef.current === UGC_BETA_RULES_VERSION
+      && ugcConsentEpoch.current === consentEpochAtPublish;
     const locationEpochAtPublish = locationPublicationRevocationEpoch.current;
     const publishAuthEpoch = verifiedEmailBetaAuth.sessionGeneration();
     // Guard every async completion against A→B and A→B→A transitions.
@@ -491,6 +506,7 @@ export default function NationalPublishScreen() {
     if (!hasValidQuantity) return setMessage('La cantidad debe ser un número entero entre 1 y 99.');
     if (prohibitedDraft) return setMessage('Ese artículo o servicio no está permitido en TuTop. Revisa el título y la descripción.');
     if (!deliveryMethods.length) return setMessage('Selecciona al menos una forma de entrega.');
+    if (!ugcConsentReady || !consentStillValid()) return setMessage('Lee y confirma las reglas de contenido beta antes de publicar.');
     if (missing.length) {
       setAdvancedOpen(true);
       return setMessage(`Completa estos campos obligatorios: ${missingLabels.join(', ')}.`);
@@ -529,6 +545,7 @@ export default function NationalPublishScreen() {
         return;
       }
 
+      if (!consentStillValid()) throw new Error('UGC_RULES_ACK_REVOKED');
       // Cached Nearby location is availability, not consent to publish it. Publication never requests location implicitly.
       const location = locationOptIn ? approxLocation : null;
 
@@ -537,6 +554,7 @@ export default function NationalPublishScreen() {
         uploadedVideoUri = uploaded.uri;
       }
       if (!publisherStillCurrent()) throw new Error('PUBLISH_OWNER_CHANGED');
+      if (!consentStillValid()) throw new Error('UGC_RULES_ACK_REVOKED');
 
       const now = new Date().toISOString();
       const listing: CanonicalListingV2 = {
@@ -579,11 +597,12 @@ export default function NationalPublishScreen() {
       const created = await withPublicationSessionRecovery({
         attempt: () => {
           if (!publisherStillCurrent()) throw new Error('PUBLISH_OWNER_CHANGED');
+          if (!consentStillValid()) throw new Error('UGC_RULES_ACK_REVOKED');
           return canonicalListingsBackend.create(listing, category, publishOperationId);
         },
         refreshVerification: async () => {
           const refreshed = await verifiedEmailBetaAuth.refreshVerificationStatus();
-          if (!publisherStillCurrent() || refreshed.uid !== user.id
+          if (!publisherStillCurrent() || !consentStillValid() || refreshed.uid !== user.id
             || !refreshed.emailVerified || refreshed.phoneVerified !== true) {
             throw new Error('PUBLISH_OWNER_CHANGED');
           }
@@ -594,6 +613,10 @@ export default function NationalPublishScreen() {
       uploadedVideoUri = null;
       if (!publisherStillCurrent()) return;
       clearPublishDraft(user.id);
+      // The next listing always requires fresh explicit acknowledgement.
+      ugcConsentEpoch.current += 1;
+      ugcAcceptedVersionRef.current = null;
+      setUgcRulesAccepted(false);
 
       let refreshedFeed = true;
       try {
@@ -622,7 +645,9 @@ export default function NationalPublishScreen() {
       const raw = error instanceof Error ? error.message : String(error);
       const failureCode = publicationFailureCode(raw);
       recordDiagnostic('publication', failureCode);
-      if (failureCode === 'publish_permission_denied') {
+      if (raw === 'UGC_RULES_ACK_REVOKED') {
+        setMessage('Cambió la confirmación de reglas durante el envío. Revísalas y vuelve a confirmar antes de publicar.');
+      } else if (failureCode === 'publish_permission_denied') {
         setMessage('TuTop revalidó tu sesión automáticamente, pero una validación de seguridad todavía rechazó la publicación. El borrador sigue guardado. Código: PUBLISH_PERMISSION_DENIED.');
       } else if (failureCode === 'publish_session_refresh_failed') {
         setMessage('TuTop detectó que la sesión necesitaba revalidarse, pero no pudo renovarla. El borrador sigue guardado: revisa tu conexión, cierra sesión, vuelve a entrar y toca Publicar otra vez.');
@@ -728,6 +753,23 @@ export default function NationalPublishScreen() {
       </>}
 
       {category && <section className="publish-card"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-300" /><strong className="text-xs">Precio inteligente</strong></div>{pricing ? <><p className="mt-2 text-[10px] leading-5 text-slate-400">{pricing.sample_size} comparables · mediana ${pricing.median_mxn.toLocaleString('es-MX')} · vender rápido ${pricing.sell_fast_mxn.toLocaleString('es-MX')} · recomendado <strong className="text-violet-200">${pricing.recommended_mxn.toLocaleString('es-MX')}</strong> · probar alto ${pricing.try_high_mxn.toLocaleString('es-MX')}</p><button type="button" onClick={() => setPrice(String(pricing.recommended_mxn))} className="mt-2 rounded-xl bg-violet-500/10 px-3 py-2 text-[10px] font-bold text-violet-200">Usar precio recomendado</button></> : <p className="mt-2 text-[9px] text-slate-500">Aún no hay suficientes comparables reales. Topi no inventará un precio.</p>}</section>}
+
+      <section className="publish-card" aria-label="Reglas de contenido beta">
+        <label className="flex items-start gap-3 text-[10px] text-slate-300">
+          <input type="checkbox" className="mt-1 h-4 w-4 shrink-0" checked={ugcRulesAccepted}
+            onChange={(event) => {
+              ugcConsentEpoch.current += 1;
+              ugcAcceptedVersionRef.current = event.target.checked ? UGC_BETA_RULES_VERSION : null;
+              setUgcRulesAccepted(event.target.checked);
+            }} />
+          <span>He leído las reglas de contenido de la beta para este anuncio.</span>
+        </label>
+        <p className="mt-2 text-[9px] text-slate-500">
+          <a href="/terms.html" target="_blank" rel="noopener noreferrer" className="text-violet-200 underline">Leer reglas de la comunidad</a>
+          {' · '}Versión {UGC_BETA_RULES_VERSION}. Son un borrador; este control no reemplaza los términos legales ni la autorización de tutor/servidor.
+          La confirmación se solicita por anuncio y no se guarda en borradores.
+        </p>
+      </section>
 
       <section className={`publish-card ${readyToPublish ? 'border-emerald-400/20 bg-emerald-500/[0.05]' : 'border-amber-400/15 bg-amber-500/[0.04]'}`}><div className="flex items-center gap-2"><CheckCircle2 className={`h-4 w-4 ${readyToPublish ? 'text-emerald-300' : 'text-amber-300'}`} /><strong className="text-xs">{readyToPublish ? 'Listo para publicar' : 'Completa lo mínimo'}</strong></div><p className="mt-1 text-[9px] text-slate-400">{readyToPublish ? 'Tu anuncio tiene lo necesario. Los campos avanzados siguen siendo opcionales salvo los marcados con *.' : `Falta: ${publishIssues.join(' · ')}`}</p></section>
       <div className="grid grid-cols-2 gap-2">
