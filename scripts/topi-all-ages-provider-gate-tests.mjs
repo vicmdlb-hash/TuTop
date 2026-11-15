@@ -129,6 +129,20 @@ assert.match(uiReports, /setAnswerReportTarget\(null\)/);
 assert.doesNotMatch(uiReports, /topi-firebase-ai:\$\{shown\.route\}\`/);
 assert.match(uiReports, /onlineBackend\.submitReport\('ai_response',/);
 assert.doesNotMatch(uiReports, /submitReport\('ai_response'[^\n]*(?:answer\.text|question)/);
+// Administrative Topi queue is only a VIEW over the existing role-scoped
+// backend. Review, resolve and dismissal must remain server-authorized and audited.
+const moderatorUi = fs.readFileSync('src/admin/ScopedModerationDashboard.tsx', 'utf8');
+const moderatorBackend = fs.readFileSync('src/services/scopedAdminBackend.ts', 'utf8');
+assert.match(moderatorUi, /reportView === 'all' \|\| item\.data\.target_type === 'ai_response'/);
+assert.match(moderatorUi, /Respuestas de Topi \(\{openAiReportCount\}\)/);
+assert.match(moderatorUi, /resolveReport\(item\.id,'reviewing',item\.data\.institution_id\)/);
+assert.match(moderatorUi, /resolveReport\(item\.id,'resolved',item\.data\.institution_id\)/);
+assert.match(moderatorUi, /resolveReport\(item\.id,'dismissed',item\.data\.institution_id\)/);
+assert.match(moderatorBackend, /moderationQueryScope\(admin, kind\)/);
+assert.match(moderatorBackend, /return firebase\.runQuery<any>\('reports', filters/);
+assert.match(moderatorBackend, /await auditedPatch\(\{ path: `reports\/\$\{reportId\}`/);
+console.log('PASS AI report moderation view uses existing scoped backend and auditable review/resolve/dismiss path');
+
 console.log('PASS Topi AI answer reporting opt-in, account-bound, guarded and without automatic raw-text capture');
 
 console.log('PASS Topi mixed-age remote Gemini provider gate: no client feature/env/App Check bypass, honest UX; local model is NOT implemented');
