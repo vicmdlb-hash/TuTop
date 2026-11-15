@@ -1,6 +1,7 @@
 import { getNativeAppCheckToken, initializeNativeAppCheck, nativeAppCheckStatus } from './nativeAppCheckToken';
 import { recordDiagnostic } from './localDiagnostics';
 import { topiRemoteProviderAudienceGate } from '../lib/topiAllAgesProviderGate';
+import { redactTopiRemoteText } from '../lib/topiPrivacy';
 
 type CapacitorPlugin = Record<string, (...args: any[]) => Promise<any>>;
 type CapacitorRuntime = {
@@ -112,7 +113,9 @@ export async function generateNativeTopiText(prompt: string): Promise<{ text: st
   }
   const ai = plugin();
   if (!ai?.generate) { setReason('plugin-missing'); return null; }
-  const clean = prompt.replace(/\u0000/g, '').trim().slice(0, 6000);
+  // Final outbound gate: never trust upstream callers to have already
+  // redacted user content. Detect secrets BEFORE limiting the native payload.
+  const clean = redactTopiRemoteText(prompt, 6000).text || '';
   if (clean.length < 3) return null;
 
   const preferred = String(import.meta.env.VITE_TUTOP_TOPI_MODEL || 'gemini-3.8-flash').trim();
