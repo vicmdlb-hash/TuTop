@@ -1,7 +1,7 @@
 import type { AdminPrincipal, AdminRole, ModerationCaseKind } from '../lib/marketplaceGovernance.ts';
 import { FirebaseRestClient } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
-import { requireModerationCaseTransition } from '../lib/institutionalModeration.ts';
+import { requireModerationCaseTransition, requireNoShowClaimDecision } from '../lib/institutionalModeration.ts';
 import { getFirebaseConfig } from './runtimeConfig.ts';
 
 export type AdminContext = AdminPrincipal & { role: AdminRole };
@@ -245,7 +245,19 @@ export const scopedAdminBackend = {
     });
   },
 
-  async resolveNoShowClaim(claimId: string, status: 'upheld' | 'dismissed', institutionId: string) {
-    await auditedPatch({ path: `transaction_outcome_claims/${claimId}`, patch: { status }, action: `no_show_${status}`, targetType: 'transaction_outcome_claim', targetId: claimId, institutionId });
+  async resolveNoShowClaim(claimId: string, status: 'upheld' | 'dismissed', _institutionId: string) {
+    const firebase = client();
+    const admin = await this.context();
+    if (!claimId || claimId.includes('/') || claimId.length > 180) throw new Error('NO_SHOW_CLAIM_ID_INVALID');
+    const current = await firebase.getDocument<any>(`transaction_outcome_claims/${claimId}`);
+    if (!current) throw new Error('NO_SHOW_CLAIM_NOT_FOUND');
+    // The case's stored institution is authoritative, not a UI-supplied value.
+    const institutionId = requireNoShowClaimDecision(admin, current.data, status);
+    if (!current.updateTime) throw new Error('NO_SHOW_CLAIM_VERSION_UNVERIFIED');
+    await auditedPatch({
+      path: `transaction_outcome_claims/${claimId}`, patch: { status },
+      action: `no_show_${status}`, targetType: 'transaction_outcome_claim',
+      targetId: claimId, institutionId, expectedUpdateTime: current.updateTime,
+    });
   },
 };
