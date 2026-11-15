@@ -320,4 +320,21 @@ function harness(initialUid = 'B') {
     'remoderated/private listing must not open on cold push retry');
   assert.equal(h.state.selectedProductId, null);
 }
+// Cached approval is not current authorization. No stale listing preview
+// may flash on screen before the trusted snapshot discovers remoderation.
+{
+  const h = harness('B');
+  h.state.products.push({ id: 'stale-B-listing', estado: 'Activo', moderation_status: 'approved' });
+  h.backend.loadSnapshot = async () => ({
+    user: { id: 'B' },
+    products: [{ id: 'stale-B-listing', estado: 'Activo', moderation_status: 'pending' }],
+  });
+  h.send({ source: 'action', recipient_uid: 'B', listing_id: 'stale-B-listing' });
+  assert.deepEqual(h.operations, ['tab:feed'],
+    'cached approval must not open listing before fresh moderation check');
+  await h.flush();
+  assert.deepEqual(h.operations, ['tab:feed', 'hydrate:B', 'tab:feed'],
+    'withdrawn listing must remain closed after verified refresh');
+  assert.equal(h.state.selectedProductId, null);
+}
 console.log('PASS native notification router account/session/read-ownership integration, no Firebase');
