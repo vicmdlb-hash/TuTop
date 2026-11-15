@@ -249,3 +249,97 @@ assert.equal((await freshSessionMiss).length,0);
 
 console.log('PASS listing backend read results fail closed before returning/caching after A→B or A→logout→A');
 console.log('PASS synthetic deferred Firestore reads reject old A sessions and Nearby cache is session-scoped');
+
+// SYNTHETIC HYDRATION SELECTION CONTRACT: execute the actual Zustand store
+// implementation against a memory-only test store, with no real backend.
+// Selected A chat/product, read flags and filters must not follow account B;
+// remoderation and revocation must close stale visible detail overlays.
+const { canViewerOpenListing } = await import('../src/lib/publicDiscovery.ts');
+let currentStore;
+const fakeCreate = init => {
+  const set = patch => {
+    const part = typeof patch === 'function' ? patch(currentStore) : patch;
+    currentStore = { ...currentStore, ...part };
+  };
+  const get = () => currentStore;
+  currentStore = init(set, get);
+  const hook = () => currentStore;
+  hook.getState = get;
+  hook.setState = set;
+  return hook;
+};
+const fakeBackend = { session: { uid: 'synthetic-A' } };
+const mockStoreModule = { exports: {} };
+runInNewContext(compileTypescriptFixture('src/store/useAppStore.ts'), {
+  module: mockStoreModule, exports: mockStoreModule.exports,
+  require(id) {
+    const deps = {
+      'zustand': { create: fakeCreate },
+      '../lib/productAssistant': { sellerLevelFor: () => 'Novato' },
+      '../services/onlineBackend': { onlineBackend: fakeBackend },
+      '../lib/feedback': { feedbackMessage: () => '' },
+      '../lib/publicDiscovery': { canViewerOpenListing },
+      '../lib/backendHydrationIdentity': { isLiveAccountSnapshot },
+      '../services/nationalBackend': { nationalSchemaEnabled: () => true },
+    };
+    assert(Object.hasOwn(deps, id), 'Unexpected synthetic store dependency: ' + id);
+    return deps[id];
+  },
+  Date, Map, Set, Math, Number, JSON, String, Promise, console,
+}, { timeout: 3500 });
+const syntheticStore = mockStoreModule.exports.useAppStore;
+assert(syntheticStore, 'compiled real app store must export useAppStore');
+const testUser = uid => ({ id: uid, facultad: 'Faculty-' + uid });
+const testProduct = (id, status = 'approved') => ({
+  id, vendedor_id: 'seller', moderation_status: status, estado: 'Activo',
+});
+const testChat = (id, buyer) => ({ id, comprador_id: buyer, vendedor_id: 'seller' });
+const testNote = (id, read = false) => ({ id, read, kind: 'offer' });
+const testSnapshot = (uid, products = [], chats = [], notifications = []) => ({
+  user: testUser(uid), products, chats, notifications, reviews: [], transactions: [],
+  favorites: [], isAdmin: false,
+});
+syntheticStore.getState().setUser(testUser('synthetic-A'));
+syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-A',
+  [testProduct('product-A')], [testChat('chat-A', 'synthetic-A')],
+  [testNote('shared-notice')]));
+syntheticStore.setState({
+  selectedProductId: 'product-A', activeChatId: 'chat-A',
+  notifications: [testNote('shared-notice', true)],
+});
+syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-A',
+  [testProduct('product-A')], [testChat('chat-A', 'synthetic-A')],
+  [testNote('shared-notice')]));
+assert.equal(syntheticStore.getState().selectedProductId, 'product-A');
+assert.equal(syntheticStore.getState().activeChatId, 'chat-A');
+assert.equal(syntheticStore.getState().notifications[0].read, true,
+  'a still-authenticated account may retain its locally read notification');
+syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-A',
+  [testProduct('product-A', 'pending')], [], [testNote('shared-notice')]));
+assert.equal(syntheticStore.getState().selectedProductId, null,
+  'a remoderated listing may not remain selected after a new snapshot');
+assert.equal(syntheticStore.getState().activeChatId, null,
+  'a revoked chat may not remain open after an account-owned snapshot');
+syntheticStore.setState({
+  selectedProductId: 'product-A', activeChatId: 'chat-A',
+  notifications: [testNote('shared-notice', true)],
+  products: [testProduct('product-A')], chats: [testChat('chat-A', 'synthetic-A')],
+});
+syntheticStore.getState().setUser(testUser('synthetic-B'));
+assert.deepEqual([
+  syntheticStore.getState().products.length, syntheticStore.getState().chats.length,
+  syntheticStore.getState().notifications.length,
+  syntheticStore.getState().selectedProductId,
+  syntheticStore.getState().activeChatId,
+], [0, 0, 0, null, null], 'owner switch clears A personal cache and navigation immediately');
+fakeBackend.session = { uid: 'synthetic-B' };
+syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-B',
+  [], [], [testNote('shared-notice')]));
+assert.equal(syntheticStore.getState().notifications[0].read, false,
+  'reused notification IDs from A cannot mark B notifications read');
+syntheticStore.setState({ selectedProductId: 'keep' });
+syntheticStore.getState().setUser({ ...testUser('synthetic-B'), nombre: 'New name' });
+assert.equal(syntheticStore.getState().selectedProductId, 'keep',
+  'same owner profile edits must not erase in-progress local navigation');
+console.log('PASS synthetic real Zustand hydration: remoderation, revoked chat and A-to-B personal state are fail-closed');
+
