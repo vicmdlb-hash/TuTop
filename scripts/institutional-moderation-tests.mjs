@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { canModerateItem, moderationQueueFor, requireModerationCaseTransition } from '../src/lib/institutionalModeration.ts';
+import { canModerateItem, moderationQueueFor, requireModerationCaseTransition, requireNoShowClaimDecision } from '../src/lib/institutionalModeration.ts';
 
 const items = [
   { id: 'uatx-urgent', institution_id: 'uatx', status: 'open', priority: 'urgent' },
@@ -65,5 +65,34 @@ assert.match(actionSection, /requireModerationCaseTransition\(admin, current\.da
 assert.match(actionSection, /MODERATION_CASE_VERSION_UNVERIFIED/);
 assert.match(actionSection, /expectedUpdateTime: current\.updateTime/);
 assert.match(actionSection, /const current = await firebase\.getDocument/);
+
+// No-show cases are terminal once decided. Client arguments may not override
+// the actual institution or write a case twice after another reviewer.
+assert.equal(requireNoShowClaimDecision(actor('institution_moderator', 'uatx'),
+  { status: 'open', institution_id: 'uatx' }, 'upheld'), 'uatx');
+assert.equal(requireNoShowClaimDecision(actor('trust_safety'),
+  { status: 'open' }, 'dismissed'), undefined);
+const noShowDeny = (reason, admin, item, next = 'upheld') =>
+  assert.throws(() => requireNoShowClaimDecision(admin, item, next),
+    { message: reason });
+noShowDeny('ROLE_SCOPE_DENIED', actor('support'), { status: 'open' });
+noShowDeny('ROLE_SCOPE_DENIED', actor('verification_reviewer'), { status: 'open' });
+noShowDeny('ADMIN_REQUIRED', { ...actor('moderator'), active: false },
+  { status: 'open' });
+noShowDeny('INSTITUTION_SCOPE_DENIED', actor('institution_moderator', 'uatx'),
+  { status: 'open', institution_id: 'buap' });
+noShowDeny('INSTITUTION_SCOPE_DENIED', actor('institution_moderator', 'uatx'),
+  { status: 'open' });
+noShowDeny('NO_SHOW_INVALID_TRANSITION', actor('moderator'),
+  { status: 'upheld' });
+noShowDeny('NO_SHOW_INVALID_TRANSITION', actor('moderator'),
+  { status: 'dismissed' });
+noShowDeny('NO_SHOW_INVALID_TRANSITION', actor('moderator'),
+  { status: 'open' }, 'reviewing');
+const noShowSection = backendSource.split('async resolveNoShowClaim(')[1]?.split('\n};')[0];
+assert(noShowSection, 'no-show action wrapper must exist');
+assert.match(noShowSection, /requireNoShowClaimDecision\(admin, current\.data, status\)/);
+assert.match(noShowSection, /NO_SHOW_CLAIM_VERSION_UNVERIFIED/);
+assert.match(noShowSection, /expectedUpdateTime: current\.updateTime/);
 
 console.log('Institutional moderation tests: PASS');
