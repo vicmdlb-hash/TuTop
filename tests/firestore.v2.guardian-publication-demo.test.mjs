@@ -114,6 +114,9 @@ test('adult with expired, revoked, client-forged or stale-version UGC proof cann
     ['oldversion', ugc({ rulesVersion: 'ugc-beta-old' })],
     ['otherowner', ugc({ subjectUid: 'other' })],
   ]) {
+    // Each denial must be evaluated against a freshly created rate bucket;
+    // a stale previous iteration must never supply a false security PASS.
+    await env.clearFirestore();
     await seed('adult', null, proof);
     await assertFails(publish('ugc-' + name));
   }
