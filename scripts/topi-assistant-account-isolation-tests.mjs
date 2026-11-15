@@ -34,6 +34,7 @@ const submittedAiReports = [];
 let currentUid = 'synthetic-user';
 let reportNonceSequence = 0;
 let switchUidDuringPrompt = false;
+let promptReason = 'Esta respuesta es imprecisa';
 let dictationStops = 0;
 let unmount = () => {};
 const mockSupport = {
@@ -46,6 +47,9 @@ vm.runInNewContext(js, {
     if (name === 'react') return { useState, useRef, useMemo: (compute) => compute(), useEffect: (effect) => { unmount = effect() || (() => {}); } };
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
     if (name === 'lucide-react') return {};
+    if (name === '../lib/topiPrivacy') return {
+      redactTopiRemoteText: (value) => ({ text: value, redactions: String(value).includes('@') ? ['email'] : [] }),
+    };
     if (name === '../lib/topiVoice') return { startTopiDictation: (callbacks) => { dictations.push(callbacks); return () => { dictationStops += 1; }; } };
     if (name === '../lib/supportDecisionTree') return {
       supportNode: (route) => ({ title: route, prompt: 'Ayuda', choices: route === 'root'
@@ -61,7 +65,7 @@ vm.runInNewContext(js, {
   crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(++reportNonceSequence).padStart(12, '0') },
   window: { prompt: () => {
     if (switchUidDuringPrompt) currentUid = 'synthetic-other';
-    return 'Esta respuesta es imprecisa';
+    return promptReason;
   } },
 }, { timeout: 4000 });
 const Topi = module.exports.default;
@@ -224,6 +228,14 @@ button(render(), 'Reportar respuesta de IA').props.onClick();
 assert.equal(submittedAiReports.length, 0, 'report must fail closed if UID changes in prompt');
 switchUidDuringPrompt = false;
 currentUid = 'synthetic-user';
+// The real privacy utility is independently tested; the component must not
+// call submitReport if its sanitizer rejects personal data in the reason.
+promptReason = 'Contáctame en privada@example.com para denunciar';
+button(render(), 'Reportar respuesta de IA').props.onClick();
+assert.equal(submittedAiReports.length, 0, 'sensitive report reason must not reach backend');
+assert(content(render()).includes('El motivo incluye datos sensibles'),
+  'show a useful correction without rendering the pasted private data');
+promptReason = 'Esta respuesta es imprecisa';
 dialog = render();
 button(dialog, 'Reportar respuesta de IA').props.onClick();
 button(dialog, 'Reportar respuesta de IA').props.onClick();
