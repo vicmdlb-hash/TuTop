@@ -7,6 +7,7 @@ const listings = fs.readFileSync('src/services/canonicalListingsBackend.ts','utf
 const tx = fs.readFileSync('src/services/canonicalTransactionsBackend.ts','utf8');
 const offers = fs.readFileSync('src/services/canonicalOffersBackend.ts','utf8');
 const card = fs.readFileSync('src/components/ProductCard.tsx','utf8');
+const reservationCard = fs.readFileSync('src/components/TransactionReservationCard.tsx','utf8');
 const detail = fs.readFileSync('src/components/ProductDetail.tsx','utf8');
 const store = fs.readFileSync('src/store/useAppStore.ts','utf8');
 const prepare = fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs','utf8');
@@ -135,6 +136,27 @@ assert.match(prepare, /availability_status/);
 assert.match(prepare, /affectedKeys\(\)\.hasAny\(\['availability_status'\]\)/);
 assert.match(lockRules, /availability_status == 'reserved'/);
 assert.match(lockRules, /availability_status == 'available'/);
+
+// #50: Missing or corrupted reservation timestamps must never be labeled
+// active or expose an unverified meeting plan in the Android transaction card.
+const remainingStart = reservationCard.indexOf('function remainingLabel(');
+const remainingEnd = reservationCard.indexOf('\nfunction defaultMeetupInput(', remainingStart);
+assert(remainingStart >= 0 && remainingEnd > remainingStart);
+const remainingLabel = new Function(
+  stripTypeScriptTypes(reservationCard.slice(remainingStart, remainingEnd)) + '\nreturn remainingLabel;'
+)();
+const referenceClock = Date.parse('2026-11-15T07:00:00.000Z');
+assert.equal(remainingLabel(undefined, referenceClock), null);
+assert.equal(remainingLabel('not-a-date', referenceClock), null);
+assert.equal(remainingLabel('2026-11-15T06:59:00.000Z', referenceClock), 'Reserva vencida');
+assert.equal(remainingLabel('2026-11-15T07:01:00.000Z', referenceClock), '1 min restantes');
+assert.match(reservationCard, /const reservationClockUnverified = transaction\?\.status === 'reserved' && !Number\.isFinite\(expiryMs\)/);
+assert.match(reservationCard, /reservationClockUnverified \? 'Vencimiento por verificar' : remaining \|\| 'Reserva vencida'/);
+assert.match(reservationCard, /!expired && !reservationClockUnverified && <div/);
+assert.match(reservationCard, /if \(!selectedPointId \|\| !meetupAt \|\| busy \|\| expired \|\| reservationClockUnverified\) return/);
+assert.match(reservationCard, /Number\.isFinite\(date\.getTime\(\)\)/);
+assert.match(reservationCard, /!Number\.isFinite\(Date\.parse\(transaction\.meetup_at\)\)/);
+console.log('PASS reservation card shows unverified/expired status truth and rejects malformed meeting timestamps');
 
 assert.match(card, /Reservado temporalmente/);
 assert.match(card, /reservedForViewer/);
