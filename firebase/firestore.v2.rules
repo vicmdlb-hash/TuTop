@@ -672,7 +672,15 @@ service cloud.firestore {
 
     match /moderation_cases/{caseId} { allow read, write: if isAdmin(); }
     match /audit_log/{entryId} {
-      allow read: if isAdmin();
+      // Audit visibility must be enforced by Rules, not only UI query filters.
+      // Institution moderators may list only records from their own institution;
+      // verification/support roles cannot directly bypass the client queue.
+      allow read: if isAdmin() && (
+        get(adminDoc()).data.role in ['super_admin', 'trust_safety', 'moderator']
+        || (get(adminDoc()).data.role == 'institution_moderator'
+          && get(adminDoc()).data.institution_id is string
+          && resource.data.institution_id == get(adminDoc()).data.institution_id)
+      );
       allow create: if isAdmin() && request.resource.data.admin_uid == request.auth.uid && fresh(request.resource.data.created_at);
       allow update, delete: if false;
     }
