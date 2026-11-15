@@ -337,6 +337,19 @@ syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-B',
   [], [], [testNote('shared-notice')]));
 assert.equal(syntheticStore.getState().notifications[0].read, false,
   'reused notification IDs from A cannot mark B notifications read');
+// A stale action or notification must not open an A chat after B signs in,
+// even when it bypasses the native push router's own membership checks.
+syntheticStore.getState().openChat('chat-A');
+assert.equal(syntheticStore.getState().activeChatId, null,
+  'opening foreign or absent chat must fail closed');
+syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-B', [],
+  [testChat('chat-B', 'synthetic-B')], []));
+syntheticStore.getState().openChat('chat-B');
+assert.equal(syntheticStore.getState().activeChatId, 'chat-B',
+  'legitimate owned B chat remains navigable');
+syntheticStore.getState().openChat('chat-A');
+assert.equal(syntheticStore.getState().activeChatId, 'chat-B',
+  'foreign deep link must not replace the valid B view');
 syntheticStore.setState({ selectedProductId: 'keep' });
 syntheticStore.getState().setUser({ ...testUser('synthetic-B'), nombre: 'New name' });
 assert.equal(syntheticStore.getState().selectedProductId, 'keep',
