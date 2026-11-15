@@ -108,8 +108,10 @@ assert.match(reset, /adminListCollectionGroupDocuments\(subcollection\)/);
 assert.match(admin, /collectTokenPages/);
 // The actual privileged listDocuments mapping must use the pure scoped
 // parser, not a split() that truncates a nested collection named "documents".
-assert.match(admin, /path: firestoreListDocumentPath\\(document\\.name, projectId, collectionPath\\)/);
-assert.doesNotMatch(admin, /document\\.name\\.split\\('\\/documents\\/'\\)/);
+assert.equal(admin.includes('path: firestoreListDocumentPath(document.name, projectId, collectionPath),'), true,
+  'listDocuments mapping must use the scoped pure path parser');
+assert.equal(admin.includes("document.name.split('/documents/')"), false,
+  'listDocuments must not truncate a nested documents collection');
 const listRoot = 'projects/demo/databases/(default)/documents/';
 assert.equal(
   firestoreListDocumentPath(listRoot + 'chats/chat1/documents/nested1',
