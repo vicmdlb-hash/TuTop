@@ -65,7 +65,7 @@ assert.equal(toCanonicalStatus('UNKNOWN_FROM_UI'), 'paused');
 const offerableStart = offers.indexOf('async function assertOfferableListing(');
 const offerableEnd = offers.indexOf('\nfunction assertOfferNotExpired(', offerableStart);
 assert(offerableStart >= 0 && offerableEnd > offerableStart);
-const assertOfferableListing = new Function(
+const assertPriceOfferable = new Function(
   stripTypeScriptTypes(offers.slice(offerableStart, offerableEnd))
   + '\nreturn assertOfferableListing;'
 )();
@@ -77,11 +77,11 @@ const safeListing = {
 const clientWithListing = listing => ({
   getDocument: async () => ({ data: listing }),
 });
-await assert.doesNotReject(assertOfferableListing(clientWithListing(safeListing), 'listing-test', 'synthetic-seller'),
+await assert.doesNotReject(assertPriceOfferable(clientWithListing(safeListing), 'listing-test', 'synthetic-seller'),
   'explicit free (0 MXN) listings remain supported');
 for (const invalidPrice of [-1, Number.NaN, Infinity, '250', null, undefined]) {
   await assert.rejects(
-    assertOfferableListing(clientWithListing({ ...safeListing, price_mxn: invalidPrice }), 'listing-test', 'synthetic-seller'),
+    assertPriceOfferable(clientWithListing({ ...safeListing, price_mxn: invalidPrice }), 'listing-test', 'synthetic-seller'),
     /LISTING_PRICE_UNVERIFIED/,
     'invalid canonical prices must fail closed before offer submission',
   );
@@ -94,7 +94,6 @@ assert.match(tx, /reservationAvailabilityWrite\(client, transaction\.listing_id,
 assert.match(tx, /LISTING_ALREADY_RESERVED/);
 
 // Exercise the real canonical reservation precondition with fake reads: no Firebase.
-const { stripTypeScriptTypes } = await import('node:module');
 const activeSource = tx.slice(
   tx.indexOf('async function assertActiveCanonicalListing('),
   tx.indexOf('\nfunction assertCancelable(')
@@ -105,7 +104,7 @@ const assertActiveListing = new Function(
 )();
 const offerFixture = {listing_id:'listing-test',seller_id:'seller-test'};
 const reservationClient = (availability, quantity = 1) => ({
-  getDocument: async () => ({id:'listing-test',data:{seller_id:'seller-test',status:'active',moderation_status:'approved',availability_status:availability,quantity}})
+  getDocument: async () => ({id:'listing-test',data:{seller_id:'seller-test',status:'active',moderation_status:'approved',availability_status:availability,quantity,price_mxn:250}})
 });
 await assertActiveListing(reservationClient('available'),offerFixture);
 await assertActiveListing(reservationClient(undefined),offerFixture);
