@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Clock3, FileKey2, Flag, MessageCircleWarning, RefreshCw, ShieldAlert, ShieldCheck, Store, UserRound, XCircle } from 'lucide-react';
-import type { ModerationCaseKind } from '../lib/marketplaceGovernance';
+import { canModerateCase, type ModerationCaseKind } from '../lib/marketplaceGovernance';
 import { scopedAdminBackend, type AdminContext } from '../services/scopedAdminBackend';
 
 type QueueKey = 'credential' | 'product' | 'user' | 'possible_scam' | 'chat' | 'appeal' | 'urgent';
@@ -43,16 +43,20 @@ export default function ScopedModerationDashboard() {
     try {
       const admin = await scopedAdminBackend.context();
       setContext(admin);
+      // Never report an unavailable security queue as an empty verified queue.
+      // Keep successful sections visible while naming exactly which reads failed.
+      const failedSections: string[] = [];
       const [caseDocs, reportDocs, claimDocs, auditDocs] = await Promise.all([
-        scopedAdminBackend.moderationCases(undefined, 200).catch(() => []),
-        scopedAdminBackend.reports(200).catch(() => []),
-        scopedAdminBackend.noShowClaims(200).catch(() => []),
-        scopedAdminBackend.auditLog(80).catch(() => []),
+        scopedAdminBackend.moderationCases(undefined, 200).catch(() => { failedSections.push('casos'); return []; }),
+        scopedAdminBackend.reports(200).catch(() => { failedSections.push('reportes'); return []; }),
+        scopedAdminBackend.noShowClaims(200).catch(() => { failedSections.push('reclamos no-show'); return []; }),
+        scopedAdminBackend.auditLog(80).catch(() => { failedSections.push('auditoría'); return []; }),
       ]);
       setCases(caseDocs as AdminDoc[]);
       setReports(reportDocs as AdminDoc[]);
       setClaims(claimDocs as AdminDoc[]);
       setAudit(auditDocs as AdminDoc[]);
+      if (failedSections.length) setError(`Consulta incompleta: ${failedSections.join(', ')}. Actualiza para verificar esos datos.`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally { setLoading(false); }
@@ -106,7 +110,7 @@ export default function ScopedModerationDashboard() {
           <section className="rounded-3xl border border-white/[0.07] bg-[#0b111c] p-4 sm:p-5">
             <div className="flex items-center gap-2"><QueueIcon queue={queue}/><h2 className="font-black">{queues.find((item) => item.key === queue)?.label}</h2><span className="ml-auto text-xs text-slate-600">{visibleCases.length} casos</span></div>
             <div className="mt-4 space-y-3">
-              {visibleCases.length ? visibleCases.map((item) => <CaseCard key={item.id} item={item} busy={busy === item.id} onAction={(status) => void act(item.id, () => scopedAdminBackend.resolveModerationCase(item.id, status, item.data.institution_id))}/>) : <Empty text={loading ? 'Consultando Firestore…' : 'No hay casos en esta cola.'}/>}            
+              {visibleCases.length ? visibleCases.map((item) => <CaseCard key={item.id} item={item} busy={busy === item.id} canDecide={!!context && canModerateCase(context, { id: item.id, kind: item.data.kind as ModerationCaseKind, institution_id: item.data.institution_id, priority: item.data.priority || 'normal', status: item.data.status || 'open' })} onAction={(status) => void act(item.id, () => scopedAdminBackend.resolveModerationCase(item.id, status, item.data.institution_id))}/>) : <Empty text={loading ? 'Consultando Firestore…' : error ? 'No se pudo verificar la cola completa; revisa el aviso y vuelve a actualizar.' : 'No hay casos en esta cola.'}/>}            
             </div>
           </section>
 
@@ -137,10 +141,10 @@ function QueueIcon({ queue }: { queue: QueueKey }) {
   return <ShieldAlert className={className}/>;
 }
 
-function CaseCard({ item, busy, onAction }: { item: AdminDoc; busy: boolean; onAction: (status: 'reviewing'|'resolved'|'dismissed') => void }) {
+function CaseCard({ item, busy, canDecide, onAction }: { item: AdminDoc; busy: boolean; canDecide: boolean; onAction: (status: 'reviewing'|'resolved'|'dismissed') => void }) {
   const status = String(item.data.status || 'open');
   const closed = status === 'resolved' || status === 'dismissed';
-  return <article className="rounded-2xl border border-white/[0.06] bg-[#080d16] p-4"><div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${item.data.priority === 'urgent' ? 'bg-rose-500/15 text-rose-300' : item.data.priority === 'high' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/[0.05] text-slate-500'}`}>{item.data.priority || 'normal'}</span><span className="text-[10px] font-bold uppercase text-violet-300">{item.data.kind}</span><span className="text-[10px] text-slate-600">{item.data.institution_id || 'global'}</span></div><p className="mt-2 text-sm font-bold">{item.data.target_type || 'caso'} · {item.data.target_id || item.id}</p>{item.data.reason && <p className="mt-1 text-xs leading-5 text-slate-500">{item.data.reason}</p>}</div><span className="rounded-full border border-white/[0.07] px-2 py-1 text-[9px] font-black text-slate-500">{status}</span></div>{!closed && <div className="mt-3 flex flex-wrap gap-2"><SmallButton disabled={busy} onClick={() => onAction('reviewing')}>Tomar caso</SmallButton><button disabled={busy} onClick={() => onAction('resolved')} className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1.5 text-[10px] font-black text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5"/>Resolver</button><button disabled={busy} onClick={() => onAction('dismissed')} className="inline-flex items-center gap-1 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-black text-rose-300"><XCircle className="h-3.5 w-3.5"/>Descartar</button></div>}</article>;
+  return <article className="rounded-2xl border border-white/[0.06] bg-[#080d16] p-4"><div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${item.data.priority === 'urgent' ? 'bg-rose-500/15 text-rose-300' : item.data.priority === 'high' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/[0.05] text-slate-500'}`}>{item.data.priority || 'normal'}</span><span className="text-[10px] font-bold uppercase text-violet-300">{item.data.kind}</span><span className="text-[10px] text-slate-600">{item.data.institution_id || 'global'}</span></div><p className="mt-2 text-sm font-bold">{item.data.target_type || 'caso'} · {item.data.target_id || item.id}</p>{item.data.reason && <p className="mt-1 text-xs leading-5 text-slate-500">{item.data.reason}</p>}</div><span className="rounded-full border border-white/[0.07] px-2 py-1 text-[9px] font-black text-slate-500">{status}</span></div>{!closed && canDecide && <div className="mt-3 flex flex-wrap gap-2"><SmallButton disabled={busy} onClick={() => onAction('reviewing')}>Tomar caso</SmallButton><button disabled={busy} onClick={() => onAction('resolved')} className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1.5 text-[10px] font-black text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5"/>Resolver</button><button disabled={busy} onClick={() => onAction('dismissed')} className="inline-flex items-center gap-1 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-black text-rose-300"><XCircle className="h-3.5 w-3.5"/>Descartar</button></div>}{!closed && !canDecide && <p className="mt-3 text-xs text-amber-200/70">Solo lectura: tu rol no puede decidir este caso.</p>}</article>;
 }
 
 function SmallButton({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled?: boolean }) { return <button disabled={disabled} onClick={onClick} className="rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-black text-slate-300 disabled:opacity-40">{children}</button>; }
