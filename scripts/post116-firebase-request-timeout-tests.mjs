@@ -106,6 +106,30 @@ try {
   globalThis.fetch = blockedFetch;
 }
 
+// Invalid/non-finite/overflowing timeout inputs must not accidentally
+// schedule a 1 ms timer and classify a healthy request as timed out.
+const networkBeforeMalformedTimeouts = globalThis.fetch;
+try {
+  let validResponses = 0;
+  globalThis.fetch = async () => {
+    await new Promise(resolve => setTimeout(resolve, 12));
+    validResponses += 1;
+    return new Response('synthetic-ok', { status: 200 });
+  };
+  for (const invalidMs of [Number.NaN, Infinity, 3_000_000_000]) {
+    const healthy = await firebaseFetch('https://example.test/valid-timeout', {}, invalidMs);
+    assert.equal(healthy.status, 200, 'invalid timer must not abort a healthy Firebase transport');
+  }
+  assert.equal(validResponses, 3);
+} finally {
+  globalThis.fetch = networkBeforeMalformedTimeouts;
+}
+for (const invalidMs of [Number.NaN, Infinity, 3_000_000_000]) {
+  const body = await readFirebaseResponseText({
+    text: () => new Promise(resolve => setTimeout(() => resolve('synthetic-body'), 12)),
+  }, invalidMs);
+  assert.equal(body, 'synthetic-body', 'invalid timer must not abort healthy body read');
+}
 // Headers can complete while the body itself stalls; both clients must fail bounded.
 const responseBodyStarted = Date.now();
 await assert.rejects(
