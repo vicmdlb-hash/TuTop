@@ -247,7 +247,7 @@ service cloud.firestore {
 
     match /products/{productId} {
       allow read: if signedIn();
-      allow create: if signedIn() && notSuspended()
+      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && request.resource.data.keys().hasOnly([
           'vendedor_id','vendedor_nombre','vendedor_handle','titulo','descripcion','precio_mxn','stock','categoria','facultad',
           'country_code','state_code','city_id','city_name','institution_id','campus_id','faculty_id','career_id','visibility_scope','listing_kind',
@@ -283,7 +283,7 @@ service cloud.firestore {
 
     match /favorites/{favoriteId} {
       allow read: if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
-      allow create: if signedIn() && notSuspended()
+      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && request.resource.data.keys().hasOnly(['uid','product_id','created_at'])
         && request.resource.data.uid == request.auth.uid
         && favoriteId == request.auth.uid + '_' + request.resource.data.product_id
@@ -295,7 +295,7 @@ service cloud.firestore {
 
     match /seller_follows/{followId} {
       allow read: if signedIn() && (resource.data.follower_uid == request.auth.uid || isAdmin());
-      allow create: if signedIn() && notSuspended()
+      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && request.resource.data.keys().hasOnly(['follower_uid','seller_id','created_at','updated_at'])
         && request.resource.data.follower_uid == request.auth.uid
         && request.resource.data.seller_id is string
@@ -310,6 +310,7 @@ service cloud.firestore {
     match /chats/{chatId} {
       allow read: if signedIn() && (request.auth.uid in resource.data.participants || isAdmin());
       allow create: if signedIn() && notSuspended()
+        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)
         && request.resource.data.keys().hasOnly(['product_id','producto_id','buyer_id','comprador_id','seller_id','vendedor_id','participants','nombre_otro_usuario','transaction_id','current_offer_id','created_at','updated_at','last_message','last_message_at'])
         && request.resource.data.buyer_id == request.auth.uid
         && request.resource.data.comprador_id == request.auth.uid
@@ -372,6 +373,7 @@ service cloud.firestore {
     match /offers/{offerId} {
       allow read: if signedIn() && (request.auth.uid == resource.data.buyer_id || request.auth.uid == resource.data.seller_id || isAdmin());
       allow create: if signedIn() && notSuspended()
+        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)
         && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','created_by','amount_mxn','status','parent_offer_id','counter_offer_id','expires_at','created_at','updated_at'])
         && request.resource.data.buyer_id != request.resource.data.seller_id
         && request.resource.data.created_by == request.auth.uid
@@ -415,10 +417,12 @@ service cloud.firestore {
             && request.resource.data.status == 'rejected')
           ||
           (request.auth.uid == resource.data.buyer_id
+            && commerceAccountsEligible(resource.data.buyer_id, resource.data.seller_id)
             && resource.data.created_by == resource.data.seller_id
             && request.resource.data.status == 'accepted')
           ||
           (request.auth.uid == resource.data.seller_id
+            && commerceAccountsEligible(resource.data.buyer_id, resource.data.seller_id)
             && resource.data.created_by == resource.data.buyer_id
             && request.resource.data.status == 'accepted'
             && sellerAcceptanceReady(offerId, resource.data))
@@ -535,7 +539,7 @@ service cloud.firestore {
 
     match /demand_requests/{requestId} {
       allow read: if signedIn();
-      allow create: if signedIn() && notSuspended()
+      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && request.resource.data.keys().hasOnly(['buyer_id','title','description','category','max_price_mxn','needed_by','institution_id','campus_id','city_id','visibility_scope','status','created_at','updated_at'])
         && request.resource.data.buyer_id == request.auth.uid
         && request.resource.data.title is string && request.resource.data.title.size() >= 2 && request.resource.data.title.size() <= 120
@@ -558,7 +562,7 @@ service cloud.firestore {
 
     match /saved_searches/{searchId} {
       allow read: if signedIn() && (resource.data.owner_uid == request.auth.uid || isAdmin());
-      allow create: if signedIn() && notSuspended()
+      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && request.resource.data.keys().hasOnly(['owner_uid','query','category','max_price_mxn','institution_id','campus_id','visibility_scope','notifications_enabled','created_at','updated_at'])
         && request.resource.data.owner_uid == request.auth.uid
         && request.resource.data.query is string && request.resource.data.query.size() >= 1 && request.resource.data.query.size() <= 180
@@ -597,7 +601,7 @@ service cloud.firestore {
 
     match /bids/{bidId} {
       allow read: if signedIn();
-      allow create: if signedIn() && notSuspended()
+      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && request.resource.data.keys().hasOnly(['uid','product_id','facultad','categoria','amount','week_id','created_at'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.amount is int && request.resource.data.amount >= 1 && request.resource.data.amount <= 5000

@@ -3,6 +3,11 @@ import fs from 'node:fs';
 const path = 'firebase/firestore.v2.generated.rules';
 let rules = fs.readFileSync(path, 'utf8');
 
+// The checked-in source can use CRLF on Windows while the composition
+// hardeners intentionally match canonical LF fragments. Normalize only the
+// generated artifact so the pipeline is deterministic across operating systems.
+rules = rules.replace(/\r\n/g, '\n');
+
 function replaceOnce(from, to, label) {
   const count = rules.split(from).length - 1;
   if (count !== 1) {

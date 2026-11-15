@@ -99,3 +99,32 @@ test('moderator general no hereda permisos de privacidad de soporte', async () =
   await assertFails(getDoc(doc(moderator, 'account_deletion_requests/alice')));
   await assertFails(updateDoc(doc(moderator, 'account_deletion_requests/alice'), { status: 'processing', updated_at: now() }));
 });
+
+test('solicitud de borrado bloquea nuevas operaciones y rechazo rehabilita la admision', async () => {
+  const alice = verifiedContext(env, 'alice').firestore();
+  const support = verifiedContext(env, 'support').firestore();
+  const deletionRef = doc(alice, 'account_deletion_requests/alice');
+  const savedSearchRef = doc(alice, 'saved_searches/search-after-deletion-request');
+  const savedSearch = () => ({
+    owner_uid: 'alice',
+    query: 'apuntes',
+    visibility_scope: 'campus',
+    notifications_enabled: false,
+    created_at: now(),
+    updated_at: now(),
+  });
+
+  await assertSucceeds(setDoc(deletionRef, {
+    uid: 'alice',
+    status: 'pending',
+    requested_at: now(),
+    updated_at: now(),
+  }));
+  await assertFails(setDoc(savedSearchRef, savedSearch()));
+
+  await assertSucceeds(updateDoc(
+    doc(support, 'account_deletion_requests/alice'),
+    { status: 'rejected', updated_at: now() },
+  ));
+  await assertSucceeds(setDoc(savedSearchRef, savedSearch()));
+});

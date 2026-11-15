@@ -71,8 +71,8 @@ replaceOnce(oldPrivateCreate, newPrivateCreate, 'user_private verified-email con
 
 const gates = [
   [
-    `      allow create: if signedIn() && notSuspended()\n        && request.resource.data.keys().hasOnly([\n          'vendedor_id'`,
-    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && request.resource.data.keys().hasOnly([\n          'vendedor_id'`,
+    `      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)\n        && request.resource.data.keys().hasOnly([\n          'vendedor_id'`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity() && commerceAccountEligible(request.auth.uid)\n        && request.resource.data.keys().hasOnly([\n          'vendedor_id'`,
     'legacy product create',
   ],
   [
@@ -81,8 +81,8 @@ const gates = [
     'legacy product update',
   ],
   [
-    `      allow create: if signedIn() && notSuspended()\n        && rateLimitConsumed('chat_create')`,
-    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && rateLimitConsumed('chat_create')`,
+    `      allow create: if signedIn() && notSuspended()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && rateLimitConsumed('chat_create')`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && rateLimitConsumed('chat_create')`,
     'chat create',
   ],
   [
@@ -101,8 +101,8 @@ const gates = [
     'legacy delivery confirmation',
   ],
   [
-    `      allow create: if signedIn() && notSuspended()\n        && offerRateLimitConsumed()`,
-    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && offerRateLimitConsumed()`,
+    `      allow create: if signedIn() && notSuspended()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && offerRateLimitConsumed()`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && offerRateLimitConsumed()`,
     'offer create',
   ],
   [
@@ -125,8 +125,8 @@ for (const [from, to, label] of gates) replaceOnce(from, to, label);
 replaceOnceInSection(
   '    match /listings_v2/{listingId} {',
   '    match /offers/{offerId} {',
-  `      allow create: if signedIn() && notSuspended()\n        && listingRateLimitConsumed()`,
-  `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && listingRateLimitConsumed()`,
+  `      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)\n        && listingRateLimitConsumed()`,
+  `      allow create: if signedIn() && notSuspended() && verifiedIdentity() && commerceAccountEligible(request.auth.uid)\n        && listingRateLimitConsumed()`,
   'canonical listings_v2 verified create',
 );
 replaceOnceInSection(

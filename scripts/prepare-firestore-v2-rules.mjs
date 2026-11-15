@@ -116,7 +116,7 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
         || request.auth.uid == resource.data.seller_id
         || canModerateInstitution(resource.data)
       );
-      allow create: if signedIn() && notSuspended()
+      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && request.resource.data.keys().hasOnly([
           'schema_version','seller_id','institution_id','campus_id','city_id','faculty_id','career_id','community_id',
           'category_id','subcategory_id','title','description','attributes','price_mxn','negotiable','quantity','condition',
