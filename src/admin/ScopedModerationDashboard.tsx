@@ -30,6 +30,7 @@ export default function ScopedModerationDashboard() {
   const [context, setContext] = useState<AdminContext | null>(null);
   const [cases, setCases] = useState<AdminDoc[]>([]);
   const [reports, setReports] = useState<AdminDoc[]>([]);
+  const [reportView, setReportView] = useState<'all' | 'ai_response'>('all');
   const [claims, setClaims] = useState<AdminDoc[]>([]);
   const [audit, setAudit] = useState<AdminDoc[]>([]);
   const [queue, setQueue] = useState<QueueKey>('urgent');
@@ -65,6 +66,13 @@ export default function ScopedModerationDashboard() {
     if (queue === 'urgent') return [...source, ...cases.filter((item) => item.data.priority === 'urgent' && !source.some((candidate) => candidate.id === item.id))];
     return source;
   }, [cases, queue]);
+
+  // AI reports use the same existing role-scoped backend and audited status
+  // transitions. Filtering here grants no new read or write permissions.
+  const activeReports = reports.filter((item) => !['resolved', 'dismissed'].includes(item.data.status));
+  const visibleReports = activeReports.filter((item) =>
+    reportView === 'all' || item.data.target_type === 'ai_response');
+  const openAiReportCount = activeReports.filter((item) => item.data.target_type === 'ai_response').length;
 
   const queueCount = (key: QueueKey) => {
     const meta = queues.find((item) => item.key === key)!;
@@ -103,7 +111,12 @@ export default function ScopedModerationDashboard() {
           </section>
 
           <div className="space-y-5">
-            <section className="rounded-3xl border border-white/[0.07] bg-[#0b111c] p-4 sm:p-5"><div className="flex items-center gap-2"><Flag className="h-4 w-4 text-amber-300"/><h2 className="font-black">Reportes</h2><span className="ml-auto text-xs text-slate-600">{reports.filter((r) => r.data.status === 'open').length} abiertos</span></div><div className="mt-3 max-h-80 space-y-2 overflow-y-auto">{reports.filter((r) => !['resolved','dismissed'].includes(r.data.status)).slice(0,20).map((item) => <div key={item.id} className="rounded-xl border border-white/[0.06] bg-black/10 p-3"><p className="text-xs font-bold">{item.data.target_type} · {item.data.target_id}</p><p className="mt-1 text-xs text-slate-500">{item.data.reason}</p><div className="mt-2 flex gap-2"><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveReport(item.id,'resolved',item.data.institution_id))}>Resolver</SmallButton><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveReport(item.id,'dismissed',item.data.institution_id))}>Descartar</SmallButton></div></div>)}{!reports.length && <Empty text="Sin reportes visibles para tu alcance."/>}</div></section>
+            <section className="rounded-3xl border border-white/[0.07] bg-[#0b111c] p-4 sm:p-5"><div className="flex items-center gap-2"><Flag className="h-4 w-4 text-amber-300"/><h2 className="font-black">Reportes</h2><span className="ml-auto text-xs text-slate-600">{activeReports.length} pendientes</span></div>
+            <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filtrar reportes">
+              <button type="button" onClick={() => setReportView('all')} aria-pressed={reportView === 'all'} className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold ${reportView === 'all' ? 'bg-violet-500 text-white' : 'border border-white/10 text-slate-400'}`}>Todos ({activeReports.length})</button>
+              <button type="button" onClick={() => setReportView('ai_response')} aria-pressed={reportView === 'ai_response'} className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold ${reportView === 'ai_response' ? 'bg-violet-500 text-white' : 'border border-white/10 text-slate-400'}`}>Respuestas de Topi ({openAiReportCount})</button>
+            </div>
+            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">{visibleReports.slice(0,20).map((item) => <div key={item.id} className="rounded-xl border border-white/[0.06] bg-black/10 p-3"><p className="text-xs font-bold">{item.data.target_type === 'ai_response' ? 'Respuesta de Topi' : item.data.target_type} · {item.data.target_id}</p><p className="mt-1 text-xs text-slate-500">{item.data.reason}</p><div className="mt-2 flex gap-2"><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveReport(item.id,'reviewing',item.data.institution_id))}>Tomar caso</SmallButton><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveReport(item.id,'resolved',item.data.institution_id))}>Resolver</SmallButton><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveReport(item.id,'dismissed',item.data.institution_id))}>Descartar</SmallButton></div></div>)}{!visibleReports.length && <Empty text="No hay reportes pendientes en este filtro para tu alcance."/>}</div></section>
 
             <section className="rounded-3xl border border-white/[0.07] bg-[#0b111c] p-4 sm:p-5"><div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-rose-300"/><h2 className="font-black">No-show</h2></div><div className="mt-3 space-y-2">{claims.filter((item) => item.data.status === 'open').slice(0,12).map((item) => <div key={item.id} className="rounded-xl border border-white/[0.06] bg-black/10 p-3"><p className="text-xs font-bold">{item.data.kind} · {item.data.transaction_id}</p><p className="mt-1 text-xs text-slate-500">{item.data.reason || 'Sin nota adicional'}</p><div className="mt-2 flex gap-2"><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveNoShowClaim(item.id,'upheld',String(item.data.institution_id)))}>Confirmar no-show</SmallButton><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveNoShowClaim(item.id,'dismissed',String(item.data.institution_id)))}>Descartar</SmallButton></div></div>)}{!claims.some((item)=>item.data.status==='open') && <Empty text="Sin reclamos de no-show abiertos."/>}</div></section>
 
