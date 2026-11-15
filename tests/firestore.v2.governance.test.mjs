@@ -143,6 +143,7 @@ test('moderation_cases protege institución, kind, rol y finalización contra es
     await setDoc(doc(db, 'moderation_cases/buap-product'), { ...base, kind: 'product', institution_id: 'buap' });
     await setDoc(doc(db, 'moderation_cases/uatx-credential'), { ...base, kind: 'credential', institution_id: 'uatx' });
     await setDoc(doc(db, 'moderation_cases/global-appeal'), { ...base, kind: 'appeal' });
+    await setDoc(doc(db, 'moderation_cases/global-product'), { ...base, kind: 'product' });
   });
   const inst = verifiedContext(env, 'uatxmod').firestore();
   const other = verifiedContext(env, 'buapmod').firestore();
@@ -158,6 +159,23 @@ test('moderation_cases protege institución, kind, rol y finalización contra es
   await assertFails(getDoc(doc(legacy, 'moderation_cases/uatx-product')));
   await assertFails(updateDoc(doc(inst, 'moderation_cases/buap-product'), { status: 'reviewing', updated_at: now() }));
   await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { kind: 'credential', status: 'reviewing', updated_at: now() }));
+  // A moderator must never rewrite case provenance or add unrecognized fields,
+  // even when changing a permitted status or case priority.
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), {
+    created_at: now(), status: 'reviewing', updated_at: now(),
+  }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), {
+    priority: 'high', created_at: now(), updated_at: now(),
+  }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), {
+    origin_trace: 'injected', status: 'reviewing', updated_at: now(),
+  }));
+  await assertFails(updateDoc(doc(global, 'moderation_cases/global-product'), {
+    institution_id: 'uatx', status: 'reviewing', updated_at: now(),
+  }));
+  await assertSucceeds(updateDoc(doc(global, 'moderation_cases/global-product'), {
+    status: 'reviewing', updated_at: now(),
+  }));
   await assertSucceeds(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'reviewing', updated_at: now() }));
   await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'reviewing', updated_at: now() }));
   await assertSucceeds(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'resolved', updated_at: now() }));
