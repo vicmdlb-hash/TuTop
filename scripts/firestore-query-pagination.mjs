@@ -1,8 +1,17 @@
 // Fail closed on in-band query errors or malformed document envelopes.
 // Firestore may return readTime-only metadata rows for an empty result set;
 // these are not equivalent to arbitrary, silently discarded response objects.
-export function parseFirestoreRunQueryRows(rows) {
+export function parseFirestoreRunQueryRows(rows, expectedProjectId) {
   if (!Array.isArray(rows)) throw new Error('QUERY_RESPONSE_INVALID');
+  // Privileged inventories must reject a document outside the same staging
+  // project/default database, even if it has a syntactically valid REST name.
+  if (expectedProjectId !== undefined
+      && (typeof expectedProjectId !== 'string'
+        || !/^[A-Za-z0-9_-]+$/.test(expectedProjectId))) {
+    throw new Error('QUERY_PROJECT_SCOPE_INVALID');
+  }
+  const expectedRoot = expectedProjectId === undefined ? ''
+    : `projects/${expectedProjectId}/databases/(default)/documents/`;
   const results = [];
   for (const row of rows) {
     if (!row || typeof row !== 'object' || Array.isArray(row)
@@ -35,6 +44,9 @@ export function parseFirestoreRunQueryRows(rows) {
         || typeof name !== 'string'
         || !name.startsWith('projects/') || !name.includes('/databases/') || !name.includes('/documents/')) {
       throw new Error('QUERY_DOCUMENT_INVALID');
+    }
+    if (expectedRoot && !name.startsWith(expectedRoot)) {
+      throw new Error('QUERY_DOCUMENT_SCOPE_INVALID');
     }
     // Split only at the first Firestore API root delimiter. A legitimate
     // nested collection can itself be named "documents"; splitting at every

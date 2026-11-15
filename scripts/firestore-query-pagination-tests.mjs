@@ -166,6 +166,25 @@ assert.deepEqual(accepted, [{
   fields: { uid: { stringValue: 'synthetic-user' } },
 }]);
 assert.deepEqual(parseFirestoreRunQueryRows([]), []);
+// A malformed but successful query response outside the requested staging
+// project/default DB must never count as an exhaustive erasure inventory.
+assert.equal(parseFirestoreRunQueryRows([
+  { document: { name: firestoreName, fields: {} } },
+], 'demo').length, 1);
+for (const wrongScope of [
+  'projects/foreign/databases/(default)/documents/chats/chat1',
+  'projects/demo/databases/elsewhere/documents/chats/chat1',
+]) {
+  assert.throws(() => parseFirestoreRunQueryRows([
+    { document: { name: wrongScope, fields: {} } },
+  ], 'demo'), /QUERY_DOCUMENT_SCOPE_INVALID/,
+  'cross-project/database document must never enter privileged inventory');
+}
+for (const invalidProject of ['', 'bad/project', null, 0]) {
+  assert.throws(() => parseFirestoreRunQueryRows([], invalidProject),
+    /QUERY_PROJECT_SCOPE_INVALID/,
+    'invalid privilege project scope must fail even when query is empty');
+}
 // Metadata-only responses must not falsely prove an empty/exhausted inventory.
 // Firestore documents a valid readTime for zero-result queries and can emit an
 // explicit done=true completion marker; no Firebase/credentials are used.
@@ -223,7 +242,7 @@ await assert.rejects(
   collectTokenPages(async () => ({ error: { status: 'PERMISSION_DENIED' } })),
   /LIST_PAGE_REMOTE_ERROR/,
 );
-assert.match(admin, /parseFirestoreRunQueryRows\(rows\)/);
+assert.match(admin, /parseFirestoreRunQueryRows\(rows, projectId\)/);
 
 const expectedDocumentName = 'projects/demo/databases/(default)/documents/users/test-user';
 const validDoc = { name: expectedDocumentName, fields: { flag: { booleanValue: true } } };

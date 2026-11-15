@@ -38,7 +38,7 @@ async function request(url, options = {}, allow = []) {
 }
 
 function queryRows(rows) {
-  return parseFirestoreRunQueryRows(rows);
+  return parseFirestoreRunQueryRows(rows, projectId);
 }
 
 export async function adminGetDocument(path) {
