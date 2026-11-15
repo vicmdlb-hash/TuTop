@@ -160,28 +160,33 @@ export const scopedAdminBackend = {
     return firebase.runQuery<any>('audit_log', [], [{ field: 'created_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
   },
 
-  async moderateListing(listingId: string, status: 'approved' | 'rejected', institutionId?: string) {
+  async moderateListing(listingId: string, status: 'approved' | 'rejected', _institutionId?: string) {
     const firebase = client();
     const admin = await this.context();
     if (!canModerateListings(admin)) throw new Error('ROLE_SCOPE_DENIED');
+    if (!listingId || listingId.includes('/') || listingId.length > 180) throw new Error('LISTING_ID_INVALID');
     const listing = await firebase.getDocument<any>(`listings_v2/${listingId}`);
     if (!listing) throw new Error('LISTING_NOT_FOUND');
     const listingInstitution = String(listing.data.institution_id || '');
-    if (admin.role === 'institution_moderator' && admin.institution_id !== listingInstitution) throw new Error('INSTITUTION_SCOPE_DENIED');
+    if (admin.role === 'institution_moderator'
+      && (!admin.institution_id || admin.institution_id !== listingInstitution)) throw new Error('INSTITUTION_SCOPE_DENIED');
     if (listing.data.moderation_status !== 'pending') throw new Error('LISTING_NOT_PENDING');
+    if (!listing.updateTime) throw new Error('LISTING_VERSION_UNVERIFIED');
     await auditedPatch({
       path: `listings_v2/${listingId}`,
       patch: { moderation_status: status },
       action: `listing_${status}`,
       targetType: 'listing',
       targetId: listingId,
-      institutionId: institutionId || listingInstitution || undefined,
+      institutionId: listingInstitution || undefined,
+      expectedUpdateTime: listing.updateTime,
     });
   },
 
   async updateAccountDeletionRequest(uid: string, status: 'processing' | 'rejected') {
     const admin = await this.context();
     if (!canProcessAccountRequests(admin)) throw new Error('ROLE_SCOPE_DENIED');
+    if (!uid || uid.includes('/') || uid.length > 180) throw new Error('ACCOUNT_DELETION_UID_INVALID');
     const firebase = client();
     const current = await firebase.getDocument<any>(`account_deletion_requests/${uid}`);
     if (!current) throw new Error('ACCOUNT_DELETION_REQUEST_NOT_FOUND');
@@ -192,12 +197,14 @@ export const scopedAdminBackend = {
         ? ['rejected']
         : [];
     if (!allowed.includes(status)) throw new Error('ACCOUNT_DELETION_INVALID_TRANSITION');
+    if (!current.updateTime) throw new Error('ACCOUNT_DELETION_VERSION_UNVERIFIED');
     await auditedPatch({
       path: `account_deletion_requests/${uid}`,
       patch: { status },
       action: `account_deletion_${status}`,
       targetType: 'account_deletion_request',
       targetId: uid,
+      expectedUpdateTime: current.updateTime,
     });
   },
 
