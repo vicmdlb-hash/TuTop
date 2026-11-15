@@ -55,6 +55,10 @@ export function requireModerationCaseTransition(
   if (admin.role === 'support' && kind !== 'appeal') {
     throw new Error('ROLE_SCOPE_DENIED');
   }
+  // Match marketplaceGovernance.canModerateCase: credential review is
+  // reserved for trust/safety, super admins and verification reviewers.
+  if ((admin.role === 'moderator' || admin.role === 'institution_moderator')
+    && kind === 'credential') throw new Error('ROLE_SCOPE_DENIED');
   const institution = typeof current.institution_id === 'string'
     ? current.institution_id.trim() : '';
   if (admin.role === 'institution_moderator'
