@@ -104,21 +104,33 @@ export const useAppStore = create<AppState>((set, get) => ({
   hydrateOnline: (snapshot) => set((state) => {
     // Mutations may resolve after logout or A→B even if BackendGate is guarded.
     if (!isLiveAccountSnapshot(state.user.id, onlineBackend.session?.uid, snapshot.user.id)) return state;
-    const readNotifications = new Set(state.notifications.filter((item) => item.read).map((item) => item.id));
+    const sameAccount = state.user.id === snapshot.user.id;
+    const readNotifications = new Set(
+      sameAccount ? state.notifications.filter((item) => item.read).map((item) => item.id) : [],
+    );
+    // An A chat or newly remoderated product must not stay open merely
+    // because its identifier survived a refresh or account switch.
+    const ownedChat = snapshot.chats.some((chat) => chat.id === state.activeChatId
+      && (chat.comprador_id === snapshot.user.id || chat.vendedor_id === snapshot.user.id));
+    const visibleProduct = snapshot.products.some((product) => product.id === state.selectedProductId
+      && canViewerOpenListing(product, snapshot.user.id, nationalSchemaEnabled()));
     return {
       ...snapshot,
       notifications: snapshot.notifications.map((item) => readNotifications.has(item.id) ? { ...item, read: true } : item),
-      currentFacultad: state.user.id ? state.currentFacultad : snapshot.user.facultad,
+      currentFacultad: sameAccount ? state.currentFacultad : snapshot.user.facultad,
       activeTab: state.activeTab,
-      activeChatId: state.activeChatId,
-      selectedProductId: state.selectedProductId,
+      activeChatId: ownedChat ? state.activeChatId : null,
+      selectedProductId: visibleProduct ? state.selectedProductId : null,
       onlineReady: true,
       syncError: null,
     };
   }),
   clearOnline: () => set(blankState()),
   setSyncError: (syncError) => set({ syncError }),
-  setUser: (user) => set({ user }),
+  // Switching owner must clear stale products, chats, read flags and navigation
+  // before the next online snapshot; editing the same owner's profile does not.
+  setUser: (user) => set((state) => state.user.id === user.id
+    ? { user } : { ...blankState(), user }),
   setActiveTab: (activeTab) => set({ activeTab }),
   openProduct: (selectedProductId) => set((state) => {
     const product = state.products.find((item) => item.id === selectedProductId);
