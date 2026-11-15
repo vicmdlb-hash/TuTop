@@ -25,7 +25,8 @@ assert.equal(result.kind, 'PREVIEW_NOT_EXECUTABLE');
 assert.equal(result.writeCount, 6);
 assert.equal(result.writes.length, 6);
 assert.deepEqual(result.writes[0], {
-  path: 'age_proofs_v2/alice', changes: { revoked: true },
+  path: 'age_proofs_v2/alice', writeMode: 'server_upsert_tombstone',
+  changes: { revoked: true, 'guardian.active': false, 'ugc.revoked': true, 'ugc.granted': false },
 });
 assert.deepEqual(result.writes[1], {
   path: 'guardian_grants_v2/alice', changes: { active: false },
@@ -44,6 +45,7 @@ assert.deepEqual(result.writes[4], {
 assert.equal(result.requiresPrivilegedAtomicCommit, true);
 assert.equal(result.requiresServerVerifiedEnumeration, true);
 assert.equal(result.requiresAdmissionFreezeDuringCommit, true);
+assert.equal(result.requiresFreshGuardianAndUgcEpochBeforeReissue, true);
 assert.equal(result.completionVerified, false);
 const full = prepareGuardianRevocation(base({ revokeGuardianGrant: true }));
 assert.deepEqual(full.writes[1], {
