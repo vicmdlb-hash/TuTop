@@ -30,6 +30,9 @@ const useRef = (initial) => {
 const jsx = (type, props) => ({ type, props: props || {} });
 const pending = [];
 const dictations = [];
+const submittedAiReports = [];
+let currentUid = 'synthetic-user';
+let switchUidDuringPrompt = false;
 let dictationStops = 0;
 let unmount = () => {};
 const mockSupport = {
@@ -47,13 +50,17 @@ vm.runInNewContext(js, {
       supportNode: (route) => ({ title: route, prompt: 'Ayuda', choices: route === 'root'
         ? [{ id: 'security', next: 'security', label: 'Seguridad' }] : [] }),
     };
-    if (name === '../services/onlineBackend') return { onlineBackend: { submitReport: async () => 'synthetic-report' } };
-    if (name === '../store/useAppStore') return { useAppStore: { getState: () => ({ user: { id: 'synthetic-user' } }) } };
+    if (name === '../services/onlineBackend') return { onlineBackend: { submitReport: async (...args) => { submittedAiReports.push(args); return 'synthetic-report'; } } };
+    if (name === '../store/useAppStore') return { useAppStore: { getState: () => ({ user: { id: currentUid } }) } };
     if (name === '../services/topiConsumerSupport') return mockSupport;
     if (name === './TopiMascot') return { default: () => null };
     throw new Error('Unexpected Topi module ' + name);
   },
   console,
+  window: { prompt: () => {
+    if (switchUidDuringPrompt) currentUid = 'synthetic-other';
+    return 'Esta respuesta es imprecisa';
+  } },
 }, { timeout: 4000 });
 const Topi = module.exports.default;
 const render = () => { hookIndex = 0; return Topi(); };
@@ -198,6 +205,36 @@ await new Promise((resolve) => setImmediate(resolve));
 button(render(), 'Abrir Topi').props.onClick();
 assert(!content(render()).includes('SENSITIVE_URI_OR_TOKEN'),
   'late rejected answer must not leak a provider error after dialog closure');
+
+// Reporting must be available ONLY on a true AI provider answer, and a change
+// of account while prompting must prevent the old answer from being reported.
+dialog = render();
+input(dialog).props.onChange({ target: { value: 'Pregunta con respuesta generada' } });
+button(render(), 'Preguntar a Topi').props.onClick();
+assert.equal(pending.length, 7);
+pending[6].resolve({ source: 'firebase-ai', route: 'root', text: 'RESPUESTA_AI_SINTETICA' });
+await Promise.resolve();
+await Promise.resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert(button(render(), 'Reportar respuesta de IA'));
+switchUidDuringPrompt = true;
+button(render(), 'Reportar respuesta de IA').props.onClick();
+assert.equal(submittedAiReports.length, 0, 'report must fail closed if UID changes in prompt');
+switchUidDuringPrompt = false;
+currentUid = 'synthetic-user';
+dialog = render();
+button(dialog, 'Reportar respuesta de IA').props.onClick();
+button(dialog, 'Reportar respuesta de IA').props.onClick();
+assert.equal(submittedAiReports.length, 1, 'same-tick duplicate AI reports must be suppressed');
+assert.equal(submittedAiReports[0][0], 'ai_response');
+assert.equal(submittedAiReports[0][1], 'topi-firebase-ai:root');
+assert.equal(submittedAiReports[0][2], 'Esta respuesta es imprecisa');
+assert(!submittedAiReports[0].join(' ').includes('RESPUESTA_AI_SINTETICA'),
+  'the full provider answer must not be silently uploaded');
+await Promise.resolve();
+await Promise.resolve();
+assert(content(render()).includes('Reporte de respuesta de IA enviado'),
+  'only an explicit submitted AI report can show success');
 
 // Logout/UID remount must also stop active native/Web Speech capture.
 dialog = render();
