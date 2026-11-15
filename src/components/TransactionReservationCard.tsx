@@ -70,8 +70,10 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
       if (value?.meeting_point_id) setSelectedPointId(value.meeting_point_id);
       if (value?.meetup_at) {
         const date = new Date(value.meetup_at);
-        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-        setMeetupAt(local.toISOString().slice(0, 16));
+        if (Number.isFinite(date.getTime())) {
+          const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+          setMeetupAt(local.toISOString().slice(0, 16));
+        }
       }
     }).catch(() => undefined);
     return () => { active = false; };
@@ -94,7 +96,11 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
   }, [transaction?.reservation_expires_at, transaction?.status]);
 
   const remaining = useMemo(() => remainingLabel(transaction?.reservation_expires_at, now), [transaction?.reservation_expires_at, now]);
-  const expired = Boolean(transaction?.status === 'reserved' && transaction.reservation_expires_at && Date.parse(transaction.reservation_expires_at) <= now);
+  // Missing/malformed reservation expiry is not proof of an active reserve.
+  const expiryMs = transaction?.status === 'reserved' && typeof transaction.reservation_expires_at === 'string'
+    ? Date.parse(transaction.reservation_expires_at) : Number.NaN;
+  const reservationClockUnverified = transaction?.status === 'reserved' && !Number.isFinite(expiryMs);
+  const expired = transaction?.status === 'reserved' && Number.isFinite(expiryMs) && expiryMs <= now;
   const isSeller = transaction?.seller_id === currentUserId;
   const isBuyer = transaction?.buyer_id === currentUserId;
   const currentUserConfirmed = Boolean(isBuyer ? transaction?.buyer_confirmed_at : transaction?.seller_confirmed_at);
@@ -115,7 +121,7 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
   };
 
   const saveMeetup = async () => {
-    if (!selectedPointId || !meetupAt || busy) return;
+    if (!selectedPointId || !meetupAt || busy || expired || reservationClockUnverified) return;
     try {
       setBusy(true); setMessage(null);
       const next = await nationalBackend.scheduleMeetup(transaction, selectedPointId, new Date(meetupAt).toISOString());
@@ -126,7 +132,8 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
   };
 
   const shareMeetup = async () => {
-    if (!transaction.meeting_point_id || !transaction.meetup_at) return;
+    if (!transaction.meeting_point_id || !transaction.meetup_at
+      || !Number.isFinite(Date.parse(transaction.meetup_at))) return;
     const text = meetupShareText(transaction, selectedPoint?.name || 'Punto TuTop público');
     try {
       if (navigator.share) {
@@ -172,16 +179,16 @@ export default function TransactionReservationCard({ chatId, currentUserId, tran
         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-amber-400/10 text-amber-300"><PackageCheck className="h-4 w-4" /></div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2"><strong className="text-[10px] text-amber-100">Operación · {statusLabel}</strong><span className="rounded-full bg-white/5 px-2 py-0.5 text-[8px] text-slate-500">${Number(transaction.agreed_amount_mxn || 0).toLocaleString('es-MX')}</span></div>
-          {transaction.status === 'reserved' && <p className={`mt-1 flex items-center gap-1 text-[9px] ${expired ? 'text-rose-300' : 'text-amber-200/70'}`}><Clock3 className="h-3 w-3" />{remaining || 'Reserva activa'}</p>}
+          {transaction.status === 'reserved' && <p role={reservationClockUnverified ? 'alert' : undefined} className={`mt-1 flex items-center gap-1 text-[9px] ${expired || reservationClockUnverified ? 'text-rose-300' : 'text-amber-200/70'}`}><Clock3 className="h-3 w-3" />{reservationClockUnverified ? 'Vencimiento por verificar' : remaining || 'Reserva vencida'}</p>}
           <p className="mt-1 text-[8px] leading-4 text-slate-600">La reserva aparta temporalmente el artículo; no representa un pago ni una garantía de entrega.</p>
         </div>
       </div>
 
-      {['reserved', 'meetup_scheduled'].includes(transaction.status) && !expired && <div className="mt-3 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.045] p-2.5">
+      {['reserved', 'meetup_scheduled'].includes(transaction.status) && !expired && !reservationClockUnverified && <div className="mt-3 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.045] p-2.5">
         <div className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5 text-emerald-300" /><div><strong className="block text-[9px] text-emerald-200">Plan de encuentro seguro</strong><span className="text-[8px] text-slate-600">Punto sugerido de TuTop + horario compartido dentro de esta operación.</span></div></div>
         {safePoints.length > 0 ? <div className="mt-2 space-y-1.5">{safePoints.map((point) => <button key={point.id} onClick={() => setSelectedPointId(point.id)} className={`flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left ${selectedPointId === point.id || transaction.meeting_point_id === point.id ? 'bg-emerald-400/10 ring-1 ring-emerald-300/20' : 'bg-white/[0.035]'}`}><MapPin className="mt-0.5 h-3 w-3 shrink-0 text-emerald-300" /><span className="min-w-0"><strong className="block text-[8px] text-slate-300">{point.name}</strong><small className="mt-0.5 block text-[7px] leading-3 text-slate-600">{point.description}</small></span></button>)}</div> : <p className="mt-2 text-[8px] leading-4 text-slate-600">Aún no hay un Punto TuTop catalogado para este campus. Por seguridad, esta versión no guarda lugares improvisados como “Punto TuTop”.</p>}
         {safePoints.length > 0 && <div className="mt-2 grid grid-cols-[1fr_auto] gap-2"><input aria-label="Fecha y hora del encuentro" type="datetime-local" value={meetupAt} onChange={(event) => setMeetupAt(event.target.value)} className="min-w-0 rounded-lg border border-white/5 bg-black/20 px-2 py-2 text-[8px] text-slate-300 outline-none" /><button disabled={busy || !selectedPointId || !meetupAt} onClick={() => void saveMeetup()} className="flex items-center justify-center gap-1 rounded-lg bg-emerald-400/10 px-3 text-[8px] font-black text-emerald-200 disabled:opacity-40">{busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CalendarCheck2 className="h-3 w-3" />}Guardar</button></div>}
-        {transaction.meeting_point_id && transaction.meetup_at && <div className="mt-2"><p className="text-[8px] leading-4 text-emerald-100/70"><MapPin className="mr-1 inline h-3 w-3" />{selectedPoint?.name || 'Punto TuTop'} · {new Date(transaction.meetup_at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}</p><button type="button" onClick={() => void shareMeetup()} className="mt-1.5 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-400/10 bg-white/[0.03] text-[8px] font-black text-emerald-200"><Share2 className="h-3 w-3" />Compartir mi encuentro</button><p className="mt-1 text-[7px] leading-3 text-slate-600">Comparte sólo el punto público y horario; nunca tu domicilio exacto. TuTop no es un servicio de emergencia.</p></div>}
+        {transaction.meeting_point_id && transaction.meetup_at && Number.isFinite(Date.parse(transaction.meetup_at)) && <div className="mt-2"><p className="text-[8px] leading-4 text-emerald-100/70"><MapPin className="mr-1 inline h-3 w-3" />{selectedPoint?.name || 'Punto TuTop'} · {new Date(transaction.meetup_at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}</p><button type="button" onClick={() => void shareMeetup()} className="mt-1.5 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-400/10 bg-white/[0.03] text-[8px] font-black text-emerald-200"><Share2 className="h-3 w-3" />Compartir mi encuentro</button><p className="mt-1 text-[7px] leading-3 text-slate-600">Comparte sólo el punto público y horario; nunca tu domicilio exacto. TuTop no es un servicio de emergencia.</p></div>}
       </div>}
 
       {transaction.status === 'meetup_scheduled' && <div className="mt-3 rounded-xl border border-sky-400/10 bg-sky-500/[0.04] p-2.5"><strong className="text-[9px] text-sky-200">Confirmación de entrega</strong><p className="mt-1 text-[8px] leading-4 text-slate-600">Confirma sólo después de revisar y recibir/entregar el artículo. TuTop completa la operación únicamente cuando ambas partes confirman.</p><div className="mt-2 flex items-center gap-2"><button disabled={busy || currentUserConfirmed} onClick={() => void confirmDelivery()} className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-sky-400/10 text-[8px] font-black text-sky-200 disabled:opacity-45">{currentUserConfirmed ? <CheckCircle2 className="h-3 w-3" /> : busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}{currentUserConfirmed ? 'Ya confirmaste' : 'Confirmar entrega'}</button><span className="text-[7px] text-slate-600">Otra parte: {otherConfirmed ? 'confirmó' : 'pendiente'}</span></div></div>}
