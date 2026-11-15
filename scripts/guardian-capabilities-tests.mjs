@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { decideCapability, trustedAgeBandFromServerRecord } from '../src/lib/guardianCapabilities.ts';
+import { decideCapability, trustedAgeBandFromServerRecord, trustedUgcConsentReady } from '../src/lib/guardianCapabilities.ts';
 
 const nowMs = 1_760_000_000_000;
 const age = (band, extras = {}) => ({
@@ -166,4 +166,36 @@ assert.match(ageSettings, /age_proofs_v2\/\$\{ownerUid\}/);
 assert.match(ageSettings, /firebase\.currentSession\?\.uid !== ownerUid/);
 assert.doesNotMatch(agePanel, /setTrustedAgeBand\(event\.target\.value\)/);
 console.log('PASS neutral server-age presentation unknown fail-closed; account/session binding; no self-declared authority');
+// Source-only UGC contract: no checkbox can stand in for trusted issuance.
+const ruleVersion = 'ugc-beta-draft-2026-11-14-v1';
+const ugc = (overrides = {}) => ({
+  subjectUid: 'child', issuer: 'trusted_server', rulesVersion: ruleVersion,
+  granted: true, revoked: false, expiresAtMs: nowMs + 60_000, ...overrides,
+});
+const ugcCheck = (overrides = {}) => trustedUgcConsentReady({
+  uid: 'child', rulesVersion: ruleVersion, nowMs, age: age('adult'),
+  consent: ugc(), ...overrides,
+});
+assert.equal(ugcCheck(), true);
+for (const invalid of [null, ugc({ subjectUid: 'other' }), ugc({ issuer: 'client' }),
+  ugc({ rulesVersion: 'superseded' }), ugc({ granted: false }), ugc({ revoked: true }),
+  ugc({ expiresAtMs: nowMs }), ugc({ expiresAtMs: '9999999999999' })]) {
+  assert.equal(ugcCheck({ consent: invalid }), false);
+}
+assert.equal(ugcCheck({ age: null }), false);
+assert.equal(ugcCheck({ age: age('adult', { revoked: true }) }), false);
+assert.equal(ugcCheck({ rulesVersion: '' }), false);
+assert.equal(ugcCheck({ rulesVersion: 'new-version', consent: ugc() }), false);
+for (const band of ['teen_13_17', 'under_13']) {
+  assert.equal(ugcCheck({ age: age(band), consent: ugc() }), false);
+  assert.equal(ugcCheck({ age: age(band), guardian: guardian(['publish_listing']), consent: ugc() }), false);
+  assert.equal(ugcCheck({ age: age(band), guardian: guardian(['publish_listing']),
+    consent: ugc({ guardianConsentVersion: 'v1' }) }), true);
+  assert.equal(ugcCheck({ age: age(band), guardian: guardian(['publish_listing'], { consentVersion: 'v2' }),
+    consent: ugc({ guardianConsentVersion: 'v1' }) }), false);
+  assert.equal(ugcCheck({ age: age(band), guardian: guardian(['publish_listing'], { active: false }),
+    consent: ugc({ guardianConsentVersion: 'v1' }) }), false);
+}
+console.log('PASS UGC trusted server consent source contract: version/uid/expiry/revocation/guardian epoch; not deployed');
+
 console.log('PASS guardian strict runtime-proof rejection cases (synthetic; backend authority still pending)');
