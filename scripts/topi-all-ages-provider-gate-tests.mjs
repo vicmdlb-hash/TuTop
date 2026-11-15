@@ -107,4 +107,22 @@ assert.match(publishUi, /Beta guiada: Topi organiza datos mediante reglas locale
 assert.match(supportUi, /Guía local de reglas. No es IA generativa/);
 console.log('PASS approved Topi guided beta: local publishing and local support, zero remote attempts and honest UI');
 
+// Source-only report gate: the user must initiate reports on actual AI answers;
+ // no raw prompt/answer, guided response or unrelated account may be auto-submitted.
+const uiReports = fs.readFileSync('src/components/TopiSupportAssistant.tsx', 'utf8');
+const backendReports = fs.readFileSync('src/services/onlineBackend.ts', 'utf8');
+for (const rulePath of ['firebase/firestore.rules', 'firebase/firestore.v2.rules']) {
+  const rules = fs.readFileSync(rulePath, 'utf8');
+  assert.match(rules, /target_type in \\[[^\\]]*'ai_response'/);
+}
+assert.match(backendReports, /'product' \\| 'user' \\| 'chat' \\| 'ai_response'/);
+assert.match(backendReports, /if \\(client\\.currentSession\\?\\.uid !== uid\\) throw new Error\\('SESSION_CHANGED'\\)/);
+assert.match(uiReports, /shown\\?\\.source !== 'firebase-ai'/);
+assert.match(uiReports, /useAppStore\\.getState\\(\\)\\.user\\.id !== reporterUid/);
+assert.match(uiReports, /reportPendingRef\\.current/);
+assert.match(uiReports, /answer\\.source === 'firebase-ai' && <button/);
+assert.match(uiReports, /onlineBackend\\.submitReport\\('ai_response',/);
+assert.doesNotMatch(uiReports, /submitReport\\('ai_response'[^\\n]*(?:answer\\.text|question)/);
+console.log('PASS Topi AI answer reporting opt-in, account-bound, guarded and without automatic raw-text capture');
+
 console.log('PASS Topi mixed-age remote Gemini provider gate: no client feature/env/App Check bypass, honest UX; local model is NOT implemented');
