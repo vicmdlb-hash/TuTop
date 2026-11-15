@@ -52,16 +52,16 @@ const helpers = `
       let proof = get(guardianAgeDoc(uid)).data;
       return signedIn() && uid is string
         && guardianAgeDataAllowed(uid, ['adult','teen_13_17'], proof)
-        && (proof.band == 'adult' || guardianValidGrant(uid, cap));
+        && (proof.band == 'adult' || guardianValidGrant(uid, cap, proof));
     }
-    function guardianValidGrant(uid, cap) {
+    function guardianValidGrant(uid, cap, ageProof) {
       // DEMO architecture trial: server owns a single atomic age+guardian
       // proof at age_proofs_v2/{uid}. Revocation updates this very document;
       // legacy guardian_grants_v2 is NOT authoritative in this candidate.
       // Reuses the age document already evaluated by the parent guard,
       // avoiding an independent grant read at the offer write budget boundary.
       // Not usable in production until trusted issuance and migrations exist.
-      let proof = get(guardianAgeDoc(uid)).data.guardian;
+      let proof = ageProof.guardian;
       return proof.keys().hasAll([
           'childUid','guardianUid','issuer','active','consentVersion',
           'approvedCapabilities','expires_at'
@@ -127,7 +127,7 @@ const helpers = `
       return signedIn() && uid is string
         && guardianAgeDataAllowed(uid, ['adult','teen_13_17','under_13'], proof)
         && (proof.band == 'adult'
-          || guardianValidGrant(uid, 'publish_listing'));
+          || guardianValidGrant(uid, 'publish_listing', proof));
     }
 `;
 rules = rules.replace(signedIn, signedIn + helpers);
