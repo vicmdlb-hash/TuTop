@@ -43,8 +43,13 @@ for (const permission of ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'CAM
 assert.match(native, /ACCESS_BACKGROUND_LOCATION/);
 assert.match(native, /READ_EXTERNAL_STORAGE/);
 assert.match(native, /WRITE_EXTERNAL_STORAGE/);
-assert.match(native, /android:allowBackup=\\"false\\"/);
-assert.match(native, /android:usesCleartextTraffic=\\"false\\"/);
+assert.match(native, /android:allowBackup="false"/);
+assert.match(native, /allowBackup debe quedar desactivado/, 'native hardening must fail closed if backups remain enabled');
+assert.match(native, /android:usesCleartextTraffic="false"/);
+assert.match(native, /cleartext traffic debe quedar desactivado/, 'native hardening must fail closed if plaintext traffic remains enabled');
+assert.match(native, /TuTop 0\.9\.2 no debe pedir ubicación precisa/, 'precise location cannot be requested');
+assert.match(native, /TuTop no debe declarar ubicación en segundo plano/, 'background location cannot be requested');
+assert.match(native, /TuTop no debe recuperar permisos legacy de almacenamiento/, 'legacy storage cannot be requested');
 
 console.log('PASS TuTop 0.9.1 exposes native-aware location/camera/microphone/notification controls');
 console.log('PASS Android camera uses system Camera 8 getPhoto while Topi voice requests RECORD_AUDIO only on demand');
