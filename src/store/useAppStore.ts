@@ -155,16 +155,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   publishProduct: async (product, bidAmount = 0) => {
     const actorUid = get().user.id;
+    const actorSession = onlineBackend.session;
     try {
       await onlineBackend.createProduct(product);
       if (get().user.id !== actorUid) return false;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return false;
       if (bidAmount > 0) await onlineBackend.bidProduct(product, bidAmount);
       if (get().user.id !== actorUid) return false;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return false;
       const snapshot = await onlineBackend.loadSnapshot();
       if (get().user.id !== actorUid) return false;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return false;
       get().hydrateOnline(snapshot);
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return false;
       return get().user.id === actorUid;
     } catch (error) {
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return false;
       if (get().user.id === actorUid) reportSyncError(set, error);
       return false;
     }
@@ -257,6 +263,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   sendMessage: (chatId, text) => {
     const actorUid = get().user.id;
+    const actorSession = onlineBackend.session;
     const clean = text.trim();
     if (!clean) return;
     const state = get();
@@ -267,11 +274,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, mensajes: [...item.mensajes, message], sin_leer: 0 } : item) }));
     void onlineBackend.sendMessage(chatId, clean).then(async () => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       const snapshot = await onlineBackend.loadSnapshot();
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       get().hydrateOnline(snapshot);
     }).catch((error) => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       // Preserve newer messages; roll back only the failed optimistic message.
       set((current) => ({ chats: current.chats.map((item) => item.id === chatId
         ? { ...item, mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id) }
@@ -283,6 +293,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sendImageMessage: (chatId, imageUrl) => {
     const state = get();
     const actorUid = state.user.id;
+    const actorSession = onlineBackend.session;
     const chat = state.chats.find((item) => item.id === chatId);
     if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)
       || !imageUrl.startsWith('data:image/')) return;
@@ -292,11 +303,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     feedbackMessage();
     void onlineBackend.sendMessage(chatId, '', imageUrl).then(async () => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       const snapshot = await onlineBackend.loadSnapshot();
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       get().hydrateOnline(snapshot);
     }).catch((error) => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       // Preserve newer messages; roll back only the failed optimistic message.
       set((current) => ({ chats: current.chats.map((item) => item.id === chatId
         ? { ...item, mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id) }
@@ -329,6 +343,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   confirmDelivery: (chatId) => {
     const state = get();
     const actorUid = state.user.id;
+    const actorSession = onlineBackend.session;
     const chat = state.chats.find((item) => item.id === chatId);
     if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)
       || chat.entrega_confirmada) return;
@@ -338,11 +353,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((current) => ({ chats: current.chats.map((item) => item.id === chatId ? { ...item, confirmaciones_entrega: confirmations, entrega_confirmada: confirmations.comprador && confirmations.vendedor, entrega_estado: confirmations.comprador && confirmations.vendedor ? 'completada' : 'esperando_confirmacion' } : item) }));
     void onlineBackend.confirmDelivery(chatId).then(async () => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       const snapshot = await onlineBackend.loadSnapshot();
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       get().hydrateOnline(snapshot);
     }).catch((error) => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       // Revert only our unchanged optimistic confirmation; never erase later chat messages.
       set((current) => ({ chats: current.chats.map((item) => item.id === chatId && item.confirmaciones_entrega === confirmations
         ? { ...item, confirmaciones_entrega: chat.confirmaciones_entrega, entrega_confirmada: chat.entrega_confirmada, entrega_estado: chat.entrega_estado }
@@ -354,6 +372,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   submitReview: (chatId, calificacion, comentario) => {
     const state = get();
     const actorUid = state.user.id;
+    const actorSession = onlineBackend.session;
     const chat = state.chats.find((item) => item.id === chatId);
     if (!chat || !actorUid || (chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid)
       || !chat.entrega_confirmada) return false;
@@ -363,11 +382,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((current) => ({ reviews: [review, ...current.reviews] }));
     void onlineBackend.submitReview(chat, calificacion, comentario).then(async () => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       const snapshot = await onlineBackend.loadSnapshot();
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       get().hydrateOnline(snapshot);
     }).catch((error) => {
       if (get().user.id !== actorUid) return;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return;
       set((current) => ({ reviews: current.reviews.filter((item) => item.id !== review.id) }));
       reportSyncError(set, error);
     });
@@ -377,16 +399,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   bidProduct: async (productId, amount) => {
     const state = get();
     const actorUid = state.user.id;
+    const actorSession = onlineBackend.session;
     const product = state.products.find((item) => item.id === productId);
     if (!actorUid || !product || !canViewerOpenListing(product, actorUid, nationalSchemaEnabled())) return false;
     try {
       await onlineBackend.bidProduct(product, amount);
       if (get().user.id !== actorUid) return false;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return false;
       const snapshot = await onlineBackend.loadSnapshot();
       if (get().user.id !== actorUid) return false;
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return false;
       get().hydrateOnline(snapshot);
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return false;
       return get().user.id === actorUid;
     } catch (error) {
+      if (!sameFirebaseSession(actorSession, onlineBackend.session)) return false;
       if (get().user.id === actorUid) reportSyncError(set, error);
       return false;
     }
