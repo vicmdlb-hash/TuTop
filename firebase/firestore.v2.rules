@@ -706,6 +706,13 @@ service cloud.firestore {
       allow get: if owner(uid);
       allow list, create, update, delete: if false;
     }
+    // Explicitly reserve versioned UGC consent evidence for a privileged
+    // issuer. This does not implement/legalize guardian consent or authorize
+    // publication: the write-side marketplace gate is a separate blocker.
+    match /ugc_consents_v2/{uid} {
+      allow get: if owner(uid);
+      allow list, create, update, delete: if false;
+    }
 
     match /{document=**} { allow read, write: if false; }
   }
