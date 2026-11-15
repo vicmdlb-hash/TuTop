@@ -75,7 +75,9 @@ try {
 // must reject immediately with their reason and allow the next call to work.
 const blockedFetch = globalThis.fetch;
 try {
+  let transportInvocations = 0;
   globalThis.fetch = async (_url, init) => {
+    transportInvocations += 1;
     assert.ok(init.signal instanceof AbortSignal);
     return await new Promise(() => {});
   };
@@ -95,6 +97,11 @@ try {
       { signal: preCancelled.signal }, 5_000),
     /synthetic already aborted/,
   );
+  assert.equal(transportInvocations, 1,
+    'pre-aborted request must never invoke fetch (only earlier in-flight request ran)');
+  assert.match(fs.readFileSync('src/services/firebaseHttp.ts', 'utf8'),
+    /if \(upstream\?\.aborted\) throw upstream\.reason/,
+    'abort preflight must happen before any request transport');
 } finally {
   globalThis.fetch = blockedFetch;
 }
