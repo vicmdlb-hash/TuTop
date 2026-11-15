@@ -59,14 +59,17 @@ function legacyStatus(status: CanonicalListingV2['status']): ProductStatus {
   if (status === 'paused') return 'Pausado';
   if (status === 'sold_out') return 'Vendido';
   if (status === 'archived') return 'Archivado';
-  return 'Activo';
+  // Unrecognized or absent lifecycle is NOT an active public listing.
+  return status === 'active' ? 'Activo' : 'Pausado';
 }
 
 function canonicalStatus(status: ProductStatus): CanonicalListingV2['status'] {
   if (status === 'Pausado') return 'paused';
   if (status === 'Vendido' || status === 'Agotado') return 'sold_out';
   if (status === 'Archivado') return 'archived';
-  return 'active';
+  // Preserve legacy 'Reservado' transaction compatibility, but reject every
+  // unknown runtime status instead of silently publishing it as active.
+  return status === 'Activo' || status === 'Reservado' ? 'active' : 'paused';
 }
 
 function legacyDelivery(method: ListingDeliveryMethod): DeliveryMethod {
@@ -104,6 +107,7 @@ async function sellerNameFor(client: FirebaseRestClient, uid: string) {
 
 export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListingV2>, sellerName = 'Estudiante'): Product {
   const data = doc.data;
+  const validPrice = typeof data.price_mxn === 'number' && Number.isFinite(data.price_mxn) && data.price_mxn >= 0;
   const photos = Array.isArray(data.photo_urls) ? data.photo_urls.filter(Boolean).slice(0, 4) : [];
   const videos = Array.isArray(data.video_urls) ? data.video_urls.filter(validCanonicalVideoUri).slice(0, 1) : [];
   const product: Product & { video_urls?: string[] } = {
@@ -112,7 +116,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     vendedor_nombre: sellerName,
     titulo: data.title,
     descripcion: data.description || undefined,
-    precio_mxn: Number(data.price_mxn || 0),
+    precio_mxn: validPrice ? data.price_mxn : 0,
     precio_negociable: data.negotiable,
     stock: Number.isSafeInteger(data.quantity) && data.quantity >= 1 && data.quantity <= 99 ? data.quantity : 0,
     categoria: categoryLabel(data.category_id),
@@ -131,14 +135,14 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     moderation_status: data.moderation_status === 'flagged' ? 'flagged' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
     // Invalid/null remote availability is not consent to display a listing as offerable.
     // Only missing legacy V2 availability remains available for backwards compatibility.
-    availability_status: !Number.isSafeInteger(data.quantity) || data.quantity < 1 || data.quantity > 99 ? 'unverified' : data.availability_status === 'available' || data.availability_status === undefined ? 'available' : data.availability_status === 'reserved' ? 'reserved' : 'unverified',
+    availability_status: !Number.isSafeInteger(data.quantity) || data.quantity < 1 || data.quantity > 99 || !validPrice ? 'unverified' : data.availability_status === 'available' || data.availability_status === undefined ? 'available' : data.availability_status === 'reserved' ? 'reserved' : 'unverified',
     punto_encuentro: 'Coordinar por Chat' as MeetingPoint,
     metodos_entrega: data.delivery_methods.map(legacyDelivery),
     shipping_available: data.shipping_available,
     imagen_url: photos[0] || '',
     imagenes_url: photos,
     ...(videos.length ? { video_urls: videos } : {}),
-    estado: legacyStatus(data.status),
+    estado: validPrice ? legacyStatus(data.status) : 'Pausado',
     es_top: false,
     jerarquia_top: 0,
     puja_ucoins: 0,
