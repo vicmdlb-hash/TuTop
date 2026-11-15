@@ -42,7 +42,9 @@ function route(intent: NativeNotificationIntent, markRead = true) {
     // chat-less cached notification may belong to a previous account:
     // defer its read receipt until an owner-verified snapshot proves it.
     const cached = state.notifications.find((item) => item.id === intent.notification_id);
-    if (!cached || (cached.chat_id && hasOwnedChat(cached.chat_id, state.user.id))) {
+    // An absent cache entry has no proved owner. Wait for the authenticated
+    // notification snapshot instead of sending a premature remote read.
+    if (cached?.chat_id && hasOwnedChat(cached.chat_id, state.user.id)) {
       state.markNotificationRead(intent.notification_id);
     }
   }
@@ -95,6 +97,13 @@ export function installNativeNotificationRouter() {
     const expectedSessionGeneration = verifiedEmailBetaAuth.sessionGeneration();
     const expectedCanonicalSession = verifiedEmailBetaAuth.readSessionIdentity();
     if (!expectedCanonicalSession || expectedCanonicalSession.uid !== expectedUid) return;
+    const cachedBeforeRoute = useAppStore.getState().notifications.find(
+      (item) => item.id === intent.notification_id,
+    );
+    const cachedChatReadAlreadyIssued = intent.source === 'action'
+      && Boolean(intent.notification_id)
+      && Boolean(cachedBeforeRoute?.chat_id)
+      && hasOwnedChat(String(cachedBeforeRoute?.chat_id || ''), expectedUid);
     const exactTargetResolved = route(intent);
     void onlineBackend.loadSnapshot().then((snapshot) => {
       // An A-owned request can settle after A logs out and B signs in.
@@ -112,13 +121,15 @@ export function installNativeNotificationRouter() {
         expectedUid, activeRecipientUid(), store.user.id, snapshot.user.id,
       )) return;
       store.hydrateOnline(snapshot);
-      // Only an authenticated B-owned snapshot may authorize a read for a
-      // chat-less notification that could have been cached under A. No read
-      // receipt is issued merely because Android delivered the push.
-      if (intent.source === 'action' && intent.notification_id
+      // The snapshot must prove notification ownership before a previously
+      // unseen ID can trigger a remote read. For chats, also prove membership
+      // from the newly hydrated owner-scoped chat list.
+      if (!cachedChatReadAlreadyIssued
+        && intent.source === 'action' && intent.notification_id
         && Array.isArray(snapshot.notifications)
         && snapshot.notifications.some((item) =>
-          item.id === intent.notification_id && !item.chat_id)) {
+          item.id === intent.notification_id
+          && (!item.chat_id || hasOwnedChat(item.chat_id, expectedUid)))) {
         useAppStore.getState().markNotificationRead(intent.notification_id);
       }
       if (!exactTargetResolved && intent.source === 'action'

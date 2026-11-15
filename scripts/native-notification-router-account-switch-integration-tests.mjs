@@ -123,19 +123,19 @@ function harness(initialUid = 'B') {
   const h = harness('B');
   h.send({ source: 'action', recipient_uid: 'B', chat_id: 'chat-b', notification_id: 'n3' });
   await h.flush();
-  assert.deepEqual(h.operations, ['read:n3', 'chat:chat-b', 'hydrate:B']);
+  assert.deepEqual(h.operations, ['chat:chat-b', 'hydrate:B']);
 }
 {
   const h = harness('A');
   let resolve;
   h.backend.loadSnapshot = () => new Promise((r) => { resolve = r; });
   h.send({ source: 'action', recipient_uid: 'A', chat_id: 'chat-a', notification_id: 'n4' });
-  assert.deepEqual(h.operations, ['read:n4', 'chat:chat-a']);
+  assert.deepEqual(h.operations, ['chat:chat-a']);
   h.backend.session = { uid: 'B' };
   h.state.user.id = 'B';
   resolve({ user: { id: 'A' } });
   await h.flush();
-  assert.deepEqual(h.operations, ['read:n4', 'chat:chat-a'], 'late A snapshot cannot hydrate B');
+  assert.deepEqual(h.operations, ['chat:chat-a'], 'late A snapshot cannot hydrate B');
 }
 {
   const h = harness('B');
@@ -158,7 +158,7 @@ function harness(initialUid = 'B') {
   let resolve;
   h.backend.loadSnapshot = () => new Promise((r) => { resolve = r; });
   h.send({ source: 'action', recipient_uid: 'A', chat_id: 'chat-a', notification_id: 'n5' });
-  assert.deepEqual(h.operations, ['read:n5', 'chat:chat-a']);
+  assert.deepEqual(h.operations, ['chat:chat-a']);
   // A logs out and authenticates again as A before an old request finishes.
   // UID matching alone would erroneously hydrate the obsolete snapshot.
   h.newSession();
@@ -166,7 +166,7 @@ function harness(initialUid = 'B') {
   h.state.user.id = 'A';
   resolve({ user: { id: 'A' } });
   await h.flush();
-  assert.deepEqual(h.operations, ['read:n5', 'chat:chat-a'], 'same-UID reauthentication must invalidate prior snapshot');
+  assert.deepEqual(h.operations, ['chat:chat-a'], 'same-UID reauthentication must invalidate prior snapshot');
 }
 
 {
@@ -174,12 +174,12 @@ function harness(initialUid = 'B') {
   let resolve;
   h.backend.loadSnapshot = () => new Promise((r) => { resolve = r; });
   h.send({ source: 'action', recipient_uid: 'A', chat_id: 'chat-a', notification_id: 'n6' });
-  assert.deepEqual(h.operations, ['read:n6', 'chat:chat-a']);
+  assert.deepEqual(h.operations, ['chat:chat-a']);
   // Phone-password sign-out/login does not increment verified-email generation.
   h.phoneRelogin();
   resolve({ user: { id: 'A' } });
   await h.flush();
-  assert.deepEqual(h.operations, ['read:n6', 'chat:chat-a'], 'old phone-session snapshot cannot hydrate same UID after token rotation');
+  assert.deepEqual(h.operations, ['chat:chat-a'], 'old phone-session snapshot cannot hydrate same UID after token rotation');
 }
 {
   const h = harness('A');
@@ -197,7 +197,7 @@ function harness(initialUid = 'B') {
   // A malicious/misrouted B-addressed notification points at A's cached chat.
   h.send({ source: 'action', recipient_uid: 'B', chat_id: 'chat-a', notification_id: 'n-cross' });
   await h.flush();
-  assert.deepEqual(h.operations, ['read:n-cross', 'tab:inbox', 'hydrate:B', 'tab:inbox'],
+  assert.deepEqual(h.operations, ['tab:inbox', 'hydrate:B', 'tab:inbox'],
     'B cannot navigate into cached A chat even when push recipient is B');
 }
 {
@@ -210,7 +210,7 @@ function harness(initialUid = 'B') {
   });
   h.send({ source: 'action', recipient_uid: 'B', chat_id: 'chat-new-b', notification_id: 'n-new' });
   await h.flush();
-  assert.deepEqual(h.operations, ['read:n-new', 'tab:inbox', 'hydrate:B', 'chat:chat-new-b'],
+  assert.deepEqual(h.operations, ['tab:inbox', 'hydrate:B', 'chat:chat-new-b'],
     'cold-chat tap must wait for owner-scoped snapshot before opening');
 }
 {
@@ -250,6 +250,44 @@ function harness(initialUid = 'B') {
     'legitimate B notification must still mark as read and route to B chat');
 }
 
+// An uncached notification must not cause a remote read without a matching
+// authenticated notification record. Auth UID and chat membership alone are
+// insufficient, because the supplied notification_id is untrusted.
+{
+  const h = harness('B');
+  h.send({ source: 'action', recipient_uid: 'B', chat_id: 'chat-b', notification_id: 'uncached-B' });
+  assert.deepEqual(h.operations, ['chat:chat-b'], 'no premature uncached read');
+  await h.flush();
+  assert.deepEqual(h.operations, ['chat:chat-b', 'hydrate:B'], 'missing notification snapshot cannot prove a receipt');
+}
+// A genuinely new notification may become readable after its exact ID and
+// chat membership appear in the verified B-owned snapshot.
+{
+  const h = harness('B');
+  h.backend.loadSnapshot = async () => ({
+    user: { id: 'B' },
+    chats: [{ id: 'chat-b', comprador_id: 'B', vendedor_id: 'seller' }],
+    notifications: [{ id: 'new-B-notice', kind: 'message', chat_id: 'chat-b' }],
+  });
+  h.send({ source: 'action', recipient_uid: 'B', chat_id: 'chat-b', notification_id: 'new-B-notice' });
+  assert.deepEqual(h.operations, ['chat:chat-b'], 'receipt must await verified snapshot');
+  await h.flush();
+  assert.deepEqual(h.operations, ['chat:chat-b', 'hydrate:B', 'read:new-B-notice']);
+}
+// An authenticated B snapshot that contains an A-owned chat notification
+// must not authorize B to mark A's message as read.
+{
+  const h = harness('B');
+  h.backend.loadSnapshot = async () => ({
+    user: { id: 'B' },
+    chats: [{ id: 'chat-b', comprador_id: 'B', vendedor_id: 'seller' }],
+    notifications: [{ id: 'cross-owned', kind: 'message', chat_id: 'chat-a' }],
+  });
+  h.send({ source: 'action', recipient_uid: 'B', chat_id: 'chat-a', notification_id: 'cross-owned' });
+  await h.flush();
+  assert.deepEqual(h.operations, ['tab:inbox', 'hydrate:B', 'tab:inbox'],
+    'unowned remote chat must never mark read');
+}
 // Delivery is not a read receipt, even when the cached chat belongs to B.
 {
   const h = harness('B');
