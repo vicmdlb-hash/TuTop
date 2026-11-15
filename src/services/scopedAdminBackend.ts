@@ -1,6 +1,7 @@
 import type { AdminPrincipal, AdminRole, ModerationCaseKind } from '../lib/marketplaceGovernance.ts';
 import { FirebaseRestClient } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
+import { requireModerationCaseTransition } from '../lib/institutionalModeration.ts';
 import { getFirebaseConfig } from './runtimeConfig.ts';
 
 export type AdminContext = AdminPrincipal & { role: AdminRole };
@@ -200,8 +201,21 @@ export const scopedAdminBackend = {
     });
   },
 
-  async resolveModerationCase(caseId: string, status: 'reviewing' | 'resolved' | 'dismissed', institutionId?: string) {
-    await auditedPatch({ path: `moderation_cases/${caseId}`, patch: { status }, action: `moderation_case_${status}`, targetType: 'moderation_case', targetId: caseId, institutionId });
+  async resolveModerationCase(caseId: string, status: 'reviewing' | 'resolved' | 'dismissed', _institutionId?: string) {
+    const firebase = client();
+    const admin = await this.context();
+    if (!caseId || caseId.includes('/') || caseId.length > 180) throw new Error('MODERATION_CASE_ID_INVALID');
+    const current = await firebase.getDocument<any>(`moderation_cases/${caseId}`);
+    if (!current) throw new Error('MODERATION_CASE_NOT_FOUND');
+    // Never trust the institution supplied by a UI caller. Verify the current
+    // stored case, its allowed role/transition and its updateTime before commit.
+    const institutionId = requireModerationCaseTransition(admin, current.data, status);
+    if (!current.updateTime) throw new Error('MODERATION_CASE_VERSION_UNVERIFIED');
+    await auditedPatch({
+      path: `moderation_cases/${caseId}`, patch: { status },
+      action: `moderation_case_${status}`, targetType: 'moderation_case',
+      targetId: caseId, institutionId, expectedUpdateTime: current.updateTime,
+    });
   },
 
   async resolveReport(reportId: string, status: 'reviewing' | 'resolved' | 'dismissed', _institutionId?: string) {
