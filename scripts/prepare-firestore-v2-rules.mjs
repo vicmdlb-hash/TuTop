@@ -285,7 +285,9 @@ const strictModerationAndPrivacy = `    match /moderation_cases/{caseId} {
       allow create: if canDecideModerationCase(request.resource.data)
         && request.resource.data.keys().hasOnly(['kind','target_type','target_id','institution_id','status','priority','assigned_to','evidence_refs','action','reason','internal_notes','result','created_at','updated_at'])
         && request.resource.data.kind in ['credential','product','user','chat','possible_scam','prohibited_content','appeal','urgent_incident']
-        && request.resource.data.status in ['open','reviewing','resolved','dismissed']
+        // A new case must enter the moderation queue; terminal decisions
+        // require a separate authorized transition and auditable action.
+        && request.resource.data.status == 'open'
         && request.resource.data.priority in ['normal','high','urgent']
         && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
       allow update: if canDecideModerationCase(resource.data)
