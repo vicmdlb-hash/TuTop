@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Flag, HelpCircle, Loader2, Mic, RotateCcw, Send, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { startTopiDictation } from '../lib/topiVoice';
+import { redactTopiRemoteText } from '../lib/topiPrivacy';
 import { supportNode, type SupportRouteId } from '../lib/supportDecisionTree';
 import { answerConsumerSupport, type SupportAnswer } from '../services/topiConsumerSupport';
 import { onlineBackend } from '../services/onlineBackend';
@@ -108,6 +109,12 @@ export default function TopiSupportAssistant() {
     const reason = window.prompt('¿Qué problema tiene esta respuesta de IA? Describe el problema sin incluir datos personales.')?.trim();
     if (!reason || reason.length < 3 || reason.length > 500) return;
     if (serial !== reportContextSerial.current || useAppStore.getState().user.id !== reporterUid) return;
+    // Do not persist contact data, credentials, identity numbers or private
+    // addresses accidentally pasted into a moderation reason.
+    if (redactTopiRemoteText(reason, 500).redactions.length > 0) {
+      setReportMessage('El motivo incluye datos sensibles. Omítelos y vuelve a reportar.');
+      return;
+    }
     reportPendingRef.current = true;
     setReportBusy(true);
     setReportMessage(null);
