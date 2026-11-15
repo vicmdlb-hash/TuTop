@@ -153,7 +153,7 @@ assert.equal(requireModerationCaseTransition(actor('verification_reviewer'), rec
 
 // The generator, not its input template, owns the actual V2 rules used by
 // the emulator. These contracts guard strict role-scoped output construction.
-const reportTransform = prepareGenerator.split("  '    match /reports/{reportId} {'")[1]
+const reportTransform = prepareGenerator.split("  '    match /reports/{reportId} {'").at(-1)
   ?.split("  'reports institutional scope',")[0];
 const moderationOutput = prepareGenerator.split('const strictModerationAndPrivacy = `')[1]
   ?.split('`;' + '\n' + 'requireOnce(generated, permissiveModeration')[0];
