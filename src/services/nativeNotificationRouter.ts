@@ -37,11 +37,12 @@ function hasOwnedChat(chatId: string, uid: string) {
 function route(intent: NativeNotificationIntent, markRead = true) {
   if (!recipientMatchesActiveSession(intent)) return false;
   const state = useAppStore.getState();
-  if (markRead && intent.notification_id) {
-    // The store can still contain an A-owned message notification after B
-    // becomes the authenticated user. Never mark that foreign chat as read.
+  if (markRead && intent.source === 'action' && intent.notification_id) {
+    // Merely receiving a push is not reading it. On a shared device, a
+    // chat-less cached notification may belong to a previous account:
+    // defer its read receipt until an owner-verified snapshot proves it.
     const cached = state.notifications.find((item) => item.id === intent.notification_id);
-    if (!cached?.chat_id || hasOwnedChat(cached.chat_id, state.user.id)) {
+    if (!cached || (cached.chat_id && hasOwnedChat(cached.chat_id, state.user.id))) {
       state.markNotificationRead(intent.notification_id);
     }
   }
@@ -108,6 +109,15 @@ export function installNativeNotificationRouter() {
         expectedUid, activeRecipientUid(), store.user.id, snapshot.user.id,
       )) return;
       store.hydrateOnline(snapshot);
+      // Only an authenticated B-owned snapshot may authorize a read for a
+      // chat-less notification that could have been cached under A. No read
+      // receipt is issued merely because Android delivered the push.
+      if (intent.source === 'action' && intent.notification_id
+        && Array.isArray(snapshot.notifications)
+        && snapshot.notifications.some((item) =>
+          item.id === intent.notification_id && !item.chat_id)) {
+        useAppStore.getState().markNotificationRead(intent.notification_id);
+      }
       if (!exactTargetResolved && intent.source === 'action'
         && (intent.chat_id || intent.transaction_id)) route(intent, false);
     }).catch(() => undefined);
