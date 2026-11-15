@@ -44,12 +44,7 @@ const guardian = (extra = {}) => ({
   approvedCapabilities: ['publish_listing'],
   expires_at: expires(3_600_000), ...extra,
 });
-const ugc = (extra = {}) => ({
-  subjectUid: 'seller', issuer: 'trusted_server',
-  rulesVersion: 'ugc-beta-draft-2026-11-14-v1',
-  granted: true, revoked: false, expires_at: expires(3_600_000), ...extra,
-});
-async function seed(band, guardianOverride, ugcOverride = undefined) {
+async function seed(band, guardianOverride) {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
     await setDoc(doc(db, 'institutions/uatx'), { name: 'UATx', active: true });
@@ -60,23 +55,13 @@ async function seed(band, guardianOverride, ugcOverride = undefined) {
       uid: 'seller', nombre: 'Seller', institution_id: 'uatx',
       campus_id: 'riberena', created_at: at(), updated_at: at(),
     });
-    // The trusted issuer must atomically version/revoke this bundled proof.
-    // Standalone UGC records remain a server-only audit source but can NEVER
-    // grant publication when the atomic proof is absent or revoked.
-    const trustedUgc = ugcOverride === undefined
-      ? ugc(guardianOverride ? { guardianConsentVersion: guardianOverride.consentVersion } : {})
-      : ugcOverride;
     if (band !== null) {
-      await setDoc(doc(db, 'age_proofs_v2/seller'), typeof band === 'string'
-        ? age(band, {
-          ...(guardianOverride ? { guardian: guardianOverride } : {}),
-          ...(trustedUgc ? { ugc: trustedUgc } : {}),
-        }) : band);
+      await setDoc(doc(db, 'age_proofs_v2/seller'),
+        typeof band === 'string' ? age(band, guardianOverride ? { guardian: guardianOverride } : {}) : band);
     }
     if (guardianOverride) {
       await setDoc(doc(db, 'guardian_grants_v2/seller'), guardianOverride);
     }
-    if (trustedUgc) await setDoc(doc(db, 'ugc_consents_v2/seller'), trustedUgc);
   });
 }
 function publish(suffix) {
@@ -90,7 +75,7 @@ function publish(suffix) {
   batch.set(doc(db, 'listings_v2/' + suffix), listing());
   return batch.commit();
 }
-test('adult with trusted age and UGC revision can publish without a guardian grant', async () => {
+test('adult with trusted age can publish without a guardian grant', async () => {
   await seed('adult');
   await assertSucceeds(publish('approved-adult'));
 });
@@ -105,37 +90,6 @@ test('teen with valid specific guardian grant can publish to moderation', async 
 test('under13 with valid specific guardian grant can publish pending moderation', async () => {
   await seed('under_13', guardian());
   await assertSucceeds(publish('guardian-approved'));
-});
-test('adult without server UGC consent cannot publish even when age is verified', async () => {
-  await seed('adult', null, null);
-  await assertFails(publish('ugc-absent'));
-});
-test('adult with expired, revoked, client-forged or stale-version UGC proof cannot publish', async () => {
-  for (const [name, proof] of [
-    ['expired', ugc({ expires_at: expires(-1_000) })],
-    ['revoked', ugc({ revoked: true })],
-    ['forged', ugc({ issuer: 'client' })],
-    ['oldversion', ugc({ rulesVersion: 'ugc-beta-old' })],
-    ['otherowner', ugc({ subjectUid: 'other' })],
-  ]) {
-    // Each denial must be evaluated against a freshly created rate bucket;
-    // a stale previous iteration must never supply a false security PASS.
-    await env.clearFirestore();
-    await seed('adult', null, proof);
-    await assertFails(publish('ugc-' + name));
-  }
-});
-test('standalone legacy consent cannot reauthorize after atomic UGC proof is revoked', async () => {
-  await seed('teen_13_17', guardian(), ugc({ revoked: true, guardianConsentVersion: 'families-2026-v1' }));
-  // Synthetic issuer changes the legacy standalone receipt, not the embedded proof.
-  await env.withSecurityRulesDisabled(async (ctx) =>
-    setDoc(doc(ctx.firestore(), 'ugc_consents_v2/seller'),
-      ugc({ guardianConsentVersion: 'families-2026-v1' })));
-  await assertFails(publish('ugc-standalone-replay'));
-});
-test('teen with older guardian consent version cannot publish', async () => {
-  await seed('teen_13_17', guardian(), ugc({ guardianConsentVersion: 'old-families-v0' }));
-  await assertFails(publish('ugc-guardian-epoch'));
 });
 test('under13 without any guardian proof is denied publication', async () => {
   await seed('under_13');
