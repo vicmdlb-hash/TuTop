@@ -437,3 +437,89 @@ assert.equal(syntheticStore.getState().syncError, null,
   'old create failures cannot surface under the reauthenticated account');
 console.log('PASS same-UID relogin fences stale create-product, create-chat and contact-product effects');
 
+// Same-UID relogin must fence every legacy asynchronous store callback, not
+// only optimistic product creation. No network, OS, device or Firebase used.
+fakeBackend.session = sessionB('old-actions');
+const pendingMessageFailures = [];
+let rejectOldConfirmation, rejectOldReview;
+fakeBackend.sendMessage = () => new Promise((_, reject) => pendingMessageFailures.push(reject));
+fakeBackend.confirmDelivery = () => new Promise((_, reject) => { rejectOldConfirmation = reject; });
+fakeBackend.submitReview = () => new Promise((_, reject) => { rejectOldReview = reject; });
+const ownedChat = (id, extra = {}) => ({
+  ...testChat(id, 'synthetic-B'), mensajes: [], sin_leer: 0,
+  confirmaciones_entrega: { comprador: false, vendedor: false },
+  entrega_confirmada: false, entrega_estado: 'negociando', ...extra,
+});
+syntheticStore.setState({
+  chats: [
+    ownedChat('B-text'), ownedChat('B-image'),
+    ownedChat('B-confirm'),
+    ownedChat('B-review', { entrega_confirmada: true }),
+  ],
+  reviews: [], syncError: null,
+});
+syntheticStore.getState().sendMessage('B-text', 'hello synthetic');
+syntheticStore.getState().sendImageMessage('B-image', 'data:image/png;base64,AAAA');
+syntheticStore.getState().confirmDelivery('B-confirm');
+assert.equal(syntheticStore.getState().submitReview('B-review', 5, 'synthetic review'), true);
+assert.equal(pendingMessageFailures.length, 2);
+const oldTextMessage = syntheticStore.getState().chats.find(c => c.id === 'B-text').mensajes[0];
+const oldImageMessage = syntheticStore.getState().chats.find(c => c.id === 'B-image').mensajes[0];
+const oldReview = syntheticStore.getState().reviews[0];
+fakeBackend.session = sessionB('new-actions');
+syntheticStore.setState({
+  chats: [
+    ownedChat('B-text', { mensajes: [oldTextMessage] }),
+    ownedChat('B-image', { mensajes: [oldImageMessage] }),
+    ownedChat('B-confirm', { entrega_estado: 'completed-new' }),
+    ownedChat('B-review', { entrega_confirmada: true }),
+  ],
+  reviews: [oldReview], syncError: null,
+});
+for (const reject of pendingMessageFailures) reject(new Error('SYNTHETIC_OLD_ACTION'));
+rejectOldConfirmation(new Error('SYNTHETIC_OLD_ACTION'));
+rejectOldReview(new Error('SYNTHETIC_OLD_ACTION'));
+await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+assert.equal(syntheticStore.getState().chats.find(c => c.id === 'B-text').mensajes.length, 1,
+  'old-login failed send must not remove a newly hydrated same-ID message');
+assert.equal(syntheticStore.getState().chats.find(c => c.id === 'B-image').mensajes.length, 1,
+  'old-login failed image send must not remove newly hydrated message');
+assert.equal(syntheticStore.getState().chats.find(c => c.id === 'B-confirm').entrega_estado, 'completed-new',
+  'old-login failed delivery must not alter reauthenticated transaction state');
+assert.equal(syntheticStore.getState().reviews.length, 1,
+  'old-login failed review must not remove a new-login same-ID review');
+assert.equal(syntheticStore.getState().syncError, null,
+  'old-login message/delivery/review failures must not surface in newer login');
+
+// Publishing and bidding are async result-returning operations. After the
+// first awaited write settles, the old login must return false, not reload
+// the new session or issue a second commercial write.
+let finishOldPublish;
+fakeBackend.createProduct = () => new Promise(resolve => { finishOldPublish = resolve; });
+let reloadCalls = 0, bidCalls = 0;
+fakeBackend.loadSnapshot = async () => { reloadCalls++; return testSnapshot('synthetic-B'); };
+fakeBackend.bidProduct = () => { bidCalls++; return Promise.resolve(); };
+fakeBackend.session = sessionB('publish-old');
+const oldPublishPromise = syntheticStore.getState().publishProduct(
+  { ...testProduct('B-publish-old'), vendedor_id: 'synthetic-B' }, 1,
+);
+fakeBackend.session = sessionB('publish-new');
+finishOldPublish();
+assert.equal(await oldPublishPromise, false,
+  'old-login published action must not continue to bid or load new login');
+assert.equal(reloadCalls, 0);
+assert.equal(bidCalls, 0);
+
+let finishOldBid;
+fakeBackend.bidProduct = () => new Promise(resolve => { bidCalls++; finishOldBid = resolve; });
+syntheticStore.setState({ products: [sellerListing], syncError: null });
+fakeBackend.session = sessionB('bid-old');
+const oldBidPromise = syntheticStore.getState().bidProduct('seller-listing', 5);
+fakeBackend.session = sessionB('bid-new');
+finishOldBid();
+assert.equal(await oldBidPromise, false,
+  'old-login bidding action must not refresh new login or report success');
+assert.equal(reloadCalls, 0, 'no old-login callback may fetch the new-login snapshot');
+console.log('PASS same-UID relogin fences message, image, delivery, review, publish and bid callbacks');
+
+
