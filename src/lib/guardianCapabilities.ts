@@ -80,6 +80,32 @@ function trustedAge(uid: string, proof: TrustedAgeProof | null, nowMs: number): 
     && Number.isFinite(proof.expiresAtMs) && proof.expiresAtMs > nowMs
     ? proof.band : 'unknown';
 }
+/**
+ * Presentation ONLY: validate an owner-readable, server-write-only age proof
+ * after Firestore REST timestamp decoding. A UI never self-issues this record.
+ * It DOES NOT grant marketplace permissions: backend rules/trusted issuance
+ * must independently authorize every protected operation.
+ */
+export function trustedAgeBandFromServerRecord(uid: string, raw: unknown, nowMs: number): AgeBand {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)
+    || typeof uid !== 'string' || !uid.trim() || !Number.isSafeInteger(nowMs) || nowMs <= 0) return 'unknown';
+  const record = raw as Record<string, unknown>;
+  if (typeof record.subjectUid !== 'string' || record.subjectUid !== uid
+    || record.issuer !== 'trusted_server' || record.revoked !== false
+    || typeof record.expires_at !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(record.expires_at)) return 'unknown';
+  const expiry = Date.parse(record.expires_at);
+  if (!Number.isFinite(expiry) || expiry <= nowMs
+    || !VERIFIED_BANDS.has(record.band as AgeBand)) return 'unknown';
+  return trustedAge(uid, {
+    subjectUid: uid,
+    issuer: 'trusted_server',
+    band: record.band as AgeBand,
+    revoked: false,
+    expiresAtMs: expiry,
+  }, nowMs);
+}
+
 function trustedGuardian(uid: string, proof: GuardianProof | null, cap: Capability, nowMs: number) {
   return Boolean(proof && proof.issuer === 'trusted_server' && proof.childUid === uid
     && typeof proof.guardianUid === 'string' && proof.guardianUid.trim().length > 0
