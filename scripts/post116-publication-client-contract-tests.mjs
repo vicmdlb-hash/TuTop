@@ -54,6 +54,43 @@ for (const precio_mxn of [null, -1, 0, 0.001, 1_000_000.01, '20', NaN, Infinity]
 }
 assert.doesNotMatch(numericSource, /Math\.round\(Number\(updates\.stock\)\)/);
 
+// Run actual legacy read-projection helpers offline; old stock=0 must never become 1.
+const legacy = fs.readFileSync('src/services/onlineBackend.ts', 'utf8');
+const legacyStart = legacy.indexOf('function legacySaleableStock(');
+const legacyEnd = legacy.indexOf('\nexport class TuTopOnlineBackend', legacyStart);
+assert(legacyStart >= 0 && legacyEnd > legacyStart, 'legacy projector must be visible');
+const legacyHelpers = stripTypeScriptTypes(legacy.slice(legacyStart, legacyEnd));
+const { legacySaleableStock, legacySaleablePrice, asProduct } =
+  new Function('normalizeCategory', 'nowIso', legacyHelpers + '\nreturn { legacySaleableStock, legacySaleablePrice, asProduct };')(
+    (category) => category, () => '2026-11-14T00:00:00.000Z');
+const legacyProduct = (extra = {}) => asProduct({ id: 'legacy-test', data: {
+  vendedor_id: 'seller-test', titulo: 'Anuncio', categoria: 'Otros',
+  precio_mxn: 30, stock: 1, estado: 'Activo', ...extra,
+} });
+assert.equal(legacyProduct().stock, 1);
+assert.equal(legacyProduct().availability_status, 'available');
+assert.equal(legacyProduct({ stock: 99 }).stock, 99);
+for (const stock of [undefined, null, 0, -1, 1.5, 100, NaN, Infinity, '1']) {
+  assert.equal(legacySaleableStock(stock), 0);
+  const projected = legacyProduct({ stock });
+  assert.equal(projected.stock, 0, 'legacy cannot fabricate a saleable unit');
+  assert.equal(projected.availability_status, 'unverified');
+  assert.equal(projected.estado, 'Pausado');
+}
+for (const precio_mxn of [undefined, null, 0, -1, 1_000_000.01, NaN, Infinity, '30']) {
+  assert.equal(legacySaleablePrice(precio_mxn), false);
+  assert.equal(legacyProduct({ precio_mxn }).estado, 'Pausado');
+}
+assert.equal(legacyProduct({ availability_status: 'reserved' }).availability_status, 'reserved');
+assert.equal(legacyProduct({ availability_status: null }).availability_status, 'unverified');
+assert.equal(legacyProduct({ estado: 'unknown' }).estado, 'Pausado');
+assert.match(legacy, /if \(!legacySaleablePrice\(product\.precio_mxn\)\) throw new Error\('LISTING_PRICE_INVALID'\)/);
+assert.match(legacy, /if \(!stock\) throw new Error\('LISTING_QUANTITY_INVALID'\)/);
+assert.match(legacy, /if \(updates\.stock !== undefined && !legacySaleableStock\(updates\.stock\)\)/);
+assert.match(legacy, /if \(updates\.precio_mxn !== undefined && !legacySaleablePrice\(updates\.precio_mxn\)\)/);
+assert.doesNotMatch(legacy, /stock: product\.stock \|\| 1/);
+
+
 
 assert.match(rulesGenerator,/request\.resource\.data\.title\.size\(\) >= 2/);
 assert.match(rulesGenerator,/request\.resource\.data\.title\.size\(\) <= 120/);

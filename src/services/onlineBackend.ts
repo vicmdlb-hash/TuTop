@@ -31,8 +31,27 @@ function weekId(date = new Date()) {
 function nowIso() { return new Date().toISOString(); }
 function v2SnapshotMode() { return String(import.meta.env.VITE_TUTOP_SCHEMA_V2 || '').toLowerCase() === 'true'; }
 
+// Legacy-only projection: unknown/malformed stock is never magically one unit.
+function legacySaleableStock(value: unknown) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 && value <= 99 ? value : 0;
+}
+
+function legacySaleablePrice(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0.01 && value <= 1_000_000;
+}
+
 function asProduct(doc: FirestoreDocument<any>): Product {
   const data = doc.data || {};
+  const stock = legacySaleableStock(data.stock);
+  const priced = legacySaleablePrice(data.precio_mxn);
+  const knownStatus = ['Activo', 'Reservado', 'Pausado', 'Vendido', 'Agotado', 'Archivado'].includes(data.estado)
+    ? data.estado : 'Pausado';
+  // Invalid legacy inventory, price, or status must not become a public active offer.
+  const estado = (!stock || !priced) && knownStatus === 'Activo' ? 'Pausado' : knownStatus;
+  const availability = stock > 0 && priced && estado === 'Activo'
+    ? data.availability_status === undefined || data.availability_status === 'available'
+      ? 'available' : data.availability_status === 'reserved' ? 'reserved' : 'unverified'
+    : 'unverified';
   return {
     id: doc.id,
     vendedor_id: String(data.vendedor_id || data.seller_id || ''),
@@ -41,14 +60,15 @@ function asProduct(doc: FirestoreDocument<any>): Product {
     vendedor_verificado: Boolean(data.vendedor_verificado),
     titulo: String(data.titulo || ''),
     descripcion: data.descripcion ? String(data.descripcion) : undefined,
-    precio_mxn: Number(data.precio_mxn || 0),
-    stock: Math.max(1, Number(data.stock || 1)),
+    precio_mxn: priced ? data.precio_mxn : 0,
+    stock,
+    availability_status: availability,
     categoria: normalizeCategory(String(data.categoria || 'Otros')),
     facultad: String(data.facultad || 'Comunidad universitaria'),
     punto_encuentro: data.punto_encuentro,
     imagen_url: String(data.imagen_url || (Array.isArray(data.imagenes_url) ? data.imagenes_url[0] : '') || ''),
     imagenes_url: Array.isArray(data.imagenes_url) ? data.imagenes_url.map(String).slice(0, 4) : undefined,
-    estado: data.estado || 'Activo',
+    estado,
     es_top: false,
     jerarquia_top: 0,
     puja_ucoins: 0,
@@ -400,6 +420,10 @@ export class TuTopOnlineBackend {
     const client = this.getClient();
     const uid = client.currentSession?.uid;
     if (!uid || product.vendedor_id !== uid) throw new Error('No puedes publicar por otra cuenta.');
+    if (!legacySaleablePrice(product.precio_mxn)) throw new Error('LISTING_PRICE_INVALID');
+    // Keep a missing historical optional stock default; reject explicit zero/NaN.
+    const stock = product.stock === undefined ? 1 : legacySaleableStock(product.stock);
+    if (!stock) throw new Error('LISTING_QUANTITY_INVALID');
     await client.setDocument(`products/${product.id}`, {
       vendedor_id: uid,
       vendedor_nombre: product.vendedor_nombre,
@@ -407,7 +431,7 @@ export class TuTopOnlineBackend {
       titulo: product.titulo,
       descripcion: product.descripcion || '',
       precio_mxn: product.precio_mxn,
-      stock: product.stock || 1,
+      stock,
       categoria: product.categoria,
       facultad: product.facultad,
       punto_encuentro: product.punto_encuentro,
@@ -421,6 +445,10 @@ export class TuTopOnlineBackend {
   }
 
   async updateProduct(productId: string, updates: Partial<Product>) {
+    if (updates.stock !== undefined && !legacySaleableStock(updates.stock))
+      throw new Error('LISTING_QUANTITY_INVALID');
+    if (updates.precio_mxn !== undefined && !legacySaleablePrice(updates.precio_mxn))
+      throw new Error('LISTING_PRICE_INVALID');
     const allowed = ['titulo', 'descripcion', 'precio_mxn', 'stock', 'categoria', 'facultad', 'punto_encuentro', 'imagen_url', 'imagenes_url', 'estado'] as const;
     const data: Record<string, unknown> = {};
     for (const key of allowed) if (updates[key] !== undefined) data[key] = updates[key];
