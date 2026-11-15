@@ -55,7 +55,11 @@ export function prepareGuardianRevocation(input) {
     seen.add(chat.id);
   }
   const writes = [
-    { path: 'age_proofs_v2/' + subjectUid, changes: { revoked: true } },
+    // Deny-first upsert: a missing age proof must not make full revocation fail.
+    // Clear embedded age/guardian/UGC epochs AS WELL AS separate legacy proofs.
+    { path: 'age_proofs_v2/' + subjectUid, writeMode: 'server_upsert_tombstone',
+      changes: { revoked: true, 'guardian.active': false,
+        'ugc.revoked': true, 'ugc.granted': false } },
     { path: 'guardian_grants_v2/' + subjectUid, changes: { active: false } },
     { path: 'adult_actions_v2/' + subjectUid, changes: { authorized: false } },
     // If no UGC record exists, the privileged writer must CREATE a deny
@@ -77,6 +81,7 @@ export function prepareGuardianRevocation(input) {
     requiresPrivilegedAtomicCommit: true,
     requiresServerVerifiedEnumeration: true,
     requiresAdmissionFreezeDuringCommit: true,
+    requiresFreshGuardianAndUgcEpochBeforeReissue: true,
     // No caller can treat this preview as evidence that access was revoked.
     completionVerified: false,
   };
