@@ -104,8 +104,17 @@ const scopedAdminHelpers = `${isAdminLine}
         && get(adminDoc()).data.institution_id == get(/databases/$(database)/documents/users/$(uid)).data.institution_id
       );
     }
+    // Queue visibility can exceed decision authority (e.g. global moderator
+    // may inspect credentials but must never decide on them).
     function canHandleModerationCase(data) {
       return canModerateInstitution(data)
+        || (adminHasRole('verification_reviewer') && ('kind' in data) && data.kind == 'credential')
+        || (adminHasRole('support') && ('kind' in data) && data.kind == 'appeal');
+    }
+    function canDecideModerationCase(data) {
+      return adminHasRole('super_admin') || adminHasRole('trust_safety')
+        || (adminHasRole('moderator') && ('kind' in data) && data.kind != 'credential')
+        || (institutionModeratorFor(data) && ('kind' in data) && data.kind != 'credential')
         || (adminHasRole('verification_reviewer') && ('kind' in data) && data.kind == 'credential')
         || (adminHasRole('support') && ('kind' in data) && data.kind == 'appeal');
     }`;
@@ -273,19 +282,25 @@ generated = replaceSection(
 const permissiveModeration = '    match /moderation_cases/{caseId} { allow read, write: if isAdmin(); }';
 const strictModerationAndPrivacy = `    match /moderation_cases/{caseId} {
       allow read: if canHandleModerationCase(resource.data);
-      allow create: if isAdmin()
+      allow create: if canDecideModerationCase(request.resource.data)
         && request.resource.data.keys().hasOnly(['kind','target_type','target_id','institution_id','status','priority','assigned_to','evidence_refs','action','reason','internal_notes','result','created_at','updated_at'])
         && request.resource.data.kind in ['credential','product','user','chat','possible_scam','prohibited_content','appeal','urgent_incident']
         && request.resource.data.status in ['open','reviewing','resolved','dismissed']
         && request.resource.data.priority in ['normal','high','urgent']
-        && canHandleModerationCase(request.resource.data)
         && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
-      allow update: if canHandleModerationCase(resource.data)
+      allow update: if canDecideModerationCase(resource.data)
         && request.resource.data.kind == resource.data.kind
         && request.resource.data.target_type == resource.data.target_type
         && request.resource.data.target_id == resource.data.target_id
         && (!('institution_id' in resource.data) || request.resource.data.institution_id == resource.data.institution_id)
+        && resource.data.status in ['open','reviewing']
         && request.resource.data.status in ['open','reviewing','resolved','dismissed']
+        && (
+          (request.resource.data.status == resource.data.status
+            && request.resource.data.diff(resource.data).affectedKeys().hasAny(['priority','assigned_to','evidence_refs','action','reason','internal_notes','result']))
+          || (request.resource.data.status in ['reviewing','resolved','dismissed']
+            && request.resource.data.status != resource.data.status)
+        )
         && request.resource.data.priority in ['normal','high','urgent']
         && fresh(request.resource.data.updated_at);
       allow delete: if false;
