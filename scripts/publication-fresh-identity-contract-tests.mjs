@@ -30,7 +30,7 @@ assert.match(body, /const publishAuthEpoch = verifiedEmailBetaAuth\.sessionGener
 assert.match(body, /const publisherStillCurrent = \(\) => isCurrentBackendHydration\([\s\S]*?useAppStore\.getState\(\)\.user\.id,[\s\S]*?readSessionIdentity\(\)\?\.uid,[\s\S]*?publishAuthEpoch,[\s\S]*?verifiedEmailBetaAuth\.sessionGeneration\(\)/);
 const ownerAfterAuth = locate('if (!publisherStillCurrent()) {');
 const ownerAfterUpload = locate("if (!publisherStillCurrent()) throw new Error('PUBLISH_OWNER_CHANGED')");
-const guardedAttempt = locate("if (!publisherStillCurrent()) throw new Error('PUBLISH_OWNER_CHANGED');\n          return canonicalListingsBackend.create(");
+const guardedAttempt = locate("if (!publisherStillCurrent()) throw new Error('PUBLISH_OWNER_CHANGED');\n          if (!consentStillValid()) throw new Error('UGC_RULES_ACK_REVOKED');\n          return canonicalListingsBackend.create(");
 const guardedRetry = locate('const refreshed = await verifiedEmailBetaAuth.refreshVerificationStatus();');
 const ownerAfterCommit = locate('if (!publisherStillCurrent()) return;\n      clearPublishDraft(user.id);');
 const feedFetch = locate('const refreshed = await canonicalListingsBackend.loadMarketplaceProducts(');
@@ -42,7 +42,7 @@ assert(ownerAfterAuth < sameUid && ownerAfterUpload > media && ownerAfterUpload 
 assert(guardedAttempt < guardedRetry && guardedRetry < ownerAfterCommit,
   'retry must re-check owner and Firebase claims before a second attempt');
 assert.match(body.slice(guardedRetry, ownerAfterCommit),
-  /!publisherStillCurrent\(\) \|\| refreshed\.uid !== user\.id[\s\S]*?!refreshed\.emailVerified \|\| refreshed\.phoneVerified !== true/);
+  /!publisherStillCurrent\(\) \|\| !consentStillValid\(\) \|\| refreshed\.uid !== user\.id[\s\S]*?!refreshed\.emailVerified \|\| refreshed\.phoneVerified !== true/);
 assert(ownerAfterCommit < feedFetch && feedFetch < feedOwner && feedOwner < feedMessage && feedMessage < delayedTab,
   'late feed results, UI success and navigation must not hydrate another account');
 assert.match(body, /if \(uploadedVideoUri && publisherStillCurrent\(\)\)/,
