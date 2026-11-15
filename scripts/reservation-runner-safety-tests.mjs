@@ -127,6 +127,23 @@ const inventoryRow = (id) => ({ document: {
   fields: {}, updateTime: '2026-11-07T00:00:00Z',
 } });
 assert.equal(assertCompleteReconciliationPage([inventoryRow('A'), inventoryRow('B')], inventoryScope).length, 2);
+// The runner would coerce null/absent fields to {}, masking malformed REST
+// documents. Reject the envelope before any inventory can justify cleanup.
+for (const invalidFields of [null, 'not-a-map', [], 11, true]) {
+  assert.throws(() => validateReconciliationInventoryPage([{
+    document: { ...inventoryRow('A').document, fields: invalidFields },
+  }], inventoryScope), /RECONCILE_INVENTORY_FIELDS_INVALID/,
+  'malformed transaction fields must fail closed');
+}
+assert.throws(() => validateReconciliationInventoryPage([{
+  document: { name: inventoryRow('A').document.name },
+}], inventoryScope), /RECONCILE_INVENTORY_FIELDS_INVALID/,
+'missing transaction fields must not masquerade as empty document');
+assert.equal(validateReconciliationInventoryPage([inventoryRow('A')], inventoryScope).length, 1);
+for (const inBandError of [{ error: null }, { error: false }, { error: '' }]) {
+  assert.throws(() => validateReconciliationInventoryPage([inBandError], inventoryScope),
+    /RECONCILE_INVENTORY_ROW_INVALID/, 'any in-band error property must fail closed');
+}
 assert.equal(assertCompleteReconciliationPage([{ readTime: '2026-11-07T00:00:00Z' }], inventoryScope).length, 0);
 assert.equal(assertCompleteReconciliationPage([{ done: true }], inventoryScope).length, 0);
 assert.equal(assertCompleteReconciliationPage([

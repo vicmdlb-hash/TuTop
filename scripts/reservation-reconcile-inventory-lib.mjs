@@ -11,7 +11,8 @@ export function validateReconciliationInventoryPage(rows, { projectId, collectio
   const seen = new Set();
   const documents = [];
   for (const row of rows) {
-    if (!row || typeof row !== 'object' || Array.isArray(row) || row.error) throw new Error('RECONCILE_INVENTORY_ROW_INVALID');
+    if (!row || typeof row !== 'object' || Array.isArray(row)
+        || Object.hasOwn(row, 'error')) throw new Error('RECONCILE_INVENTORY_ROW_INVALID');
     // Cursor inventories must refuse Firestore offset omissions, even when
     // the same response also contains an apparently valid document.
     if (Object.hasOwn(row, 'skippedResults')
@@ -36,6 +37,10 @@ export function validateReconciliationInventoryPage(rows, { projectId, collectio
     const name = document?.name;
     const id = typeof name === 'string' && name.startsWith(prefix) ? name.slice(prefix.length) : '';
     if (!id || id.includes('/') || /[\u0000-\u001F\u007F]/.test(id)) throw new Error('RECONCILE_INVENTORY_PATH_INVALID');
+    // A malformed field map must not be decoded as {} by the reconciliation
+    // runner and misrepresented as a valid transactional inventory record.
+    if (!document.fields || typeof document.fields !== 'object'
+        || Array.isArray(document.fields)) throw new Error('RECONCILE_INVENTORY_FIELDS_INVALID');
     if (seen.has(name)) throw new Error('RECONCILE_INVENTORY_DUPLICATE_DOCUMENT');
     seen.add(name);
     documents.push(document);
