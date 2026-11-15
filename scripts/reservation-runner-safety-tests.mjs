@@ -128,6 +128,20 @@ const inventoryRow = (id) => ({ document: {
 } });
 assert.equal(assertCompleteReconciliationPage([inventoryRow('A'), inventoryRow('B')], inventoryScope).length, 2);
 assert.equal(assertCompleteReconciliationPage([{ readTime: '2026-11-07T00:00:00Z' }], inventoryScope).length, 0);
+assert.equal(assertCompleteReconciliationPage([{ done: true }], inventoryScope).length, 0);
+assert.equal(assertCompleteReconciliationPage([
+  { readTime: '2026-11-07T00:00:00.123456789Z', done: true, skippedResults: 0 },
+], inventoryScope).length, 0);
+for (const invalidMetadata of [
+  { skippedResults: 0 }, { explainMetrics: {} },
+  { readTime: null }, { readTime: '' }, { readTime: 'invalid-time' },
+  { done: false }, { done: 'true' },
+  { readTime: '2026-11-07T00:00:00Z', done: 'true' },
+]) {
+  assert.throws(() => validateReconciliationInventoryPage([invalidMetadata], inventoryScope),
+    /RECONCILE_INVENTORY_METADATA_INVALID/,
+    'malformed metadata must not certify completed reservation inventory');
+}
 for (const invalid of [
   [inventoryRow('A'), inventoryRow('B'), inventoryRow('C')],
   [inventoryRow('A'), inventoryRow('A')],

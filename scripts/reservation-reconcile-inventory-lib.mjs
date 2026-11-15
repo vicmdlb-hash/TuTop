@@ -19,7 +19,17 @@ export function validateReconciliationInventoryPage(rows, { projectId, collectio
       throw new Error('RECONCILE_INVENTORY_SKIPPED_RESULTS_UNSAFE');
     }
     if (!Object.hasOwn(row, 'document')) {
-      if (!('readTime' in row) && !('skippedResults' in row) && !('explainMetrics' in row)) throw new Error('RECONCILE_INVENTORY_METADATA_INVALID');
+      // Do not infer an exhaustive reservation scan from skippedResults=0
+      // or explainMetrics alone. Firestore's documented empty runQuery reply
+      // has a readTime; done=true is an explicit completion marker.
+      const hasReadTime = Object.hasOwn(row, 'readTime');
+      const validReadTime = hasReadTime && typeof row.readTime === 'string'
+        && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(row.readTime);
+      if ((hasReadTime && !validReadTime)
+          || (Object.hasOwn(row, 'done') && typeof row.done !== 'boolean')
+          || (!validReadTime && row.done !== true)) {
+        throw new Error('RECONCILE_INVENTORY_METADATA_INVALID');
+      }
       continue;
     }
     const document = row.document;
