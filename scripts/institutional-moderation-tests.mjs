@@ -132,4 +132,18 @@ assert.match(auditQuery, /field: 'institution_id', op: 'EQUAL', value: admin\.in
 assert.doesNotMatch(auditQuery, /if \(admin\.role === 'institution_moderator' && admin\.institution_id\)/);
 console.log('PASS missing institutional scope cannot request cross-institution admin queues');
 
+// The Firestore authorization barrier must not accept the old all-admin read
+// policy, even if UI queries are filtered. The emulator gate tests deployment
+// compatibility separately; these are exact source regression anchors.
+const firestoreRules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
+const auditRules = firestoreRules.split('match /audit_log/{entryId} {')[1]
+  ?.split('match /reputation/{uid}')[0];
+assert(auditRules, 'audit_log Rules block must exist');
+assert.doesNotMatch(auditRules, /allow read: if isAdmin\(\);/);
+assert.match(auditRules, /data\.role in \['super_admin', 'trust_safety', 'moderator'\]/);
+assert.match(auditRules, /data\.role == 'institution_moderator'/);
+assert.match(auditRules, /data\.institution_id is string/);
+assert.match(auditRules, /resource\.data\.institution_id == get\(adminDoc\(\)\)\.data\.institution_id/);
+console.log('PASS audit Rules role and institution scope are enforced in source');
+
 console.log('Institutional moderation tests: PASS');
