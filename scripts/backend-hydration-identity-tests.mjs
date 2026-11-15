@@ -280,6 +280,7 @@ runInNewContext(compileTypescriptFixture('src/store/useAppStore.ts'), {
       '../lib/feedback': { feedbackMessage: () => '' },
       '../lib/publicDiscovery': { canViewerOpenListing },
       '../lib/backendHydrationIdentity': { isLiveAccountSnapshot },
+      '../lib/firebaseSharedSessionGuard': { sameFirebaseSession },
       '../services/nationalBackend': { nationalSchemaEnabled: () => true },
     };
     assert(Object.hasOwn(deps, id), 'Unexpected synthetic store dependency: ' + id);
@@ -355,4 +356,47 @@ syntheticStore.getState().setUser({ ...testUser('synthetic-B'), nombre: 'New nam
 assert.equal(syntheticStore.getState().selectedProductId, 'keep',
   'same owner profile edits must not erase in-progress local navigation');
 console.log('PASS synthetic real Zustand hydration: remoderation, revoked chat and A-to-B personal state are fail-closed');
+
+// SAME-UID RELOGIN REGRESSION: a prior login's rejected optimistic mutation
+// must not roll back the newly authenticated login, even when UID is unchanged.
+// Use the actual compiled store with deferred synthetic backend failures.
+const sessionB = serial => ({
+  uid: 'synthetic-B', idToken: 'synthetic-id-' + serial,
+  refreshToken: 'synthetic-refresh-' + serial,
+});
+fakeBackend.session = sessionB('old');
+const pendingRollbacks = {};
+fakeBackend.toggleFavorite = () => new Promise((_, reject) => { pendingRollbacks.favorite = reject; });
+fakeBackend.updateProduct = () => new Promise((_, reject) => { pendingRollbacks.product = reject; });
+fakeBackend.markChatRead = () => new Promise((_, reject) => { pendingRollbacks.read = reject; });
+syntheticStore.setState({
+  favorites: [], syncError: null,
+  products: [{ ...testProduct('B-product'), titulo: 'Original', vendedor_id: 'synthetic-B' }],
+  chats: [{ ...testChat('B-chat', 'synthetic-B'), sin_leer: 2 }],
+});
+syntheticStore.getState().toggleFavorite('B-product');
+syntheticStore.getState().updateProduct('B-product', { titulo: 'Edited old session' });
+syntheticStore.getState().markChatRead('B-chat');
+assert.equal(syntheticStore.getState().favorites.includes('B-product'), true);
+assert.equal(syntheticStore.getState().chats[0].sin_leer, 0);
+assert.equal(syntheticStore.getState().products[0].titulo, 'Edited old session');
+fakeBackend.session = sessionB('new');
+syntheticStore.setState({
+  favorites: ['B-product'],
+  products: [{ ...testProduct('B-product'), titulo: 'New authenticated session', vendedor_id: 'synthetic-B' }],
+  chats: [{ ...testChat('B-chat', 'synthetic-B'), sin_leer: 5 }],
+});
+pendingRollbacks.favorite(new Error('SYNTHETIC_OLD_LOGIN_OFFLINE'));
+pendingRollbacks.product(new Error('SYNTHETIC_OLD_LOGIN_OFFLINE'));
+pendingRollbacks.read(new Error('SYNTHETIC_OLD_LOGIN_OFFLINE'));
+await Promise.resolve(); await Promise.resolve();
+assert.deepEqual(syntheticStore.getState().favorites, ['B-product'],
+  'old same-UID login cannot roll back new-login favorites');
+assert.equal(syntheticStore.getState().products[0].titulo, 'New authenticated session',
+  'old same-UID failed product update cannot roll back new-login product');
+assert.equal(syntheticStore.getState().chats[0].sin_leer, 5,
+  'old same-UID failed chat read cannot roll back new-login unread counter');
+assert.equal(syntheticStore.getState().syncError, null,
+  'old same-UID login failure cannot show a stale error in the current login');
+console.log('PASS same-UID relogin fences optimistic favorite, product and chat-read rollbacks');
 
