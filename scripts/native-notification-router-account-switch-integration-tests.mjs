@@ -34,15 +34,27 @@ function harness(initialUid = 'B') {
       { id: 'chat-a', comprador_id: 'A', vendedor_id: 'seller' },
       { id: 'chat-b', comprador_id: 'B', vendedor_id: 'seller' },
     ],
-    products: [], notifications: [],
+    products: [], notifications: [], selectedProductId: null,
     markNotificationRead: (id) => operations.push('read:' + id),
     openChat: (id) => operations.push('chat:' + id),
     setActiveTab: (tab) => operations.push('tab:' + tab),
-    openProduct: (id) => operations.push('product:' + id),
+    openProduct: (id) => {
+      const product = state.products.find(item => item.id === id);
+      state.selectedProductId = product && product.estado === 'Activo'
+        && product.moderation_status === 'approved' ? id : null;
+      if (state.selectedProductId) operations.push('product:' + id);
+    },
     hydrateOnline: (snapshot) => {
       operations.push('hydrate:' + snapshot.user.id);
       state.user = snapshot.user;
       if (Array.isArray(snapshot.chats)) state.chats = snapshot.chats;
+      if (Array.isArray(snapshot.products)) {
+        state.products = snapshot.products;
+        if (!state.products.some(product => product.id === state.selectedProductId
+            && product.estado === 'Activo' && product.moderation_status === 'approved')) {
+          state.selectedProductId = null;
+        }
+      }
     },
   };
   const store = { getState: () => state };
@@ -281,4 +293,31 @@ function harness(initialUid = 'B') {
     'owner-verified B snapshot should mark the right chatless notification read');
 }
 
+// Cold-start listing push: before hydration no listing is available to open.
+// After an exact same-account snapshot, retry once and honor moderation.
+{
+  const h = harness('B');
+  h.backend.loadSnapshot = async () => ({
+    user: { id: 'B' },
+    products: [{ id: 'fresh-B-listing', estado: 'Activo', moderation_status: 'approved' }],
+  });
+  h.send({ source: 'action', recipient_uid: 'B', listing_id: 'fresh-B-listing' });
+  await h.flush();
+  assert.deepEqual(h.operations,
+    ['tab:feed', 'hydrate:B', 'tab:feed', 'product:fresh-B-listing'],
+    'cold-start listing push should open only after B-owned snapshot hydration');
+  assert.equal(h.state.selectedProductId, 'fresh-B-listing');
+}
+{
+  const h = harness('B');
+  h.backend.loadSnapshot = async () => ({
+    user: { id: 'B' },
+    products: [{ id: 'pending-B-listing', estado: 'Activo', moderation_status: 'pending' }],
+  });
+  h.send({ source: 'action', recipient_uid: 'B', listing_id: 'pending-B-listing' });
+  await h.flush();
+  assert.deepEqual(h.operations, ['tab:feed', 'hydrate:B', 'tab:feed'],
+    'remoderated/private listing must not open on cold push retry');
+  assert.equal(h.state.selectedProductId, null);
+}
 console.log('PASS native notification router account/session/read-ownership integration, no Firebase');
