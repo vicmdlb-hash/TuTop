@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { canModerateCase } from '../src/lib/marketplaceGovernance.ts';
 import { canModerateItem, moderationQueueFor, requireModerationCaseTransition, requireNoShowClaimDecision } from '../src/lib/institutionalModeration.ts';
 
 const items = [
@@ -171,5 +172,30 @@ assert(moderationOutput.includes("allow delete: if false;"));
 assert(prepareGenerator.includes("function canDecideModerationCase(data)"));
 assert(prepareGenerator.includes("institutionModeratorFor(data) && ('kind' in data) && data.kind != 'credential'"));
 console.log('PASS generated moderation/report Rules role and transition contracts');
+
+// Frontend must not advertise impossible moderation decisions or hide failed
+// security reads behind an apparently empty queue. The backend remains the gate.
+const sampleCredential = {
+  id: 'cred1', kind: 'credential', institution_id: 'uatx',
+  priority: 'high', status: 'open',
+};
+assert.equal(canModerateCase(actor('moderator'), sampleCredential), false);
+assert.equal(canModerateCase(actor('institution_moderator', 'uatx'), sampleCredential), false);
+assert.equal(canModerateCase(actor('verification_reviewer'), sampleCredential), true);
+assert.equal(canModerateCase(actor('support'), sampleCredential), false);
+assert.equal(canModerateCase(actor('support'), { ...sampleCredential, kind: 'appeal' }), true);
+assert.equal(canModerateCase(actor('institution_moderator', 'uatx'),
+  { ...sampleCredential, kind: 'product' }), true);
+
+const moderationDashboard = fs.readFileSync('src/admin/ScopedModerationDashboard.tsx', 'utf8');
+const caseCard = moderationDashboard.split('function CaseCard(')[1];
+assert(caseCard, 'dashboard must render case cards');
+assert.match(moderationDashboard, /canModerateCase\(context,/);
+assert.match(moderationDashboard, /failedSections\.length\) setError/);
+assert.match(moderationDashboard, /No se pudo verificar la cola completa/);
+assert.doesNotMatch(moderationDashboard, /\.catch\(\(\) => \[\]\)/);
+assert.match(caseCard, /!closed && canDecide/);
+assert.match(caseCard, /!closed && !canDecide/);
+console.log('PASS admin queue failures are visible and unauthorized actions are read-only');
 
 console.log('Institutional moderation tests: PASS');
