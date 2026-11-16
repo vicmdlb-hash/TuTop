@@ -44,9 +44,18 @@ function hasForbiddenKey(value) {
   });
 }
 
+// JavaScript Date.parse normalizes nonexistent Gregorian dates (e.g. Feb 31).
+// Physical App Check attestations must use an explicit real UTC instant.
+function parsePhysicalEvidenceTimestamp(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)) return NaN;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed)
+    && new Date(parsed).toISOString().slice(0, 19) === value.slice(0, 19) ? parsed : NaN;
+}
 function freshTimestamp(value, now) {
-  const parsed = Date.parse(String(value || ''));
-  return Number.isFinite(parsed) && parsed <= now + 5 * 60_000 && now - parsed <= MAX_EVIDENCE_AGE_MS;
+  const parsed = parsePhysicalEvidenceTimestamp(value);
+  return Number.isFinite(now) && Number.isFinite(parsed)
+    && parsed <= now + 5 * 60_000 && now - parsed <= MAX_EVIDENCE_AGE_MS;
 }
 
 export function validateAppCheckPhysicalEvidence(input, now = Date.now(), expectedCandidate = loadCandidateManifest()) {
@@ -95,8 +104,8 @@ export function validateAppCheckPhysicalEvidence(input, now = Date.now(), expect
     if (!freshTimestamp(device?.verified_at, now)) errors.push(`device_${slot}_evidence_stale_or_future`);
   });
 
-  const verifiedAt = Date.parse(String(input.verified_at || ''));
-  if (!Number.isFinite(verifiedAt)) errors.push('verified_at_invalid');
+  const verifiedAt = parsePhysicalEvidenceTimestamp(input.verified_at);
+  if (!Number.isFinite(now) || !Number.isFinite(verifiedAt)) errors.push('verified_at_invalid');
   else if (verifiedAt > now + 5 * 60_000 || now - verifiedAt > MAX_EVIDENCE_AGE_MS) errors.push('evidence_stale_or_future');
 
   if (input.candidate_apk_sha256 !== candidate.apk_sha256) errors.push('wrong_apk_candidate');

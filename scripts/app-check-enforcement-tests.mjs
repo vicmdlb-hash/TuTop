@@ -95,6 +95,36 @@ const perDeviceStale = structuredClone(valid);
 perDeviceStale.devices[1].verified_at = '2026-08-20T00:00:00.000Z';
 assert.equal(validateAppCheckPhysicalEvidence(perDeviceStale, now, candidate).ready, false);
 
+// App Check evidence timestamps must be real Gregorian UTC instants, not
+// Date.parse rollover dates, abbreviated dates, numeric epochs or offsets.
+// These synthetic fixtures cannot satisfy the real two-device release gate.
+const rolloverNow = Date.parse('2026-03-03T04:30:00.000Z');
+const rolloverValid = structuredClone(valid);
+rolloverValid.verified_at = '2026-03-03T04:22:00.000Z';
+rolloverValid.devices[0].verified_at = '2026-03-03T04:20:00.000Z';
+rolloverValid.devices[1].verified_at = '2026-03-03T04:21:00.000Z';
+assert.equal(validateAppCheckPhysicalEvidence(rolloverValid, rolloverNow, candidate).ready, true);
+for (const malformed of [
+  '2026-02-31T04:22:00.000Z', // Date.parse silently normalizes to March 3
+  '2026-03-03',
+  '2026-03-03T04:22:00+00:00',
+  1772511720000,
+]) {
+  const topLevel = structuredClone(rolloverValid);
+  topLevel.verified_at = malformed;
+  const topResult = validateAppCheckPhysicalEvidence(topLevel, rolloverNow, candidate);
+  assert.equal(topResult.ready, false, 'invalid top-level timestamp must block');
+  assert(topResult.errors.includes('verified_at_invalid'));
+  const deviceLevel = structuredClone(rolloverValid);
+  deviceLevel.devices[0].verified_at = malformed;
+  const deviceResult = validateAppCheckPhysicalEvidence(deviceLevel, rolloverNow, candidate);
+  assert.equal(deviceResult.ready, false, 'invalid per-device timestamp must block');
+  assert(deviceResult.errors.includes('device_A_evidence_stale_or_future'));
+}
+assert.equal(validateAppCheckPhysicalEvidence(rolloverValid, NaN, candidate).ready, false,
+  'invalid clock must not establish fresh physical App Check evidence');
+console.log('PASS App Check evidence timestamps reject impossible dates and non-UTC strings');
+
 // Regression: raw credentials must not evade redaction checks by using
 // camelCase, snake_case, or nested keys (including device telemetry).
 for (const key of [
