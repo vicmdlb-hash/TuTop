@@ -81,6 +81,19 @@ assert.doesNotMatch(sourceText,/errors:\[String\(err\)\]/);
 denied(x=>{x.recovery.privateKey='synthetic'},'private age key');
 denied(x=>{x.recovery.owner_age_decryption_verified=false},'not decrypted');
 denied(x=>{x.recovery.decrypted_apk_sha256='0'.repeat(64)},'restored bytes mismatch');
+// Canonical device observation proof: JS normalizes 31 February to March 3,
+// which previously made a fabricated fresh timestamp pass this self-report gate.
+const nonexistentDate = structuredClone(e);
+nonexistentDate.observed_at = '2026-02-31T19:50:00.000Z';
+assert.equal(assessPrivateNoAiSmoke(p, nonexistentDate,
+  Date.parse('2026-03-03T20:00:00.000Z')).private_smoke_evidence_complete, false,
+  'calendar rollover cannot certify a fresh private QA observation');
+denied(x=>{x.observed_at='2026-11-12T19:50:00+00:00'},'noncanonical timezone alias');
+const leapDay = structuredClone(e);
+leapDay.observed_at = '2024-02-29T19:50:00.123Z';
+assert.equal(assessPrivateNoAiSmoke(p, leapDay,
+  Date.parse('2024-02-29T20:00:00.000Z')).private_smoke_evidence_complete, true,
+  'a real leap-day UTC observation stays eligible as self-reported evidence');
 denied(x=>{x.observed_at='2026-11-10T00:00:00.000Z'},'expired session');
 denied(x=>{x.observed_at='2026-11-13T00:00:00.000Z'},'future session');
 denied((_,p)=>{p.release_ready='true'},'fake release');

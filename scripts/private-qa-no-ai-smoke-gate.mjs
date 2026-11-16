@@ -76,7 +76,15 @@ export function assessPrivateNoAiSmoke(p,e,now=Date.now()) {
     if (!SHA256.test(e.certificate_sha256) || e.certificate_sha256 !== p.qa_certificate_sha256) errors.push('wrong QA signer');
     if (e.firebase_project !== PROJECT) errors.push('not staging');
     if (e.remote_ai_enabled !== false) errors.push('remote AI must be OFF');
-    const at=typeof e.observed_at === 'string' ? Date.parse(e.observed_at) : NaN;
+    // Observed timestamps are release-adjacent evidence, not freeform dates.
+    // Date.parse normalizes nonexistent dates (for example February 31).
+    const rawTime = e.observed_at;
+    const syntaxOk = typeof rawTime === 'string'
+      && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(rawTime);
+    const parsedTime = syntaxOk ? Date.parse(rawTime) : NaN;
+    const at = syntaxOk && Number.isFinite(parsedTime)
+      && new Date(parsedTime).toISOString().slice(0, 19) === rawTime.slice(0, 19)
+      ? parsedTime : NaN;
     if (!Number.isFinite(at) || !Number.isFinite(now)
       || at > now + 300000 || now - at > 86400000) errors.push('device observation missing/stale/future');
     if (exactKeys(e.device,['physical','manufacturer','model','android_version','installation'],'device',errors)) {
