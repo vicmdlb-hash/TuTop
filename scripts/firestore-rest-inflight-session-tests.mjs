@@ -24,7 +24,7 @@ async function until(predicate, label) {
   for (let i = 0; i < 100 && !predicate(); i++) await Promise.resolve();
   assert(predicate(), 'synthetic await not reached: ' + label);
 }
-function makeHarness({ appCheckGate = null, bodyGate = null } = {}) {
+function makeHarness({ appCheckGate = null, bodyGate = null, expired = false } = {}) {
   const map = new Map();
   const storage = {
     getItem: (key) => map.get(key) ?? null,
@@ -32,12 +32,13 @@ function makeHarness({ appCheckGate = null, bodyGate = null } = {}) {
     removeItem: (key) => { map.delete(key); },
   };
   const first = makeSession('A', 'original');
+  if (expired) first.expiresAt = Date.now() - 1_000;
   storage.setItem(storageKey, JSON.stringify(first));
   const requests = [];
   let appCheckStarted = false;
   let bodyStarted = false;
   const firebaseFetch = (url, init) => {
-    assert.match(url, /firestore\.googleapis\.com/, 'no auth endpoint expected');
+    assert.match(url, /(?:firestore|securetoken)\.googleapis\.com/, 'only Firestore or Secure Token endpoint expected');
     const call = { url, init, gate: deferred() };
     requests.push(call);
     return call.gate.promise;
@@ -115,6 +116,35 @@ function makeHarness({ appCheckGate = null, bodyGate = null } = {}) {
   assert.equal(valid.fields.reservation_expires_at?.timestampValue, '2024-02-29T12:00:00.123Z');
 }
 console.log('PASS Firestore date encoder rejects rollover/noncanonical strings as timestamps while preserving valid leap day');
+
+// The real REST refresh method must not persist a success-shaped but malformed
+// Secure Token response. Synthetic network only; no real Firebase credentials.
+{
+  const h = makeHarness({ expired: true });
+  const pending = h.clientA.getIdToken();
+  await until(() => h.requests.length === 1, 'valid refresh request');
+  h.settle(h.requests[0], { user_id:'A', id_token:'fresh-A', refresh_token:'fresh-r', expires_in:'3600' });
+  assert.equal(await pending, 'fresh-A', 'matching UID refresh remains functional');
+  assert.equal(h.persisted().uid, 'A');
+  assert.equal(h.persisted().refreshToken, 'fresh-r');
+}
+for (const [label, payload, code] of [
+  ['missing user_id', { id_token:'foreign', refresh_token:'r', expires_in:'3600' }, 'AUTH_SESSION_CHANGED'],
+  ['empty user_id', { user_id:'', id_token:'foreign', refresh_token:'r', expires_in:'3600' }, 'AUTH_SESSION_CHANGED'],
+  ['cross-account user_id', { user_id:'B', id_token:'foreign', refresh_token:'r', expires_in:'3600' }, 'AUTH_SESSION_CHANGED'],
+  ['empty id_token', { user_id:'A', id_token:'', refresh_token:'r', expires_in:'3600' }, 'AUTH_REFRESH_RESPONSE_INVALID'],
+  ['missing id_token', { user_id:'A', refresh_token:'r', expires_in:'3600' }, 'AUTH_REFRESH_RESPONSE_INVALID'],
+  ['invalid expiry', { user_id:'A', id_token:'fresh', refresh_token:'r', expires_in:'not-a-number' }, 'AUTH_REFRESH_RESPONSE_INVALID'],
+]) {
+  const h = makeHarness({ expired: true });
+  const initial = h.persisted();
+  const pending = h.clientA.getIdToken();
+  await until(() => h.requests.length === 1, label);
+  h.settle(h.requests[0], payload);
+  await assert.rejects(pending, new RegExp(code), label);
+  assert.deepEqual(h.persisted(), initial, label + ': original session must remain untouched');
+}
+console.log('PASS strict Secure Token REST refresh: wrong/missing UID, token and expiry fail closed; valid owner refresh remains accepted');
 
 // Baseline: unchanged A session successfully decodes the remote result.
 {

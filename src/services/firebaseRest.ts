@@ -247,12 +247,20 @@ export class FirebaseRestClient {
     // may have signed out, or signed in as B (or re-signed in as A) meanwhile.
     if (!sameFirebaseSession(this.session, starting)
       || !sameFirebaseSession(this.readStoredSession(), starting)
-      || (data.user_id && data.user_id !== starting.uid)) {
+      || typeof data?.user_id !== 'string' || data.user_id !== starting.uid) {
       throw new Error('AUTH_SESSION_CHANGED');
+    }
+    // A malformed Secure Token success body must not poison the canonical
+    // credentials or expiry. Firebase normally returns all these fields.
+    const expiresIn = Number(data?.expires_in);
+    if (typeof data?.id_token !== 'string' || !data.id_token.trim()
+      || data.id_token.length > 16_384
+      || !Number.isFinite(expiresIn) || expiresIn <= 0) {
+      throw new Error('AUTH_REFRESH_RESPONSE_INVALID');
     }
     const refreshed: AuthSession = {
       ...starting, idToken: data.id_token, refreshToken: data.refresh_token || starting.refreshToken,
-      uid: starting.uid, expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
+      uid: starting.uid, expiresAt: Date.now() + expiresIn * 1000,
     };
     this.persistSession(refreshed);
     return refreshed.idToken;
