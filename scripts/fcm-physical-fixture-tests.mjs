@@ -90,6 +90,24 @@ const staleWindow = structuredClone(valid); staleWindow.evidence_started_at = '2
 assert.equal(validateFcmPhysicalFixture(staleWindow, candidate, now).pass, false);
 const futureWindow = structuredClone(valid); futureWindow.evidence_started_at = '2026-09-07T05:00:00.000Z'; futureWindow.evidence_completed_at = '2026-09-07T05:01:00.000Z';
 assert.equal(validateFcmPhysicalFixture(futureWindow, candidate, now).pass, false);
+// Canonical time evidence: V8's Date.parse normalizes 31 February to 3 March.
+// The original source accepted this fabricated timestamp within a fresh window.
+const impossibleCalendar = structuredClone(valid);
+impossibleCalendar.evidence_started_at = '2026-02-31T04:29:00.000Z';
+impossibleCalendar.evidence_completed_at = '2026-02-31T04:29:50.000Z';
+assert.equal(validateFcmPhysicalFixture(impossibleCalendar, candidate,
+  Date.parse('2026-03-03T04:30:00.000Z')).pass, false,
+  'nonexistent calendar dates must never certify a physical FCM trace');
+const nonCanonicalTimezone = structuredClone(valid);
+nonCanonicalTimezone.evidence_started_at = '2026-09-07T04:29:00+00:00';
+assert.equal(validateFcmPhysicalFixture(nonCanonicalTimezone, candidate, now).pass, false,
+  'physical evidence must use canonical UTC Z instants, not timezone aliases');
+const validLeapDay = structuredClone(valid);
+validLeapDay.evidence_started_at = '2024-02-29T04:29:00.123Z';
+validLeapDay.evidence_completed_at = '2024-02-29T04:29:50.123Z';
+assert.equal(validateFcmPhysicalFixture(validLeapDay, candidate,
+  Date.parse('2024-02-29T04:30:00.000Z')).pass, true,
+  'valid leap-day UTC timestamps must remain accepted');
 // Unknown scenario names and event kinds are untrusted user values; even if
 // scanning rejects them, error text must not reveal their raw contents.
 const malformedScenarioName = structuredClone(valid);

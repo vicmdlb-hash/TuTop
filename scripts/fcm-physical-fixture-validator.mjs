@@ -61,9 +61,20 @@ function placeholder(value) {
   return !String(value || '').trim() || /PENDIENTE|TODO|TBD/i.test(String(value));
 }
 
+// Physical QA evidence must use real canonical UTC instants. Date.parse alone
+// silently converts impossible calendar dates (e.g. February 31 into March 3).
+function parseCanonicalEvidenceUtc(value) {
+  if (typeof value !== 'string'
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)) return NaN;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0, 19) !== value.slice(0, 19))
+    return NaN;
+  return parsed;
+}
+
 function validateWindow(fixture, now, errors) {
-  const started = Date.parse(String(fixture?.evidence_started_at || ''));
-  const completed = Date.parse(String(fixture?.evidence_completed_at || ''));
+  const started = parseCanonicalEvidenceUtc(fixture?.evidence_started_at);
+  const completed = parseCanonicalEvidenceUtc(fixture?.evidence_completed_at);
   if (!Number.isFinite(started)) errors.push('evidence_started_at ISO-8601 real requerido');
   if (!Number.isFinite(completed)) errors.push('evidence_completed_at ISO-8601 real requerido');
   if (!Number.isFinite(started) || !Number.isFinite(completed)) return null;
