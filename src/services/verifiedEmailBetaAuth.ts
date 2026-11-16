@@ -155,9 +155,13 @@ async function forceRefreshStoredSession(expectedGeneration = authGeneration) {
   });
   const data = await readJson(response);
   assertSessionUnchanged(expectedGeneration, stored.uid, originalRefreshToken);
+  // The refresh response must belong to the same authenticated owner. A
+  // malformed or cross-UID result cannot silently replace the canonical UID.
+  if (typeof data?.user_id !== 'string' || data.user_id !== stored.uid)
+    throw new Error('AUTH_UID_MISMATCH');
   const next: CompatibleSession = {
     ...stored,
-    uid: data.user_id || stored.uid,
+    uid: stored.uid,
     idToken: data.id_token,
     refreshToken: data.refresh_token || originalRefreshToken,
     expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,

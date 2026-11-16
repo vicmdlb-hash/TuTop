@@ -25,7 +25,7 @@ function harness() {
   let session = null;
   let privateEmail = '';
   const calls = [];
-  let commitError, sendError, commitWait, deleteWait, signupWait, sendWait, lookupWait, signInWait, updateWait, profileWait, lookupVerified=true, lookupEmail='a@example.test';
+  let commitError, sendError, commitWait, deleteWait, signupWait, sendWait, lookupWait, signInWait, updateWait, profileWait, lookupVerified=true, lookupEmail='a@example.test', refreshUid='u1';
   class Client {
     get currentSession() { return session && {...session}; }
     persistSession(value) { session = value; }
@@ -59,7 +59,7 @@ function harness() {
     if(url.includes('sendOobCode') && sendError) throw new Error(sendError);
     let data = url.includes('accounts:lookup') ? {users:[{localId:'u1',email:lookupEmail,emailVerified:lookupVerified}]} :
       url.includes('accounts:update') ? {localId:'u1',email:body.email,idToken:'migrated-token',refreshToken:'migrated-refresh',expiresIn:'3600'} :
-      url.includes('securetoken') ? {user_id:'u1',id_token:'renewed',refresh_token:'r2',expires_in:'3600'} :
+      url.includes('securetoken') ? {user_id:refreshUid,id_token:'renewed',refresh_token:'r2',expires_in:'3600'} :
       {localId:'u1',idToken:'token',refreshToken:'r1',expiresIn:'3600'};
     return {ok:true,text:async()=>JSON.stringify(data)};
   };
@@ -68,7 +68,7 @@ function harness() {
   const isFirebaseRequestTimeout = (error) => error?.message === 'FIREBASE_REQUEST_TIMEOUT' || error?.code === 'FIREBASE_REQUEST_TIMEOUT';
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
   const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','readFirebaseResponseText','isFirebaseRequestTimeout','nationalVerificationIndicators','nationalAcademicMetadata','validateBetaAcademicCatalog','INSTITUTIONS','CAMPUSES',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,readFirebaseResponseText,isFirebaseRequestTimeout,nationalVerificationIndicators,nationalAcademicMetadata,validateBetaAcademicCatalog,INSTITUTIONS,CAMPUSES);
-  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set commitWait(v){commitWait=v;},set deleteWait(v){deleteWait=v;},set signupWait(v){signupWait=v;},set sendWait(v){sendWait=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set signInWait(v){signInWait=v;},set updateWait(v){updateWait=v;},set profileWait(v){profileWait=v;}};
+  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set commitWait(v){commitWait=v;},set deleteWait(v){deleteWait=v;},set signupWait(v){signupWait=v;},set sendWait(v){sendWait=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set refreshUid(v){refreshUid=v;},set signInWait(v){signInWait=v;},set updateWait(v){updateWait=v;},set profileWait(v){profileWait=v;}};
 }
 const profile={nombre:'Tester',facultad:'Campus',institution_id:'uatx',institution_name:'Universidad Autónoma de Tlaxcala',campus_id:'uatx-riberena',campus_name:'Campus Ribereña'};
 const replacementSession={uid:'u2',idToken:'newer-B-token',refreshToken:'newer-B-refresh',expiresAt:Date.now()+600000,phone:''};
@@ -305,6 +305,16 @@ const tests = [
    assert.equal(privateWrite.data.institutional_email,'legacy@example.test');
    assert.equal(privateWrite.options.merge,true);
    assert.equal(h.calls.filter(c=>c.kind==='commit').length,0);
+ }],
+ ['refresh with a different or missing UID must never persist foreign tokens',async()=>{
+   for (const untrustedUid of ['u2', '']) {
+     const h=harness(); await h.auth.register('a@example.test','password123',profile);
+     const original={...h.session};
+     h.refreshUid=untrustedUid;
+     await assert.rejects(h.auth.refreshVerificationStatus(),/AUTH_UID_MISMATCH/);
+     assert.deepEqual(h.session,original,
+       'invalid Secure Token response must not replace the canonical A session');
+   }
  }],
  ['successful verification refreshes signed token',async()=>{
    const h=harness(); await h.auth.register('a@example.test','password123',profile);
