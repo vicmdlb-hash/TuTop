@@ -25,7 +25,7 @@ function harness() {
   let session = null;
   let privateEmail = '';
   const calls = [];
-  let commitError, sendError, commitWait, deleteWait, signupWait, sendWait, lookupWait, signInWait, updateWait, profileWait, lookupVerified=true, lookupEmail='a@example.test', refreshUid='u1';
+  let commitError, sendError, commitWait, deleteWait, signupWait, sendWait, lookupWait, signInWait, updateWait, profileWait, statusWait, profileMissing=false, lookupVerified=true, lookupEmail='a@example.test', refreshUid='u1';
   class Client {
     get currentSession() { return session && {...session}; }
     persistSession(value) { session = value; }
@@ -35,9 +35,13 @@ function harness() {
     async getDocument(path) {
       if(profileWait) await profileWait;
       if(String(path).startsWith('user_private/')) return {data:{uid:'u1',telefono:'+522461234567',auth_mode:'phone_password_beta',...(privateEmail?{institutional_email:privateEmail}:{})}};
-      return {data:{uid:'u1'}};
+      return profileMissing ? null : {data:{uid:'u1'}};
     }
-    async setDocument(path,data,options) { calls.push({kind:'setDocument',path,data,options}); if(data?.institutional_email) privateEmail=String(data.institutional_email); }
+    async setDocument(path,data,options) {
+      calls.push({kind:'setDocument',path,data,options});
+      if(statusWait && String(path).startsWith('auth_status/')) await statusWait;
+      if(data?.institutional_email) privateEmail=String(data.institutional_email);
+    }
     async getIdToken() { return session.idToken; }
   }
   const normalizeMexicoPhone = (input) => {
@@ -68,7 +72,7 @@ function harness() {
   const isFirebaseRequestTimeout = (error) => error?.message === 'FIREBASE_REQUEST_TIMEOUT' || error?.code === 'FIREBASE_REQUEST_TIMEOUT';
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
   const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','readFirebaseResponseText','isFirebaseRequestTimeout','nationalVerificationIndicators','nationalAcademicMetadata','validateBetaAcademicCatalog','INSTITUTIONS','CAMPUSES',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,readFirebaseResponseText,isFirebaseRequestTimeout,nationalVerificationIndicators,nationalAcademicMetadata,validateBetaAcademicCatalog,INSTITUTIONS,CAMPUSES);
-  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set commitWait(v){commitWait=v;},set deleteWait(v){deleteWait=v;},set signupWait(v){signupWait=v;},set sendWait(v){sendWait=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set refreshUid(v){refreshUid=v;},set signInWait(v){signInWait=v;},set updateWait(v){updateWait=v;},set profileWait(v){profileWait=v;}};
+  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set commitWait(v){commitWait=v;},set deleteWait(v){deleteWait=v;},set signupWait(v){signupWait=v;},set sendWait(v){sendWait=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set refreshUid(v){refreshUid=v;},set signInWait(v){signInWait=v;},set updateWait(v){updateWait=v;},set profileWait(v){profileWait=v;},set profileMissing(v){profileMissing=v;},set statusWait(v){statusWait=v;}};
 }
 const profile={nombre:'Tester',facultad:'Campus',institution_id:'uatx',institution_name:'Universidad Autónoma de Tlaxcala',campus_id:'uatx-riberena',campus_name:'Campus Ribereña'};
 const replacementSession={uid:'u2',idToken:'newer-B-token',refreshToken:'newer-B-refresh',expiresAt:Date.now()+600000,phone:''};
@@ -238,6 +242,35 @@ const tests = [
    const h=harness(); let release; h.signInWait=new Promise(r=>release=r);
    const pending=h.auth.login('a@example.test','password123'); await new Promise(r=>setImmediate(r));
    h.auth.signOut(); release(); await assert.rejects(pending,/AUTH_SESSION_CHANGED/); assert.equal(h.session,null);
+ }],
+ ['delayed login response cannot overwrite independent B or newer same-UID A session',async()=>{
+   for (const [starting, successor] of [
+     [null, replacementSession],
+     [{uid:'u1',idToken:'old-A-id',refreshToken:'old-A-refresh',expiresAt:Date.now()+600000,phone:''},
+       {uid:'u1',idToken:'new-A-id',refreshToken:'new-A-refresh',expiresAt:Date.now()+600000,phone:''}],
+   ]) {
+     const h=harness(); h.session=starting;
+     let release; h.signInWait=new Promise(resolve=>{release=resolve;});
+     const pending=h.auth.login('a@example.test','password123');
+     await waitForCall(h,'accounts:signInWithPassword');
+     h.session={...successor}; // Independent FirebaseRestClient did not bump authGeneration.
+     release();
+     await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+     assert.deepEqual(h.session,successor,'stale login must not replace independent session');
+     assert.equal(h.calls.some(call=>call.kind==='setDocument'),false,
+       'obsolete sign-in must not write account status');
+   }
+ }],
+ ['missing-profile cleanup cannot sign out a newer independent B session',async()=>{
+   const h=harness(); h.profileMissing=true;
+   let releaseStatus; h.statusWait=new Promise(resolve=>{releaseStatus=resolve;});
+   const pending=h.auth.login('a@example.test','password123');
+   await waitForCall(h,'setDocument');
+   h.session={...replacementSession};
+   releaseStatus();
+   await assert.rejects(pending,/AUTH_SESSION_CHANGED/);
+   assert.equal(h.session.uid,'u2');
+   assert.equal(h.session.refreshToken,'newer-B-refresh');
  }],
  ['profile response after sign-out cannot restore session',async()=>{
    const h=harness(); let release; h.profileWait=new Promise(r=>release=r);

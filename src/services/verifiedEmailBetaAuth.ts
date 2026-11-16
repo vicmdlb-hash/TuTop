@@ -355,9 +355,20 @@ export const verifiedEmailBetaAuth = {
 
   async login(emailInput: string, password: string) {
     const email = normalizeEmail(emailInput);
+    // A second FirebaseRestClient may replace the canonical session without
+    // incrementing this module's authGeneration. Capture the exact owner tokens
+    // before dispatch so a delayed login cannot overwrite B or newer A.
+    const expectedCanonicalSession = readCompatibleSession();
     const requestGeneration = ++authGeneration;
     const data = await identityRequest('accounts:signInWithPassword', { email, password, returnSecureToken: true }) as AuthPayload;
-    if (authGeneration !== requestGeneration) throw new Error('AUTH_SESSION_CHANGED');
+    const currentCanonicalSession = readCompatibleSession();
+    const sameCanonical = expectedCanonicalSession
+      ? Boolean(currentCanonicalSession
+        && currentCanonicalSession.uid === expectedCanonicalSession.uid
+        && currentCanonicalSession.idToken === expectedCanonicalSession.idToken
+        && currentCanonicalSession.refreshToken === expectedCanonicalSession.refreshToken)
+      : currentCanonicalSession === null;
+    if (authGeneration !== requestGeneration || !sameCanonical) throw new Error('AUTH_SESSION_CHANGED');
     const ownSession = persistCompatibleSession(data, email, false);
     const ownGeneration = authGeneration;
     const client = sessionClient();
@@ -365,6 +376,9 @@ export const verifiedEmailBetaAuth = {
     assertSessionUnchanged(ownGeneration, ownSession.uid, ownSession.refreshToken);
     if (!profile) {
       await syncAuthStatus(data.localId, false, 'PROFILE_MISSING');
+      // The diagnostic write can be delayed by a second login. Never clear
+      // a newer owner just because A's profile could not be loaded earlier.
+      assertSessionUnchanged(ownGeneration, ownSession.uid, ownSession.refreshToken);
       clearCanonicalSession();
       throw new Error('PROFILE_MISSING');
     }
