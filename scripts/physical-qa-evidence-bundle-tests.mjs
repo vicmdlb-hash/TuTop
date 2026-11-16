@@ -254,6 +254,26 @@ const webResult = validatePhysicalQaEvidence(webReport, now, candidateManifest);
 assert.equal(webResult.overall, 'fail');
 assert.equal(webResult.release_blocked, true);
 
+// Release-adjacent physical R6 diagnostic timestamps must be real UTC dates,
+// not silently normalized February 31 or alternative offset spellings.
+const impossibleDiagnostic = structuredClone(good);
+impossibleDiagnostic.diagnostic_report.generated_at = '2026-02-31T02:45:00.000Z';
+const impossibleVerdict = validatePhysicalQaEvidence(
+  impossibleDiagnostic, Date.parse('2026-03-03T02:50:00.000Z'), candidateManifest);
+assert(impossibleVerdict.errors.includes('diagnostic_report.generated_at inválido'),
+  'nonexistent diagnostic calendar dates must not become physical R6 proof');
+assert.equal(impossibleVerdict.release_blocked, true);
+const offsetDiagnostic = structuredClone(good);
+offsetDiagnostic.diagnostic_report.generated_at = '2026-09-07T02:45:00+00:00';
+assert(validatePhysicalQaEvidence(offsetDiagnostic, now, candidateManifest)
+  .errors.includes('diagnostic_report.generated_at inválido'));
+const leapDiagnostic = structuredClone(good);
+leapDiagnostic.diagnostic_report.generated_at = '2024-02-29T02:45:00.123Z';
+assert.equal(validatePhysicalQaEvidence(leapDiagnostic,
+  Date.parse('2024-02-29T02:50:00.000Z'), candidateManifest)
+  .errors.includes('diagnostic_report.generated_at inválido'), false,
+  'valid leap-day diagnostics must not be falsely rejected as malformed');
+
 const staleReport = structuredClone(good);
 staleReport.diagnostic_report.generated_at = '2026-09-05T00:00:00.000Z';
 const staleResult = validatePhysicalQaEvidence(staleReport, now, candidateManifest);

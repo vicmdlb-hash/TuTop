@@ -117,7 +117,15 @@ function validateFreshNativeDiagnostic(bundle, errors, now = Date.now()) {
   if (report.version !== bundle.app_version) errors.push('diagnostic_report.version no coincide con app_version');
   if (report.platform !== 'android') errors.push('diagnostic_report.platform debe ser android');
   if (report.native_runtime !== true) errors.push('diagnostic_report debe provenir de runtime Android nativo');
-  const generatedAt = Date.parse(String(report.generated_at || ''));
+  // Physical R6 diagnostics are evidence: reject impossible calendar dates,
+  // timezone aliases and accidental Date.parse rollover before accepting age.
+  const rawGeneratedAt = report.generated_at;
+  const canonicalUtc = typeof rawGeneratedAt === 'string'
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(rawGeneratedAt);
+  const parsedGeneratedAt = canonicalUtc ? Date.parse(rawGeneratedAt) : NaN;
+  const generatedAt = Number.isFinite(parsedGeneratedAt)
+    && new Date(parsedGeneratedAt).toISOString().slice(0, 19) === rawGeneratedAt.slice(0, 19)
+    ? parsedGeneratedAt : NaN;
   if (!Number.isFinite(generatedAt)) errors.push('diagnostic_report.generated_at inválido');
   else if (generatedAt > now + 5 * 60_000 || now - generatedAt > MAX_DIAGNOSTIC_AGE_MS) errors.push('diagnostic_report fuera de ventana fresca de 24 h');
 
