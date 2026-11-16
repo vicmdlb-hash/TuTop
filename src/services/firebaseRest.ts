@@ -38,7 +38,12 @@ function encodePath(path: string) {
 }
 
 function isIsoDate(value: string) {
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value) && !Number.isNaN(Date.parse(value));
+  // Date.parse alone normalizes impossible dates (e.g. 2026-02-31), which
+  // would otherwise turn a user-supplied expiration into a different day.
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)) return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed)
+    && new Date(parsed).toISOString().slice(0, 19) === value.slice(0, 19);
 }
 
 function encodeValue(value: unknown, fieldName?: string): Record<string, unknown> {

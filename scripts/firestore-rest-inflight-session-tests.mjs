@@ -95,6 +95,27 @@ function makeHarness({ appCheckGate = null, bodyGate = null } = {}) {
   };
 }
 
+// Timestamp serialization is a security boundary for expiry and retention.
+// Date.parse silently normalizes nonexistent calendar dates; those values must
+// not be persisted as valid Firestore timestampValue fields.
+{
+  const h = makeHarness();
+  const invalid = h.clientA.encodeDocumentForWrite('demo/synthetic-timestamps', {
+    reservation_expires_at: '2026-02-31T12:00:00.000Z',
+    retention_delete_after: '2026-02-31T12:00:00.000Z',
+    created_at: '2026-09-07T04:29:00+00:00',
+  });
+  assert.equal(invalid.fields.reservation_expires_at?.timestampValue, undefined);
+  assert.equal(invalid.fields.retention_delete_after?.timestampValue, undefined);
+  assert.equal(invalid.fields.created_at?.timestampValue, undefined);
+  assert.equal(invalid.fields.reservation_expires_at?.stringValue, '2026-02-31T12:00:00.000Z');
+  const valid = h.clientA.encodeDocumentForWrite('demo/synthetic-timestamps', {
+    reservation_expires_at: '2024-02-29T12:00:00.123Z',
+  });
+  assert.equal(valid.fields.reservation_expires_at?.timestampValue, '2024-02-29T12:00:00.123Z');
+}
+console.log('PASS Firestore date encoder rejects rollover/noncanonical strings as timestamps while preserving valid leap day');
+
 // Baseline: unchanged A session successfully decodes the remote result.
 {
   const h = makeHarness();
