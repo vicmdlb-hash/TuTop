@@ -87,6 +87,8 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
   const fakeModule = { exports: {} };
   let canonical = { uid:'A', refreshToken:'a-r1' };
   let switchDuringWrite = false;
+  let failReceiptQuery = false;
+  let switchOnReceiptFailure = false;
   const actualReceiptWrites = [];
   class FakeFirebaseClient {
     get currentSession() { return canonical; }
@@ -94,6 +96,21 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
     async getDocument(path) {
       return path.startsWith('notification_outbox/')
         ? { data:{recipient_uid:'A'} } : null;
+    }
+    async runQuery(collection) {
+      if (collection === 'notification_outbox') return [{
+        id: 'trusted-notice', data: { kind:'new_message', recipient_uid:'A', title:'TuTop',
+          body:'synthetic', created_at:'2026-11-17T08:00:00Z' },
+      }];
+      if (collection === 'notification_receipts') {
+        if (switchOnReceiptFailure) {
+          canonical = { uid:'B', refreshToken:'b-r2' };
+          throw new Error('synthetic-stale-session-remote-body');
+        }
+        if (failReceiptQuery) throw new Error('synthetic-secret-remote-error');
+        return [{ id:'receipt1', data:{notification_id:'trusted-notice',read_at:'2026-11-17T08:01:00Z'} }];
+      }
+      return [];
     }
     async setDocument(path, payload) {
       if (path.startsWith('notification_receipts/')) actualReceiptWrites.push({ path, payload });
@@ -179,6 +196,24 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
     assert.equal(actualReceiptWrites[index].payload.notification_id, expected,
       'receipt retains exact original notification ID for read-state reconciliation');
   }
+
+  // A receipts fetch failure must not fabricate an all-unread snapshot.
+  // Exercise the actual production function using synthetic Firestore results.
+  let notices = await newModule.exports.pushBackend.loadTrustedNotifications();
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].id, 'trusted-notice');
+  assert.equal(notices[0].read, true, 'successfully fetched receipts preserve read state');
+  failReceiptQuery = true;
+  await assert.rejects(newModule.exports.pushBackend.loadTrustedNotifications(),
+    /NOTIFICATION_RECEIPTS_UNAVAILABLE/,
+    'remote receipts failure must reject rather than invent unread state');
+  failReceiptQuery = false;
+  switchOnReceiptFailure = true;
+  await assert.rejects(newModule.exports.pushBackend.loadTrustedNotifications(),
+    /PUSH_OWNER_SESSION_CHANGED/,
+    'a receipt query that outlives account A must still fail as changed owner');
+  switchOnReceiptFailure = false;
+  canonical = { uid:'A',refreshToken:'a-r1' };
 }
 
 const notificationRead=backendSource.slice(backendSource.indexOf('async loadTrustedNotifications('),backendSource.indexOf('async markNotificationRead('));

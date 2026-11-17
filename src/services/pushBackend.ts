@@ -111,7 +111,12 @@ export const pushBackend = {
         [{ field: 'created_at', direction: 'DESCENDING' }],
         Math.max(1, Math.min(100, limit)),
       ),
-      client.runQuery<any>('notification_receipts', [{ field: 'owner_uid', op: 'EQUAL', value: uid }], [], 200).catch(() => []),
+      client.runQuery<any>('notification_receipts', [{ field: 'owner_uid', op: 'EQUAL', value: uid }], [], 200).catch(() => {
+        // A failed read is UNKNOWN, not proof that every notification is unread.
+        // Reject stale account sessions and never leak a remote error body.
+        assertOwner();
+        throw new Error('NOTIFICATION_RECEIPTS_UNAVAILABLE');
+      }),
     ]);
     assertOwner(); // Reject A's completed query when B has logged in.
     const read = new Set(receipts.filter((doc) => Boolean(doc.data?.read_at)).map((doc) => String(doc.data.notification_id || '')));
