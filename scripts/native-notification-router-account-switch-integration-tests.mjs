@@ -375,4 +375,29 @@ function harness(initialUid = 'B') {
     'withdrawn listing must remain closed after verified refresh');
   assert.equal(h.state.selectedProductId, null);
 }
+// Same-account concurrent push snapshots can complete in reverse order.
+// The older result must not restore stale listing visibility or reads.
+{
+  const h = harness('B');
+  const resolveSnapshots = [];
+  h.backend.loadSnapshot = () => new Promise((resolve) => { resolveSnapshots.push(resolve); });
+  h.send({ source: 'received', recipient_uid: 'B', notification_id: 'older' });
+  h.send({ source: 'received', recipient_uid: 'B', notification_id: 'newer' });
+  assert.equal(resolveSnapshots.length, 2);
+  resolveSnapshots[1]({
+    user: { id: 'B' },
+    products: [{ id: 'current-approved', estado: 'Activo', moderation_status: 'approved' }],
+  });
+  await h.flush();
+  assert.deepEqual(h.state.products.map((item) => item.id), ['current-approved']);
+  resolveSnapshots[0]({
+    user: { id: 'B' },
+    products: [{ id: 'stale-approved', estado: 'Activo', moderation_status: 'approved' }],
+  });
+  await h.flush();
+  assert.deepEqual(h.state.products.map((item) => item.id), ['current-approved'],
+    'older same-account snapshot cannot restore stale products');
+  assert.deepEqual(h.operations, ['hydrate:B'],
+    'only the most recently initiated snapshot may hydrate the active account');
+}
 console.log('PASS native notification router account/session/read-ownership integration, no Firebase');

@@ -6,6 +6,8 @@ import { onlineBackend } from './onlineBackend';
 import { verifiedEmailBetaAuth } from './verifiedEmailBetaAuth';
 
 let installed = false;
+// Ignore a superseded snapshot even when two taps belong to the same session.
+let latestNotificationSnapshotRequest = 0;
 
 function activeRecipientUid() {
   try {
@@ -97,6 +99,7 @@ export function installNativeNotificationRouter() {
     const expectedSessionGeneration = verifiedEmailBetaAuth.sessionGeneration();
     const expectedCanonicalSession = verifiedEmailBetaAuth.readSessionIdentity();
     if (!expectedCanonicalSession || expectedCanonicalSession.uid !== expectedUid) return;
+    const snapshotRequest = ++latestNotificationSnapshotRequest;
     const cachedBeforeRoute = useAppStore.getState().notifications.find(
       (item) => item.id === intent.notification_id,
     );
@@ -106,6 +109,9 @@ export function installNativeNotificationRouter() {
       && hasOwnedChat(String(cachedBeforeRoute?.chat_id || ''), expectedUid);
     const exactTargetResolved = route(intent);
     void onlineBackend.loadSnapshot().then((snapshot) => {
+      // Two same-account push requests can resolve out of order. Never let
+      // an older snapshot restore stale moderation, chat or notification data.
+      if (snapshotRequest !== latestNotificationSnapshotRequest) return;
       // An A-owned request can settle after A logs out and B signs in.
       // Never hydrate or retry a target if the verified identity has changed.
       const store = useAppStore.getState();
