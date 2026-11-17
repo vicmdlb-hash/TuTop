@@ -34,9 +34,17 @@ export default function V2NearbyListingsHydrator() {
     const unsubscribeOwner = useAppStore.subscribe((state) => {
       if (state.user.id === currentOwnerUid) return;
       currentOwnerUid = state.user.id;
+      // The store's normal setUser() clears products on an account switch,
+      // but other session bridges can update the owner independently. Never
+      // retain an old owner's Nearby-only listings in that interim state.
+      requestSerial += 1;
+      const retained = state.products.filter((product) =>
+        !nearbyInjectedIds.has(product.id) || baseProductIds.has(product.id)
+      );
+      const evicted = retained.length !== state.products.length;
       baseProductIds.clear();
       nearbyInjectedIds.clear();
-      requestSerial += 1;
+      if (evicted) useAppStore.setState({ products: retained });
     });
 
     const hydrate = async (location: ApproxLocation, force = false) => {

@@ -243,6 +243,27 @@ nearPending[2].reject(new Error('SYNTHETIC_STALE_REQUEST'));
 await flushRead();
 assert(nearState.products.some(x => x.id === 'fresh-near-only'),
   'obsolete failed query must not delete latest Nearby results');
+// A lightweight owner change may update only user identity while a fresh
+// session snapshot is still pending. Old Nearby-only products must disappear
+// synchronously; never rely on setUser() to run before every owner transition.
+nearWindow.dispatchEvent({ type: 'tutop:approx-location', detail: nearLocation });
+assert.equal(nearPending.length, 5, 'synthetic account-switch fixture must start a Nearby request');
+nearPending[4].resolve([{ id: 'account-A-near-only', updated_at: '2026-11-15T07:02:00Z' }]);
+await flushRead();
+assert(nearState.products.some(x => x.id === 'account-A-near-only'),
+  'the A-only fixture must appear before switching identity');
+nearWindow.dispatchEvent({ type: 'tutop:approx-location', detail: nearLocation });
+assert.equal(nearPending.length, 6, 'a second A request must remain pending before logout');
+nearStore.setState({ user: { id: 'synthetic-B' } });
+assert.deepEqual(Array.from(nearState.products, x => x.id), ['base'],
+  'A-only Nearby rows must disappear immediately on owner change');
+nearPending[5].resolve([{ id: 'A-late-after-B', updated_at: '2026-11-15T07:03:00Z' }]);
+await flushRead();
+assert.deepEqual(Array.from(nearState.products, x => x.id), ['base'],
+  'in-flight A Nearby results must not hydrate the B session');
+nearStore.setState({ user: { id: 'synthetic-A' } });
+assert.deepEqual(Array.from(nearState.products, x => x.id), ['base'],
+  'A to B to A cannot rehydrate stale Nearby rows without a fresh request');
 nearCleanup();
-console.log('PASS Nearby stale-injection guard: refresh failure evicts only injected rows; timestamp tie and request epoch remain safe');
+console.log('PASS Nearby stale-injection guard: owner transition immediately evicts Nearby-only data, late responses ignored');
 
