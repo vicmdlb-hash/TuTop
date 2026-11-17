@@ -22,8 +22,15 @@ const rules = fs.readFileSync(rulesPath, 'utf8');
 
 if (ruleset === 'guardian-demo') {
   assert.match(rules, /function guardianOfferLinksValid\(data\)/);
+  assert.match(rules, /function guardianPairCapabilityAllowed\(firstUid, secondUid, cap\)/);
   const offerCreate = rules.split('    match /offers/{offerId} {')[1]
     ?.split('    match /transactions_v2/{transactionId} {')[0] || '';
+  assert.match(offerCreate,
+    /guardianPairCapabilityAllowed\(request\.resource\.data\.buyer_id, request\.resource\.data\.seller_id, 'make_offer'\)/,
+    'demo offer creation must evaluate both trusted participant proofs once');
+  assert.doesNotMatch(offerCreate,
+    /guardianAdultOrTeen\(request\.resource\.data\.(?:buyer_id|seller_id), 'make_offer'\)/,
+    'demo offer creation must not duplicate per-participant proof predicates');
   assert.match(offerCreate, /guardianOfferLinksValid\(request\.resource\.data\)/,
     'demo offer creation must preserve product/chat checks through cached snapshots');
   assert.doesNotMatch(offerCreate,

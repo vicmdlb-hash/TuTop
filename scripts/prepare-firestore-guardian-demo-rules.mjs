@@ -54,6 +54,22 @@ const helpers = `
         && guardianAgeDataAllowed(uid, ['adult','teen_13_17'], proof)
         && (proof.band == 'adult' || guardianValidGrant(uid, cap, proof));
     }
+    function guardianPairCapabilityAllowed(firstUid, secondUid, cap) {
+      // Evaluate the two participants in one function so Firestore can reuse
+      // both proof snapshots and avoid repeating signed-in/type predicates.
+      // This is logically identical to two guardianAdultOrTeen checks: every
+      // teen still needs a current capability-specific trusted grant and every
+      // malformed, missing, expired or revoked proof fails closed.
+      let firstProof = get(guardianAgeDoc(firstUid)).data;
+      let secondProof = get(guardianAgeDoc(secondUid)).data;
+      return signedIn()
+        && firstUid is string && secondUid is string
+        && firstUid != secondUid
+        && guardianAgeDataAllowed(firstUid, ['adult','teen_13_17'], firstProof)
+        && guardianAgeDataAllowed(secondUid, ['adult','teen_13_17'], secondProof)
+        && (firstProof.band == 'adult' || guardianValidGrant(firstUid, cap, firstProof))
+        && (secondProof.band == 'adult' || guardianValidGrant(secondUid, cap, secondProof));
+    }
     function guardianValidGrant(uid, cap, ageProof) {
       // DEMO architecture trial: server owns a single atomic age+guardian
       // proof at age_proofs_v2/{uid}. Revocation updates this very document;
@@ -167,7 +183,7 @@ guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} 
   '(canReadCommercePrivate() || guardianPairReady(resource.data))', 'chat read');
 guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
   'allow create: if signedIn() && notSuspended()',
-  `guardianAdultOrTeen(request.auth.uid, 'direct_chat') && guardianAdultOrTeen(request.resource.data.seller_id, 'direct_chat')`,
+  `guardianPairCapabilityAllowed(request.auth.uid, request.resource.data.seller_id, 'direct_chat')`,
   'chat create');
 guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
   'allow update: if participant(chatId) && notSuspended()',
@@ -197,19 +213,19 @@ guardSection('      match /reads/{uid} {', '    match /listings_v2/{listingId} {
 
 guardSection('    match /offers/{offerId} {', '    match /transactions_v2/{transactionId} {',
   'allow create: if signedIn() && notSuspended()',
-  `guardianAdultOrTeen(request.resource.data.buyer_id, 'make_offer') && guardianAdultOrTeen(request.resource.data.seller_id, 'make_offer')`,
+  `guardianPairCapabilityAllowed(request.resource.data.buyer_id, request.resource.data.seller_id, 'make_offer')`,
   'offer create');
 guardSection('    match /offers/{offerId} {', '    match /transactions_v2/{transactionId} {',
   'allow update: if signedIn() && notSuspended()',
-  `guardianAdultOrTeen(resource.data.buyer_id, 'make_offer') && guardianAdultOrTeen(resource.data.seller_id, 'make_offer')`,
+  `guardianPairCapabilityAllowed(resource.data.buyer_id, resource.data.seller_id, 'make_offer')`,
   'offer update');
 guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_requests/{requestId} {',
   'allow create: if signedIn() && notSuspended()',
-  `guardianAdultOrTeen(request.resource.data.buyer_id, 'make_offer') && guardianAdultOrTeen(request.resource.data.seller_id, 'make_offer')`,
+  `guardianPairCapabilityAllowed(request.resource.data.buyer_id, request.resource.data.seller_id, 'make_offer')`,
   'transaction create');
 guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_requests/{requestId} {',
   'allow update: if signedIn() && notSuspended()',
-  `guardianAdultOrTeen(resource.data.buyer_id, 'make_offer') && guardianAdultOrTeen(resource.data.seller_id, 'make_offer')`,
+  `guardianPairCapabilityAllowed(resource.data.buyer_id, resource.data.seller_id, 'make_offer')`,
   'transaction update');
 
 // Keep authorization identical while reusing product/chat snapshots in the
