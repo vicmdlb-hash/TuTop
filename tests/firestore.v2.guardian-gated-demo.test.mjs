@@ -113,6 +113,60 @@ async function seedChat({
     }));
 }
 
+/*
+ * Run the same full positive teen/guardian offer permission check before
+ * negative-case probes accumulate emulator-side state. No rules, payloads,
+ * permissions, negative expectations or assertions are changed. The test
+ * still FAILS on any PERMISSION_DENIED. Firebase emulator issue #10518
+ * documents service-call errors disguised as permission denials on large
+ * rulesets; test ordering is a diagnostic isolation, NOT a product fix or
+ * proof of production correctness.
+ */
+test('teen with current guardian make_offer grant can submit an offer', async () => {
+  await seed('teen_13_17', 'adult', grant(['make_offer']));
+  await seedChat({ vetted: true });
+  try {
+    await assertSucceeds(createOffer(verifiedContext(env, 'buyer').firestore()));
+  } catch (error) {
+    // Diagnostic is confined to the disposable DEMO emulator. Keep this
+    // positive contract failing on denial; never print real auth or user data.
+    const url = `http://${hostname}:${Number(portRaw || 8080)}/emulator/v1/projects/${process.env.GCLOUD_PROJECT}:ruleCoverage`;
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      const report = await response.text();
+      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_STATUS', response.status);
+      // Inspect ONLY the relevant offer-create source lines; never dump
+      // full rule expressions, raw test documents, paths or auth credentials.
+      const coverage = JSON.parse(report);
+      const relevant = [];
+      const visit = (node) => {
+        if (!node || typeof node !== 'object') return;
+        const line = node.sourcePosition?.line;
+        if (Number.isInteger(line) && line >= 815 && line <= 860
+          && Array.isArray(node.values) && node.values.length) {
+          const summary = JSON.stringify(node.values);
+          relevant.push({
+            line, column: node.sourcePosition.column,
+            evaluated: node.values.length,
+            error: /errorValue|Null value error|Service call error|Unable to evaluate/.test(summary),
+            denied: /boolValue\":false/.test(summary),
+          });
+        }
+        for (const value of Object.values(node)) {
+          if (Array.isArray(value)) for (const child of value) visit(child);
+          else if (value && typeof value === 'object') visit(value);
+        }
+      };
+      visit(coverage);
+      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_LINE_815_860',
+        JSON.stringify(relevant.slice(0, 45)));
+    } catch {
+      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_UNAVAILABLE');
+    }
+    throw error;
+  }
+});
+
 test('isolated age proof gate accepts a server-issued adult claim and rejects revoked claim', async () => {
   await seed('adult');
   const buyer = verifiedContext(env, 'buyer').firestore();
@@ -159,51 +213,6 @@ test('revoked atomic guardian proof cannot authorize offer even when legacy gran
   await env.withSecurityRulesDisabled(async (ctx) =>
     updateDoc(doc(ctx.firestore(), 'age_proofs_v2/buyer'), { 'guardian.active': false }));
   await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
-});
-
-test('teen with current guardian make_offer grant can submit an offer', async () => {
-  await seed('teen_13_17', 'adult', grant(['make_offer']));
-  await seedChat({ vetted: true });
-  try {
-    await assertSucceeds(createOffer(verifiedContext(env, 'buyer').firestore()));
-  } catch (error) {
-    // Diagnostic is confined to the disposable DEMO emulator. Keep this
-    // positive contract failing on denial; never print real auth or user data.
-    const url = `http://${hostname}:${Number(portRaw || 8080)}/emulator/v1/projects/${process.env.GCLOUD_PROJECT}:ruleCoverage`;
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
-      const report = await response.text();
-      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_STATUS', response.status);
-      // Inspect ONLY the relevant offer-create source lines; never dump
-      // full rule expressions, raw test documents, paths or auth credentials.
-      const coverage = JSON.parse(report);
-      const relevant = [];
-      const visit = (node) => {
-        if (!node || typeof node !== 'object') return;
-        const line = node.sourcePosition?.line;
-        if (Number.isInteger(line) && line >= 815 && line <= 860
-          && Array.isArray(node.values) && node.values.length) {
-          const summary = JSON.stringify(node.values);
-          relevant.push({
-            line, column: node.sourcePosition.column,
-            evaluated: node.values.length,
-            error: /errorValue|Null value error|Service call error|Unable to evaluate/.test(summary),
-            denied: /boolValue\":false/.test(summary),
-          });
-        }
-        for (const value of Object.values(node)) {
-          if (Array.isArray(value)) for (const child of value) visit(child);
-          else if (value && typeof value === 'object') visit(value);
-        }
-      };
-      visit(coverage);
-      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_LINE_815_860',
-        JSON.stringify(relevant.slice(0, 45)));
-    } catch {
-      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_UNAVAILABLE');
-    }
-    throw error;
-  }
 });
 
 test('under-13 child cannot independently open direct chat even with signed guardian grant', async () => {
