@@ -151,7 +151,7 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
   vm.runInNewContext(code, {
     module: newModule, exports: newModule.exports,
     require: (key) => imports[key],
-    Date, Set, Map, Promise, Number, String, console, crypto: webcrypto,
+    Date, Set, Map, Promise, Number, String, TextEncoder, console, crypto: webcrypto,
   }, { timeout: 2500 });
   await assert.rejects(newModule.exports.pushBackend.markNotificationRead('A-notice'),
     /PUSH_OWNER_SESSION_CHANGED/,
