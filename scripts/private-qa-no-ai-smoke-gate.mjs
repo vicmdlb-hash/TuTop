@@ -91,7 +91,7 @@ export function assessPrivateNoAiSmoke(p,e,now=Date.now()) {
       if (e.device.physical !== true) errors.push('real Android device evidence required');
       for (const field of ['manufacturer','model','android_version'])
         if (!validModel(e.device[field])) errors.push('invalid/nonprivate device.'+field);
-      if (!['clean','reinstall','upgrade'].includes(e.device.installation)) errors.push('invalid installation');
+      if (e.device.installation !== 'clean') errors.push('private QA requires installation=clean; reinstall/upgrade blocked');
     }
     if (exactKeys(e.recovery,['owner_age_decryption_verified','decrypted_apk_sha256','certificate_sha256'],'recovery',errors)) {
       if (e.recovery.owner_age_decryption_verified !== true

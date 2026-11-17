@@ -49,6 +49,13 @@ denied(x=>{x.cases.topi_real_ai='pending'},'ambiguous AI');
 denied(x=>{x.cases.auth_identity='pending'},'missing auth');
 denied(x=>{delete x.cases.app_check_token_observed},'missing App Check');
 denied(x=>{x.device.physical=false},'not physical');
+// R45 no-downgrade/no-data-loss rule: historical Build121 versionCode 90215
+// cannot be silently overwritten by owner-local QA versionCode 90200.
+// A clean-install report is still self-reported, NOT proof of device state.
+denied(x=>{x.device.installation='reinstall'},'no forced uninstall/reinstall');
+denied(x=>{x.device.installation='upgrade'},'no unverified downgrade as upgrade');
+denied(x=>{x.device.installation='unknown'},'device installation unknown');
+denied(x=>{delete x.device.installation},'missing installation state');
 denied(x=>{x.device.model='PENDIENTE'},'placeholder');
 denied(x=>{x.device.model='123456789012345'},'IMEI-like hardware identifier');
 denied(x=>{x.device.manufacturer='A1:B2:C3:D4:E5:F6'},'MAC-like hardware identifier');

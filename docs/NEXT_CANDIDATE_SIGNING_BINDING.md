@@ -150,3 +150,21 @@ certificate (update incompatible), or both.
 This paragraph documents risk only. It does not create a compatible APK,
 prove a real device is clean, authorize data deletion, or replace the
 owner's consent and independent legal/privacy gates.
+
+### Private no-AI smoke must reject downgrade/reinstallation reports
+<!-- TUTOP_OWNER1_R52_20261117_PRIVATE_SMOKE_CLEAN_ONLY -->
+
+The code gate `scripts/private-qa-no-ai-smoke-gate.mjs` now requires
+`device.installation` to be exactly `clean`. A self-report of `reinstall`,
+`upgrade`, `unknown`, or a missing state **fails closed**; never direct an
+owner to uninstall, clear data, force an Android downgrade, or bypass a
+signing-certificate mismatch to satisfy this test. The `clean` string is
+an owner claim, **not independent Android evidence**: manually establish
+that the chosen test device/profile had no existing TuTop package and that
+no existing owner data is disturbed **before** attempting an authorized
+private install. If the owner's POCO C85 or Samsung already has TuTop,
+keep the phone untouched until compatibility and backups are reviewed.
+This guard remains isolated to single-device private **no-AI** smoke; it
+does not change full two-device R6, App Check, legal review, remote Topi AI,
+or any release acceptance state.
+
