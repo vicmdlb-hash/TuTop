@@ -104,3 +104,49 @@ JSON fields: schema=tutop.private-smoke-no-ai.v1, source_sha, apk_sha256, certif
 
 The workflow's provenance source_sha points to the unique one-file trigger commit, whose parent MUST be the exact code-reviewed HEAD; the final APK hash comes from the decrypted signed bytes. Do not reuse historical Build120/Build121 or claim code HEAD alone is the APK identity.
 
+
+## Private Android QA installation safety — NO automatic replacement
+<!-- TUTOP_PRIVATE_QA_INSTALL_SAFETY_R45_20261116 -->
+
+**Source-only safety finding; no new APK built or installed.** The current owner-local signing contract
+(`scripts/local-private-qa-sign-encrypt.mjs`) expects `mx.tutop.app` /
+`0.9.2-beta.0` / Android `versionCode 90200`. Historical **Build121**
+used `0.9.2-beta.11` / **versionCode 90215** and a different historical
+signing certificate. A future owner-local QA package therefore **cannot be
+assumed upgrade-compatible** with a phone that still has Build121 installed:
+Android may reject the lower versionCode (downgrade), a different signing
+certificate (update incompatible), or both.
+
+**Before even proposing a test installation:**
+
+1. On the owner's trusted computer, and **without uninstalling anything**, identify
+   whether the test device already has `mx.tutop.app` installed. With Android
+   SDK platform-tools and an authorized connected device, read only:
+   `adb shell pm path mx.tutop.app`; if it exists, inspect locally with
+   `adb shell dumpsys package mx.tutop.app` and note the app's installed
+   `versionCode`. This is diagnostic only and does not authenticate the
+   installed certificate. Never paste full dumpsys output, device IDs, tokens,
+   accounts or private paths into ChatGPT, GitHub, Drive or logs.
+2. If installed code is **90215** (or any code greater than **90200**), do
+   **not** suggest `adb install -r` or other replacement. Independently check
+   the signing certificate of any future candidate APK locally using
+   `apksigner verify --print-certs`, with private APK files kept off public
+   services; a differing signer also blocks an in-place update.
+3. Preserve any existing device data. **No automated uninstall, app-data clear,
+   downgrade bypass, or uninstall/reinstall workaround is authorized.** Use a
+   separate owner-approved device or profile with no TuTop app only if its
+   isolation and staging compatibility have been checked, and the owner has
+   confirmed the installation will not disturb data. Never assume a
+   parallel-profile install is isolated without testing.
+4. Any redesign to increase versionCode, change applicationId, alter Android
+   signing identity or Firebase staging bindings is **a separate reviewed
+   decision**, not an emergency workaround. Freeze installation when device
+   state is unknown; report `INSTALL_COMPATIBILITY_UNKNOWN`.
+5. A private, manually authorized no-remote-AI smoke must still use the
+   exact recovered signed APK SHA-256, signing certificate, source SHA,
+   one-device evidence and existing `private-qa-no-ai-smoke-gate.mjs`.
+   **It never satisfies real Topi AI, Device A/B R6, Play, or legal approval.**
+
+This paragraph documents risk only. It does not create a compatible APK,
+prove a real device is clean, authorize data deletion, or replace the
+owner's consent and independent legal/privacy gates.
