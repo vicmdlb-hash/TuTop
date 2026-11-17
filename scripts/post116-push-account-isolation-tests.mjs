@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
 import { compileTypescriptFixture } from './typescript-fixture-compiler.mjs';
 import './native-notification-router-account-switch-integration-tests.mjs';
 import { canApplyNativeNotificationSnapshot, canRouteNativeNotification } from '../src/lib/nativeNotificationSessionGuard.ts';
@@ -86,6 +87,7 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
   const fakeModule = { exports: {} };
   let canonical = { uid:'A', refreshToken:'a-r1' };
   let switchDuringWrite = false;
+  const actualReceiptWrites = [];
   class FakeFirebaseClient {
     get currentSession() { return canonical; }
     readStoredSession() { return canonical; }
@@ -93,7 +95,8 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
       return path.startsWith('notification_outbox/')
         ? { data:{recipient_uid:'A'} } : null;
     }
-    async setDocument() {
+    async setDocument(path, payload) {
+      if (path.startsWith('notification_receipts/')) actualReceiptWrites.push({ path, payload });
       if (switchDuringWrite) canonical = { uid:'B', refreshToken:'b-r2' };
     }
   }
@@ -148,12 +151,34 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
   vm.runInNewContext(code, {
     module: newModule, exports: newModule.exports,
     require: (key) => imports[key],
-    Date, Set, Map, Promise, Number, String, console,
+    Date, Set, Map, Promise, Number, String, console, crypto: webcrypto,
   }, { timeout: 2500 });
   await assert.rejects(newModule.exports.pushBackend.markNotificationRead('A-notice'),
     /PUSH_OWNER_SESSION_CHANGED/,
     'successful remote write must not claim completion after logout');
   switchDuringWrite = false;
+
+  canonical = { uid:'A',refreshToken:'a-r1' };
+  actualReceiptWrites.length = 0;
+  await newModule.exports.pushBackend.markNotificationRead('short');
+  assert.equal(actualReceiptWrites[0].path, 'notification_receipts/A-short',
+    'short receipt IDs must retain their historical document IDs');
+
+  actualReceiptWrites.length = 0;
+  const sharedPrefix = 'same-' + 'x'.repeat(270);
+  const longFirst = sharedPrefix + '-first';
+  const longSecond = sharedPrefix + '-second';
+  await newModule.exports.pushBackend.markNotificationRead(longFirst);
+  await newModule.exports.pushBackend.markNotificationRead(longSecond);
+  assert.equal(actualReceiptWrites.length, 2);
+  assert.notEqual(actualReceiptWrites[0].path, actualReceiptWrites[1].path,
+    'two notification IDs with the same initial 240 characters must never share a receipt');
+  for (const [index, expected] of [longFirst, longSecond].entries()) {
+    assert(actualReceiptWrites[index].path.startsWith('notification_receipts/A-sha256-'));
+    assert(actualReceiptWrites[index].path.length < 240);
+    assert.equal(actualReceiptWrites[index].payload.notification_id, expected,
+      'receipt retains exact original notification ID for read-state reconciliation');
+  }
 }
 
 const notificationRead=backendSource.slice(backendSource.indexOf('async loadTrustedNotifications('),backendSource.indexOf('async markNotificationRead('));

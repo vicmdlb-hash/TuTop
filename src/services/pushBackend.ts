@@ -33,8 +33,12 @@ async function sha256(value: string) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function receiptId(uid: string, notificationId: string) {
-  return `${uid}-${notificationId}`.slice(0, 240);
+async function receiptId(uid: string, notificationId: string) {
+  const full = `${uid}-${notificationId}`;
+  if (full.length <= 240) return full;
+  // Truncating two long IDs with the same prefix silently aliases their
+  // read receipts. Hash the COMPLETE value, preserving old short-ID paths.
+  return `${uid.slice(0, 100)}-sha256-${await sha256(full)}`;
 }
 
 export const pushBackend = {
@@ -134,7 +138,8 @@ export const pushBackend = {
     const outbox = await client.getDocument<any>(`notification_outbox/${notificationId}`);
     assertOwner();
     if (!outbox || outbox.data?.recipient_uid !== uid) throw new Error('NOTIFICATION_NOT_FOUND');
-    const id = receiptId(uid, notificationId);
+    const id = await receiptId(uid, notificationId);
+    assertOwner(); // Hashing may outlive logout or same-UID session rotation.
     const now = new Date().toISOString();
     const existing = await client.getDocument<any>(`notification_receipts/${id}`);
     assertOwner();
