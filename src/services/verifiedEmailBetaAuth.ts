@@ -68,10 +68,26 @@ async function authHeaders() {
 async function readJson(response: Response) {
   const text = await readFirebaseResponseText(response);
   let data: any = null;
-  if (text) { try { data = JSON.parse(text); } catch { data = { raw: text }; } }
+  if (text) { try { data = JSON.parse(text); } catch { data = null; } }
   if (!response.ok) {
-    const message = data?.error?.message || data?.error?.status || data?.raw || `HTTP ${response.status}`;
-    throw new Error(String(message));
+    // Firebase error bodies are untrusted. Never echo remote descriptions,
+    // email addresses, bearer tokens or malformed HTML into UI/logs.
+    // Preserve only explicitly known machine-readable Auth codes.
+    const allowed = new Set([
+      'EMAIL_NOT_FOUND','USER_NOT_FOUND','EMAIL_EXISTS','INVALID_EMAIL',
+      'INVALID_PASSWORD','INVALID_LOGIN_CREDENTIALS','INVALID_ID_TOKEN',
+      'TOKEN_EXPIRED','INVALID_REFRESH_TOKEN','USER_DISABLED',
+      'WEAK_PASSWORD','INVALID_OOB_CODE','EXPIRED_OOB_CODE',
+      'TOO_MANY_ATTEMPTS_TRY_LATER','OPERATION_NOT_ALLOWED',
+      'CREDENTIAL_TOO_OLD_LOGIN_AGAIN','MISSING_PASSWORD',
+    ]);
+    let code = '';
+    for (const value of [data?.error?.message, data?.error?.status]) {
+      if (typeof value !== 'string') continue;
+      const match = /^([A-Z][A-Z0-9_]{1,79})(?=[: ]|$)/.exec(value);
+      if (match && allowed.has(match[1])) { code = match[1]; break; }
+    }
+    throw new Error(code || `FIREBASE_AUTH_HTTP_${response.status}`);
   }
   return data;
 }

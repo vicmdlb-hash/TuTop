@@ -25,7 +25,7 @@ function harness() {
   let session = null;
   let privateEmail = '';
   const calls = [];
-  let commitError, sendError, commitWait, deleteWait, signupWait, sendWait, lookupWait, signInWait, updateWait, profileWait, statusWait, profileMissing=false, lookupVerified=true, lookupEmail='a@example.test', refreshUid='u1';
+  let commitError, sendError, authHttpError, commitWait, deleteWait, signupWait, sendWait, lookupWait, signInWait, updateWait, profileWait, statusWait, profileMissing=false, lookupVerified=true, lookupEmail='a@example.test', refreshUid='u1';
   class Client {
     get currentSession() { return session && {...session}; }
     persistSession(value) { session = value; }
@@ -61,6 +61,9 @@ function harness() {
     if(url.includes('accounts:signInWithPassword') && signInWait) await signInWait;
     if(url.includes('accounts:update') && updateWait) await updateWait;
     if(url.includes('sendOobCode') && sendError) throw new Error(sendError);
+    if(url.includes('accounts:signInWithPassword') && authHttpError) {
+      return {ok:false,status:400,text:async()=>JSON.stringify(authHttpError)};
+    }
     let data = url.includes('accounts:lookup') ? {users:[{localId:'u1',email:lookupEmail,emailVerified:lookupVerified}]} :
       url.includes('accounts:update') ? {localId:'u1',email:body.email,idToken:'migrated-token',refreshToken:'migrated-refresh',expiresIn:'3600'} :
       url.includes('securetoken') ? {user_id:refreshUid,id_token:'renewed',refresh_token:'r2',expires_in:'3600'} :
@@ -72,7 +75,7 @@ function harness() {
   const isFirebaseRequestTimeout = (error) => error?.message === 'FIREBASE_REQUEST_TIMEOUT' || error?.code === 'FIREBASE_REQUEST_TIMEOUT';
   const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'')).replace('export const verifiedEmailBetaAuth','const verifiedEmailBetaAuth');
   const auth=new Function('FirebaseRestClient','getFirebaseConfig','getNativeAppCheckToken','normalizeMexicoPhone','phoneAliasEmail','fetch','firebaseFetch','readFirebaseResponseText','isFirebaseRequestTimeout','nationalVerificationIndicators','nationalAcademicMetadata','validateBetaAcademicCatalog','INSTITUTIONS','CAMPUSES',js+'; return verifiedEmailBetaAuth;')(Client,()=>({apiKey:'test',projectId:'test'}),async()=>null,normalizeMexicoPhone,phoneAliasEmail,fetch,firebaseFetch,readFirebaseResponseText,isFirebaseRequestTimeout,nationalVerificationIndicators,nationalAcademicMetadata,validateBetaAcademicCatalog,INSTITUTIONS,CAMPUSES);
-  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set commitWait(v){commitWait=v;},set deleteWait(v){deleteWait=v;},set signupWait(v){signupWait=v;},set sendWait(v){sendWait=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set refreshUid(v){refreshUid=v;},set signInWait(v){signInWait=v;},set updateWait(v){updateWait=v;},set profileWait(v){profileWait=v;},set profileMissing(v){profileMissing=v;},set statusWait(v){statusWait=v;}};
+  return {auth,calls,get session(){return session;},set session(v){session=v;},set commitError(v){commitError=v;},set sendError(v){sendError=v;},set authHttpError(v){authHttpError=v;},set commitWait(v){commitWait=v;},set deleteWait(v){deleteWait=v;},set signupWait(v){signupWait=v;},set sendWait(v){sendWait=v;},set lookupWait(v){lookupWait=v;},set lookupVerified(v){lookupVerified=v;},set lookupEmail(v){lookupEmail=v;},set refreshUid(v){refreshUid=v;},set signInWait(v){signInWait=v;},set updateWait(v){updateWait=v;},set profileWait(v){profileWait=v;},set profileMissing(v){profileMissing=v;},set statusWait(v){statusWait=v;}};
 }
 const profile={nombre:'Tester',facultad:'Campus',institution_id:'uatx',institution_name:'Universidad Autónoma de Tlaxcala',campus_id:'uatx-riberena',campus_name:'Campus Ribereña'};
 const replacementSession={uid:'u2',idToken:'newer-B-token',refreshToken:'newer-B-refresh',expiresAt:Date.now()+600000,phone:''};
@@ -115,6 +118,21 @@ const tests = [
    assert.equal(result.emailVerified,false); assert.equal(result.verificationEmailSent,false); assert.equal(h.session.uid,'u1');
    assert.equal(h.calls.some(c=>c.kind.includes('accounts:delete')),false);
    h.sendError=null; await h.auth.resendVerificationEmail();
+ }],
+ ['Auth HTTP failures preserve safe codes but never expose remote PII or tokens',async()=>{
+   for (const [payload,expected] of [
+     [{error:{message:'INVALID_PASSWORD: private-token=secret@example.test',status:'INVALID_ARGUMENT'}},'INVALID_PASSWORD'],
+     [{error:{message:'Private server error secret@example.test bearer=abc.def'}},'FIREBASE_AUTH_HTTP_400'],
+     [{error:{status:'EMAIL_NOT_FOUND'}},'EMAIL_NOT_FOUND'],
+     [{error:{message:'INVALID_PASSWORD_EXTRA private data'}},'FIREBASE_AUTH_HTTP_400'],
+   ]) {
+     const h=harness();
+     h.authHttpError=payload;
+     await assert.rejects(h.auth.login('a@example.test','password123'),
+       error=>error instanceof Error && error.message===expected
+         && !/private-token|secret@example|bearer=|abc\.def/.test(error.message));
+     assert.equal(h.session,null,'failed login cannot create a session');
+   }
  }],
  ['password reset hides nonexistent accounts and does not create an identity',async()=>{
    const h=harness();
