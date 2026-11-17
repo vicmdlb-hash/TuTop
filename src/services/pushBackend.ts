@@ -141,9 +141,22 @@ export const pushBackend = {
     const payload = { owner_uid: uid, notification_id: notificationId, read_at: now, updated_at: now, ...(existing ? {} : { created_at: now }) };
     if (existing) await client.setDocument(`notification_receipts/${id}`, payload, { merge: true });
     else await client.setDocument(`notification_receipts/${id}`, payload, { exists: false });
+    // A completed network write can race a logout or same-UID re-login.
+    // Never report this receipt as completed by the superseded session.
+    assertOwner();
   },
 
   async markAllNotificationsRead(notificationIds: string[]) {
-    for (const id of [...new Set(notificationIds)].slice(0, 100)) await this.markNotificationRead(id);
+    const ids = [...new Set(notificationIds)].slice(0, 100);
+    if (!ids.length) return;
+    // One immutable session witness for the entire batch. Without this,
+    // each iteration can instantiate a NEW client for B after A logs out.
+    const ownerClient = getClient();
+    const assertBatchOwner = currentPushOwnerGuard(ownerClient);
+    for (const id of ids) {
+      assertBatchOwner();
+      await this.markNotificationRead(id);
+      assertBatchOwner();
+    }
   },
 };

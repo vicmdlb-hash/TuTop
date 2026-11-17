@@ -76,6 +76,86 @@ assert.equal(isCurrentPushSession(witness,{uid:'A',refreshToken:'synthetic-token
 for(const missing of [null,{}, {uid:'A'}, {uid:'A',refreshToken:''}])
   assert.equal(isCurrentPushSession(witness,missing,witness),false);
 const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replace(/\r\n/g,'\n');
+
+// Execute the real pushBackend batch code against a synthetic session.
+// A->B or same-UID refresh-token rotation after the first receipt must
+// prevent ALL subsequent receipts, even though each per-item call would
+// otherwise create a fresh Firebase client under the new account.
+{
+  const code = compileTypescriptFixture('src/services/pushBackend.ts');
+  const fakeModule = { exports: {} };
+  let canonical = { uid:'A', refreshToken:'a-r1' };
+  let switchDuringWrite = false;
+  class FakeFirebaseClient {
+    get currentSession() { return canonical; }
+    readStoredSession() { return canonical; }
+    async getDocument(path) {
+      return path.startsWith('notification_outbox/')
+        ? { data:{recipient_uid:'A'} } : null;
+    }
+    async setDocument() {
+      if (switchDuringWrite) canonical = { uid:'B', refreshToken:'b-r2' };
+    }
+  }
+  const imports = {
+    '../lib/notificationProjection': { appNotificationKindFromOutbox: () => 'system' },
+    '../lib/pushBackendSessionWitness': { isCurrentPushSession },
+    '../lib/pushTokenCreateFirst': {
+      createFirstPushTokenDocument: async () => {},
+      normalizePushTokenIdentity: (token,platform) => ({ token,platform }),
+      normalizePushAppVersion: (x) => x,
+    },
+    './firebaseRest': { FirebaseRestClient: FakeFirebaseClient },
+    './nationalBackend': { nationalSchemaEnabled: () => true },
+    './runtimeConfig': { getFirebaseConfig: () => ({}) },
+  };
+  vm.runInNewContext(code, {
+    module: fakeModule, exports: fakeModule.exports,
+    require: (key) => {
+      if (!Object.hasOwn(imports,key)) throw Error('unexpected push module import');
+      return imports[key];
+    },
+    Date, Set, Map, Promise, Number, String, console,
+  }, { timeout: 2500 });
+  const backend = fakeModule.exports.pushBackend;
+  assert.equal(typeof backend.markAllNotificationsRead,'function');
+
+  const sent = [];
+  backend.markNotificationRead = async (id) => { sent.push(id); };
+  await backend.markAllNotificationsRead(['one','one','two']);
+  assert.deepEqual(sent,['one','two'],'same-session batch remains usable with deduplication');
+
+  for (const changed of [
+    { uid:'B',refreshToken:'b-r2' },
+    { uid:'A',refreshToken:'a-r2' },
+  ]) {
+    canonical = { uid:'A',refreshToken:'a-r1' };
+    const calls = [];
+    backend.markNotificationRead = async (id) => {
+      calls.push(id);
+      if (id==='first') canonical=changed;
+    };
+    await assert.rejects(backend.markAllNotificationsRead(['first','second']),
+      /PUSH_OWNER_SESSION_CHANGED/);
+    assert.deepEqual(calls,['first'],
+      'batch must not invoke next receipt after account or token rotation');
+  }
+
+  canonical = { uid:'A',refreshToken:'a-r1' };
+  switchDuringWrite = true;
+  // Use the production per-item method, not the instrumented batch stub.
+  const newModule = { exports: {} };
+  vm.runInNewContext(code, {
+    module: newModule, exports: newModule.exports,
+    require: (key) => imports[key],
+    Date, Set, Map, Promise, Number, String, console,
+  }, { timeout: 2500 });
+  await assert.rejects(newModule.exports.pushBackend.markNotificationRead('A-notice'),
+    /PUSH_OWNER_SESSION_CHANGED/,
+    'successful remote write must not claim completion after logout');
+  switchDuringWrite = false;
+}
+
 const notificationRead=backendSource.slice(backendSource.indexOf('async loadTrustedNotifications('),backendSource.indexOf('async markNotificationRead('));
 assert(notificationRead.includes('assertOwner(); // Reject A'));
 assert(notificationRead.indexOf('assertOwner(); // Reject A') > notificationRead.indexOf('await Promise.all(['));
