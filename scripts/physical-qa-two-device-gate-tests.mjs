@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { validateTwoDeviceEvidence } from './physical-qa-two-device-gate.mjs';
+import { validateTwoDeviceEvidence, parseCanonicalEvidenceUtc } from './physical-qa-two-device-gate.mjs';
 
 const historical = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
 const exactSha = String(historical.build_commit_sha || '1'.repeat(40));
@@ -185,6 +185,40 @@ assert.equal(validateTwoDeviceEvidence([a, wrongGateBinding], now, candidate).pa
 const invalidCandidate = { ...candidate, staging_smoke_commit_sha: '0'.repeat(40) };
 assert.equal(validateTwoDeviceEvidence([a, b], now, invalidCandidate).pass, false);
 
+
+// Gregorian rollovers and non-UTC evidence timestamps must fail closed.
+for (const badTime of [
+  '2026-02-31T04:29:00Z',
+  '2026-09-07T04:29:00+00:00',
+  '2026-09-07T04:29:00',
+  '2026-09-07',
+  '2026-09-07T04:29:00Z ',
+]) {
+  assert.equal(Number.isNaN(parseCanonicalEvidenceUtc(badTime)), true,
+    'R6 must reject invalid/noncanonical timestamp: ' + badTime);
+}
+assert.equal(parseCanonicalEvidenceUtc('2026-09-07T04:29:00.000Z'),
+  Date.parse('2026-09-07T04:29:00.000Z'));
+
+// Before this fix the offsets below parsed within the existing session;
+// the other R6 evidence must not mask that inconsistent acceptance.
+const nonCanonicalCases = [
+  ['screenshot', copy => { copy.screenshots[0].captured_at =
+    copy.screenshots[0].captured_at.replace(/Z$/, '+00:00'); }],
+  ['per-device App Check', copy => { copy.app_check_evidence.observed_at =
+    copy.app_check_evidence.observed_at.replace(/Z$/, '+00:00'); }],
+  ['diagnostic event', copy => { copy.diagnostic_report.events[0].at =
+    copy.diagnostic_report.events[0].at.replace(/Z$/, '+00:00'); }],
+  ['session', copy => { copy.evidence_started_at =
+    copy.evidence_started_at.replace(/Z$/, '+00:00'); }],
+];
+for (const [name, modify] of nonCanonicalCases) {
+  const invalid = structuredClone(a);
+  modify(invalid);
+  assert.equal(validateTwoDeviceEvidence([invalid, b], now, candidate).pass, false,
+    'R6 must reject noncanonical UTC in ' + name);
+}
+
 const templateA = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_DEVICE_A_0.9.json', 'utf8'));
 const templateB = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_DEVICE_B_0.9.json', 'utf8'));
 assert.equal(validateTwoDeviceEvidence([templateA, templateB], now, candidate).pass, false);
@@ -194,4 +228,5 @@ console.log('PASS visual evidence, FCM session/window and per-device App Check b
 console.log('PASS evidence is bound to exact gate/staging/build candidate identity');
 console.log('PASS reversed, stale and out-of-order evidence sessions fail closed');
 console.log('PASS Device A/B templates remain blocked until real evidence exists');
+console.log('PASS impossible Gregorian and noncanonical UTC timestamps fail closed');
 console.log('Two-device Physical QA contract: PASS');
