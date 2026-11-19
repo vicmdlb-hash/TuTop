@@ -259,6 +259,47 @@ exactlyOne(rules, originalOfferLinks, 'offer create repeated reads');
 rules = rules.replace(originalOfferLinks,
   '        && guardianOfferLinksValid(request.resource.data)');
 
+// DEMO-ONLY: preserve the FULL canonical listing-create predicate byte-for-byte
+// apart from replacing repeated request.resource.data dereferences with a
+// single function parameter. This changes no permission or trust condition.
+// Firebase limits whole-request rule evaluation to 1,000 expressions; the
+// positive minor-with-guardian publication paths hit that ceiling.
+const listingMatch = '    match /listings_v2/{listingId} {';
+const createPrefix = '      allow create: if ';
+const updatePrefix = '      allow update: if ';
+exactlyOne(rules, listingMatch, 'single canonical listings V2 match');
+const listingStart = rules.indexOf(listingMatch);
+const createStart = rules.indexOf(createPrefix, listingStart + listingMatch.length);
+const updateStart = rules.indexOf(updatePrefix, createStart + createPrefix.length);
+if (createStart < 0 || updateStart < 0 || createStart > listingStart + 140) {
+  throw new Error('GUARDIAN_DEMO_LISTING_CREATE_DRIFT');
+}
+const originalListingCreate = rules.slice(createStart + createPrefix.length, updateStart).trimEnd();
+if (!originalListingCreate.endsWith(';')) {
+  throw new Error('GUARDIAN_DEMO_LISTING_CREATE_TERMINATOR_DRIFT');
+}
+const originalListingPredicate = originalListingCreate.slice(0, -1).trimEnd();
+if (!originalListingPredicate.includes('guardianCanPublish(request.auth.uid)')
+  || !originalListingPredicate.includes('commerceAccountEligible(request.auth.uid)')
+  || !originalListingPredicate.includes('validUniversityMetadata(request.resource.data)')
+  || originalListingPredicate.includes('listingData')) {
+  throw new Error('GUARDIAN_DEMO_LISTING_AUTHORITY_DRIFT');
+}
+const cachedListingPredicate = originalListingPredicate.replaceAll('request.resource.data', 'listingData');
+if (cachedListingPredicate === originalListingPredicate
+  || cachedListingPredicate.replaceAll('listingData', 'request.resource.data') !== originalListingPredicate) {
+  throw new Error('GUARDIAN_DEMO_LISTING_PREDICATE_EQUIVALENCE_FAILED');
+}
+rules = rules.slice(0, createStart)
+  + createPrefix + 'guardianListingCreateCached(request.resource.data);\n'
+  + rules.slice(updateStart);
+const cachedListingFunction = '    function guardianListingCreateCached(listingData) {\n'
+  + '      return ' + cachedListingPredicate + ';\n'
+  + '    }\n';
+const newListingStart = rules.indexOf(listingMatch);
+rules = rules.slice(0, newListingStart) + cachedListingFunction + rules.slice(newListingStart);
+console.log('GUARDIAN_LISTING_CREATE_CACHED_EQUIVALENT: source round-trip verified, no rule bypass');
+
 // Minimal DEMO-ONLY diagnostic isolates proof verification from marketplace
 // payload/rate/participant preconditions; it is never part of default V2.
 const catchAll = '    match /{document=**} { allow read, write: if false; }';
