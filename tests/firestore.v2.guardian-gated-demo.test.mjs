@@ -186,6 +186,27 @@ for (const round of [2, 3, 4, 5, 6]) {
   });
 }
 
+// R102: the linked chat's trusted PAIR clearance is mandatory to authorize an
+// offer. Actor age/grant and matching IDs alone MUST NOT launder a revoked,
+// expired or never-vetted chat into a new financial/commerce offer.
+test('teen make_offer grant never authorizes offer through an unvetted chat', async () => {
+  await seed('teen_13_17', 'adult', grant(['make_offer']));
+  await seedChat();
+  await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
+test('teen make_offer grant never authorizes offer after pair revocation', async () => {
+  await seed('teen_13_17', 'adult', grant(['make_offer']));
+  await seedChat({ vetted: true, revoked: true });
+  await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
+test('teen make_offer grant never authorizes offer after pair clearance expires', async () => {
+  await seed('teen_13_17', 'adult', grant(['make_offer']));
+  await seedChat({ vetted: true, expiresAt: past() });
+  await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
 test('isolated age proof gate accepts a server-issued adult claim and rejects revoked claim', async () => {
   await seed('adult');
   const buyer = verifiedContext(env, 'buyer').firestore();

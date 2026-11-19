@@ -135,7 +135,11 @@ const helpers = `
         && !exists(/databases/$(database)/documents/listing_reservation_locks/$(data.listing_id))
         && data.listing_id == chat.product_id
         && data.buyer_id == chat.buyer_id
-        && data.seller_id == chat.seller_id;
+        && data.seller_id == chat.seller_id
+        // R102: a linked chat is not a trusted admission merely because
+        // its buyer/seller and listing IDs match. Reject stale/revoked/
+        // unvetted pair authority before any offer is written (DEMO only).
+        && guardianPairReady(chat);
     }
     // DEMO-ONLY: consent lives in the same server-written atomic age record.
     // A client checkbox and an independent legacy consent document do not
