@@ -6,6 +6,7 @@ on:
     branches:
       - fix/post120-physical-failure-cluster
       - integration/tutop-121-122-fcm-owner-ci-20261022
+      - audit/r90-guardian-demo-boundary-20261118
 
 permissions:
   contents: read
@@ -17,7 +18,7 @@ concurrency:
 jobs:
   successor-emulator-security:
     name: Firestore + Storage emulator security
-    if: github.ref_name == 'fix/post120-physical-failure-cluster' || github.ref_name == 'integration/tutop-121-122-fcm-owner-ci-20261022'
+    if: github.ref_name == 'fix/post120-physical-failure-cluster' || github.ref_name == 'integration/tutop-121-122-fcm-owner-ci-20261022' || github.ref_name == 'audit/r90-guardian-demo-boundary-20261118'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
