@@ -300,8 +300,8 @@ const newListingStart = rules.indexOf(listingMatch);
 rules = rules.slice(0, newListingStart) + cachedListingFunction + rules.slice(newListingStart);
 console.log('GUARDIAN_LISTING_CREATE_CACHED_EQUIVALENT: source round-trip verified, no rule bypass');
 
-// DEMO-ONLY: cache canonical offer chat snapshots in the offer-create base
-// predicate, preserving the exact original validation requirements. The
+// DEMO-ONLY: cache the offer request payload in the base predicate without
+// duplicating canonical listing/chat reads already in guardianOfferLinksValid. The
 // capability-specific dual trusted age/guardian checks AND canonical
 // moderation/reservation-lock check remain mandatory direct allow clauses.
 // Round-trip source assertions prevent accidentally dropping a predicate.
@@ -324,17 +324,13 @@ const linkSegment = '\n        && ' + linkCall;
 if (originalOfferPredicate.split(pairSegment).length !== 2
   || originalOfferPredicate.split(linkSegment).length !== 2
   || !originalOfferPredicate.includes('commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)')
-  || !originalOfferPredicate.includes('chatDoc(request.resource.data.chat_id).data')) {
+) {
   throw new Error('GUARDIAN_DEMO_OFFER_GUARD_DRIFT');
 }
 const offerBasePredicate = originalOfferPredicate.replace(pairSegment, '').replace(linkSegment, '');
-let cachedOfferBase = offerBasePredicate.replaceAll('request.resource.data', 'offerData');
-cachedOfferBase = cachedOfferBase.replaceAll('chatDoc(offerData.chat_id).data', 'chatData');
-const offerRestored = cachedOfferBase
-  .replaceAll('chatData', 'chatDoc(offerData.chat_id).data')
-  .replaceAll('offerData', 'request.resource.data');
-if (offerRestored !== offerBasePredicate
-  || cachedOfferBase.includes('chatDoc(offerData.chat_id).data')) {
+const cachedOfferBase = offerBasePredicate.replaceAll('request.resource.data', 'offerData');
+const offerRestored = cachedOfferBase.replaceAll('offerData', 'request.resource.data');
+if (offerRestored !== offerBasePredicate || cachedOfferBase === offerBasePredicate) {
   throw new Error('GUARDIAN_DEMO_OFFER_PREDICATE_EQUIVALENCE_FAILED');
 }
 rules = rules.slice(0, offerCreateStart)
@@ -342,7 +338,6 @@ rules = rules.slice(0, offerCreateStart)
   + ' && guardianOfferCreateBaseCached(request.resource.data);\n'
   + rules.slice(offerUpdateStart);
 const offerHelper = '    function guardianOfferCreateBaseCached(offerData) {\n'
-  + '      let chatData = chatDoc(offerData.chat_id).data;\n'
   + '      return ' + cachedOfferBase + ';\n'
   + '    }\n';
 const newOfferStart = rules.indexOf(offerMatch);
