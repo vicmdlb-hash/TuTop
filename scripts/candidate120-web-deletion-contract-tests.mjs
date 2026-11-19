@@ -86,6 +86,41 @@ assert.match(loginHandler, /try \{\s*await refreshRequestStatus\(\);\s*\} catch 
 assert.match(loginHandler, /La sesión se inició, pero no pudimos consultar el estado de eliminación/);
 assert.match(loginHandler, /\} catch \{\s*clearSession\(\);/);
 
+// The initial config request can resolve AFTER a second request authenticated
+// an account. Its obsolete success/failure must not overwrite that session's
+// deletion status or disable controls belonging to a valid logged-in user.
+const bootHandler = client.slice(client.lastIndexOf('\nloadConfig()\n')).trim();
+assert.match(bootHandler, /if \(!state\.busy && !state\.session\)/);
+assert.match(bootHandler, /if \(state\.busy \|\| state\.session \|\| state\.config\) return;/);
+async function runBootScenario({ busy = false, session = null, config = null, fail = false } = {}) {
+  const messages = [];
+  const loginButton = { disabled: false };
+  const context = {
+    state: { busy, session, config },
+    loginButton,
+    setStatus: (message, tone) => messages.push({ message, tone }),
+    loadConfig: () => fail
+      ? Promise.reject(new Error('synthetic stale config failure'))
+      : Promise.resolve(),
+  };
+  await vm.runInNewContext(bootHandler, context);
+  return { messages, disabled: loginButton.disabled };
+}
+const signedInAfterBoot = await runBootScenario({ session: { uid: 'A' } });
+assert.equal(signedInAfterBoot.messages.length, 0,
+  'late config boot must not replace an authenticated deletion status');
+const loginInProgress = await runBootScenario({ busy: true });
+assert.equal(loginInProgress.messages.length, 0, 'late config must not replace in-progress login status');
+const ordinaryBoot = await runBootScenario();
+assert.equal(ordinaryBoot.messages.length, 1, 'idle boot must still show sign-in directions');
+assert.match(ordinaryBoot.messages[0].message, /Inicia sesión/);
+const staleFailure = await runBootScenario({ fail: true, session: { uid: 'A' }, config: { projectId: 'staging' } });
+assert.equal(staleFailure.messages.length, 0, 'stale boot failure must not replace valid session status');
+assert.equal(staleFailure.disabled, false, 'stale boot failure must not disable valid account controls');
+const freshFailure = await runBootScenario({ fail: true });
+assert.equal(freshFailure.disabled, true, 'genuine boot failure must prevent unauthenticated login');
+assert.equal(freshFailure.messages[0].tone, 'error');
+
 // A pending request must never be re-enabled by changing confirmation.
 const busyHandler = client.slice(client.indexOf('function setBusy('), client.indexOf('function clearSession('));
 assert.match(busyHandler, /state\.busy = Boolean\(busy\)/);
