@@ -48,6 +48,13 @@ jobs:
       - name: Install emulator harness without mutating manifests
         run: npm install --no-save --package-lock=false --no-audit --no-fund @firebase/rules-unit-testing@5.0.2 firebase@12.18.0
 
+      - name: Prove source-only web deletion, first moderator and erasure safety contracts
+        run: |
+          node scripts/candidate120-web-deletion-contract-tests.mjs
+          node scripts/first-admin-bootstrap-gate-tests.mjs
+          node scripts/account-erasure-admission-lock-tests.mjs
+          node scripts/account-erasure-atomic-commit-tests.mjs
+
       - name: Verify dependency manifests stayed immutable
         run: git diff --exit-code -- package.json package-lock.json
 
