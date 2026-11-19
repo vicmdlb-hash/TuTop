@@ -55,6 +55,18 @@ jobs:
           node scripts/account-erasure-admission-lock-tests.mjs
           node scripts/account-erasure-atomic-commit-tests.mjs
 
+      - name: Prove trusted guardian revocation and privacy source guards (synthetic only)
+        # These local Node checks use fixtures and repository files only.
+        # No Firebase token, credential, Android device, admin apply or deploy.
+        run: |
+          node scripts/guardian-capabilities-tests.mjs
+          node scripts/guardian-revocation-preflight-tests.mjs
+          node scripts/moderation-admin-audit-tests.mjs
+          node scripts/post116-erasure-completion-attestation-tests.mjs
+          node scripts/physical-qa-telemetry-privacy-tests.mjs
+          node scripts/local-diagnostics-privacy-tests.mjs
+          node scripts/staging-v2-readiness-tests.mjs
+
       - name: Verify dependency manifests stayed immutable
         run: git diff --exit-code -- package.json package-lock.json
 
