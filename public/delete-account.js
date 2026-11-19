@@ -281,8 +281,16 @@ logoutButton.addEventListener('click', () => {
 });
 
 loadConfig()
-  .then(() => setStatus('Inicia sesión con tu cuenta TuTop para consultar o solicitar la eliminación.'))
+  .then(() => {
+    // A slow initial config response must not replace an in-progress sign-in
+    // or an authenticated account's deletion-request status.
+    if (!state.busy && !state.session)
+      setStatus('Inicia sesión con tu cuenta TuTop para consultar o solicitar la eliminación.');
+  })
   .catch(() => {
+    // A later successful config load may already have authenticated the user.
+    // Never disable that valid session because an earlier boot request failed.
+    if (state.busy || state.session || state.config) return;
     setStatus('Este recurso todavía no tiene una configuración de release válida. No se puede iniciar una solicitud.', 'error');
     loginButton.disabled = true;
   });
