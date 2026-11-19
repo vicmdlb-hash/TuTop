@@ -1,6 +1,6 @@
 import { createNativeSessionWriteQueue } from '../lib/nativeSessionWriteQueue';
 import { FirebaseRestClient, type AuthSession } from './firebaseRest';
-import { isNativeSecureSessionRuntime, markNativeSignedOut, persistNativeSessionRaw, volatileSessionStorage } from './nativeSecureSession';
+import { isNativeSecureSessionRuntime, markNativeSignedOut, parseValidNativeAuthSession, persistNativeSessionRaw, volatileSessionStorage } from './nativeSecureSession';
 
 const LEGACY_SESSION_KEY = 'tutop.firebase.session.v1';
 const proto = FirebaseRestClient.prototype as any;
@@ -31,21 +31,7 @@ if (!proto.__tutopNativeSecureSessionInstalled) {
       if (!key) return null;
       const raw = volatileSessionStorage().getItem(key);
       if (!raw) return null;
-      const parsed = JSON.parse(raw) as AuthSession;
-      // Keep Android's process-scoped encrypted restore as strict as the web
-      // FirebaseRestClient reader. Malformed secure-store/legacy migration
-      // JSON must not become a usable authenticated runtime session.
-      const validIdentity = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        && typeof parsed.uid === 'string' && parsed.uid.length > 0
-        && parsed.uid.length <= 256 && parsed.uid.trim() === parsed.uid
-        && typeof parsed.idToken === 'string' && parsed.idToken.length > 0
-        && parsed.idToken.length <= 16384
-        && typeof parsed.refreshToken === 'string' && parsed.refreshToken.length > 0
-        && parsed.refreshToken.length <= 16384
-        && Number.isFinite(parsed.expiresAt) && parsed.expiresAt >= 0
-        && (parsed.phone === undefined || typeof parsed.phone === 'string');
-      if (!validIdentity) return null;
-      return parsed;
+      return parseValidNativeAuthSession(raw);
     } catch { return null; }
   };
 
