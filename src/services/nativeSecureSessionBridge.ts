@@ -32,7 +32,19 @@ if (!proto.__tutopNativeSecureSessionInstalled) {
       const raw = volatileSessionStorage().getItem(key);
       if (!raw) return null;
       const parsed = JSON.parse(raw) as AuthSession;
-      if (!parsed.uid || !parsed.idToken || !parsed.refreshToken) return null;
+      // Keep Android's process-scoped encrypted restore as strict as the web
+      // FirebaseRestClient reader. Malformed secure-store/legacy migration
+      // JSON must not become a usable authenticated runtime session.
+      const validIdentity = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        && typeof parsed.uid === 'string' && parsed.uid.length > 0
+        && parsed.uid.length <= 256 && parsed.uid.trim() === parsed.uid
+        && typeof parsed.idToken === 'string' && parsed.idToken.length > 0
+        && parsed.idToken.length <= 16384
+        && typeof parsed.refreshToken === 'string' && parsed.refreshToken.length > 0
+        && parsed.refreshToken.length <= 16384
+        && Number.isFinite(parsed.expiresAt) && parsed.expiresAt >= 0
+        && (parsed.phone === undefined || typeof parsed.phone === 'string');
+      if (!validIdentity) return null;
       return parsed;
     } catch { return null; }
   };
