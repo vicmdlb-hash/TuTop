@@ -174,6 +174,18 @@ test('teen with current guardian make_offer grant can submit an offer', async ()
   }
 });
 
+// R99: stress the EXACT positive make_offer/guardian contract on freshly cleared
+// emulator fixtures. No relaxed assertions, retries, suppression, or real minors.
+// Each top-level test triggers beforeEach(env.clearFirestore), so an intermittent
+// Firestore Rules exists() service-call denial causes the entire CI to FAIL.
+for (const round of [2, 3, 4, 5, 6]) {
+  test(`teen authorized make_offer is stable across fresh isolated fixture rounds ${round}/6`, async () => {
+    await seed('teen_13_17', 'adult', grant(['make_offer']));
+    await seedChat({ vetted: true });
+    await assertSucceeds(createOffer(verifiedContext(env, 'buyer').firestore()));
+  });
+}
+
 test('isolated age proof gate accepts a server-issued adult claim and rejects revoked claim', async () => {
   await seed('adult');
   const buyer = verifiedContext(env, 'buyer').firestore();
