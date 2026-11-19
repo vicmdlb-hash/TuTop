@@ -96,6 +96,10 @@ jobs:
           tests/firestore.v2.guardian-gated-demo.test.mjs"
 
       - name: Guardian capability rules emulator challenge (demo only)
+        id: guardian_demo
+        # Keep running independent suites only on the isolated audit branch.
+        # The explicit final gate below restores FAILURE for any guardian failure.
+        continue-on-error: ${{ github.ref_name == 'audit/r90-guardian-demo-boundary-20261118' }}
         run: >
           npx --yes firebase-tools@15.29.0 emulators:exec
           --only firestore,storage
@@ -145,3 +149,14 @@ jobs:
       - name: Final dependency immutability check
         if: always()
         run: git diff --exit-code -- package.json package-lock.json
+
+      - name: Audit guardian gate must remain red unless all guardian tests pass
+        if: ${{ always() && github.ref_name == 'audit/r90-guardian-demo-boundary-20261118' }}
+        run: |
+          echo "Guardian demo original outcome: ${{ steps.guardian_demo.outcome }}"
+          if [ "${{ steps.guardian_demo.outcome }}" != 'success' ]; then
+            echo 'GUARDIAN_DEMO_NOT_GREEN: audit job MUST fail despite independent suite execution'
+            exit 1
+          fi
+          echo 'GUARDIAN_DEMO_GREEN: independent checks still required to pass'
+
