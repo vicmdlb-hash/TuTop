@@ -207,6 +207,33 @@ test('teen make_offer grant never authorizes offer after pair clearance expires'
   await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
 });
 
+// R103: offer permission must not bypass the same trusted pair clearance
+// for adults, and must reject a future-dated or overlong teen chat grant.
+// These synthetic assertions never confer real age/guardian authority.
+test('adult offer cannot use an unvetted linked chat', async () => {
+  await seed('adult');
+  await seedChat();
+  await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
+test('adult offer cannot use revoked pair clearance', async () => {
+  await seed('adult');
+  await seedChat({ vetted: true, revoked: true });
+  await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
+test('teen offer cannot use future-dated pair clearance', async () => {
+  await seed('teen_13_17', 'adult', grant(['make_offer']));
+  await seedChat({ vetted: true, issuedAt: future() });
+  await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
+test('teen offer cannot use overlong pair clearance', async () => {
+  await seed('teen_13_17', 'adult', grant(['make_offer']));
+  await seedChat({ vetted: true, expiresAt: future() });
+  await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
 test('isolated age proof gate accepts a server-issued adult claim and rejects revoked claim', async () => {
   await seed('adult');
   const buyer = verifiedContext(env, 'buyer').firestore();

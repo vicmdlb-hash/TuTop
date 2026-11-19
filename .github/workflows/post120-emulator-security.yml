@@ -67,6 +67,15 @@ jobs:
           node scripts/local-diagnostics-privacy-tests.mjs
           node scripts/staging-v2-readiness-tests.mjs
 
+      - name: Check FCM owner isolation, Android read-only and erasure truth (source only)
+        # Synthetic fixtures; never send pushes, create accounts or deploy.
+        run: |
+          node scripts/post120-fcm-single-target-gate-tests.mjs
+          node scripts/post116-push-ownership-contract-tests.mjs
+          node scripts/staging-android-read-only-prep-tests.mjs
+          node scripts/staging-config-read-context-tests.mjs
+          node --experimental-strip-types scripts/post116-erasure-user-status-truth-tests.mjs
+
       - name: Verify dependency manifests stayed immutable
         run: git diff --exit-code -- package.json package-lock.json
 
