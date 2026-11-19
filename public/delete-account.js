@@ -1,6 +1,7 @@
 import { trustedWebDeletionStatus } from './deletion-completion-proof.js';
 import { deletionJsonRequest } from './deletion-request-timeout.js';
 
+const EXPECTED_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const CONFIG_URL = '/tutop-web-config.json';
 const AUTH_BASE = 'https://identitytoolkit.googleapis.com/v1';
 const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1';
@@ -55,6 +56,10 @@ async function loadConfig() {
     credentials: 'same-origin',
   });
   if (!config?.apiKey || !config?.projectId || !config?.appId) throw new Error('WEB_CONFIG_INCOMPLETE');
+  // This private-beta deletion resource must not sign users into a wrong
+  // Firebase project if public hosting config is stale or misdirected.
+  if (config.projectId !== EXPECTED_PROJECT || config.environment !== 'staging')
+    throw new Error('WEB_STAGING_CONFIG_REQUIRED');
   state.config = {
     apiKey: String(config.apiKey),
     projectId: String(config.projectId),
