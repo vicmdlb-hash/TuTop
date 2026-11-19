@@ -22,6 +22,39 @@ assert.doesNotMatch(html,/<script(?![^>]*\ssrc=)[^>]*>/i);
 assert.match(html,/sin abrir ni reinstalar la app/i);
 assert.match(html,/Solicitar eliminación de mi cuenta TuTop/i);
 
+
+// A wrong Firebase project or environment must be rejected BEFORE Auth login.
+assert.match(client, /const EXPECTED_PROJECT = 'tutop-beta-vicmdlb-1356585881'/);
+assert.match(client, /config.projectId !== EXPECTED_PROJECT/);
+assert.match(client, /config.environment !== 'staging'/);
+const loadConfigSource = client.slice(
+  client.indexOf('async function loadConfig()'),
+  client.indexOf('async function authRequest('),
+);
+async function checkWebConfig(config) {
+  const ctx = {
+    state: { config: null },
+    CONFIG_URL: '/tutop-web-config.json',
+    EXPECTED_PROJECT: 'tutop-beta-vicmdlb-1356585881',
+    deletionJsonRequest: async () => ({ data: config }),
+  };
+  await vm.runInNewContext(loadConfigSource + '\nloadConfig();', ctx);
+  return ctx.state.config;
+}
+const validWebConfig = {
+  projectId: 'tutop-beta-vicmdlb-1356585881',
+  appId: 'synthetic-app',
+  apiKey: 'synthetic-non-secret',
+  environment: 'staging',
+};
+assert.equal((await checkWebConfig(validWebConfig)).projectId, validWebConfig.projectId);
+for (const bad of [
+  { ...validWebConfig, projectId: 'production' },
+  { ...validWebConfig, projectId: 'tutop-3a4f7' },
+  { ...validWebConfig, environment: 'production' },
+  { ...validWebConfig, environment: '' },
+]) await assert.rejects(checkWebConfig(bad), { message: 'WEB_STAGING_CONFIG_REQUIRED' });
+
 assert.match(client,/accounts:signInWithPassword/);
 assert.match(client,/accounts:lookup/);
 assert.match(client,/account_deletion_requests/);
