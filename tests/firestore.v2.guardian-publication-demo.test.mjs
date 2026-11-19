@@ -33,9 +33,15 @@ const listing = () => {
     created_at: timestamp, updated_at: timestamp,
   };
 };
+const ugcConsent = (extra = {}) => ({
+  subjectUid: 'seller', issuer: 'trusted_server',
+  rulesVersion: 'ugc-beta-draft-2026-11-14-v1',
+  granted: true, revoked: false, expires_at: expires(3_600_000),
+  guardianConsentVersion: 'families-2026-v1', ...extra,
+});
 const age = (band, extra = {}) => ({
   subjectUid: 'seller', band, issuer: 'trusted_server',
-  revoked: false, expires_at: expires(3_600_000), ...extra,
+  revoked: false, expires_at: expires(3_600_000), ugc: ugcConsent(), ...extra,
 });
 const guardian = (extra = {}) => ({
   childUid: 'seller', guardianUid: 'verified-parent',
@@ -114,4 +120,35 @@ test('under13 with irrelevant capability is denied', async () => {
 test('unknown-age account cannot publish', async () => {
   await seed(null, guardian());
   await assertFails(publish('age-unverified'));
+});
+
+test('adult without valid UGC consent fails closed', async () => {
+  await seed(age('adult', { ugc: null }));
+  await assertFails(publish('adult-ugc-missing'));
+});
+test('revoked, expired, or untrusted UGC consent denies listing creation', async () => {
+  await seed(age('adult', { ugc: ugcConsent({ revoked: true }) }));
+  await assertFails(publish('ugc-revoked'));
+  await seed(age('adult', { ugc: ugcConsent({ expires_at: expires(-1_000) }) }));
+  await assertFails(publish('ugc-expired'));
+  await seed(age('adult', { ugc: ugcConsent({ issuer: 'client' }) }));
+  await assertFails(publish('ugc-untrusted'));
+});
+test('old UGC policy, other account consent and ungranted consent fail closed', async () => {
+  await seed(age('adult', { ugc: ugcConsent({ rulesVersion: 'outdated-version' }) }));
+  await assertFails(publish('ugc-wrong-version'));
+  await seed(age('adult', { ugc: ugcConsent({ subjectUid: 'other' }) }));
+  await assertFails(publish('ugc-wrong-subject'));
+  await seed(age('adult', { ugc: ugcConsent({ granted: false }) }));
+  await assertFails(publish('ugc-not-granted'));
+});
+test('teen UGC consent is bound to the current guardian authorization epoch', async () => {
+  const renewedGuardian = guardian({ consentVersion: 'families-2026-v2' });
+  await seed(age('teen_13_17', { guardian: renewedGuardian }));
+  await assertFails(publish('ugc-stale-guardian-epoch'));
+  await seed(age('teen_13_17', {
+    guardian: renewedGuardian,
+    ugc: ugcConsent({ guardianConsentVersion: 'families-2026-v2' }),
+  }));
+  await assertSucceeds(publish('ugc-current-guardian-epoch'));
 });
