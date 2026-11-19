@@ -1,6 +1,6 @@
 import { createNativeSessionWriteQueue } from '../lib/nativeSessionWriteQueue';
 import { FirebaseRestClient, type AuthSession } from './firebaseRest';
-import { isNativeSecureSessionRuntime, markNativeSignedOut, persistNativeSessionRaw, volatileSessionStorage } from './nativeSecureSession';
+import { isNativeSecureSessionRuntime, markNativeSignedOut, parseValidNativeAuthSession, persistNativeSessionRaw, volatileSessionStorage } from './nativeSecureSession';
 
 const LEGACY_SESSION_KEY = 'tutop.firebase.session.v1';
 const proto = FirebaseRestClient.prototype as any;
@@ -31,9 +31,7 @@ if (!proto.__tutopNativeSecureSessionInstalled) {
       if (!key) return null;
       const raw = volatileSessionStorage().getItem(key);
       if (!raw) return null;
-      const parsed = JSON.parse(raw) as AuthSession;
-      if (!parsed.uid || !parsed.idToken || !parsed.refreshToken) return null;
-      return parsed;
+      return parseValidNativeAuthSession(raw);
     } catch { return null; }
   };
 
