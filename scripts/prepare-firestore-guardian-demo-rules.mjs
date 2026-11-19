@@ -300,6 +300,61 @@ const newListingStart = rules.indexOf(listingMatch);
 rules = rules.slice(0, newListingStart) + cachedListingFunction + rules.slice(newListingStart);
 console.log('GUARDIAN_LISTING_CREATE_CACHED_EQUIVALENT: source round-trip verified, no rule bypass');
 
+// DEMO-ONLY: cache legacy product/chat snapshots in the offer-create base
+// predicate, preserving the exact original validation requirements. The
+// capability-specific dual trusted age/guardian checks AND canonical
+// moderation/reservation-lock check remain mandatory direct allow clauses.
+// Round-trip source assertions prevent accidentally dropping a predicate.
+const offerMatch = '    match /offers/{offerId} {';
+exactlyOne(rules, offerMatch, 'single canonical offer match');
+const offerStart = rules.indexOf(offerMatch);
+const offerCreateStart = rules.indexOf(createPrefix, offerStart + offerMatch.length);
+const offerUpdateStart = rules.indexOf(updatePrefix, offerCreateStart + createPrefix.length);
+if (offerCreateStart < 0 || offerUpdateStart < 0
+  || offerCreateStart > offerStart + 1200) {
+  throw new Error('GUARDIAN_DEMO_OFFER_CREATE_DRIFT');
+}
+const originalOfferCreate = rules.slice(offerCreateStart + createPrefix.length, offerUpdateStart).trimEnd();
+if (!originalOfferCreate.endsWith(';')) throw new Error('GUARDIAN_DEMO_OFFER_CREATE_TERMINATOR_DRIFT');
+const originalOfferPredicate = originalOfferCreate.slice(0, -1).trimEnd();
+const pairCall = "guardianPairCapabilityAllowed(request.resource.data.buyer_id, request.resource.data.seller_id, 'make_offer')";
+const linkCall = 'guardianOfferLinksValid(request.resource.data)';
+const pairSegment = ' && (' + pairCall + ')';
+const linkSegment = '\n        && ' + linkCall;
+if (originalOfferPredicate.split(pairSegment).length !== 2
+  || originalOfferPredicate.split(linkSegment).length !== 2
+  || !originalOfferPredicate.includes('commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)')
+  || !originalOfferPredicate.includes('productDoc(request.resource.data.listing_id).data')
+  || !originalOfferPredicate.includes('chatDoc(request.resource.data.chat_id).data')) {
+  throw new Error('GUARDIAN_DEMO_OFFER_GUARD_DRIFT');
+}
+const offerBasePredicate = originalOfferPredicate.replace(pairSegment, '').replace(linkSegment, '');
+let cachedOfferBase = offerBasePredicate.replaceAll('request.resource.data', 'offerData');
+cachedOfferBase = cachedOfferBase
+  .replaceAll('productDoc(offerData.listing_id).data', 'productData')
+  .replaceAll('chatDoc(offerData.chat_id).data', 'chatData');
+const offerRestored = cachedOfferBase
+  .replaceAll('productData', 'productDoc(offerData.listing_id).data')
+  .replaceAll('chatData', 'chatDoc(offerData.chat_id).data')
+  .replaceAll('offerData', 'request.resource.data');
+if (offerRestored !== offerBasePredicate
+  || cachedOfferBase.includes('productDoc(offerData.listing_id).data')
+  || cachedOfferBase.includes('chatDoc(offerData.chat_id).data')) {
+  throw new Error('GUARDIAN_DEMO_OFFER_PREDICATE_EQUIVALENCE_FAILED');
+}
+rules = rules.slice(0, offerCreateStart)
+  + createPrefix + '(' + pairCall + ') && (' + linkCall + ')'
+  + ' && guardianOfferCreateBaseCached(request.resource.data);\n'
+  + rules.slice(offerUpdateStart);
+const offerHelper = '    function guardianOfferCreateBaseCached(offerData) {\n'
+  + '      let productData = productDoc(offerData.listing_id).data;\n'
+  + '      let chatData = chatDoc(offerData.chat_id).data;\n'
+  + '      return ' + cachedOfferBase + ';\n'
+  + '    }\n';
+const newOfferStart = rules.indexOf(offerMatch);
+rules = rules.slice(0, newOfferStart) + offerHelper + rules.slice(newOfferStart);
+console.log('GUARDIAN_OFFER_CREATE_CACHED_EQUIVALENT: all predicates restored, reservation lock retained');
+
 // Minimal DEMO-ONLY diagnostic isolates proof verification from marketplace
 // payload/rate/participant preconditions; it is never part of default V2.
 const catchAll = '    match /{document=**} { allow read, write: if false; }';
