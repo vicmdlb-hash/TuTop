@@ -50,6 +50,12 @@ assert.equal(config.emulators?.ui?.enabled, false);
 // Passing a source contract is never authorization to release to minors.
 const guardianDemoConfig = JSON.parse(fs.readFileSync('firebase.guardian-demo.json', 'utf8'));
 const guardianDemoGenerator = fs.readFileSync('scripts/prepare-firestore-guardian-demo-rules.mjs', 'utf8');
+// A future guardian demo cannot silently skip trusted, versioned UGC consent.
+assert.match(guardianDemoGenerator, /function guardianUgcConsentReady\(uid, ageProof\)/);
+assert.match(guardianDemoGenerator, /guardianUgcConsentReady\(uid, proof\)/);
+assert.match(guardianDemoGenerator, /ugc-beta-draft-2026-11-14-v1/);
+assert.match(guardianDemoGenerator, /guardianConsentVersion == ageProof\.guardian\.consentVersion/);
+
 const sourceRules = fs.readFileSync('firebase/firestore.v2.rules', 'utf8');
 const erasureSmoke = fs.readFileSync('scripts/staging-account-erasure-smoke.mjs', 'utf8');
 
