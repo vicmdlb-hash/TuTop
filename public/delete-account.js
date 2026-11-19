@@ -1,6 +1,7 @@
 import { trustedWebDeletionStatus } from './deletion-completion-proof.js';
 import { deletionJsonRequest } from './deletion-request-timeout.js';
 
+const EXPECTED_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const CONFIG_URL = '/tutop-web-config.json';
 const AUTH_BASE = 'https://identitytoolkit.googleapis.com/v1';
 const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1';
@@ -55,6 +56,10 @@ async function loadConfig() {
     credentials: 'same-origin',
   });
   if (!config?.apiKey || !config?.projectId || !config?.appId) throw new Error('WEB_CONFIG_INCOMPLETE');
+  // This private-beta deletion resource must not sign users into a wrong
+  // Firebase project if public hosting config is stale or misdirected.
+  if (config.projectId !== EXPECTED_PROJECT || config.environment !== 'staging')
+    throw new Error('WEB_STAGING_CONFIG_REQUIRED');
   state.config = {
     apiKey: String(config.apiKey),
     projectId: String(config.projectId),
@@ -276,8 +281,16 @@ logoutButton.addEventListener('click', () => {
 });
 
 loadConfig()
-  .then(() => setStatus('Inicia sesión con tu cuenta TuTop para consultar o solicitar la eliminación.'))
+  .then(() => {
+    // A slow initial config response must not replace an in-progress sign-in
+    // or an authenticated account's deletion-request status.
+    if (!state.busy && !state.session)
+      setStatus('Inicia sesión con tu cuenta TuTop para consultar o solicitar la eliminación.');
+  })
   .catch(() => {
+    // A later successful config load may already have authenticated the user.
+    // Never disable that valid session because an earlier boot request failed.
+    if (state.busy || state.session || state.config) return;
     setStatus('Este recurso todavía no tiene una configuración de release válida. No se puede iniciar una solicitud.', 'error');
     loginButton.disabled = true;
   });
