@@ -68,7 +68,7 @@ function harness(native = true) {
   return { client: new Client(), requests, drain, requestCount, tombstone,
     getEncrypted: () => encrypted, getVolatile: () => sessionStorage.getItem(key) };
 }
-const account = (uid, nonce) => ({ uid, idToken: 'synthetic-id-' + nonce, refreshToken: 'synthetic-refresh-' + nonce });
+const account = (uid, nonce) => ({ uid, idToken: 'synthetic-id-' + nonce, refreshToken: 'synthetic-refresh-' + nonce, expiresAt: 0, phone: '+520000000000' });
 
 {
   const h = harness();
@@ -143,5 +143,38 @@ const account = (uid, nonce) => ({ uid, idToken: 'synthetic-id-' + nonce, refres
   assert.equal(h.client.session.uid, 'W');
   assert.equal(h.requests.length, 0, 'native Keystore must not be invoked on web');
 }
+
+// Android restore must enforce the same structural checks as the browser's
+// FirebaseRestClient localStorage reader. Only synthetic process-memory values
+// are used here; this test never touches Android, Keystore or Firebase.
+const validNative = harness();
+validNative.client.persistSession(account('A', 'valid'));
+assert.equal(validNative.client.readStoredSession()?.uid, 'A');
+const noOptionalPhone = harness();
+const { phone: _optionalPhone, ...phoneOmitted } = account('A', 'no-phone');
+noOptionalPhone.client.persistSession(phoneOmitted);
+assert.equal(noOptionalPhone.client.readStoredSession()?.uid, 'A');
+
+for (const malformed of [
+  { ...account('A', 'bad'), uid: {} },
+  { ...account('A', 'bad'), uid: ' A ' },
+  { ...account('A', 'bad'), uid: 'A'.repeat(257) },
+  { ...account('A', 'bad'), idToken: {} },
+  { ...account('A', 'bad'), idToken: '' },
+  { ...account('A', 'bad'), idToken: 'x'.repeat(16385) },
+  { ...account('A', 'bad'), refreshToken: ['synthetic-refresh'] },
+  { ...account('A', 'bad'), refreshToken: '' },
+  { ...account('A', 'bad'), refreshToken: 'x'.repeat(16385) },
+  { ...account('A', 'bad'), expiresAt: '0' },
+  { ...account('A', 'bad'), expiresAt: -1 },
+  { ...account('A', 'bad'), expiresAt: Number.NaN },
+  { ...account('A', 'bad'), phone: {} },
+]) {
+  const h = harness();
+  h.client.persistSession(malformed);
+  assert.equal(h.client.readStoredSession(), null,
+    'malformed Android secure session must never be restored as authenticated');
+}
+console.log('PASS 13 malformed Android secure-session restore fixtures rejected; valid sessions retain functionality');
 
 console.log('PASS 7 synthetic native secure-session write-order/tombstone regressions; no plugin or Firebase calls');
