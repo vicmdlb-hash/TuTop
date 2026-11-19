@@ -137,13 +137,37 @@ const helpers = `
         && data.buyer_id == chat.buyer_id
         && data.seller_id == chat.seller_id;
     }
+    // DEMO-ONLY: consent lives in the same server-written atomic age record.
+    // A client checkbox and an independent legacy consent document do not
+    // authorize UGC. Version and guardian epoch must be current.
+    function guardianUgcConsentReady(uid, ageProof) {
+      return ageProof.keys().hasAll(['ugc'])
+        && ageProof.ugc is map
+        && ageProof.ugc.keys().hasAll([
+          'subjectUid','issuer','rulesVersion','granted','revoked','expires_at'
+        ])
+        && ageProof.ugc.subjectUid == uid
+        && ageProof.ugc.issuer == 'trusted_server'
+        && ageProof.ugc.rulesVersion == 'ugc-beta-draft-2026-11-14-v1'
+        && ageProof.ugc.granted == true
+        && ageProof.ugc.revoked == false
+        && ageProof.ugc.expires_at is timestamp
+        && ageProof.ugc.expires_at > request.time
+        && (ageProof.band == 'adult'
+          || (ageProof.keys().hasAll(['guardian'])
+            && ageProof.guardian is map
+            && ageProof.guardian.keys().hasAll(['consentVersion'])
+            && ageProof.ugc.keys().hasAll(['guardianConsentVersion'])
+            && ageProof.ugc.guardianConsentVersion == ageProof.guardian.consentVersion));
+    }
     function guardianCanPublish(uid) {
       // One age proof read, then one grant read only for the under13 branch.
       let proof = get(guardianAgeDoc(uid)).data;
       return signedIn() && uid is string
         && guardianAgeDataAllowed(uid, ['adult','teen_13_17','under_13'], proof)
         && (proof.band == 'adult'
-          || guardianValidGrant(uid, 'publish_listing', proof));
+          || guardianValidGrant(uid, 'publish_listing', proof))
+        && guardianUgcConsentReady(uid, proof);
     }
 `;
 rules = rules.replace(signedIn, signedIn + helpers);
