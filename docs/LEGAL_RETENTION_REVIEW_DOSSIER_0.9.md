@@ -44,3 +44,19 @@ Estado: **PENDIENTE REVISIÓN LEGAL**. Este dossier no fija plazos, bases legale
 ## Gate
 
 No reemplazar `PENDIENTE LEGAL` por una duración, base jurídica, jurisdicción o excepción inferida por ingeniería. Una decisión sólo se considera cerrada cuando un responsable autorizado completa todos los campos, identifica la evidencia revisada y deja trazabilidad de aprobación y vigencia.
+
+## R105 — Diseño de ensayo de borrado con identidad desechable (19 nov 2026 CDMX)
+<!-- TUTOP_OWNER1_R105_20261119_DISPOSABLE_ERASURE_PLAN_NO_APPLY -->
+
+**AUTORIZADO: DISEÑAR, NO EJECUTAR BORRADO REAL.** No usar ninguna de las dos cuentas de correo verificadas existentes hasta establecer su titularidad legítima. No crear una cuenta `smoke`, no sembrar datos en Firebase y no activar `--apply` en staging por el hecho de contar con este diseño. El script histórico `scripts/staging-account-erasure-smoke.mjs` tiene un STOP incondicional justificado: las admisiones de chat/oferta requieren congelamiento atómico comprobado; no retirarlo para forzar verde.
+
+**Secuencia diseñada para aprobación posterior:**
+
+1. Inventario de precondiciones: proyecto staging exacto, políticas legales y retenciones revisadas, revisión de seguridad independiente del congelamiento de nuevas ofertas/chats/transacciones, alcance de datos y rollback de sólo recursos sintéticos. Comprobar que no se reutilizan cuentas, dispositivos o mensajes personales.
+2. Crear una cuenta **nueva, explícitamente desechable y aislada** sólo mediante una ejecución posterior específica y aprobada, con correo controlado por su responsable y sin datos reales de menores. Etiquetar su UID como prueba restringida; su secreto no se registra en logs.
+3. Sembrar exclusivamente documentos sintéticos previstos: perfil privado, token FCM ficticio, preferencias, publicaciones/solicitudes, ofertas, reservas/bloqueos, chat y sus subcolecciones `messages`, `reads`, `confirmations`, favoritos, historial de notificaciones y referencias cruzadas. Disponer de una segunda cuenta de control sólo si una autorización posterior cubre su seguridad y titularidad.
+4. Validar en seco un inventario completo y paginado, registrar un manifiesto previo **sin identificadores personales**, comprobar que cualquier transacción/reserva activa bloquea el borrado y que toda nueva admisión queda cerrada por una barrera confiable del servidor.
+5. Tras revisión independiente de la transacción atómica de bloqueo, autorización expresa de esa operación destructiva y decisión jurídica sobre excepciones, ejecutar la eliminación **sólo** sobre la identidad desechable. Comprobar Auth, referencias a UID, subcolecciones, tokens, Storage y estados de solicitud (pending/processing/completed), sin permitir que UI marque `completed` sin atestación de procesador y manifiesto de residuos verificado.
+6. Exigir evidencia de idempotencia/reintento, ausencia de residuos personales, conservación legal aprobada y ausencia de impactos sobre cuentas no participantes. Reportar fallos como **FAIL/BLOCKED**, nunca inventar limpieza. Preservar evidencia técnica, sin borrar cuentas originales.
+
+**Condición actual:** ninguna ejecución destructiva ni envío de datos, no se confirma proceso real de borrado, no hay política legal aprobada ni alcance firmado; `RELEASE=false`. Este dossier continúa en estado **PENDIENTE REVISIÓN LEGAL**.

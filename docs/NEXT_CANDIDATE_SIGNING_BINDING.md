@@ -168,3 +168,26 @@ This guard remains isolated to single-device private **no-AI** smoke; it
 does not change full two-device R6, App Check, legal review, remote Topi AI,
 or any release acceptance state.
 
+## R105 — QA privada del propietario, paquete cifrado existente (19 nov 2026 CDMX)
+<!-- TUTOP_OWNER1_R105_20261119_OWNER_SIGNED_CIPHERED_QA_NO_DEVICE -->
+
+**Fuente: declaración del propietario del 19/nov/2026, NO inspección externa de bytes de la APK.** El propietario dice conservar la APK privada, firmada, cifrada y recuperable con procedencia verificada, sin haberla reinstalado ni regenerado. Identidad declarada:
+
+- Paquete `mx.tutop.app`, versión `0.9.2-beta.0`, Android `versionCode 90200`.
+- SHA-256 de la APK: `e30ef5ed250253330de3fe4a91d45083cb453c2387db0e0ac3174dd8e7ad397f`.
+- SHA-256 del certificado de firma QA: `8cdc55f2178668f606ac46fc40b49ff418d80128710ba61b5064fa00d81efa79`.
+- SHA-1 del certificado de firma QA: `1AD05AEA50E0B706EC5C2346707EFC430DAADB6C`.
+- El propietario informa que añadió la huella QA a Firebase y el SHA-1 a la clave Android existente, conservando restricciones previas. Play Integrity fue inspeccionado, pero el enforcement de App Check sigue **OFF** y el token en un dispositivo físico **NO VERIFICADO**.
+
+**No es la misma prueba que HEAD actual de GitHub.** La PR #123 conserva como candidato fuente `430b1e8a5005bfad0db1f7214612474529351661` y estado DRAFT/UNMERGED al último corte; la coincidencia fuente exacta → APK firmada recuperada necesita evidencia de provenance del artefacto, no inferirla de versionCode, firmante o hash. Tampoco el manifiesto histórico `docs/PHYSICAL_QA_CANDIDATE_0.9.json` activa automáticamente R6 ni FCM: ese manifiesto es Build120 **OBSOLETO** y la puerta `loadActivePhysicalQaFcmAuthority` debe seguir rechazándolo.
+
+**Preflight no destructivo antes de cualquier intento físico** (sólo con ambos dispositivos presentes y control legítimo de las dos cuentas):
+
+1. Comprobar modelo, Android y versión instalada de `mx.tutop.app` en POCO C85 y Samsung **sin reinstalar, limpiar datos, modificar versión o descargar otro APK**. Si existe Build121 `versionCode 90215` o una firma distinta, detener instalación; no forzar downgrade ni borrar datos.
+2. En un entorno de confianza del propietario, cotejar **localmente** APK SHA-256, certificado SHA-256 y SHA-1 con las huellas anteriores. No copiar APK en claro, clave privada, identidad `age`, credenciales, datos de usuario o tokens a GitHub/Drive/chat. Documentar únicamente coincidencia booleana y un alias de sesión anónimo.
+3. Verificar la vinculación de staging (proyecto exacto, paquete y firma de la **misma APK**) y revisar App Check en modo lectura; **no activar enforcement, registrar duplicados ni cambiar restricciones API** para obtener un resultado favorable.
+4. Exigir control legítimo individual de **ambas cuentas** antes de A→B→A y FCM. Preparar las cuatro observaciones (foreground, background, cold start y deep link) sin enviar push hasta tener dos dispositivos, destino exacto, consentimiento de cada propietario y pruebas del gate FCM. Nunca promover el manifiesto Build120 para permitir envíos.
+5. Mantener por separado evidencia de apertura de páginas `privacy.html` y `delete-account.html` (observación del propietario) frente a un flujo real de borrado (aún NO ejecutado). La prueba de borrado con cuenta desechable es **sólo diseño autorizado**; no se crean o eliminan cuentas en esta fase.
+6. El propietario se designa candidato a primer moderador; **no existe un administrador staging activo verificado**. Confirmar en Auth su identidad legítima, perfil, inventario real de administradores activos y ACK exacto antes de conceder un rol. El proyecto todavía carece de emisor real de edad/tutela y de responsable legal/ARCO aprobado.
+
+**Estados vigentes:** QA privada **PREPARACIÓN AUTORIZADA**; instalación física pendiente; token App Check/FCM real pendiente; R6 0/2; seguridad de menores, borrado real y Play no aprobados; `RELEASE=false`. La ampliación de CI audit-only añade comprobaciones sintéticas de la puerta de QA no-AI (aceptación nunca equivale a publicación), manifiesto FCM obsoleto fail-closed y límites de escritura en staging.
