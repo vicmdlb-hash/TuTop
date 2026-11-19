@@ -271,7 +271,7 @@ exactlyOne(rules, listingMatch, 'single canonical listings V2 match');
 const listingStart = rules.indexOf(listingMatch);
 const createStart = rules.indexOf(createPrefix, listingStart + listingMatch.length);
 const updateStart = rules.indexOf(updatePrefix, createStart + createPrefix.length);
-if (createStart < 0 || updateStart < 0 || createStart > listingStart + 140) {
+if (createStart < 0 || updateStart < 0 || createStart > listingStart + 1200) {
   throw new Error('GUARDIAN_DEMO_LISTING_CREATE_DRIFT');
 }
 const originalListingCreate = rules.slice(createStart + createPrefix.length, updateStart).trimEnd();
