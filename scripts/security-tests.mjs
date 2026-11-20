@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const firestore = fs.readFileSync('firebase/firestore.rules', 'utf8');
+const read = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
+const firestore = read('firebase/firestore.rules');
 const firebaseConfig = JSON.parse(fs.readFileSync('firebase.json', 'utf8'));
-const backend = fs.readFileSync('src/services/onlineBackend.ts', 'utf8');
-const runtime = fs.readFileSync('src/services/runtimeConfig.ts', 'utf8');
-const firebaseRest = fs.readFileSync('src/services/firebaseRest.ts', 'utf8');
+const backend = read('src/services/onlineBackend.ts');
+const runtime = read('src/services/runtimeConfig.ts');
+const firebaseRest = read('src/services/firebaseRest.ts');
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);

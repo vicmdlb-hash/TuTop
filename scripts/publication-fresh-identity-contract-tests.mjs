@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-const publish = fs.readFileSync('src/components/NationalPublishScreen.tsx', 'utf8');
-const auth = fs.readFileSync('src/services/verifiedEmailBetaAuth.ts', 'utf8');
-const backendGate = fs.readFileSync('src/components/BackendGate.tsx', 'utf8');
+const read = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
+const publish = read('src/components/NationalPublishScreen.tsx');
+const auth = read('src/services/verifiedEmailBetaAuth.ts');
+const backendGate = read('src/components/BackendGate.tsx');
 assert.match(auth, /return \{ uid: user\.localId, email: normalizedUserEmail, emailVerified: verified, phoneVerified: evidence\.phoneVerified \}/);
 assert.match(backendGate, /!verified\.emailVerified \|\| verified\.phoneVerified !== true/);
 const body = publish.slice(publish.indexOf('  const publish = async () => {'));

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-const w=fs.readFileSync('.github/workflows/tutop-connected-staging-compile.yml','utf8');
+const w=fs.readFileSync('.github/workflows/tutop-connected-staging-compile.yml','utf8').replace(/\r\n?/g, '\n');
 assert.match(w,/TUTOP_ALLOW_STAGING_CONFIG_READ: read-only-v2/);
 assert.match(w,/prepare-staging-v2-auth\.mjs/);
 assert.match(w,/prepare-staging-android-app\.mjs/);
@@ -32,7 +32,7 @@ console.log('PASS connected staging Android compile is read-only and never uploa
 
 
 // Private beta: public GitHub artifacts may never expose a plaintext Firebase-connected APK.
-const encryptedQa = fs.readFileSync('.github/workflows/tutop-private-qa-encrypted-apk.yml','utf8');
+const encryptedQa = fs.readFileSync('.github/workflows/tutop-private-qa-encrypted-apk.yml','utf8').replace(/\r\n?/g, '\n');
 assert.match(encryptedQa, /^on:\n  push:\n    branches:\n      - integration\/tutop-121-122-fcm-owner-ci-20261022\n    paths:\n      - ops\/private-qa-apk\.trigger/m);
 assert.doesNotMatch(encryptedQa, /workflow_dispatch:|\n  schedule:|\n  pull_request:/);
 assert.match(encryptedQa, /^permissions:\n  contents: read/m);

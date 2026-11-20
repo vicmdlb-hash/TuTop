@@ -2,16 +2,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 
-const schema = fs.readFileSync('src/lib/listingSchemaV2.ts','utf8');
-const listings = fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8');
-const tx = fs.readFileSync('src/services/canonicalTransactionsBackend.ts','utf8');
-const offers = fs.readFileSync('src/services/canonicalOffersBackend.ts','utf8');
-const card = fs.readFileSync('src/components/ProductCard.tsx','utf8');
-const reservationCard = fs.readFileSync('src/components/TransactionReservationCard.tsx','utf8');
-const detail = fs.readFileSync('src/components/ProductDetail.tsx','utf8');
-const store = fs.readFileSync('src/store/useAppStore.ts','utf8');
-const prepare = fs.readFileSync('scripts/prepare-firestore-v2-rules.mjs','utf8');
-const lockRules = fs.readFileSync('scripts/harden-transaction-lock-rules.mjs','utf8');
+const read = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
+const schema = read('src/lib/listingSchemaV2.ts');
+const listings = read('src/services/canonicalListingsBackend.ts');
+const tx = read('src/services/canonicalTransactionsBackend.ts');
+const offers = read('src/services/canonicalOffersBackend.ts');
+const card = read('src/components/ProductCard.tsx');
+const reservationCard = read('src/components/TransactionReservationCard.tsx');
+const detail = read('src/components/ProductDetail.tsx');
+const store = read('src/store/useAppStore.ts');
+const prepare = read('scripts/prepare-firestore-v2-rules.mjs');
+const lockRules = read('scripts/harden-transaction-lock-rules.mjs');
 
 assert.match(schema, /availability_status\?: 'available' \| 'reserved'/);
 assert.match(listings, /availability_status: !Number\.isSafeInteger\(data\.quantity\)/);
