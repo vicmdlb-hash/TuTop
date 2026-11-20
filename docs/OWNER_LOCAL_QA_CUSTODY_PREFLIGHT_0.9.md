@@ -46,3 +46,15 @@ La alternativa fuente ya existente es `scripts/local-private-qa-sign-encrypt.mjs
 **Compatibilidad pendiente:** los flujos actuales esperan Android `versionCode 90200`, inferior al Build121 histórico `90215`. Antes de instalar, comprobar en el dispositivo versión y certificado existentes. No forzar downgrade, no desinstalar, no borrar datos. La elección de versionCode/signer para la próxima QA es un gate separado, no resuelto por este diagnóstico.
 
 **Estado de esta nota:** advertencia de seguridad de proceso, no firma, no restauración, no generación de APK, no despliegue, no autorización R6. Fuente: `.github/workflows/tutop-private-qa-encrypted-apk.yml`, `scripts/local-private-qa-sign-encrypt.mjs`; PR #123 en borrador.
+
+## Guardia local de identidad de instalación (R136)
+
+Antes de intentar instalar una APK en POCO o Samsung, debe conocerse su estado previo real. Android compara applicationId, certificado de firma y versionCode; el usuario no debe borrar la instalación existente ni forzar un downgrade para salvar la discrepancia.
+
+Se añadió el comprobador **puramente declarativo** `scripts/owner-local-install-identity-preflight.mjs`, cubierto por `scripts/owner-local-install-identity-preflight-tests.mjs` e integrado en `npm run check`. Solo compara metadatos introducidos voluntariamente en variables `TUTOP_QA_CANDIDATE_PACKAGE`, `TUTOP_QA_CANDIDATE_VERSION_CODE`, `TUTOP_QA_CANDIDATE_CERT_SHA256`, `TUTOP_QA_INSTALLED_STATE`, `TUTOP_QA_INSTALLED_PACKAGE`, `TUTOP_QA_INSTALLED_VERSION_CODE`, `TUTOP_QA_INSTALLED_CERT_SHA256`. Nunca abre ADB, el teléfono, un APK, una clave o Firebase; no descarga, instala, firma ni publica. Imprime únicamente estados seguros sin valores privados.
+
+**Fail-closed:** si la instalación anterior se desconoce, si no se conoce el certificado real, si la firma difiere o no se verificó su rotación, o si `versionCode` de la APK candidata es menor, no declara compatibilidad. Por política local también mantiene en HOLD la sustitución con `versionCode` idéntico, aunque Android puede permitir ese caso. Un resultado de comparación favorable no acredita que los datos declarados sean auténticos ni da autorización para instalar.
+
+**Ejemplo de incompatibilidad conocida del plan:** el candidato actual es `90200`; si (y solo si) se confirma que un teléfono tiene instalado el Build121 histórico `90215`, la comparación devuelve `DOWNGRADE_BLOCKED`. No asumir que el dispositivo lo tiene instalado. Fuente Android: https://developer.android.com/google/play/app-updates y https://developer.android.com/studio/publish/versioning.
+
+**Siguiente gate owner-only:** tras obtener una APK del HEAD exacto, recopilar localmente paquete/código/firma de esa APK y, sin desinstalar ni borrar datos, compararlos con el inventario auténtico del dispositivo. En caso de desconocimiento o discrepancia, no instalar. Este módulo no sustituye la custodia P12/AGE/RECOVERY ni la aceptación física R6.
