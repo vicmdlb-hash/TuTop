@@ -30,6 +30,9 @@ const auth=await get(`https://identitytoolkit.googleapis.com/admin/v2/projects/$
 const callback=String(auth?.notification?.sendEmail?.callbackUri||'').trim();
 let callbackUrl=null;try{callbackUrl=callback?new URL(callback):null;}catch{}
 if(!callbackUrl) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_MISSING');
+if(callbackUrl.protocol!=='https:' || callbackUrl.username || callbackUrl.password) {
+  throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_INSECURE_URL');
+}
 
 const customHandler=['/auth-action.html','/auth-action'].includes(callbackUrl.pathname);
 const firebaseDefaultHandler=callbackUrl.pathname==='/__/auth/action'
