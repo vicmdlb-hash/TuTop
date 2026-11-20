@@ -14,6 +14,9 @@ assert.equal(validateFirstAdminBootstrap({...base,role:'owner'}).code,'MODERATIO
 assert.equal(validateFirstAdminBootstrap({...base,role:'super_admin'}).code,'MODERATION_ROLE_REQUIRED');
 assert.equal(validateFirstAdminBootstrap({...base,institutionId:'uatx'}).code,'INSTITUTION_SCOPE_NOT_ALLOWED');
 assert.equal(validateFirstAdminBootstrap({...base,adminsActive:1,apply:true,ack:'BOOTSTRAP_FIRST_STAGING_ADMIN:uid_12345678:moderator:-'}).code,'FIRST_ADMIN_ALREADY_EXISTS');
+for (const adminsActive of [undefined, null, -1, 0.5, '0', Number.NaN, Number.POSITIVE_INFINITY]) {
+  assert.equal(validateFirstAdminBootstrap({...base,adminsActive}).code,'VERIFIED_ADMIN_COUNT_REQUIRED');
+}
 assert.equal(validateFirstAdminBootstrap({...base,authUserExists:false}).code,'AUTH_USER_REQUIRED');
 assert.equal(validateFirstAdminBootstrap({...base,profileExists:false}).code,'PROFILE_REQUIRED');
 assert.equal(validateFirstAdminBootstrap({...base,projectId:'production'}).code,'STAGING_PROJECT_REQUIRED');

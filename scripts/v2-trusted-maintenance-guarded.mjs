@@ -17,6 +17,21 @@ function run(script, args = []) {
 
 const blocked = [];
 for (const task of selectedTasks) {
+  // P01: reject commerce outcome apply BEFORE any capacity query can obtain
+  // Firebase credentials. Skip only this lane; do not block safe independent
+  // credential-retention, reputation, saved-search or push tasks.
+  if (sharedArgs.includes('--apply') && task === 'outcomes') {
+    blocked.push(task);
+    console.error('SKIP trusted outcomes: TRUSTED_OUTCOMES_ADMISSION_FREEZE_NOT_VERIFIED');
+    continue;
+  }
+  // Prevent privileged capacity reads and token acquisition for unsafe lanes,
+  // while allowing independent credentials-retention work to remain gated.
+  if (sharedArgs.includes('--apply') && ['reputation', 'saved-searches', 'push'].includes(task)) {
+    blocked.push(task);
+    console.error(`SKIP trusted maintenance: TRUSTED_MAINTENANCE_ERASURE_ADMISSION_FREEZE_NOT_VERIFIED:${task}`);
+    continue;
+  }
   const taskArg = `--tasks=${task}`;
   const guardStatus = run('scripts/trusted-reputation-capacity-guard.mjs', [...sharedArgs, taskArg]);
   if (guardStatus !== 0) {

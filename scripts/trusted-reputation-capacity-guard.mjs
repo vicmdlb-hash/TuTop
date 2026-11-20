@@ -36,7 +36,7 @@ async function countCollection(collectionId) {
   const text = await response.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
-  if (!response.ok) stop(`COUNT ${collectionId} falló (${response.status}): ${text.slice(0, 400)}`);
+  if (!response.ok) stop(`COUNT ${collectionId} falló (HTTP_${response.status}); detalles remotos omitidos.`);
   const rows = Array.isArray(data) ? data : [];
   const raw = rows.find((row) => row?.result?.aggregateFields?.count)?.result?.aggregateFields?.count;
   const value = Number(raw?.integerValue ?? raw?.doubleValue ?? NaN);

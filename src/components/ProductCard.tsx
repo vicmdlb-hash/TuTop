@@ -4,7 +4,7 @@ import { BadgeCheck, CircleDollarSign, Heart, MapPin, MessageCircle, MoreHorizon
 import type { Product } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { feedbackFavorite, feedbackTap } from '../lib/feedback';
-import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, productDistanceKm, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, productDistanceKm, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { parseListingDescription } from '../lib/listingDetails';
 import { sellerReputationEvidence } from '../lib/reputationEvidence';
 
@@ -35,7 +35,8 @@ export default function ProductCard({ product }: { product: Product }) {
     ? product.moderation_status === 'pending' ? 'En revisión'
       : product.moderation_status === 'rejected' ? 'Rechazada'
         : product.moderation_status === 'review' ? 'Revisión necesaria'
-          : null
+          : product.moderation_status === 'flagged' ? 'Marcada para revisión'
+            : null
     : null;
   const parsed = parseListingDescription(product.descripcion);
   const negotiable = product.precio_negociable === true || parsed.details['Precio negociable']?.toLowerCase() === 'sí';
@@ -43,17 +44,20 @@ export default function ProductCard({ product }: { product: Product }) {
   const reputation = sellerReputationEvidence(product.vendedor_id, reviews, chats);
   const existingBuyerChat = chats.some((chat) => chat.producto_id === product.id && chat.comprador_id === user.id && chat.vendedor_id === product.vendedor_id);
   const reserved = product.availability_status === 'reserved';
-  const reservedForViewer = reserved && !ownProduct && !existingBuyerChat;
+  const unverified = product.availability_status === 'unverified';
+  const reservedForViewer = (reserved || unverified) && !ownProduct && !existingBuyerChat;
   const [viewerLocation, setViewerLocation] = useState<ApproxLocation | null>(() => getCachedApproxLocation(user.id));
 
   useEffect(() => {
+    // A prior account's delayed geolocation event must never update B's card.
+    setViewerLocation(getCachedApproxLocation(user.id));
     const onLocation = (event: Event) => {
-      const detail = (event as CustomEvent<ApproxLocation>).detail;
-      if (detail) setViewerLocation(detail);
+      const detail = (event as CustomEvent<ScopedApproxLocationEvent>).detail;
+      if (detail?.owner_uid === user.id) setViewerLocation(detail);
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
     return () => window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
-  }, []);
+  }, [user.id]);
 
   const distance = productDistanceKm(viewerLocation, product);
   const proximity = distanceLabel(distance);
@@ -76,7 +80,7 @@ export default function ProductCard({ product }: { product: Product }) {
       <button onClick={() => openProduct(product.id)} className="relative block aspect-[1.5/1] w-full overflow-hidden bg-[#101827] text-left">
         <img src={product.imagen_url} alt={product.titulo} className="h-full w-full object-cover" loading="lazy" />
         <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 to-transparent" />
-        <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-medium backdrop-blur">{product.categoria}</span>{reserved && <span className="rounded-full bg-amber-500/90 px-2 py-1 text-[9px] font-black text-black backdrop-blur">Reservado temporalmente</span>}{negotiable && !reserved && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/80 px-2 py-1 text-[9px] font-black text-white backdrop-blur"><CircleDollarSign className="h-3 w-3" />Negociable</span>}</div>
+        <div className="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span className="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-medium backdrop-blur">{product.categoria}</span>{reserved && <span className="rounded-full bg-amber-500/90 px-2 py-1 text-[9px] font-black text-black backdrop-blur">Reservado temporalmente</span>}{unverified && <span className="rounded-full bg-amber-500/90 px-2.5 py-1 text-[9px] font-black text-black backdrop-blur">Disponibilidad por verificar</span>}{negotiable && !reserved && !unverified && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/80 px-2 py-1 text-[9px] font-black text-white backdrop-blur"><CircleDollarSign className="h-3 w-3" />Negociable</span>}</div>
         <div className="absolute right-3 top-3 flex flex-col items-end gap-1.5">{ownerModerationLabel && <span className="rounded-full bg-amber-500/90 px-2.5 py-1 text-[9px] font-black text-white shadow-lg backdrop-blur">{ownerModerationLabel}</span>}{proximity && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-[9px] font-black text-white shadow-lg backdrop-blur"><MapPin className="h-3 w-3" />{proximity}</span>}{(product.imagenes_url?.length || 0) > 1 && <span className="rounded-full bg-black/55 px-2 py-1 text-[9px] font-bold backdrop-blur">{product.imagenes_url?.length} fotos</span>}</div>
       </button>
 
@@ -84,15 +88,15 @@ export default function ProductCard({ product }: { product: Product }) {
         <button onClick={() => openProduct(product.id)} className="flex w-full items-start justify-between gap-4 text-left">
           <div className="min-w-0">
             <h3 className="truncate text-[16px] font-bold tracking-tight">{product.titulo}</h3>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted"><span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-success" />{proximity ? `${proximity} · ` : ''}{product.punto_encuentro}</span>{(product.stock || 1) > 1 && <span>· {product.stock} disponibles</span>}</div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted"><span className="inline-flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-success" />{proximity ? `${proximity} · ` : ''}{product.punto_encuentro}</span>{(product.stock || 1) > 1 && !reserved && !unverified && <span>· {product.stock} disponibles</span>}</div>
             {delivery && <p className="mt-1.5 flex items-center gap-1.5 truncate text-[9px] text-slate-500"><PackageCheck className="h-3 w-3 shrink-0 text-violet-300" /><span className="truncate">Entrega definida · {delivery}</span></p>}
           </div>
           <p className="shrink-0 text-[22px] font-extrabold text-success">${product.precio_mxn.toLocaleString('es-MX')}</p>
         </button>
 
         <div className="mt-3 flex items-center gap-2">
-          <button disabled={reservedForViewer} onClick={() => { feedbackTap(); ownProduct ? openProduct(product.id) : contactProduct(product.id); }} className="contact-button disabled:cursor-not-allowed disabled:opacity-45"><MessageCircle className="h-4 w-4" />{ownProduct ? 'Ver publicación' : reservedForViewer ? 'Reservado' : existingBuyerChat ? 'Volver al chat' : 'Contactar'}</button>
-          <button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`favorite-button ${favorite ? 'favorite-button-active' : ''}`} aria-label="Guardar producto">
+          <button disabled={reservedForViewer} onClick={() => { feedbackTap(); ownProduct ? openProduct(product.id) : contactProduct(product.id); }} className="contact-button disabled:cursor-not-allowed disabled:opacity-45"><MessageCircle className="h-4 w-4" />{ownProduct ? 'Ver publicación' : reservedForViewer ? (unverified ? 'Por verificar' : 'Reservado') : existingBuyerChat ? 'Volver al chat' : 'Contactar'}</button>
+          <button onClick={() => { toggleFavorite(product.id); feedbackFavorite(); }} className={`favorite-button ${favorite ? 'favorite-button-active' : ''}`} aria-label={favorite ? "Quitar de guardados" : "Guardar producto"} aria-pressed={favorite}>
             <Heart className="h-5 w-5" fill={favorite ? 'currentColor' : 'none'} />
             <span>{favorite ? 'Guardado' : 'Guardar'}</span>
           </button>

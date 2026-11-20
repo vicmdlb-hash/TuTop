@@ -221,10 +221,10 @@ const runtimeCollections = `    match /rate_limits/{bucketId} {
 replaceOnce(marker, runtimeCollections + marker, 'runtime catch-all');
 
 replaceOnce(
-  `      allow create: if signedIn() && notSuspended()
+  `      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && request.resource.data.keys().hasOnly([
           'schema_version'`,
-  `      allow create: if signedIn() && notSuspended()
+  `      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && rateLimitConsumed('listing_create')
         && request.resource.data.keys().hasOnly([
           'schema_version'`,
@@ -232,8 +232,10 @@ replaceOnce(
 );
 replaceOnce(
   `      allow create: if signedIn() && notSuspended()
+        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)
         && request.resource.data.keys().hasOnly(['product_id','producto_id','buyer_id'`,
   `      allow create: if signedIn() && notSuspended()
+        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)
         && rateLimitConsumed('chat_create')
         && request.resource.data.keys().hasOnly(['product_id','producto_id','buyer_id'`,
   'chat create rate limit',
@@ -248,16 +250,18 @@ replaceOnce(
 );
 replaceOnce(
   `      allow create: if signedIn() && notSuspended()
+        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)
         && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','created_by'`,
   `      allow create: if signedIn() && notSuspended()
+        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)
         && rateLimitConsumed('offer_create')
         && request.resource.data.keys().hasOnly(['listing_id','chat_id','buyer_id','seller_id','created_by'`,
   'offer create rate limit',
 );
 replaceOnce(
-  `      allow create: if signedIn() && notSuspended()
+  `      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && request.resource.data.keys().hasOnly(['buyer_id','title','description','category'`,
-  `      allow create: if signedIn() && notSuspended()
+  `      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && rateLimitConsumed('demand_create')
         && request.resource.data.keys().hasOnly(['buyer_id','title','description','category'`,
   'demand create rate limit',

@@ -9,7 +9,9 @@ function replaceOnce(from, to, label) {
     console.error(`DETENIDO: ${label} esperaba 1 coincidencia y encontró ${count}.`);
     process.exit(2);
   }
-  rules = rules.replace(from, to);
+  // Treat replacement as literal text: a Rules regex ending in $' must not
+  // trigger JavaScript String.replace's $'-means-original-suffix expansion.
+  rules = rules.replace(from, () => to);
 }
 
 function replaceOnceInSection(startMarker, endMarker, from, to, label) {
@@ -54,7 +56,11 @@ function replaceExpectedCountInSection(startMarker, endMarker, from, to, expecte
 
 const signedIn = `    function signedIn() { return request.auth != null; }`;
 const verifiedHelper = `${signedIn}\n    function verifiedIdentity() {\n      return signedIn()\n        && request.auth.token.email is string\n        && request.auth.token.email.size() >= 6\n        && request.auth.token.email_verified == true;\n    }`;
-replaceOnce(signedIn, verifiedHelper, 'verified identity helper');
+// Future national cutover only: Firebase-signed claims, never user_private or UI flags.
+// Real phone linking, end-to-end emulator authorization and owner release gate
+// remain required before this helper may grant any marketplace privileges.
+const nationalVerifiedHelper = `    function nationalVerifiedIdentity() {\n      return verifiedIdentity()\n        && ('sub' in request.auth.token)\n        && request.auth.token.sub == request.auth.uid\n        && ('phone_number' in request.auth.token)\n        && request.auth.token.phone_number is string\n        && request.auth.token.phone_number.matches('^[+]52[1-9][0-9]{9}$');\n    }`;
+replaceOnce(signedIn, verifiedHelper + '\n' + nationalVerifiedHelper, 'verified identity helpers');
 
 // Private identity: phone-password remains readable for legacy beta users, but
 // new verified-email accounts may omit phone and bind institutional_email to the
@@ -65,8 +71,8 @@ replaceOnce(oldPrivateCreate, newPrivateCreate, 'user_private verified-email con
 
 const gates = [
   [
-    `      allow create: if signedIn() && notSuspended()\n        && request.resource.data.keys().hasOnly([\n          'vendedor_id'`,
-    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && request.resource.data.keys().hasOnly([\n          'vendedor_id'`,
+    `      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)\n        && request.resource.data.keys().hasOnly([\n          'vendedor_id'`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity() && commerceAccountEligible(request.auth.uid)\n        && request.resource.data.keys().hasOnly([\n          'vendedor_id'`,
     'legacy product create',
   ],
   [
@@ -75,8 +81,8 @@ const gates = [
     'legacy product update',
   ],
   [
-    `      allow create: if signedIn() && notSuspended()\n        && rateLimitConsumed('chat_create')`,
-    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && rateLimitConsumed('chat_create')`,
+    `      allow create: if signedIn() && notSuspended()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && rateLimitConsumed('chat_create')`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && rateLimitConsumed('chat_create')`,
     'chat create',
   ],
   [
@@ -95,8 +101,8 @@ const gates = [
     'legacy delivery confirmation',
   ],
   [
-    `      allow create: if signedIn() && notSuspended()\n        && rateLimitConsumed('offer_create')`,
-    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && rateLimitConsumed('offer_create')`,
+    `      allow create: if signedIn() && notSuspended()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && offerRateLimitConsumed()`,
+    `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)\n        && offerRateLimitConsumed()`,
     'offer create',
   ],
   [
@@ -119,8 +125,8 @@ for (const [from, to, label] of gates) replaceOnce(from, to, label);
 replaceOnceInSection(
   '    match /listings_v2/{listingId} {',
   '    match /offers/{offerId} {',
-  `      allow create: if signedIn() && notSuspended()\n        && listingRateLimitConsumed()`,
-  `      allow create: if signedIn() && notSuspended() && verifiedIdentity()\n        && listingRateLimitConsumed()`,
+  `      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)\n        && listingRateLimitConsumed()`,
+  `      allow create: if signedIn() && notSuspended() && verifiedIdentity() && commerceAccountEligible(request.auth.uid)\n        && listingRateLimitConsumed()`,
   'canonical listings_v2 verified create',
 );
 replaceOnceInSection(

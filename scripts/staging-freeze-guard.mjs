@@ -65,3 +65,22 @@ export function assertAiAppCheckFreezeMode(mode) {
   }
   return normalized;
 }
+
+/**
+ * Read-only Firebase app-config retrieval. The isolated integration branch may
+ * read existing staging metadata but may NEVER inherit mutation permissions.
+ * Older approved feature branches retain their stricter October-gated context.
+ */
+export function assertStagingConfigReadContext({legacyAllowEnv, legacyAllowValue}={}, env=process.env) {
+  const branch=String(env.GITHUB_REF_NAME||'');
+  if(branch!=='integration/tutop-121-122-fcm-owner-ci-20261022') {
+    return assertStagingFreezeContext({allowEnv:legacyAllowEnv,allowValue:legacyAllowValue});
+  }
+  if(env.TUTOP_FIREBASE_PROJECT_ID!==TUTOP_V2_STAGING_PROJECT) stop('read_only_project_mismatch');
+  if(env.GITHUB_ACTIONS!=='true') stop('read_only_requires_github_actions');
+  if(!/^[a-f0-9]{40}$/i.test(String(env.GITHUB_SHA||''))) stop('read_only_invalid_git_sha');
+  if(env.TUTOP_ALLOW_STAGING_CONFIG_READ!=='read-only-v2') stop('read_only_opt_in_missing');
+  if(['TUTOP_ALLOW_FIREBASE_DEPLOY','TUTOP_ALLOW_V2_SEED','TUTOP_ALLOW_STAGING_RESET','TUTOP_STAGING_RESET_ACK']
+      .some(name=>String(env[name]||'').trim())) stop('read_only_mutation_env_present');
+  return TUTOP_V2_STAGING_PROJECT;
+}

@@ -7,7 +7,8 @@ export function validateFirstAdminBootstrap(input) {
   const institutionId=String(input.institutionId||'').trim();
   const ack=String(input.ack||'').trim();
   const apply=input.apply===true;
-  const adminsActive=Number(input.adminsActive||0);
+  // Missing, malformed or unverified counts must never mean "zero admins".
+  const adminsActive=input.adminsActive;
   const authUserExists=input.authUserExists===true;
   const profileExists=input.profileExists===true;
 
@@ -18,6 +19,8 @@ export function validateFirstAdminBootstrap(input) {
   if(role==='moderator'&&institutionId) return {ok:false,code:'INSTITUTION_SCOPE_NOT_ALLOWED'};
   if(!authUserExists) return {ok:false,code:'AUTH_USER_REQUIRED'};
   if(!profileExists) return {ok:false,code:'PROFILE_REQUIRED'};
+  if(!Number.isSafeInteger(adminsActive) || adminsActive<0)
+    return {ok:false,code:'VERIFIED_ADMIN_COUNT_REQUIRED'};
   if(adminsActive!==0) return {ok:false,code:'FIRST_ADMIN_ALREADY_EXISTS'};
   const expectedAck=`BOOTSTRAP_FIRST_STAGING_ADMIN:${uid}:${role}:${institutionId||'-'}`;
   if(apply&&ack!==expectedAck) return {ok:false,code:'EXACT_ACK_REQUIRED'};

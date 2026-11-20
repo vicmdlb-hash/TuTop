@@ -74,6 +74,15 @@ async function seed() {
   });
 }
 
+async function seedDeletionRequest(uid, status) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const at = now();
+    await setDoc(doc(ctx.firestore(), `account_deletion_requests/${uid}`), {
+      uid, status, requested_at: at, updated_at: at,
+    });
+  });
+}
+
 function createOfferBatch(db, { offerId, buyerId, chatId, amountMxn, rateCount, windowStart }) {
   const at = now();
   const batch = writeBatch(db);
@@ -189,6 +198,36 @@ function completionPhaseOne(db, { sellOut = true, completeTx = true, actor = 'se
   if (sellOut) batch.update(doc(db, 'listings_v2/listing-1'), { status: 'sold_out', updated_at: at });
   return batch;
 }
+
+// P01: source rules must reject NEW commerce while either side has an
+// account deletion request. These are synthetic emulated Firestore users.
+test('P01: buyer pending deletion blocks seller-created reservation', async () => {
+  await seed();
+  await seedDeletionRequest('buyer-a', 'pending');
+  const seller = verifiedContext(env, 'seller').firestore();
+  await assertFails(reserveBatch(seller, 'a', 'buyer-a', 400).commit());
+});
+
+test('P01: seller processing deletion blocks reservation by buyer', async () => {
+  await seed();
+  await seedDeletionRequest('seller', 'processing');
+  const buyer = verifiedContext(env, 'buyer-a').firestore();
+  await assertFails(buyerAcceptSellerCounterBatch(buyer).commit());
+});
+
+test('P01: deleting buyer cannot accept seller counteroffer into a transaction', async () => {
+  await seed();
+  await seedDeletionRequest('buyer-a', 'pending');
+  const buyer = verifiedContext(env, 'buyer-a').firestore();
+  await assertFails(buyerAcceptSellerCounterBatch(buyer).commit());
+});
+
+test('P01: rejected deletion request allows a normal reservation', async () => {
+  await seed();
+  await seedDeletionRequest('buyer-a', 'rejected');
+  const seller = verifiedContext(env, 'seller').firestore();
+  await assertSucceeds(reserveBatch(seller, 'a', 'buyer-a', 400).commit());
+});
 
 test('comprador acepta contraoferta creada por vendedor y reserva atómicamente', async () => {
   await seed();

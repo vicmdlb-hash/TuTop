@@ -1,15 +1,19 @@
+import { nationalAcademicMetadata, validateBetaAcademicCatalog } from '../lib/nationalAcademicMetadata';
+import { CAMPUSES, INSTITUTIONS } from '../lib/universityNetwork';
+import { nationalVerificationIndicators } from '../lib/nationalVerificationIndicators';
 import { getNativeAppCheckToken } from './nativeAppCheckToken';
 import { firebaseFetch, isFirebaseRequestTimeout } from './firebaseHttp';
+import { readFirebaseResponseText } from './firebaseHttp';
 import { FirebaseRestClient, normalizeMexicoPhone, phoneAliasEmail } from './firebaseRest';
 import { getFirebaseConfig } from './runtimeConfig';
 
 export interface VerifiedEmailBetaProfile {
   nombre: string;
   facultad: string;
-  institution_id: string;
-  institution_name: string;
-  campus_id: string;
-  campus_name: string;
+  institution_id?: string;
+  institution_name?: string;
+  campus_id?: string;
+  campus_name?: string;
   phone?: string;
 }
 
@@ -17,6 +21,8 @@ export interface VerifiedEmailBetaStatus {
   uid: string;
   email: string;
   emailVerified: boolean;
+  /** Read-only Firebase Auth lookup indicator; NEVER server authorization proof. */
+  phoneVerified?: boolean;
   verificationEmailSent?: boolean;
 }
 
@@ -60,12 +66,28 @@ async function authHeaders() {
 }
 
 async function readJson(response: Response) {
-  const text = await response.text();
+  const text = await readFirebaseResponseText(response);
   let data: any = null;
-  if (text) { try { data = JSON.parse(text); } catch { data = { raw: text }; } }
+  if (text) { try { data = JSON.parse(text); } catch { data = null; } }
   if (!response.ok) {
-    const message = data?.error?.message || data?.error?.status || data?.raw || `HTTP ${response.status}`;
-    throw new Error(String(message));
+    // Firebase error bodies are untrusted. Never echo remote descriptions,
+    // email addresses, bearer tokens or malformed HTML into UI/logs.
+    // Preserve only explicitly known machine-readable Auth codes.
+    const allowed = new Set([
+      'EMAIL_NOT_FOUND','USER_NOT_FOUND','EMAIL_EXISTS','INVALID_EMAIL',
+      'INVALID_PASSWORD','INVALID_LOGIN_CREDENTIALS','INVALID_ID_TOKEN',
+      'TOKEN_EXPIRED','INVALID_REFRESH_TOKEN','USER_DISABLED',
+      'WEAK_PASSWORD','INVALID_OOB_CODE','EXPIRED_OOB_CODE',
+      'TOO_MANY_ATTEMPTS_TRY_LATER','OPERATION_NOT_ALLOWED',
+      'CREDENTIAL_TOO_OLD_LOGIN_AGAIN','MISSING_PASSWORD',
+    ]);
+    let code = '';
+    for (const value of [data?.error?.message, data?.error?.status]) {
+      if (typeof value !== 'string') continue;
+      const match = /^([A-Z][A-Z0-9_]{1,79})(?=[: ]|$)/.exec(value);
+      if (match && allowed.has(match[1])) { code = match[1]; break; }
+    }
+    throw new Error(code || `FIREBASE_AUTH_HTTP_${response.status}`);
   }
   return data;
 }
@@ -149,9 +171,13 @@ async function forceRefreshStoredSession(expectedGeneration = authGeneration) {
   });
   const data = await readJson(response);
   assertSessionUnchanged(expectedGeneration, stored.uid, originalRefreshToken);
+  // The refresh response must belong to the same authenticated owner. A
+  // malformed or cross-UID result cannot silently replace the canonical UID.
+  if (typeof data?.user_id !== 'string' || data.user_id !== stored.uid)
+    throw new Error('AUTH_UID_MISMATCH');
   const next: CompatibleSession = {
     ...stored,
-    uid: data.user_id || stored.uid,
+    uid: stored.uid,
     idToken: data.id_token,
     refreshToken: data.refresh_token || originalRefreshToken,
     expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
@@ -192,14 +218,24 @@ async function synchronizePrivateEmail(uid: string, email: string) {
   }, { merge: true });
 }
 
-async function migrateLegacySessionToEmail(session: CompatibleSession, emailInput: string, expectedGeneration: number) {
+async function migrateLegacySessionToEmail(session: CompatibleSession, emailInput: string, expectedGeneration: number, expectedCanonicalSession: CompatibleSession | null) {
   const email = normalizeEmail(emailInput);
   const data = await identityRequest('accounts:update', {
     idToken: session.idToken,
     email,
     returnSecureToken: true,
   }) as AuthPayload;
-  if (authGeneration !== expectedGeneration) throw new Error('AUTH_SESSION_CHANGED');
+  // FirebaseRestClient (including the phone-password path) can replace shared
+  // credentials without incrementing this module's authGeneration. A delayed
+  // legacy migration must never overwrite a newer A->B or A->A login.
+  const current = readCompatibleSession();
+  const sameCanonical = expectedCanonicalSession
+    ? Boolean(current
+      && current.uid === expectedCanonicalSession.uid
+      && current.idToken === expectedCanonicalSession.idToken
+      && current.refreshToken === expectedCanonicalSession.refreshToken)
+    : current === null;
+  if (authGeneration !== expectedGeneration || !sameCanonical) throw new Error('AUTH_SESSION_CHANGED');
   if (!data.localId || data.localId !== session.uid) {
     clearCanonicalSession();
     throw new Error('AUTH_UID_MISMATCH');
@@ -215,6 +251,7 @@ async function migrateLegacySessionToEmail(session: CompatibleSession, emailInpu
 async function createMarketplaceAccount(payload: AuthPayload, email: string, profile: VerifiedEmailBetaProfile) {
   const config = getFirebaseConfig();
   const normalizedPhone = normalizeOptionalPhone(profile.phone);
+  const academicMetadata = nationalAcademicMetadata(profile);
   persistCompatibleSession(payload, email, false, normalizedPhone);
   // A fresh client must be authenticated immediately in this same process. On
   // Android the native bridge now reads the session written above from
@@ -230,10 +267,7 @@ async function createMarketplaceAccount(payload: AuthPayload, email: string, pro
     nombre: profile.nombre.trim().slice(0, 80),
     facultad: profile.facultad.trim().slice(0, 120),
     esta_verificado: false,
-    institution_id: profile.institution_id,
-    institution_name: profile.institution_name,
-    campus_id: profile.campus_id,
-    campus_name: profile.campus_name,
+    ...academicMetadata,
     verification_level: 0,
     verification_badge: 'Cuenta TuTop',
     created_at: at,
@@ -262,6 +296,10 @@ export const verifiedEmailBetaAuth = {
     if (password.length < 8) throw new Error('WEAK_PASSWORD');
     if (profile.nombre.trim().length < 2) throw new Error('NAME_REQUIRED');
     if (!profile.institution_id || !profile.campus_id) throw new Error('UNIVERSITY_IDENTITY_REQUIRED');
+    // Validate a complete canonical pair BEFORE creating a Firebase Auth UID.
+    // This is legacy beta enrollment only; national no-campus signup remains gated.
+    nationalAcademicMetadata(profile);
+    validateBetaAcademicCatalog(profile, INSTITUTIONS, CAMPUSES);
     // Validate/normalize optional phone before creating Firebase Auth so bad
     // metadata cannot leave behind a newly-created identity.
     const normalizedPhone = normalizeOptionalPhone(profile.phone);
@@ -269,24 +307,50 @@ export const verifiedEmailBetaAuth = {
       ...profile,
       ...(normalizedPhone ? { phone: normalizedPhone } : { phone: undefined }),
     };
+    // A signup response can arrive after another account replaces the shared
+    // canonical session through FirebaseRestClient (without authGeneration moving).
+    // Capture the full identity before the await; UID alone misses A -> A re-login.
+    const expectedCanonicalSession = readCompatibleSession();
+    const requestGeneration = ++authGeneration;
     const data = await identityRequest('accounts:signUp', { email, password, returnSecureToken: true }) as AuthPayload;
+    const currentCanonicalSession = readCompatibleSession();
+    const sameCanonical = expectedCanonicalSession
+      ? Boolean(currentCanonicalSession
+        && currentCanonicalSession.uid === expectedCanonicalSession.uid
+        && currentCanonicalSession.idToken === expectedCanonicalSession.idToken
+        && currentCanonicalSession.refreshToken === expectedCanonicalSession.refreshToken)
+      : currentCanonicalSession === null;
+    if (authGeneration !== requestGeneration || !sameCanonical) throw new Error('AUTH_SESSION_CHANGED');
+    // createMarketplaceAccount persists this signup and increments the generation.
+    const registrationGeneration = requestGeneration + 1;
+    const assertCurrentRegistration = () => {
+      const current = assertSessionUnchanged(registrationGeneration, data.localId, data.refreshToken);
+      if (current.idToken !== data.idToken) throw new Error('AUTH_SESSION_CHANGED');
+    };
     try {
       await createMarketplaceAccount(data, email, normalizedProfile);
     } catch (error) {
+      // A different login may complete while the profile commit is pending.
+      // Never delete the old signup or clear the newer account in that case.
+      assertCurrentRegistration();
       // A network timeout is ambiguous: the atomic Firestore commit may already
       // have reached Firebase. Never delete Auth or clear the session merely
       // because the client did not receive the response.
       if (isFirebaseRequestTimeout(error)) throw error;
       try { await identityRequest('accounts:delete', { idToken: data.idToken }); } catch { /* best effort rollback */ }
+      // Even a best-effort rollback may outlive a new login. Preserve its session.
+      assertCurrentRegistration();
       clearCanonicalSession();
       throw error;
     }
+    assertCurrentRegistration();
     // Mail failure after a successful atomic commit keeps a recoverable pending
     // identity. Resend retries delivery without deleting its profile or wallet.
     let verificationEmailSent = true;
     try {
       await identityRequest('accounts:sendOobCode', { requestType: 'VERIFY_EMAIL', idToken: data.idToken });
     } catch { verificationEmailSent = false; }
+    assertCurrentRegistration();
     return { uid: data.localId, email, emailVerified: false, verificationEmailSent } satisfies VerifiedEmailBetaStatus;
   },
 
@@ -307,9 +371,20 @@ export const verifiedEmailBetaAuth = {
 
   async login(emailInput: string, password: string) {
     const email = normalizeEmail(emailInput);
+    // A second FirebaseRestClient may replace the canonical session without
+    // incrementing this module's authGeneration. Capture the exact owner tokens
+    // before dispatch so a delayed login cannot overwrite B or newer A.
+    const expectedCanonicalSession = readCompatibleSession();
     const requestGeneration = ++authGeneration;
     const data = await identityRequest('accounts:signInWithPassword', { email, password, returnSecureToken: true }) as AuthPayload;
-    if (authGeneration !== requestGeneration) throw new Error('AUTH_SESSION_CHANGED');
+    const currentCanonicalSession = readCompatibleSession();
+    const sameCanonical = expectedCanonicalSession
+      ? Boolean(currentCanonicalSession
+        && currentCanonicalSession.uid === expectedCanonicalSession.uid
+        && currentCanonicalSession.idToken === expectedCanonicalSession.idToken
+        && currentCanonicalSession.refreshToken === expectedCanonicalSession.refreshToken)
+      : currentCanonicalSession === null;
+    if (authGeneration !== requestGeneration || !sameCanonical) throw new Error('AUTH_SESSION_CHANGED');
     const ownSession = persistCompatibleSession(data, email, false);
     const ownGeneration = authGeneration;
     const client = sessionClient();
@@ -317,6 +392,9 @@ export const verifiedEmailBetaAuth = {
     assertSessionUnchanged(ownGeneration, ownSession.uid, ownSession.refreshToken);
     if (!profile) {
       await syncAuthStatus(data.localId, false, 'PROFILE_MISSING');
+      // The diagnostic write can be delayed by a second login. Never clear
+      // a newer owner just because A's profile could not be loaded earlier.
+      assertSessionUnchanged(ownGeneration, ownSession.uid, ownSession.refreshToken);
       clearCanonicalSession();
       throw new Error('PROFILE_MISSING');
     }
@@ -328,6 +406,7 @@ export const verifiedEmailBetaAuth = {
     const email = normalizeEmail(emailInput);
     if (password.length < 8) throw new Error('WEAK_PASSWORD');
     const aliasEmail = await phoneAliasEmail(phone);
+    const expectedCanonicalSession = readCompatibleSession();
     const requestGeneration = ++authGeneration;
     const data = await identityRequest('accounts:signInWithPassword', {
       email: aliasEmail,
@@ -342,7 +421,7 @@ export const verifiedEmailBetaAuth = {
       expiresAt: Date.now() + Number(data.expiresIn || 3600) * 1000,
       phone,
     };
-    return migrateLegacySessionToEmail(legacySession, email, requestGeneration);
+    return migrateLegacySessionToEmail(legacySession, email, requestGeneration, expectedCanonicalSession);
   },
 
   async migrateCurrentLegacySession(emailInput: string) {
@@ -350,7 +429,7 @@ export const verifiedEmailBetaAuth = {
     if (!stored?.idToken || !stored.uid) throw new Error('AUTH_REQUIRED');
     if (stored.email || stored.authMode === 'email_password_verified_beta') throw new Error('LEGACY_MIGRATION_NOT_REQUIRED');
     const requestGeneration = ++authGeneration;
-    return migrateLegacySessionToEmail(stored, emailInput, requestGeneration);
+    return migrateLegacySessionToEmail(stored, emailInput, requestGeneration, stored);
   },
 
   async applyVerificationLink(linkInput: string) {
@@ -403,7 +482,11 @@ export const verifiedEmailBetaAuth = {
     });
     const user = lookup?.users?.[0];
     if (!user?.localId || !user?.email) throw new Error('USER_NOT_FOUND');
-    const verified = user.emailVerified === true;
+    // Accounts:lookup is a Firebase Auth response for the active ID token,
+    // NOT a profile phone or phone-alias string supplied by the client.
+    const evidence = nationalVerificationIndicators(user, stored.uid);
+    if (user.localId !== stored.uid) throw new Error('AUTH_UID_MISMATCH');
+    const verified = evidence.emailVerified;
     if (verified) stored = await forceRefreshStoredSession(generation);
     assertSessionUnchanged(generation, stored.uid, stored.refreshToken);
     const normalizedUserEmail = String(user.email).toLowerCase();
@@ -417,15 +500,26 @@ export const verifiedEmailBetaAuth = {
       authMode: 'email_password_verified_beta',
     };
     persistCanonicalSession(next);
-    return { uid: user.localId, email: normalizedUserEmail, emailVerified: verified };
+    return { uid: user.localId, email: normalizedUserEmail, emailVerified: verified, phoneVerified: evidence.phoneVerified };
   },
 
   readLocalStatus(): VerifiedEmailBetaStatus | null {
     const stored = readCompatibleSession();
     if (!stored?.uid || !stored?.email) return null;
-    return { uid: stored.uid, email: stored.email, emailVerified: stored.emailVerified === true };
+    // No local phone flag is trusted between fresh Firebase Auth lookups.
+    return { uid: stored.uid, email: stored.email, emailVerified: stored.emailVerified === true, phoneVerified: false };
   },
 
+  // Read-only, process-local generation: changes on login/logout, but not on
+  // ordinary token refresh. Async UI callbacks can reject an obsolete session
+  // even when the user signs out and signs back into the same account.
+  sessionGeneration() { return authGeneration; },
+  // Read the one project-scoped canonical session regardless of login method.
+  // Returns an in-memory identity witness; do not log, persist or send the token.
+  readSessionIdentity() {
+    const session = readCompatibleSession();
+    return session ? { uid: session.uid, refreshToken: session.refreshToken } : null;
+  },
   signOut() {
     clearCanonicalSession();
   },

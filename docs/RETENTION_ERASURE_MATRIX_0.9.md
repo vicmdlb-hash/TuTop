@@ -11,6 +11,7 @@
 | `notification_receipts` | Estado leído/no leído | Eliminar | Preferencia personal | PENDIENTE LEGAL |
 | `favorites` | Favoritos | Eliminar | Preferencia personal | PENDIENTE LEGAL |
 | `saved_searches` | Búsquedas guardadas | Eliminar | Preferencia personal | PENDIENTE LEGAL |
+| `user_blocks/*/targets` (documentos `user_blocks/{uid}/targets/{peer}`) | Referencias privadas de bloqueo (identificadores) | Eliminar relaciones tanto salientes como entrantes y comprobar residuos | Impedir que un UID borrado permanezca en listas de terceros | PENDIENTE LEGAL |
 | `wallets` | UCoins beta | Eliminar | No son dinero ni saldo retirable | PENDIENTE LEGAL |
 | `wallet_transactions` | Ledger UCoins beta | Eliminar | Sin valor monetario | PENDIENTE LEGAL |
 | `verificationRequests` | Evidencia privada de verificación | Eliminar | PII sensible operacional | PENDIENTE LEGAL |
@@ -27,6 +28,27 @@
 | `reviews` | Reputación post-operación | Retener operacionalmente | Evidencia de transacción/confianza | PENDIENTE LEGAL |
 | `reports` | Seguridad/moderación | Retener operacionalmente | Fraude, seguridad y enforcement | PENDIENTE LEGAL |
 | `audit_log` | Auditoría administrativa | Retener operacionalmente | Trazabilidad de acciones trusted | PENDIENTE LEGAL |
+
+## Inventario adicional pendiente de clasificación (sin autorización de borrado)
+
+Este control complementa la matriz técnica: las rutas de abajo aparecen en código,
+pero NO se ha acreditado una enumeración exhaustiva ni aprobado su tratamiento
+para eliminación de cuenta. El procesador de erasure mantiene `--apply`
+bloqueado; agregar una fila aquí NO habilita ninguna mutación.
+
+| Datos/fuente | Evidencia de código | Tratamiento y prueba pendientes |
+|---|---|---|
+| `notification_outbox` | `scripts/v2-trusted-maintenance.mjs` usa `recipient_uid`, `body` y `status` | **PENDIENTE LEGAL Y TÉCNICO**: inventariar notificaciones destinadas a la cuenta, evitar envíos posteriores y definir eliminación/anonimización o retención justificada; comprobar residuos |
+| `age_proofs_v2` | `scripts/guardian-revocation-preflight.mjs` propone revocar prueba de edad | **NO VERIFICADO EN BACKEND**: al activar población menor, exigir auditoría de emisor, consentimiento, caducidad, borrado y residuos; no tratar el planner como prueba de revocación |
+| `guardian_grants_v2` | `scripts/guardian-revocation-preflight.mjs` propone desactivar tutela | **NO VERIFICADO EN BACKEND**: separar tutela vigente, historia auditada y datos personales, con revisión legal reforzada |
+| `adult_actions_v2` | `scripts/guardian-revocation-preflight.mjs` propone retirar autorización del adulto | **NO VERIFICADO EN BACKEND**: comprobar revocación efectiva y conservación mínima, no inferir consentimiento de un booleano del cliente |
+| `chats/*/messages`, `chats/*/reads`, `chats/*/confirmations` | `scripts/process-account-erasure.mjs` los cuenta en el manifiesto residual | **PENDIENTE LEGAL**: revisar texto, identificadores, evidencias de disputa y lectura; evitar afirmar que retener el documento padre elimina o anonimiza estas subcolecciones |
+| `moderation_cases` | `scripts/v2-trusted-maintenance.mjs` consulta casos para reputación | **PENDIENTE LEGAL Y DE INVENTARIO**: revisar referencias al UID como sujeto o denunciante y precisar plazos/anonimización antes de validar borrado |
+
+Ninguna de estas filas se equipara automáticamente a una colección presente en
+el staging ni a una política productiva aprobada. Los periodos finales y las
+excepciones de conservación requieren revisión jurídica y evidencia del servicio.
+Mientras el inventario sea incompleto, **no marcar el borrado como completado**.
 
 ## Reglas de salida
 

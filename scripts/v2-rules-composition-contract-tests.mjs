@@ -13,6 +13,7 @@ const nearby = fs.readFileSync('scripts/harden-nearby-v2-rules.mjs', 'utf8');
 const video = fs.readFileSync('scripts/harden-listing-video-rules.mjs', 'utf8');
 const verifiedEmail = fs.readFileSync('scripts/harden-verified-email-beta-rules.mjs', 'utf8');
 const privateReads = fs.readFileSync('scripts/harden-private-admin-read-rules.mjs', 'utf8');
+const userBlocks = fs.readFileSync('scripts/harden-user-block-rules.mjs', 'utf8');
 
 const expected = [
   'node scripts/prepare-firestore-v2-rules.mjs',
@@ -26,6 +27,7 @@ const expected = [
   'node scripts/harden-listing-video-rules.mjs',
   'node scripts/harden-verified-email-beta-rules.mjs',
   'node scripts/harden-private-admin-read-rules.mjs',
+  'node scripts/harden-user-block-rules.mjs',
 ].join(' && ');
 assert.equal(pkg.scripts['v2:rules:prepare'], expected, 'V2 Rules composition order changed');
 assert.doesNotMatch(pkg.scripts['v2:rules:prepare'], /harden-favorite-v2-rules/);
@@ -57,7 +59,7 @@ assert.match(locks, /cancellation releases reservation lock/);
 
 // Independent post-runtime hardeners must remain narrowly scoped and fail closed.
 for (const [name, source] of [
-  ['canonical', canonical], ['runtime', runtime], ['optimize', optimize], ['account', account], ['receipts', receipts], ['locks', locks], ['video', video], ['verified-email', verifiedEmail], ['private-reads', privateReads],
+  ['canonical', canonical], ['runtime', runtime], ['optimize', optimize], ['account', account], ['receipts', receipts], ['locks', locks], ['video', video], ['verified-email', verifiedEmail], ['private-reads', privateReads], ['user-blocks', userBlocks],
 ]) {
   assert.match(source, /const path = 'firebase\/firestore\.v2\.generated\.rules'/, `${name} must target generated rules only`);
   assert.match(source, /encontró \$\{count\}|encontró \$\{occurrences\}|esperaba 1 coincidencia/, `${name} must fail closed on marker drift`);
@@ -97,6 +99,8 @@ assert.match(verifiedEmail, /email_password_verified_beta/);
 assert.match(privateReads, /canReadIdentityPrivate/);
 assert.match(privateReads, /canReadWalletPrivate/);
 assert.match(privateReads, /canReadCommercePrivate/);
+assert.match(userBlocks, /match \/user_blocks\/\{blockerUid\}\/targets\/\{blockedUid\}/);
+assert.match(userBlocks, /usersUnblocked/);
 assert.match(privateReads, /favorites owner-only scope/);
 assert.match(privateReads, /saved searches owner-only scope/);
 assert.match(privateReads, /reservation lock private read scope/);

@@ -1,0 +1,299 @@
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import { compileTypescriptFixture } from './typescript-fixture-compiler.mjs';
+
+// Execute the actual TypeScript REST client against synthetic storage, App Check,
+// and Firestore responses. No real Firebase, network, credentials or side effects.
+const transpile = compileTypescriptFixture;
+const sharedGuard = transpile('src/lib/firebaseSharedSessionGuard.ts');
+const restClient = transpile('src/services/firebaseRest.ts');
+const projectId = 'synthetic-firestore-session-races';
+const storageKey = 'tutop.firebase.session.v2.' + projectId;
+const makeSession = (uid, epoch) => ({
+  uid, idToken: 'synthetic-token-' + epoch, refreshToken: 'synthetic-refresh-' + epoch,
+  expiresAt: Date.now() + 600_000, phone: '+520000000000',
+});
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
+async function until(predicate, label) {
+  for (let i = 0; i < 100 && !predicate(); i++) await Promise.resolve();
+  assert(predicate(), 'synthetic await not reached: ' + label);
+}
+function makeHarness({ appCheckGate = null, bodyGate = null, expired = false } = {}) {
+  const map = new Map();
+  const storage = {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => { map.set(key, String(value)); },
+    removeItem: (key) => { map.delete(key); },
+  };
+  const first = makeSession('A', 'original');
+  if (expired) first.expiresAt = Date.now() - 1_000;
+  storage.setItem(storageKey, JSON.stringify(first));
+  const requests = [];
+  let appCheckStarted = false;
+  let bodyStarted = false;
+  const firebaseFetch = (url, init) => {
+    assert.match(url, /(?:firestore|securetoken)\.googleapis\.com/, 'only Firestore or Secure Token endpoint expected');
+    const call = { url, init, gate: deferred() };
+    requests.push(call);
+    return call.gate.promise;
+  };
+  const appCheck = async () => {
+    appCheckStarted = true;
+    if (appCheckGate) await appCheckGate.promise;
+    return null;
+  };
+  function load(source, imports = {}) {
+    const module = { exports: {} };
+    vm.runInNewContext(source, {
+      module, exports: module.exports,
+      require(name) {
+        assert(Object.prototype.hasOwnProperty.call(imports, name), 'unexpected module: ' + name);
+        return imports[name];
+      },
+      localStorage: storage, Headers, URLSearchParams, TextEncoder, Date, Promise,
+    }, { timeout: 3000 });
+    return module.exports;
+  }
+  const guard = load(sharedGuard);
+  const rest = load(restClient, {
+    './firebaseHttp': { firebaseFetch, readFirebaseResponseText: async (response) => response.text() },
+    './nativeAppCheckToken': { getNativeAppCheckToken: appCheck },
+    '../lib/firebaseSharedSessionGuard': guard,
+  });
+  const clientA = new rest.FirebaseRestClient({ apiKey: 'synthetic-key', projectId });
+  function login(uid, epoch) {
+    const next = new rest.FirebaseRestClient({ apiKey: 'synthetic-key', projectId });
+    next.persistSession(makeSession(uid, epoch));
+  }
+  function settle(call, data = { name: 'projects/demo/databases/(default)/documents/demo/test', fields: { label: { stringValue: 'safe' } } }) {
+    call.gate.resolve({
+      ok: true, status: 200,
+      text: async () => {
+        bodyStarted = true;
+        if (bodyGate) await bodyGate.promise;
+        return JSON.stringify(data);
+      },
+    });
+  }
+  function settleHttpError(call, status) {
+    call.gate.resolve({
+      ok: false, status,
+      text: async () => JSON.stringify({ error: { status: 'NOT_FOUND', message: 'synthetic missing' } }),
+    });
+  }
+  function rejectNetwork(call) { call.gate.reject(new TypeError('synthetic-network-failed')); }
+  return {
+    clientA, login, settle, settleHttpError, rejectNetwork, requests,
+    appCheckStarted: () => appCheckStarted,
+    bodyStarted: () => bodyStarted,
+    persisted: () => JSON.parse(storage.getItem(storageKey)),
+  };
+}
+
+// Timestamp serialization is a security boundary for expiry and retention.
+// Date.parse silently normalizes nonexistent calendar dates; those values must
+// not be persisted as valid Firestore timestampValue fields.
+{
+  const h = makeHarness();
+  const invalid = h.clientA.encodeDocumentForWrite('demo/synthetic-timestamps', {
+    reservation_expires_at: '2026-02-31T12:00:00.000Z',
+    retention_delete_after: '2026-02-31T12:00:00.000Z',
+    created_at: '2026-09-07T04:29:00+00:00',
+  });
+  assert.equal(invalid.fields.reservation_expires_at?.timestampValue, undefined);
+  assert.equal(invalid.fields.retention_delete_after?.timestampValue, undefined);
+  assert.equal(invalid.fields.created_at?.timestampValue, undefined);
+  assert.equal(invalid.fields.reservation_expires_at?.stringValue, '2026-02-31T12:00:00.000Z');
+  const valid = h.clientA.encodeDocumentForWrite('demo/synthetic-timestamps', {
+    reservation_expires_at: '2024-02-29T12:00:00.123Z',
+  });
+  assert.equal(valid.fields.reservation_expires_at?.timestampValue, '2024-02-29T12:00:00.123Z');
+}
+console.log('PASS Firestore date encoder rejects rollover/noncanonical strings as timestamps while preserving valid leap day');
+
+// The real REST refresh method must not persist a success-shaped but malformed
+// Secure Token response. Synthetic network only; no real Firebase credentials.
+{
+  const h = makeHarness({ expired: true });
+  const pending = h.clientA.getIdToken();
+  await until(() => h.requests.length === 1, 'valid refresh request');
+  h.settle(h.requests[0], { user_id:'A', id_token:'fresh-A', refresh_token:'fresh-r', expires_in:'3600' });
+  assert.equal(await pending, 'fresh-A', 'matching UID refresh remains functional');
+  assert.equal(h.persisted().uid, 'A');
+  assert.equal(h.persisted().refreshToken, 'fresh-r');
+}
+for (const [label, payload, code] of [
+  ['missing user_id', { id_token:'foreign', refresh_token:'r', expires_in:'3600' }, 'AUTH_SESSION_CHANGED'],
+  ['empty user_id', { user_id:'', id_token:'foreign', refresh_token:'r', expires_in:'3600' }, 'AUTH_SESSION_CHANGED'],
+  ['cross-account user_id', { user_id:'B', id_token:'foreign', refresh_token:'r', expires_in:'3600' }, 'AUTH_SESSION_CHANGED'],
+  ['empty id_token', { user_id:'A', id_token:'', refresh_token:'r', expires_in:'3600' }, 'AUTH_REFRESH_RESPONSE_INVALID'],
+  ['missing id_token', { user_id:'A', refresh_token:'r', expires_in:'3600' }, 'AUTH_REFRESH_RESPONSE_INVALID'],
+  ['invalid expiry', { user_id:'A', id_token:'fresh', refresh_token:'r', expires_in:'not-a-number' }, 'AUTH_REFRESH_RESPONSE_INVALID'],
+]) {
+  const h = makeHarness({ expired: true });
+  const initial = h.persisted();
+  const pending = h.clientA.getIdToken();
+  await until(() => h.requests.length === 1, label);
+  h.settle(h.requests[0], payload);
+  await assert.rejects(pending, new RegExp(code), label);
+  assert.deepEqual(h.persisted(), initial, label + ': original session must remain untouched');
+}
+console.log('PASS strict Secure Token REST refresh: wrong/missing UID, token and expiry fail closed; valid owner refresh remains accepted');
+
+// Baseline: unchanged A session successfully decodes the remote result.
+{
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/test');
+  await until(() => h.requests.length === 1, 'baseline request');
+  assert.equal(h.requests[0].init.headers.get('Authorization'), 'Bearer synthetic-token-original');
+  h.settle(h.requests[0]);
+  const result = await pending;
+  assert.equal(result.data.label, 'safe');
+  assert.equal(h.persisted().uid, 'A');
+}
+
+// Changing A to B during App Check must prevent even dispatching A credentials.
+{
+  const gate = deferred();
+  const h = makeHarness({ appCheckGate: gate });
+  const pending = h.clientA.getDocument('demo/test');
+  await until(() => h.appCheckStarted(), 'App Check gate');
+  h.login('B', 'fresh');
+  gate.resolve();
+  await assert.rejects(pending, /AUTH_SESSION_CHANGED/);
+  assert.equal(h.requests.length, 0, 'A request must not reach Firestore after App Check wait');
+  assert.equal(h.persisted().uid, 'B');
+}
+
+// A stale response to an already-dispatched request may not populate B's UI.
+for (const [name, uid] of [['A-to-B', 'B'], ['A-to-A-new-session', 'A']]) {
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/test');
+  await until(() => h.requests.length === 1, name + ' dispatch');
+  h.login(uid, 'replacement');
+  h.settle(h.requests[0]);
+  await assert.rejects(pending, /AUTH_SESSION_CHANGED/, name);
+  assert.equal(h.persisted().refreshToken, 'synthetic-refresh-replacement');
+}
+
+// Change the session only after HTTP receipt, while response.text() is pending.
+{
+  const gate = deferred();
+  const h = makeHarness({ bodyGate: gate });
+  const pending = h.clientA.getDocument('demo/test');
+  await until(() => h.requests.length === 1, 'HTTP dispatch');
+  h.settle(h.requests[0]);
+  await until(() => h.bodyStarted(), 'body parser');
+  h.login('B', 'after-http');
+  gate.resolve();
+  await assert.rejects(pending, /AUTH_SESSION_CHANGED/);
+  assert.equal(h.persisted().uid, 'B');
+}
+
+// Sign-out during a response must not leak old Firestore data to a guest UI.
+{
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/test');
+  await until(() => h.requests.length === 1, 'signout dispatch');
+  h.clientA.signOut();
+  h.settle(h.requests[0]);
+  await assert.rejects(pending, /AUTH_SESSION_CHANGED/);
+}
+// Unchanged A must preserve legitimate 404->null and network failure behavior.
+{
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/missing');
+  await until(() => h.requests.length === 1, 'unchanged 404');
+  h.settleHttpError(h.requests[0], 404);
+  assert.equal(await pending, null, 'current session should still return null for real 404');
+}
+{
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/unreachable');
+  await until(() => h.requests.length === 1, 'unchanged network failure');
+  h.rejectNetwork(h.requests[0]);
+  await assert.rejects(pending, /synthetic-network-failed/);
+}
+
+// The old session's 404 must NOT masquerade as B's nonexistent document.
+for (const [label, uid] of [['stale404-AtoB', 'B'], ['stale404-AtoA', 'A']]) {
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/missing');
+  await until(() => h.requests.length === 1, label);
+  h.login(uid, 'fresh');
+  h.settleHttpError(h.requests[0], 404);
+  await assert.rejects(pending, /AUTH_SESSION_CHANGED/, label);
+  assert.equal(h.persisted().refreshToken, 'synthetic-refresh-fresh');
+}
+
+// An old account's error path must fail closed even if the network itself rejects.
+{
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/error');
+  await until(() => h.requests.length === 1, 'stale network reject');
+  h.login('B', 'fresh');
+  h.rejectNetwork(h.requests[0]);
+  await assert.rejects(pending, /AUTH_SESSION_CHANGED/);
+  assert.equal(h.persisted().uid, 'B');
+}
+
+// A 403 returned from a previous session cannot be mistaken for a new account failure.
+{
+  const h = makeHarness();
+  const pending = h.clientA.getDocument('demo/denied');
+  await until(() => h.requests.length === 1, 'stale http 403');
+  h.login('B', 'fresh');
+  h.settleHttpError(h.requests[0], 403);
+  await assert.rejects(pending, /AUTH_SESSION_CHANGED/);
+}
+
+// RunQuery consumes a stream of row envelopes even when HTTP itself succeeds.
+// Validate actual FirebaseRestClient behavior with synthetic responses only.
+const queryDoc = {
+  name: `projects/${projectId}/databases/(default)/documents/listings_v2/synthetic-one`,
+  fields: { status: { stringValue: 'active' } },
+};
+{
+  const h = makeHarness();
+  const pending = h.clientA.runQuery('listings_v2');
+  await until(() => h.requests.length === 1, 'runQuery valid response');
+  h.settle(h.requests[0], [{ readTime: '2026-11-12T00:00:00Z' },
+    { document: queryDoc }, { skippedResults: 0, readTime: '2026-11-12T00:00:00Z' }]);
+  const docs = await pending;
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].id, 'synthetic-one');
+  assert.equal(docs[0].data.status, 'active');
+}
+{
+  const h = makeHarness();
+  const pending = h.clientA.runQuery('listings_v2');
+  await until(() => h.requests.length === 1, 'runQuery empty response');
+  h.settle(h.requests[0], [{ readTime: '2026-11-12T00:00:00Z' }]);
+  assert.equal((await pending).length, 0);
+}
+for (const [label, rows] of [
+  ['in-band error', [{ document: queryDoc }, { error: { code: 403 } }]],
+  ['skipped documents', [{ document: queryDoc, skippedResults: 1 }]],
+  ['malformed skipped count', [{ readTime: '2026-11-12T00:00:00Z', skippedResults: '1' }]],
+  ['unknown row', [{}]],
+  ['null document', [{ document: null }]],
+  ['foreign project document', [{ document: { name: 'projects/other/databases/(default)/documents/listings_v2/x' } }]],
+  ['malformed fields', [{ document: { name: queryDoc.name, fields: [] } }]],
+  ['no row stream', null],
+]) {
+  const h = makeHarness();
+  const pending = h.clientA.runQuery('listings_v2');
+  await until(() => h.requests.length === 1, 'runQuery ' + label);
+  h.settle(h.requests[0], rows);
+  await assert.rejects(pending, /FIRESTORE_QUERY_(?:RESPONSE|ROW|DOCUMENT)_INVALID|FIRESTORE_QUERY_SKIPPED_RESULTS_UNSAFE/, label);
+}
+console.log('PASS Firestore client query stream rejects in-band errors, omitted rows and foreign documents without live Firebase');
+
+console.log('PASS Firestore response/error paths: unchanged 404 and network errors preserve semantics; stale 404 A->B/A->A, 403 and network rejection fail closed');
+console.log('PASS real client synthetic A/B in-flight races, no Firebase traffic');

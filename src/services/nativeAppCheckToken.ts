@@ -88,7 +88,13 @@ export async function initializeNativeAppCheck() {
     }
     lastFailure = 'none';
     return appCheck;
-  })().catch((error) => {
+  })().then((availablePlugin) => {
+    // Capacitor may expose the native plugin after the first startup probe.
+    // A resolved null is transient; retaining it would block every later retry.
+    // Keep only successful initialization memoized.
+    if (!availablePlugin) initializePromise = null;
+    return availablePlugin;
+  }).catch((error) => {
     lastFailure = timedOut(error) ? 'timeout' : 'initialize-failed';
     // A hung native call must not poison all later retries with the same pending
     // promise. The underlying plugin may eventually settle, but callers are

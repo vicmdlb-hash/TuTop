@@ -15,9 +15,15 @@ function placeholder(value) {
   return !String(value || '').trim() || /PENDIENTE|TODO|TBD/i.test(String(value));
 }
 
-function parseTimestamp(value) {
-  if (placeholder(value)) return NaN;
-  return Date.parse(String(value));
+// R6 timestamps are real Gregorian UTC instants, not Date.parse rollovers.
+// Match the existing FCM and App Check physical-evidence contracts.
+export function parseCanonicalEvidenceUtc(value) {
+  if (typeof value !== 'string'
+      || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)) return NaN;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed)
+    && new Date(parsed).toISOString().slice(0, 19) === value.slice(0, 19)
+      ? parsed : NaN;
 }
 
 function validateScreenshots(bundle, index, started, completed, errors) {
@@ -26,7 +32,7 @@ function validateScreenshots(bundle, index, started, completed, errors) {
   const hashes = [];
   for (const shot of screenshots) {
     const sha = String(shot?.sha256 || '').toLowerCase();
-    const capturedAt = Date.parse(String(shot?.captured_at || ''));
+    const capturedAt = parseCanonicalEvidenceUtc(shot?.captured_at);
     const caseName = String(shot?.case || '');
     if (!SHA256.test(sha)) errors.push(`${label}: screenshot.sha256 inválido o placeholder`);
     else hashes.push(sha);
@@ -85,7 +91,7 @@ function validateLinkedEvidence(bundle, index, started, completed, now, candidat
     if (appCheck.contains_raw_token === true || 'token' in appCheck || 'app_check_token' in appCheck) {
       errors.push(`${label}: App Check no debe almacenar token crudo`);
     }
-    const observedAt = Date.parse(String(appCheck.observed_at || ''));
+    const observedAt = parseCanonicalEvidenceUtc(appCheck.observed_at);
     if (!Number.isFinite(observedAt)) errors.push(`${label}: App Check observed_at inválido`);
     else if (observedAt < started - CLOCK_SKEW_MS || observedAt > completed + CLOCK_SKEW_MS) {
       errors.push(`${label}: App Check observado fuera de la sesión de evidencia`);
@@ -95,8 +101,8 @@ function validateLinkedEvidence(bundle, index, started, completed, now, candidat
 
 function validateSessionWindow(bundle, index, now, candidate, errors) {
   const label = `Device ${index + 1}`;
-  const started = parseTimestamp(bundle?.evidence_started_at);
-  const completed = parseTimestamp(bundle?.evidence_completed_at);
+  const started = parseCanonicalEvidenceUtc(bundle?.evidence_started_at);
+  const completed = parseCanonicalEvidenceUtc(bundle?.evidence_completed_at);
   if (!Number.isFinite(started)) errors.push(`${label}: evidence_started_at ISO-8601 real requerido`);
   if (!Number.isFinite(completed)) errors.push(`${label}: evidence_completed_at ISO-8601 real requerido`);
   if (!Number.isFinite(started) || !Number.isFinite(completed)) return new Set();
@@ -105,13 +111,14 @@ function validateSessionWindow(bundle, index, now, candidate, errors) {
   if (completed > now + CLOCK_SKEW_MS) errors.push(`${label}: evidencia_completed_at está en el futuro`);
   if (now - completed > MAX_EVIDENCE_AGE_MS) errors.push(`${label}: evidencia física supera 24 horas de antigüedad`);
 
-  const reportAt = Date.parse(String(bundle?.diagnostic_report?.generated_at || ''));
-  if (Number.isFinite(reportAt) && (reportAt < started - CLOCK_SKEW_MS || reportAt > completed + CLOCK_SKEW_MS)) {
+  const reportAt = parseCanonicalEvidenceUtc(bundle?.diagnostic_report?.generated_at);
+  if (!Number.isFinite(reportAt)) errors.push(`${label}: diagnostic_report.generated_at inválido`);
+  else if (reportAt < started - CLOCK_SKEW_MS || reportAt > completed + CLOCK_SKEW_MS) {
     errors.push(`${label}: diagnostic_report.generated_at cae fuera de la sesión de evidencia`);
   }
   let previous = -Infinity;
   for (const event of bundle?.diagnostic_report?.events || []) {
-    const eventAt = Date.parse(String(event?.at || ''));
+    const eventAt = parseCanonicalEvidenceUtc(event?.at);
     if (!Number.isFinite(eventAt)) {
       errors.push(`${label}: evento diagnóstico con timestamp inválido`);
       continue;

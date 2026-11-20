@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Compass, Heart, Loader2, MapPin, Search, SlidersHorizontal, TriangleAlert } from 'lucide-react';
 import { MARKETPLACE_CATEGORIES } from '../lib/productAssistant';
-import { NEARBY_LOCATION_EVENT, getCachedApproxLocation, nearbyGeoCells, nearbyLocationPermission, productDistanceKm, requestApproxLocation, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { isPublicDiscoveryProduct } from '../lib/publicDiscovery';
+import { NEARBY_LOCATION_EVENT, NEARBY_LOCATION_CLEARED_EVENT, getCachedApproxLocation, nearbyGeoCells, nearbyLocationPermission, productDistanceKm, requestApproxLocation, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
+import { nationalSchemaEnabled } from '../services/nationalBackend';
 import { useAppStore } from '../store/useAppStore';
 import type { Product, ProductCategory } from '../types';
 import ProductCard from './ProductCard';
@@ -30,21 +32,43 @@ export default function ExploreScreen() {
   const [nearbyBusy, setNearbyBusy] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [nearbyRefreshKey, setNearbyRefreshKey] = useState(0);
+  // A revoked location must invalidate pending responses before React effect cleanup.
+  const nearbyRequestEpoch = useRef(0);
 
   useEffect(() => {
+    setLocation(getCachedApproxLocation(user.id));
+    setNearbyProducts([]);
+    setLocationBusy(false);
+    setNearbyBusy(false);
+    setLocationMessage(null);
     const onLocation = (event: Event) => {
-      const detail = (event as CustomEvent<ApproxLocation>).detail;
-      if (!detail) return;
+      const detail = (event as CustomEvent<ScopedApproxLocationEvent>).detail;
+      if (detail?.owner_uid !== user.id) return;
       setLocation(detail);
       setLocationMessage(null);
     };
+    const onLocationCleared = (event: Event) => {
+      const clearedUid = (event as CustomEvent<{ owner_uid: string | null }>).detail?.owner_uid;
+      if (clearedUid && clearedUid !== user.id) return;
+      nearbyRequestEpoch.current += 1;
+      setLocation(null);
+      setNearbyProducts([]);
+      setNearbyBusy(false);
+      setNearbyError(null);
+      setLocationMessage('Ubicación aproximada desactivada. Puedes seguir explorando por campus o ciudad.');
+    };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
-    return () => window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
-  }, []);
+    window.addEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
+    return () => {
+      window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
+      window.removeEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
+    };
+  }, [user.id]);
 
   useEffect(() => {
     const onBaseHydrated = () => {
       if (scope !== 'nearby') return;
+      nearbyRequestEpoch.current += 1;
       setNearbyProducts([]);
       setNearbyError(null);
       setNearbyRefreshKey((current) => current + 1);
@@ -53,33 +77,63 @@ export default function ExploreScreen() {
     return () => window.removeEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, onBaseHydrated);
   }, [scope]);
 
+  // Refresh stale approved-listing visibility on foreground return only.
+  // No background timer or repeated reads while users remain idle.
+  useEffect(() => {
+    if (scope !== 'nearby' || !location) return;
+    let lastRequested = Date.now();
+    const onForeground = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastRequested < 60_000) return;
+      lastRequested = Date.now();
+      nearbyRequestEpoch.current += 1;
+      setNearbyProducts([]);
+      setNearbyError(null);
+      setNearbyRefreshKey((current) => current + 1);
+    };
+    document.addEventListener('visibilitychange', onForeground);
+    window.addEventListener('focus', onForeground);
+    return () => {
+      document.removeEventListener('visibilitychange', onForeground);
+      window.removeEventListener('focus', onForeground);
+    };
+  }, [scope, location?.latitude, location?.longitude, location?.captured_at, user.id]);
+
   useEffect(() => {
     if (scope !== 'nearby' || !location) return;
     let active = true;
+    const requestEpoch = ++nearbyRequestEpoch.current;
+    const requestUid = user.id;
+    const stillCurrent = () => active && requestEpoch === nearbyRequestEpoch.current
+      && useAppStore.getState().user.id === requestUid;
     setNearbyBusy(true);
     setNearbyError(null);
     const cells = nearbyGeoCells(location);
     canonicalListingsBackend.loadNearbyProducts({ geoCells: cells, limitPerCell: 15, force: true })
-      .then((items) => { if (active) setNearbyProducts(items); })
+      .then((items) => { if (stillCurrent()) setNearbyProducts(items); })
       .catch(() => {
-        if (!active) return;
+        if (!stillCurrent()) return;
         setNearbyProducts([]);
         setNearbyError('No pudimos actualizar las publicaciones cercanas. Revisa tu conexión o vuelve a intentarlo.');
       })
-      .finally(() => { if (active) setNearbyBusy(false); });
+      .finally(() => { if (stillCurrent()) setNearbyBusy(false); });
     return () => { active = false; };
-  }, [scope, location?.latitude, location?.longitude, location?.captured_at, nearbyRefreshKey]);
+  }, [scope, location?.latitude, location?.longitude, location?.captured_at, nearbyRefreshKey, user.id]);
 
   const sourceProducts = scope === 'nearby' ? nearbyProducts : products;
+  const publicProducts = useMemo(
+    () => sourceProducts.filter((product) => isPublicDiscoveryProduct(product, nationalSchemaEnabled())),
+    [sourceProducts],
+  );
 
   const visibleCategories = useMemo(() => {
-    const present = new Set(sourceProducts.map((product) => product.categoria));
+    const present = new Set(publicProducts.map((product) => product.categoria));
     return MARKETPLACE_CATEGORIES.filter((item) => present.has(item)).slice(0, 10);
-  }, [sourceProducts]);
+  }, [publicProducts]);
 
   const filtered = useMemo(() => {
     const cleanQuery = normalized(query.trim());
-    return sourceProducts
+    return publicProducts
       .filter((product) => product.estado === 'Activo')
       .filter((product) => category === 'Todas' || product.categoria === category)
       .filter((product) => {
@@ -96,10 +150,11 @@ export default function ExploreScreen() {
         return true;
       })
       .sort((a, b) => Date.parse(b.fecha_creacion) - Date.parse(a.fecha_creacion));
-  }, [sourceProducts, category, query, scope, favorites, location, radiusKm]);
+  }, [publicProducts, category, query, scope, favorites, location, radiusKm]);
 
   const activateNearby = async () => {
-    if (locationBusy) return;
+    const requestUid = user.id;
+    if (locationBusy || !requestUid || useAppStore.getState().user.id !== requestUid) return;
     setScope('nearby');
     setLocationBusy(true);
     setLocationMessage(null);
@@ -109,12 +164,14 @@ export default function ExploreScreen() {
         setLocation(cached);
         return;
       }
-      const next = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000, ownerUid: user.id });
+      const next = await requestApproxLocation({ requestPermission: true, timeoutMs: 15_000, maximumAgeMs: 10 * 60_000, ownerUid: requestUid, isOwnerActive: () => useAppStore.getState().user.id === requestUid });
+      if (useAppStore.getState().user.id !== requestUid) return;
       if (next) {
         setLocation(next);
         return;
       }
       const permission = await nearbyLocationPermission();
+      if (useAppStore.getState().user.id !== requestUid) return;
       if (permission === 'denied') {
         setLocationMessage('Android bloqueó la ubicación para TuTop. Activa ubicación aproximada en los permisos de la app y vuelve a intentarlo.');
       } else if (permission === 'unavailable') {
@@ -123,13 +180,14 @@ export default function ExploreScreen() {
         setLocationMessage('El permiso está disponible, pero Android todavía no entregó una posición aproximada. Espera unos segundos y vuelve a intentar.');
       }
     } catch {
-      setLocationMessage('No pudimos activar la cercanía esta vez. TuTop seguirá funcionando por campus y ciudad; vuelve a intentarlo cuando tengas mejor señal.');
+      if (useAppStore.getState().user.id === requestUid) setLocationMessage('No pudimos activar la cercanía esta vez. TuTop seguirá funcionando por campus y ciudad; vuelve a intentarlo cuando tengas mejor señal.');
     } finally {
-      setLocationBusy(false);
+      if (useAppStore.getState().user.id === requestUid) setLocationBusy(false);
     }
   };
 
   const refreshNearby = () => {
+    nearbyRequestEpoch.current += 1;
     setNearbyError(null);
     setNearbyProducts([]);
     setNearbyRefreshKey((current) => current + 1);

@@ -2,7 +2,7 @@ import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { Timestamp, doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 
 const projectId = process.env.GCLOUD_PROJECT || 'demo-tutop-private-admin-reads';
 const host = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
@@ -39,6 +39,14 @@ beforeEach(async () => {
     await setDoc(doc(db, 'transactions_v2/t1'), { buyer_id: 'alice', seller_id: 'bob', listing_id: 'listing-1', chat_id: 'chat-private' });
     await setDoc(doc(db, 'reviews/r1'), { evaluador_id: 'alice', evaluado_id: 'bob', chat_id: 'chat-private' });
     await setDoc(doc(db, 'listing_reservation_locks/listing-1'), { buyer_id: 'alice', seller_id: 'bob', transaction_id: 't1' });
+    for (const [id, institution_id] of [['uatx-report', 'uatx'], ['other-report', 'buap'], ['global-report', '']]) {
+      await setDoc(doc(db, `reports/${id}`), {
+        target_type: 'ai_response', target_id: `topi-synthetic:${id}`,
+        created_by: 'alice', reason: '[exactitud] Respuesta sintética inexacta',
+        ...(institution_id ? { institution_id } : {}),
+        status: 'open', priority: 'normal', created_at: Timestamp.now(), updated_at: Timestamp.now(),
+      });
+    }
   });
 });
 
@@ -117,5 +125,50 @@ for (const roleUid of ['mod', 'inst', 'support']) {
     await assertSucceeds(getDoc(doc(db, `admins/${roleUid}`)));
   });
 }
+
+test('AI reports respect global/institutional least-privilege read scope', async () => {
+  const global = verifiedContext(env, 'trust').firestore();
+  const institution = verifiedContext(env, 'inst').firestore();
+  const support = verifiedContext(env, 'support').firestore();
+  const verification = verifiedContext(env, 'verify').firestore();
+  for (const id of ['uatx-report', 'other-report', 'global-report']) {
+    await assertSucceeds(getDoc(doc(global, `reports/${id}`)));
+    await assertFails(getDoc(doc(support, `reports/${id}`)));
+    await assertFails(getDoc(doc(verification, `reports/${id}`)));
+  }
+  await assertSucceeds(getDoc(doc(institution, 'reports/uatx-report')));
+  await assertFails(getDoc(doc(institution, 'reports/other-report')));
+  await assertFails(getDoc(doc(institution, 'reports/global-report')));
+  await assertSucceeds(getDoc(doc(verifiedContext(env, 'alice').firestore(), 'reports/uatx-report')));
+});
+
+test('AI reports use scoped audited transitions and reject cross-institution or closed-case reopen', async () => {
+  const institution = verifiedContext(env, 'inst').firestore();
+  const other = verifiedContext(env, 'support').firestore();
+  const reporter = verifiedContext(env, 'alice').firestore();
+  const at = Timestamp.now();
+  const change = (db, id, status) => updateDoc(doc(db, `reports/${id}`), {
+    status, updated_at: Timestamp.now(),
+  });
+  await assertFails(change(institution, 'other-report', 'reviewing'));
+  await assertFails(change(institution, 'global-report', 'reviewing'));
+  await assertFails(change(other, 'uatx-report', 'reviewing'));
+  await assertFails(change(reporter, 'uatx-report', 'reviewing'));
+  await assertFails(updateDoc(doc(institution, 'reports/uatx-report'), {
+    institution_id: 'buap', status: 'reviewing', updated_at: at,
+  }));
+  const audit = writeBatch(institution);
+  audit.update(doc(institution, 'reports/uatx-report'), { status: 'reviewing', updated_at: at });
+  audit.set(doc(institution, 'audit_log/synthetic-uatx-topi-review'), {
+    admin_uid: 'inst', actor_type: 'admin', role: 'institution_moderator',
+    action: 'report_reviewing', target_type: 'report', target_id: 'uatx-report',
+    institution_id: 'uatx', created_at: at,
+  });
+  await assertSucceeds(audit.commit());
+  await assertFails(change(institution, 'uatx-report', 'open'));
+  await assertSucceeds(change(institution, 'uatx-report', 'resolved'));
+  await assertFails(change(institution, 'uatx-report', 'reviewing'));
+  await assertFails(change(institution, 'uatx-report', 'open'));
+});
 
 console.log('Private admin least-privilege role matrix: PASS');

@@ -105,3 +105,23 @@ export function normalizeNationalAttributes(fieldsForCategory: NationalListingFi
   }
   return output;
 }
+
+/**
+ * An unparseable or negative required number is missing, even if the input
+ * field contains text. This is a seller-facing gate, not a schema migration.
+ */
+export function missingRequiredNationalFields(
+  fieldsForCategory: NationalListingField[],
+  values: Record<string, string | number | boolean | string[]>,
+  requiredKeys: string[],
+): string[] {
+  const fieldByKey = new Map(fieldsForCategory.map((field) => [field.key, field]));
+  return requiredKeys.filter((key) => {
+    const value = values[key];
+    if (value === undefined || value === null || value === '') return true;
+    const kind = fieldByKey.get(key)?.kind;
+    if (kind === 'number') return typeof value !== 'number' || !Number.isFinite(value) || value < 0;
+    if (kind === 'boolean') return typeof value !== 'boolean';
+    return typeof value !== 'string' || value.trim().length === 0;
+  });
+}

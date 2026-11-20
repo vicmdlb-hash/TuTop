@@ -1,4 +1,5 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { validateApkVersionCode, validateApkVersionName } from './apk-badging-version-identity.mjs';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
 const PACKAGE='mx.tutop.app';
@@ -16,6 +17,8 @@ const extractedSourceSha=required('TUTOP_NEXT_CANDIDATE_SOURCE_SHA');
 if(!/^[0-9a-f]{40}$/.test(extractedSourceSha)) throw new Error('EXTRACTED_SOURCE_SHA_INVALID');
 if(extractedSourceSha!==sourceSha) throw new Error('CANDIDATE_SOURCE_SHA_MISMATCH');
 const apkSha256=apk(required('TUTOP_NEXT_CANDIDATE_APK_SHA256'));
+const versionCode=validateApkVersionCode(required('TUTOP_NEXT_CANDIDATE_APK_VERSION_CODE'));
+const versionName=validateApkVersionName(required('TUTOP_NEXT_CANDIDATE_APK_VERSION_NAME'));
 
 const token=await firebaseCiAccessToken();
 const headers={Authorization:`Bearer ${token}`,'X-Goog-User-Project':PROJECT};
@@ -30,6 +33,9 @@ const auth=await get(`https://identitytoolkit.googleapis.com/admin/v2/projects/$
 const callback=String(auth?.notification?.sendEmail?.callbackUri||'').trim();
 let callbackUrl=null;try{callbackUrl=callback?new URL(callback):null;}catch{}
 if(!callbackUrl) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_MISSING');
+if(callbackUrl.protocol!=='https:' || callbackUrl.username || callbackUrl.password) {
+  throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_INSECURE_URL');
+}
 
 const customHandler=['/auth-action.html','/auth-action'].includes(callbackUrl.pathname);
 const firebaseDefaultHandler=callbackUrl.pathname==='/__/auth/action'
@@ -81,6 +87,9 @@ console.log(JSON.stringify({
   package:PACKAGE,
   source_sha:sourceSha,
   apk_sha256:apkSha256,
+  apk_version_code:versionCode,
+  apk_version_name:versionName,
+  install_compatibility:'UNVERIFIED_REQUIRE_DEVICE_INVENTORY',
   auth_handler_mode:handlerMode,
   auth_callback_origin:callbackUrl.origin,
   auth_callback_path:callbackUrl.pathname,

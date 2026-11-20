@@ -1,0 +1,88 @@
+/**
+ * SERVER DESIGN PREFLIGHT ONLY. No Firebase credentials, reads, writes or
+ * deployments. Input authenticity, pagination completeness, authorization,
+ * concurrent chat creation, and atomic commit remain responsibilities of a
+ * separately audited privileged backend. DO NOT call with untrusted client data.
+ *
+ * A partial revocation is worse than a deliberate fail-closed refusal: until
+ * every affected chat can be invalidated in one privileged atomic operation,
+ * social sends must be suspended at the trusted admission layer.
+ */
+const goodId = id => typeof id === 'string'
+  && /^[A-Za-z0-9_-]{1,128}$/.test(id) && !id.startsWith('__');
+
+function requireValid(ok, reason) {
+  if (!ok) throw new Error('GUARDIAN_REVOCATION_REFUSED:' + reason);
+}
+
+export function prepareGuardianRevocation(input) {
+  requireValid(input && typeof input === 'object', 'invalid_input');
+  const { subjectUid, chats, expectedChatCount, snapshotComplete,
+    snapshotObservedAtMs, nowMs, revokeGuardianGrant } = input;
+  requireValid(goodId(subjectUid), 'invalid_subject');
+  requireValid(Number.isSafeInteger(nowMs) && nowMs > 0, 'invalid_clock');
+  requireValid(Number.isSafeInteger(snapshotObservedAtMs)
+    && snapshotObservedAtMs <= nowMs
+    && nowMs - snapshotObservedAtMs <= 30_000, 'stale_or_future_snapshot');
+  requireValid(snapshotComplete === true, 'incomplete_pagination');
+  requireValid(Array.isArray(chats), 'missing_chats');
+  requireValid(Number.isSafeInteger(expectedChatCount)
+    && expectedChatCount === chats.length, 'incomplete_chat_inventory');
+  // This planner is specifically for FULL consent/guardian revocation.
+  // A revoked age proof alone must not leave a reusable active grant behind.
+  // The privileged issuer must still authenticate the request and freeze
+  // admission; this boolean is NOT an authorization or completion proof.
+  requireValid(revokeGuardianGrant === true,
+    'guardian_grant_revocation_required');
+
+  // Conservative server transaction budget, not a published product limit.
+  // Any fanout above this bound needs a different deny-first architecture.
+  // Revoke independent adult-action and UGC consent proof too: otherwise
+  // authorization issued before consent withdrawal could survive reissuance.
+  // Revoke the UGC proof in the SAME server operation. Otherwise a later
+  // age-proof reissue could resurrect an old consent/version without approval.
+  const numberOfWrites = chats.length + 4;
+  requireValid(numberOfWrites <= 400, 'cannot_atomically_revoke_all_chats');
+  const seen = new Set();
+  for (const chat of chats) {
+    requireValid(chat && goodId(chat.id), 'invalid_chat_id');
+    requireValid(goodId(chat.buyerUid) && goodId(chat.sellerUid),
+      'invalid_participant');
+    requireValid(chat.buyerUid !== chat.sellerUid, 'self_chat');
+    requireValid(chat.buyerUid === subjectUid || chat.sellerUid === subjectUid,
+      'foreign_chat');
+    requireValid(!seen.has(chat.id), 'duplicate_chat');
+    seen.add(chat.id);
+  }
+  const writes = [
+    // Deny-first upsert: a missing age proof must not make full revocation fail.
+    // Clear embedded age/guardian/UGC epochs AS WELL AS separate legacy proofs.
+    { path: 'age_proofs_v2/' + subjectUid, writeMode: 'server_upsert_tombstone',
+      changes: { revoked: true, 'guardian.active': false,
+        'ugc.revoked': true, 'ugc.granted': false } },
+    { path: 'guardian_grants_v2/' + subjectUid, changes: { active: false } },
+    { path: 'adult_actions_v2/' + subjectUid, changes: { authorized: false } },
+    // If no UGC record exists, the privileged writer must CREATE a deny
+    // tombstone rather than fail an update of a missing document. This is
+    // not an executable instruction and cannot grant publication.
+    { path: 'ugc_consents_v2/' + subjectUid,
+      writeMode: 'server_upsert_tombstone',
+      changes: { revoked: true, granted: false } },
+    ...chats.map(chat => ({
+      path: 'chats/' + chat.id,
+      changes: { guardian_pair_revoked: true, guardian_pair_vetted: false },
+    })),
+  ];
+  return {
+    kind: 'PREVIEW_NOT_EXECUTABLE',
+    subjectUid,
+    writes,
+    writeCount: numberOfWrites,
+    requiresPrivilegedAtomicCommit: true,
+    requiresServerVerifiedEnumeration: true,
+    requiresAdmissionFreezeDuringCommit: true,
+    requiresFreshGuardianAndUgcEpochBeforeReissue: true,
+    // No caller can treat this preview as evidence that access was revoked.
+    completionVerified: false,
+  };
+}

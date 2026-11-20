@@ -18,6 +18,11 @@ function mockStorage() {
   };
 }
 
+// A silent localStorage failure must never be reported to the user as saved.
+const noWrite = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+assert.equal(writeDurablePublishDraft('uid-A-123456789', { title: 'Not durable' }, noWrite), false);
+const truncated = { getItem: () => '{"partial":true}', setItem: () => {}, removeItem: () => {} };
+assert.equal(writeDurablePublishDraft('uid-A-123456789', { title: 'Truncated' }, truncated), false);
 const storage = mockStorage();
 const now = 1_800_000_000_000;
 const uidA = 'uid-A-123456789';
@@ -79,6 +84,67 @@ storage.setItem(`${DURABLE_PUBLISH_DRAFT_PREFIX}${uidA}`, JSON.stringify({
   draft: { title: 'Wrong owner' },
 }));
 assert.equal(readDurablePublishDraft(uidA, storage, now), null, 'owner mismatch must fail closed');
+
+// The local storage envelope is not a retention authority: modified timestamps,
+// corrupted drafts and oversized raw records are discarded, not revived.
+const draftKey = `${DURABLE_PUBLISH_DRAFT_PREFIX}${uidA}`;
+const validEnvelope = {
+  schema_version: 2, uid: uidA, saved_at: now,
+  expires_at: now + DURABLE_PUBLISH_DRAFT_TTL_MS,
+  draft: { title: 'Válido' },
+};
+for (const tampered of [
+  { ...validEnvelope, expires_at: now + 365 * 24 * 60 * 60 * 1000 },
+  { ...validEnvelope, expires_at: validEnvelope.expires_at + 1 },
+  { ...validEnvelope, saved_at: undefined },
+  { ...validEnvelope, saved_at: 'yesterday' },
+  { ...validEnvelope, saved_at: now + 120_000, expires_at: now + 120_000 + DURABLE_PUBLISH_DRAFT_TTL_MS },
+  { ...validEnvelope, draft: null },
+  { ...validEnvelope, draft: [] },
+  { ...validEnvelope, draft: { description: 'X'.repeat(50 * 1024) } },
+]) {
+  const forged = mockStorage();
+  forged.setItem(draftKey, JSON.stringify(tampered));
+  assert.equal(readDurablePublishDraft(uidA, forged, now), null,
+    'tampered durable storage must not bypass schema, TTL or byte limits');
+  assert.equal(forged.getItem(draftKey), null,
+    'invalid durable draft must be removed to avoid repeated private-data reads');
+}
+assert.equal(writeDurablePublishDraft(uidA, { title: 'No timestamp' }, mockStorage(), NaN), false,
+  'invalid clock input must not generate an unreadable or unbounded retention record');
+const intact = mockStorage();
+intact.setItem(draftKey, JSON.stringify(validEnvelope));
+assert.equal(readDurablePublishDraft(uidA, intact, now)?.title, 'Válido',
+  'strict envelope checks must preserve legitimate seven-day drafts');
+
+// Arbitrary attribute keys must not preserve tokens or account information.
+const injectedAttributes = mockStorage();
+assert.equal(writeDurablePublishDraft(uidA, {
+  category: 'Electrónica',
+  title: 'Teléfono usado',
+  attributes: {
+    brand: 'Motorola',
+    model: 'Moto G',
+    storage_gb: 128,
+    authToken: 'SYNTHETIC_TOKEN_NOT_REAL',
+    private_key: 'SYNTHETIC_SECRET_NOT_REAL',
+    phone: 'SYNTHETIC_PHONE_NOT_REAL',
+    exactLocation: 'SYNTHETIC_ADDRESS_NOT_REAL',
+    __proto_key: 'SYNTHETIC_PROTO_NOT_REAL',
+  },
+}, injectedAttributes, now), true);
+const injectedRaw = injectedAttributes.data.get(`${DURABLE_PUBLISH_DRAFT_PREFIX}${uidA}`);
+for (const secret of ['SYNTHETIC_TOKEN_NOT_REAL', 'SYNTHETIC_SECRET_NOT_REAL', 'SYNTHETIC_PHONE_NOT_REAL',
+  'SYNTHETIC_ADDRESS_NOT_REAL', 'SYNTHETIC_PROTO_NOT_REAL']) {
+  assert(!injectedRaw.includes(secret), 'durable attributes must never persist arbitrary account data');
+}
+assert.deepEqual(readDurablePublishDraft(uidA, injectedAttributes, now)?.attributes,
+  { brand: 'Motorola', model: 'Moto G', storage_gb: 128 },
+  'known category fields must survive without arbitrary key persistence');
+const unknownAttrCategory = mockStorage();
+writeDurablePublishDraft(uidA, { title: 'Sin categoría', attributes: { authToken: 'NOT_ALLOWED' } }, unknownAttrCategory, now);
+assert.equal(readDurablePublishDraft(uidA, unknownAttrCategory, now)?.attributes, undefined,
+  'without category no attribute is safe to persist');
 
 const invalidOperation = mockStorage();
 writeDurablePublishDraft(uidA, { operationId: 'bad op id', title: 'X' }, invalidOperation, now);

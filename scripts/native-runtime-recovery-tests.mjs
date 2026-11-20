@@ -7,6 +7,7 @@ function compile(source, names, bindings={}) {
  const js=stripTypeScriptTypes(source.replace(/^import .*;\n/gm,'').replace(/import.meta.env/g,'ENV')).replace(/\bexport /g,'');
  return new Function(...Object.keys(bindings),js+';return {'+names.join(',')+'};')(...Object.values(bindings));
 }
+const { topiRemoteProviderAudienceGate } = compile(read('src/lib/topiAllAgesProviderGate.ts'), ['topiRemoteProviderAudienceGate']);
 const never=()=>new Promise(()=>{});
 async function bounded(promise) {
  let timer; try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('test watchdog: operation never settled')),100);})]);}finally{clearTimeout(timer);}
@@ -28,16 +29,82 @@ const tests=[
   let attempts=0; const {check}=appCheckHarness({initialize:async()=>{if(++attempts===1)throw new Error('cold start');},getToken:async()=>({token:'test-token'})});
   assert.equal(await check.getNativeAppCheckToken(),null); assert.equal(await check.getNativeAppCheckToken(),'test-token');
  }],
- ['private QA AI reaches native provider after unavailable attestation',async()=>{
+ ['late Firebase Messaging registration can recover without Firebase traffic',async()=>{
+   let available=false;
+   const listeners=[];
+   const messaging={
+     getToken:async()=>({token:'synthetic-inactive-token'}),
+     addListener:async(name)=>{listeners.push(name);return {remove:async()=>{}};},
+   };
+   const nativeWindow={
+     addEventListener:()=>{},
+     Capacitor:{registerPlugin:(name)=>name==='FirebaseMessaging'&&available?messaging:null},
+   };
+   const storage={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+   const security=compile(read('src/services/nativeFirebaseSecurity.ts'),
+     ['initializeNativeFirebaseSecurity'],{
+       window:nativeWindow,localStorage:storage,
+       ENV:{VITE_TUTOP_APP_VERSION:'0.9.2-beta.0'},
+       initializeNativeAppCheck:async()=>null,isNativeFirebaseRuntime:()=>true,
+       verifiedEmailBetaAuth:{readSessionIdentity:()=>null,sessionGeneration:()=>0},
+       matchesNativePushSession:()=>false,pushBackend:{},
+     });
+   await bounded(security.initializeNativeFirebaseSecurity());
+   assert.deepEqual(listeners,[],'plugin absence must not register a listener');
+   available=true;
+   await bounded(security.initializeNativeFirebaseSecurity());
+   assert.deepEqual(listeners,['tokenReceived','notificationReceived','notificationActionPerformed'],
+     'late plugin must register all three listeners on retry');
+   await bounded(security.initializeNativeFirebaseSecurity());
+   assert.equal(listeners.length,3,'successful bootstrap must remain idempotent');
+ }],
+ ['partially failed Messaging listener registration can recover without duplicates',async()=>{
+   let failOnce = true;
+   const added = [], removed = [];
+   const messaging = {
+     getToken: async()=>({token:'synthetic-inactive-token'}),
+     addListener: async(name)=>{
+       if(name === 'notificationReceived' && failOnce) {
+         failOnce = false;
+         throw new Error('synthetic-listener-registration-failure');
+       }
+       added.push(name);
+       return {remove:async()=>{removed.push(name);}};
+     },
+   };
+   const nativeWindow = {
+     addEventListener:()=>{},
+     Capacitor:{registerPlugin:name=>name==='FirebaseMessaging'?messaging:null},
+   };
+   const storage = {getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+   const security = compile(read('src/services/nativeFirebaseSecurity.ts'),
+     ['initializeNativeFirebaseSecurity'],{
+       window:nativeWindow,localStorage:storage,
+       ENV:{VITE_TUTOP_APP_VERSION:'0.9.2-beta.0'},
+       initializeNativeAppCheck:async()=>null,isNativeFirebaseRuntime:()=>true,
+       verifiedEmailBetaAuth:{readSessionIdentity:()=>null,sessionGeneration:()=>0},
+       matchesNativePushSession:()=>false,pushBackend:{},
+     });
+   await assert.rejects(bounded(security.initializeNativeFirebaseSecurity()),
+     /synthetic-listener-registration-failure/);
+   assert.deepEqual(removed,['tokenReceived'],'partial listener must be removed before retry');
+   await bounded(security.initializeNativeFirebaseSecurity());
+   assert.deepEqual(added,[
+     'tokenReceived','tokenReceived','notificationReceived','notificationActionPerformed',
+   ],'second attempt must attach exactly one complete listener set');
+   await bounded(security.initializeNativeFirebaseSecurity());
+   assert.equal(added.length,4,'subsequent successful startup must remain idempotent');
+ }],
+ ['private QA AI also denies remote calls without attestation',async()=>{
   const h=appCheckHarness({initialize:async()=>{},getToken:never}); let generated=0;
   h.window.Capacitor.registerPlugin=name=>name==='TuTopAI'?{generate:async()=>{generated++;return {text:'provider fixture'};}}:{initialize:async()=>{},getToken:never};
-  const ai=compile(read('src/services/nativeTopiAI.ts'),['generateNativeTopiText'],{window:h.window,ENV:h.ENV,...h.check,recordDiagnostic:()=>{}});
-  assert.equal((await bounded(ai.generateNativeTopiText('test prompt')))?.provider,'firebase-ai-logic'); assert.equal(generated,1);
+  const ai=compile(read('src/services/nativeTopiAI.ts'),['generateNativeTopiText'],{window:h.window,ENV:h.ENV,...h.check,topiRemoteProviderAudienceGate,recordDiagnostic:()=>{}});
+  assert.equal(await bounded(ai.generateNativeTopiText('test prompt')),null); assert.equal(generated,0);
  }],
  ['production AI stays fail closed without attestation',async()=>{
   const h=appCheckHarness({initialize:async()=>{},getToken:never},false); let generated=0;
   h.window.Capacitor.registerPlugin=name=>name==='TuTopAI'?{generate:async()=>{generated++;return {text:'bad'};}}:{initialize:async()=>{},getToken:never};
-  const ai=compile(read('src/services/nativeTopiAI.ts'),['generateNativeTopiText'],{window:h.window,ENV:h.ENV,...h.check,recordDiagnostic:()=>{}});
+  const ai=compile(read('src/services/nativeTopiAI.ts'),['generateNativeTopiText'],{window:h.window,ENV:h.ENV,...h.check,topiRemoteProviderAudienceGate,recordDiagnostic:()=>{}});
   assert.equal(await bounded(ai.generateNativeTopiText('test prompt')),null); assert.equal(generated,0);
  }],
  ['location watch is removed when callback precedes watch id',async()=>{

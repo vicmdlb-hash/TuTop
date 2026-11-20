@@ -1,3 +1,4 @@
+import { parseStrictIsoTimestamp } from './transactionRetry.ts';
 import type { MarketplaceTransaction } from '../types';
 import type { CanonicalListingStatus } from './marketplaceGovernance';
 
@@ -18,11 +19,18 @@ export function reservationReconciliationPlan(input: {
   listingStatus: CanonicalListingStatus;
   nowMs?: number;
 }): ReservationReconciliationPlan {
+  if (!input || typeof input !== 'object' || !input.transaction
+    || typeof input.transaction !== 'object') {
+    return { kind: 'none', reason: 'reservation_input_invalid' };
+  }
   const { transaction, listingStatus } = input;
-  const nowMs = input.nowMs ?? Date.now();
+  const nowMs = input.nowMs === undefined ? Date.now() : input.nowMs;
 
   if (transaction.status === 'completed') {
-    if (!transaction.buyer_confirmed_at || !transaction.seller_confirmed_at) {
+    // A truthy malformed confirmation is NOT proof of bilateral completion.
+    // A wrong sold-out repair must not be inferred from untrusted timestamps.
+    if (parseStrictIsoTimestamp(transaction.buyer_confirmed_at) === null
+      || parseStrictIsoTimestamp(transaction.seller_confirmed_at) === null) {
       return { kind: 'none', reason: 'completed_requires_bilateral_confirmation' };
     }
     if (listingStatus !== 'sold_out') {
@@ -41,8 +49,13 @@ export function reservationReconciliationPlan(input: {
     return { kind: 'none', reason: 'status_not_auto_expirable' };
   }
 
-  const expiresMs = transaction.reservation_expires_at ? Date.parse(transaction.reservation_expires_at) : Number.NaN;
-  if (!Number.isFinite(expiresMs)) {
+  // An invalid caller clock otherwise makes every comparison false and
+  // could wrongly expire a reservation. Do not emit a write plan.
+  if (typeof nowMs !== 'number' || !Number.isSafeInteger(nowMs) || nowMs <= 0) {
+    return { kind: 'none', reason: 'reservation_clock_invalid' };
+  }
+  const expiresMs = parseStrictIsoTimestamp(transaction.reservation_expires_at);
+  if (expiresMs === null) {
     return { kind: 'none', reason: 'reservation_expiry_missing_or_invalid' };
   }
   if (expiresMs > nowMs) {

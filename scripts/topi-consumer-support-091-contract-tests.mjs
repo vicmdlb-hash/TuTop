@@ -6,6 +6,7 @@ const service = fs.readFileSync('src/services/topiConsumerSupport.ts', 'utf8');
 const ui = fs.readFileSync('src/components/TopiSupportAssistant.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const voice = fs.readFileSync('src/lib/topiVoice.ts', 'utf8');
+const nativeAI = fs.readFileSync('src/services/nativeTopiAI.ts', 'utf8');
 
 for (const route of ['Cuenta y perfil', 'Publicar con Topi', 'Comprar o vender', 'Mensajes y avisos', 'UCoins', 'Ubicación, cámara o micrófono', 'Seguridad', 'Problema técnico']) {
   assert.match(tree, new RegExp(route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -15,11 +16,25 @@ assert.match(tree, /classifySupportQuery/);
 assert.match(tree, /supportTreeFacts/);
 assert.match(tree, /No compartas contraseñas, códigos ni capturas con datos sensibles/);
 assert.match(tree, /TuTop no opera una paquetería propia/);
+assert.match(tree, /la beta de pruebas debe informar indisponibilidad sin fingir una respuesta de IA real/);
+assert.doesNotMatch(tree, /Si la IA remota no está disponible, TuTop usa su asistente local/);
 assert.match(tree, /No son dinero, criptomoneda ni saldo retirable/);
 assert.match(tree, /ubicación aproximada/i);
 assert.match(tree, /no necesita ubicación en segundo plano/i);
 
 assert.match(service, /generateNativeTopiText/);
+// Actual retry policy evaluated without Android, App Check, or any remote API.
+const retryStart = nativeAI.indexOf('function shouldRetryNativeAiFailure(');
+const retryEnd = nativeAI.indexOf('\nfunction setReason(', retryStart);
+assert(retryStart >= 0 && retryEnd > retryStart, 'native AI retry policy must exist');
+const { stripTypeScriptTypes } = await import('node:module');
+const shouldRetry = new Function(stripTypeScriptTypes(nativeAI.slice(retryStart, retryEnd)) + '\nreturn shouldRetryNativeAiFailure;')();
+for (const kind of ['timeout', 'network']) assert.equal(shouldRetry(kind), true);
+for (const kind of ['app-check', 'firebase-config-rejected', 'capacity', 'native-request', 'none']) {
+  assert.equal(shouldRetry(kind), false, 'definitive or unclassified errors must not spend another request');
+}
+assert.match(nativeAI, /if \(!shouldRetryNativeAiFailure\(failureKind\)\) return null/);
+assert.match(nativeAI, /return null; \/\/ An empty billed generation must not auto-trigger another/);
 assert.match(service, /source: 'guided' \| 'firebase-ai'/);
 assert.match(service, /No inventes políticas, reembolsos, soporte humano, garantías/);
 assert.match(service, /Nunca solicites contraseñas, códigos de verificación, tokens/);
@@ -36,12 +51,29 @@ assert.match(ui, /startTopiDictation/);
 assert.match(ui, /Firebase AI real, tu pregunta se procesa remotamente/);
 assert.match(ui, /omitió datos de contacto o códigos sensibles detectados/);
 assert.match(ui, /answerConsumerSupport/);
+
+assert.match(ui, /role="dialog" aria-modal="true" aria-labelledby="tutop-topi-dialog-title"/);
+assert.match(ui, /id="tutop-topi-dialog-title"/);
+assert.match(ui, /htmlFor="tutop-topi-support-question"/);
+assert.match(ui, /id="tutop-topi-support-question"/);
+assert.match(ui, /event.key === 'Escape'/);
+assert.match(ui, /source: 'unavailable'/);
+assert.match(ui, /No pudimos responder en este momento/);
+
 assert.doesNotMatch(ui, /Árbol de decisiones \+ IA/);
 assert.doesNotMatch(ui, /Soporte guiado/);
 assert.doesNotMatch(ui, /Ruta guiada/);
 assert.doesNotMatch(ui, /tokens ni domicilio exacto/);
 assert.match(voice, /TuTopVoice/);
 assert.match(app, /TopiSupportAssistant/);
-assert.match(app, /!activeChatId && <TopiSupportAssistant \/>/);
+assert.match(app, /!activeChatId && <TopiSupportAssistant key=\{user\.id\} \/>/);
+assert.match(ui, /const requestSerial = useRef\(0\)/);
+assert.match(ui, /const serial = \+\+requestSerial\.current/);
+assert.match(ui, /if \(serial !== requestSerial\.current\) return/);
+assert.match(ui, /if \(serial === requestSerial\.current\) \{/);
+assert.match(ui, /requestPendingRef\.current = false;[\s\S]*setBusy\(false\)/);
+assert.match(ui, /if \(clean\.length < 3 \|\| busy \|\| requestPendingRef\.current\) return/);
+assert.match(ui, /invalidatePendingAnswer\(\)/);
+assert.match(ui, /onClick=\{close\}/);
 
 console.log('✅ TuTop 0.9.1 consumer Topi support + native voice + AI fallback contracts PASS');

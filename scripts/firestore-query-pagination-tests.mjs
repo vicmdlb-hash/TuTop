@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { collectCursorPages } from './firestore-query-pagination.mjs';
+import { collectCursorPages, collectTokenPages, parseFirestoreRunQueryRows, assertAdminDocumentResponse, collectAuthAccountPages, firestoreListDocumentPath } from './firestore-query-pagination.mjs';
 
 const docs = Array.from({ length: 2505 }, (_, index) => ({
   name: `projects/demo/databases/(default)/documents/items/${String(index).padStart(5, '0')}`,
@@ -19,6 +19,20 @@ assert.equal(new Set(result.map((item) => item.name)).size, 2505);
 assert.equal(result[0].name, docs[0].name);
 assert.equal(result.at(-1).name, docs.at(-1).name);
 assert.equal(calls, 6, '2505 rows at pageSize=500 should use six cursor pages');
+// The real cursor helper must reject fractional/ambiguous limits rather than
+// reporting a fractional "short" page as an exhaustive erasure inventory.
+for (const badPageSize of [0, -1, 1.5, Number.NaN, Infinity, '500', 1001]) {
+  await assert.rejects(
+    collectCursorPages(async () => { throw new Error('UNREACHABLE'); }, { pageSize: badPageSize }),
+    /QUERY_PAGE_OPTIONS_INVALID/,
+  );
+}
+for (const badMaxPages of [0, -1, 1.5, Number.NaN, Infinity, '3', 100001]) {
+  await assert.rejects(
+    collectCursorPages(async () => { throw new Error('UNREACHABLE'); }, { maxPages: badMaxPages }),
+    /QUERY_PAGE_OPTIONS_INVALID/,
+  );
+}
 
 await assert.rejects(
   collectCursorPages(async ({ afterName }) => [{ name: afterName || docs[0].name }], { pageSize: 1, maxPages: 3 }),
@@ -30,9 +44,108 @@ await assert.rejects(
   /QUERY_CURSOR_NAME_MISSING/,
 );
 
+// Firestore listDocuments pagination must never silently accept a partial
+// inventory or a looped nextPageToken (synthetic, no Firebase calls).
+const listDocs = Array.from({ length: 1205 }, (_, i) => ({
+  name: `projects/demo/databases/(default)/documents/chats/ch-1/messages/${i}`,
+}));
+const tokens = await collectTokenPages(async ({ pageToken, pageSize }) => {
+  const begin = pageToken ? Number(pageToken) : 0;
+  const documents = listDocs.slice(begin, begin + pageSize);
+  const nextPageToken = begin + documents.length < listDocs.length
+    ? String(begin + documents.length) : '';
+  return { documents, nextPageToken };
+}, { pageSize: 300 });
+assert.equal(tokens.length, 1205);
+await assert.rejects(
+  collectTokenPages(async () => ({ documents: [listDocs[0]], nextPageToken: 'again' }),
+    { pageSize: 300, maxPages: 3 }), /LIST_DOCUMENT_DUPLICATE|LIST_PAGE_TOKEN_CYCLE/,
+);
+await assert.rejects(
+  collectTokenPages(async () => ({ documents: [listDocs[0], listDocs[0]] }),
+    { pageSize: 300 }), /LIST_DOCUMENT_DUPLICATE/,
+);
+// A malformed success envelope must not convert an unknown or corrupt field
+// map into an apparently empty privileged listDocuments inventory.
+for (const badFields of [null, 'not-a-map', [], 12, true]) {
+  await assert.rejects(
+    collectTokenPages(async () => ({ documents: [{ name: listDocs[0].name, fields: badFields }] })),
+    /LIST_DOCUMENT_FIELDS_INVALID/,
+  );
+}
+assert.equal((await collectTokenPages(async () => ({
+  documents: [{ name: listDocs[0].name, fields: {} }],
+}))).length, 1);
+assert.equal((await collectTokenPages(async () => ({
+  documents: [{ name: listDocs[0].name }],
+}))).length, 1);
+await assert.rejects(collectTokenPages(async () => null), /LIST_PAGE_INVALID/);
+await assert.rejects(
+  collectTokenPages(async () => ({ documents: 'malformed' })),
+  /LIST_DOCUMENTS_INVALID/,
+);
+await assert.rejects(
+  collectTokenPages(async () => ({ documents: [], nextPageToken: 123 })),
+  /LIST_PAGE_TOKEN_INVALID/,
+);
+await assert.rejects(
+  collectTokenPages(async () => ({ documents: [listDocs[0]], nextPageToken: null })),
+  /LIST_PAGE_TOKEN_INVALID/,
+  'null is a malformed token and cannot certify inventory exhaustion',
+);
+assert.deepEqual(await collectTokenPages(async () => ({ documents: [] })), [],
+  'omitted token still represents an ordinary empty final page');
+
+await assert.rejects(
+  collectCursorPages(async () => [docs[2], docs[1]], { pageSize: 2 }),
+  /QUERY_PAGE_OUT_OF_ORDER/,
+);
+await assert.rejects(
+  collectCursorPages(async () => docs.slice(0, 3), { pageSize: 2 }),
+  /QUERY_PAGE_INVALID/,
+);
+
 const admin = fs.readFileSync('scripts/staging-v2-admin.mjs','utf8');
 const processor = fs.readFileSync('scripts/process-account-erasure.mjs','utf8');
 assert.match(admin, /export async function adminRunQueryAll/);
+// Staging reset must inventory every orphan chat subcollection with the same
+// fail-closed cursor pagination used by account erasure, never one raw runQuery.
+const groupListStart = admin.indexOf('export async function adminListCollectionGroupDocuments(');
+const groupListEnd = admin.indexOf('export async function adminListDocuments(', groupListStart);
+assert(groupListStart >= 0 && groupListEnd > groupListStart, 'staging group inventory function must exist');
+const groupList = admin.slice(groupListStart, groupListEnd);
+assert.match(groupList, /return adminRunCollectionGroupQueryAll\(clean, \[\], 500\);/);
+assert.doesNotMatch(groupList, /const rows = await request\(|runStructuredQuery\(/);
+assert.match(admin, /from: \[\{ collectionId: clean, allDescendants: true \}\]/);
+const reset = fs.readFileSync('scripts/reset-staging-accounts.mjs', 'utf8');
+assert.match(reset, /adminListCollectionGroupDocuments\(subcollection\)/);
+assert.match(admin, /collectTokenPages/);
+// The actual privileged listDocuments mapping must use the pure scoped
+// parser, not a split() that truncates a nested collection named "documents".
+assert.equal(admin.includes('path: firestoreListDocumentPath(document.name, projectId, collectionPath),'), true,
+  'listDocuments mapping must use the scoped pure path parser');
+assert.equal(admin.includes("document.name.split('/documents/')"), false,
+  'listDocuments must not truncate a nested documents collection');
+const listRoot = 'projects/demo/databases/(default)/documents/';
+assert.equal(
+  firestoreListDocumentPath(listRoot + 'chats/chat1/documents/nested1',
+    'demo', 'chats/chat1/documents'),
+  'chats/chat1/documents/nested1',
+);
+assert.equal(firestoreListDocumentPath(listRoot + 'chats/chat1', 'demo', 'chats'),
+  'chats/chat1');
+for (const [resource, project, collection] of [
+  [listRoot + 'chats/chat1/documents/nested1', 'demo', 'chats'],
+  [listRoot + 'chats/chat1', 'other-project', 'chats'],
+  [listRoot + 'chats/chat1/messages/item1', 'demo', 'chats/chat1/documents'],
+  [listRoot + 'chats/chat1/', 'demo', 'chats'],
+  [listRoot + 'chats/chat1', 'demo', 'chats/chat1'],
+  [listRoot + 'chats/chat1', 'demo', 'chats/'],
+]) {
+  assert.throws(() => firestoreListDocumentPath(resource, project, collection),
+    /LIST_DOCUMENT_PATH_INVALID/,
+    'listDocuments inventory must refuse cross-scope or malformed paths');
+}
 assert.match(admin, /fieldPath: '__name__'/);
 assert.match(admin, /startAt: \{ values: \[\{ referenceValue: afterName \}\], before: false \}/);
 assert.doesNotMatch(admin, /offset:/);
@@ -41,5 +154,157 @@ assert.equal(processor.includes('adminRunQuery('), false);
 assert.match(processor, /ACCOUNT_ERASURE_QUERY_RESIDUAL/);
 assert.match(processor, /ACCOUNT_ERASURE_DIRECT_RESIDUAL/);
 assert.match(processor, /ACCOUNT_ERASURE_WITHDRAW_RESIDUAL/);
+
+
+const firestoreName = 'projects/demo/databases/(default)/documents/chats/chat1';
+const accepted = parseFirestoreRunQueryRows([
+  { readTime: '2026-11-05T12:00:00Z' },
+  { document: { name: firestoreName, fields: { uid: { stringValue: 'synthetic-user' } } } },
+]);
+assert.deepEqual(accepted, [{
+  name: firestoreName, path: 'chats/chat1',
+  fields: { uid: { stringValue: 'synthetic-user' } },
+}]);
+assert.deepEqual(parseFirestoreRunQueryRows([]), []);
+// A malformed but successful query response outside the requested staging
+// project/default DB must never count as an exhaustive erasure inventory.
+assert.equal(parseFirestoreRunQueryRows([
+  { document: { name: firestoreName, fields: {} } },
+], 'demo').length, 1);
+for (const wrongScope of [
+  'projects/foreign/databases/(default)/documents/chats/chat1',
+  'projects/demo/databases/elsewhere/documents/chats/chat1',
+]) {
+  assert.throws(() => parseFirestoreRunQueryRows([
+    { document: { name: wrongScope, fields: {} } },
+  ], 'demo'), /QUERY_DOCUMENT_SCOPE_INVALID/,
+  'cross-project/database document must never enter privileged inventory');
+}
+for (const invalidProject of ['', 'bad/project', null, 0]) {
+  assert.throws(() => parseFirestoreRunQueryRows([], invalidProject),
+    /QUERY_PROJECT_SCOPE_INVALID/,
+    'invalid privilege project scope must fail even when query is empty');
+}
+// Metadata-only responses must not falsely prove an empty/exhausted inventory.
+// Firestore documents a valid readTime for zero-result queries and can emit an
+// explicit done=true completion marker; no Firebase/credentials are used.
+assert.deepEqual(parseFirestoreRunQueryRows([{ done: true }]), []);
+assert.deepEqual(parseFirestoreRunQueryRows([
+  { readTime: '2026-11-15T12:00:00.123456789Z', done: true, skippedResults: 0 },
+]), []);
+for (const invalidMetadata of [
+  { skippedResults: 0 },
+  { explainMetrics: {} },
+  { readTime: null },
+  { readTime: '' },
+  { readTime: 'not-a-timestamp' },
+  { done: false },
+  { done: 'true' },
+  { readTime: '2026-11-15T12:00:00Z', done: 'true' },
+]) {
+  assert.throws(() => parseFirestoreRunQueryRows([invalidMetadata]),
+    /QUERY_RESPONSE_ROW_INVALID/,
+    'malformed metadata must not certify a privileged inventory');
+}
+// A nested collection may legitimately be called "documents". The cursor
+// parser must preserve every subsequent path component, never truncate at a
+// second "/documents/" delimiter and falsely certify deletion coverage.
+const nestedDocumentsName = 'projects/demo/databases/(default)/documents/chats/chat1/documents/nested1';
+assert.deepEqual(parseFirestoreRunQueryRows([
+  { document: { name: nestedDocumentsName, fields: {} } },
+]), [{ name: nestedDocumentsName, path: 'chats/chat1/documents/nested1', fields: {} }]);
+// A successful HTTP response can still skip results; never treat it as a
+// complete deletion inventory. This test is pure and makes no Firebase calls.
+assert.throws(() => parseFirestoreRunQueryRows([
+  { readTime: '2026-11-08T00:00:00Z', skippedResults: 2 },
+]), /QUERY_SKIPPED_RESULTS_UNSAFE/);
+assert.throws(() => parseFirestoreRunQueryRows([
+  { document: { name: firestoreName, fields: {} }, skippedResults: 1 },
+]), /QUERY_SKIPPED_RESULTS_UNSAFE/);
+assert.deepEqual(parseFirestoreRunQueryRows([
+  { readTime: '2026-11-08T00:00:00Z', skippedResults: 0 },
+]), []);
+
+for (const malformed of [
+  null, {}, { error: { code: 403, message: 'denied' } },
+  { document: null }, { document: {} },
+  { document: { name: 'users/user1' } },
+  { document: { name: 'projects/demo/databases/(default)/documents/chats' } },
+  { document: { name: firestoreName, fields: 'invalid' } },
+]) {
+  assert.throws(() => parseFirestoreRunQueryRows([malformed]),
+    /QUERY_RESPONSE_ROW_INVALID|QUERY_DOCUMENT_INVALID/);
+}
+assert.throws(() => parseFirestoreRunQueryRows(null), /QUERY_RESPONSE_INVALID/);
+// A 200 status with an in-band Firestore error must never be mistaken for
+// an exhausted residual inventory.
+await assert.rejects(
+  collectTokenPages(async () => ({ error: { status: 'PERMISSION_DENIED' } })),
+  /LIST_PAGE_REMOTE_ERROR/,
+);
+assert.match(admin, /parseFirestoreRunQueryRows\(rows, projectId\)/);
+
+const expectedDocumentName = 'projects/demo/databases/(default)/documents/users/test-user';
+const validDoc = { name: expectedDocumentName, fields: { flag: { booleanValue: true } } };
+assert.equal(assertAdminDocumentResponse(validDoc, expectedDocumentName), validDoc);
+for (const invalid of [
+  null, [], {}, { name: 'projects/demo/databases/(default)/documents/users/other' },
+  { name: expectedDocumentName, fields: 'invalid' },
+  { name: expectedDocumentName, fields: null },
+  { name: expectedDocumentName, fields: [] },
+]) {
+  assert.throws(() => assertAdminDocumentResponse(invalid, expectedDocumentName),
+    /FIREBASE_ADMIN_DOCUMENT_INVALID/);
+}
+assert(admin.includes('assertAdminDocumentResponse(result,'));
+assert(admin.includes("throw new Error('FIREBASE_ADMIN_HTTP_' + response.status)"));
+assert(admin.includes("throw new Error('FIREBASE_ADMIN_EMPTY_GET_RESPONSE')"));
+assert(!admin.includes('text.slice(0, 800)'), 'No raw provider error body in logs');
+assert(!admin.includes('catch { return text; }'), 'Malformed JSON must not pass as a successful response');
+
+// AUTH_LIST_PAGE_SYNTHETIC_TEST — no Firebase calls or real identities.
+const syntheticAccounts = Array.from({ length: 2505 }, (_, i) => ({
+  localId: `synthetic_${String(i).padStart(6, '0')}`,
+  email: `synthetic${i}@example.invalid`,
+}));
+let authPageCalls = 0;
+const authPages = await collectAuthAccountPages(async ({ pageToken, pageSize }) => {
+  authPageCalls += 1;
+  const start = pageToken ? Number(pageToken) : 0;
+  const users = syntheticAccounts.slice(start, start + pageSize);
+  return { users, nextPageToken: start + users.length < syntheticAccounts.length
+    ? String(start + users.length) : '' };
+}, { pageSize: 500 });
+assert.equal(authPages.length, 2505);
+assert.equal(new Set(authPages.map(user => user.localId)).size, 2505);
+assert.equal(authPageCalls, 6);
+assert.deepEqual(await collectAuthAccountPages(async () => ({})), []);
+for (const page of [null, [], { error: { code: 403 } },
+  { users: 'malformed' }, { users: [{ email: 'missing-uid@example.invalid' }] },
+  { users: [{ localId: ' invalid-uid ' }] },
+  { users: [{ localId: 'ok', email: 123 }] },
+  { users: [{ localId: 'x' }, { localId: 'x' }] },
+  { nextPageToken: 4 },
+]) {
+  await assert.rejects(collectAuthAccountPages(async () => page),
+    /AUTH_PAGE_INVALID|AUTH_USERS_INVALID|AUTH_USER_INVALID|AUTH_USER_DUPLICATE|AUTH_TOKEN_INVALID/);
+}
+await assert.rejects(collectAuthAccountPages(async () => ({
+  users: [{ localId: 'same-uid' }], nextPageToken: 'again',
+})), /AUTH_USER_DUPLICATE|AUTH_TOKEN_CYCLE/);
+await assert.rejects(collectAuthAccountPages(async () => ({
+  users: [], nextPageToken: 'new-token',
+}), { maxPages: 2 }), /AUTH_TOKEN_CYCLE|AUTH_PAGE_LIMIT_EXCEEDED/);
+await assert.rejects(collectAuthAccountPages(async () => ({
+  users: [{ localId: 'valid-uid' }, { localId: 'second' }],
+}), { pageSize: 1 }), /AUTH_USERS_INVALID/);
+assert.match(admin, /accounts:batchGet/);
+assert.doesNotMatch(admin, /\/accounts:query/);
+assert.match(admin, /collectAuthAccountPages/);
+assert.match(admin, /params\.set\('nextPageToken', pageToken\)/);
+const authListSource = admin.slice(admin.indexOf('export async function adminListAuthUsers'),
+  admin.indexOf('export async function adminAssertAuthUserAbsent'));
+assert.match(authListSource, /method: 'GET'/);
+assert.doesNotMatch(authListSource, /method: 'POST'/);
 
 console.log('PASS erasure query pagination covers 2505 rows with stable __name__ cursor and fails closed on cursor drift');

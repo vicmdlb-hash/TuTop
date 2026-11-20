@@ -1,89 +1,25 @@
+// Read-only retrieval of existing staging Firebase Web client configuration.
+// Never enable APIs, register new apps or alter API-key restrictions during a build.
 import fs from 'node:fs';
-import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
-import { assertStagingFreezeContext } from './staging-freeze-guard.mjs';
-import { ensureFirebaseAiApiKeyAllowlist, ensureFirebaseAiServices } from './firebase-ai-staging-provision.mjs';
-
-const projectId = assertStagingFreezeContext();
-const outputPath = String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH || '.tutop-staging-web-config.json').trim();
-
-const token = await firebaseCiAccessToken();
-const authHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Goog-User-Project': projectId };
-
-async function jsonRequest(url, options = {}, allow = []) {
-  const response = await fetch(url, { ...options, headers: { ...authHeaders, ...(options.headers || {}) } });
-  const text = await response.text();
-  let data = null;
-  if (text) { try { data = JSON.parse(text); } catch { data = { raw: text }; } }
-  if (!response.ok && !allow.includes(response.status)) throw new Error(`${response.status} ${url}: ${text.slice(0, 800)}`);
-  return { status: response.status, data };
+import {firebaseCiAccessToken} from './firebase-ci-auth.mjs';
+import {assertStagingConfigReadContext} from './staging-freeze-guard.mjs';
+import {selectExistingStagingWebApp,validateExistingWebConfig} from './staging-existing-web-config-guard.mjs';
+const projectId=assertStagingConfigReadContext();
+const output=String(process.env.TUTOP_STAGING_WEB_CONFIG_PATH||'.tutop-staging-web-config.json').trim();
+if(!/^\.[A-Za-z0-9._-]+\.json$/.test(output)) throw Error('STAGING_WEB_OUTPUT_PATH_UNSAFE');
+const token=await firebaseCiAccessToken();
+async function read(url) {
+ const response=await fetch(url,{method:'GET',headers:{Authorization:`Bearer ${token}`,'X-Goog-User-Project':projectId}});
+ if(!response.ok) throw Error(`STAGING_WEB_CONFIG_HTTP_${response.status}`);
+ try{return await response.json();}catch{throw Error('STAGING_WEB_CONFIG_RESPONSE_INVALID');}
 }
-
-async function enableService(serviceName) {
-  const base = `https://serviceusage.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/services/${serviceName}`;
-  const current = await jsonRequest(base, {}, [404]);
-  if (current.status === 200 && current.data?.state === 'ENABLED') return;
-  const op = await jsonRequest(`${base}:enable`, { method: 'POST', body: '{}' });
-  if (op.data?.name && !op.data.done) {
-    for (let i = 0; i < 40; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const result = await jsonRequest(`https://serviceusage.googleapis.com/v1/${op.data.name}`);
-      if (result.data?.done) {
-        if (result.data.error) throw new Error(`No se pudo habilitar ${serviceName}: ${JSON.stringify(result.data.error)}`);
-        return;
-      }
-    }
-    throw new Error(`Timeout habilitando ${serviceName}.`);
-  }
-}
-
-// Firebase Auth base is configured separately through `firebase deploy --only auth`.
-// This helper deliberately does NOT call identityPlatform:initializeAuth, because
-// that endpoint upgrades the project and can require billing.
-await enableService('identitytoolkit.googleapis.com');
-await enableService('firebase.googleapis.com');
-await ensureFirebaseAiServices({ projectId, token });
-
-const webAppsUrl = `https://firebase.googleapis.com/v1beta1/projects/${encodeURIComponent(projectId)}/webApps`;
-const listed = await jsonRequest(webAppsUrl);
-let app = (listed.data?.apps || []).find((item) => item.displayName === 'TuTop V2 Staging Smoke') || (listed.data?.apps || [])[0];
-
-if (!app) {
-  const created = await jsonRequest(webAppsUrl, { method: 'POST', body: JSON.stringify({ displayName: 'TuTop V2 Staging Smoke' }) });
-  let operation = created.data;
-  if (operation?.name && !operation.done) {
-    for (let i = 0; i < 30; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      const polled = await jsonRequest(`https://firebase.googleapis.com/v1beta1/${operation.name}`);
-      operation = polled.data;
-      if (operation?.done) break;
-    }
-  }
-  if (operation?.error) throw new Error(`No se pudo crear Firebase Web App: ${JSON.stringify(operation.error)}`);
-  app = operation?.response;
-}
-
-if (!app?.name) throw new Error('No se encontró/creó Firebase Web App de staging.');
-const appConfig = await jsonRequest(`https://firebase.googleapis.com/v1beta1/${app.name}/config`);
-const config = appConfig.data || {};
-if (!config.apiKey || !config.projectId || !config.appId) throw new Error('Firebase Web App no devolvió configuración completa.');
-if (config.projectId !== projectId) throw new Error(`Firebase Web App project mismatch: ${config.projectId}`);
-
-await ensureFirebaseAiApiKeyAllowlist({ projectId, token, apiKey: config.apiKey });
-
-// Storage remains infrastructure-gated on the private Spark staging project.
-// We still export the canonical bucket name so the exact same client path is
-// ready when Blaze/Storage is explicitly authorized; this helper never enables
-// the Storage API or billing by itself.
-const storageBucket = String(config.storageBucket || `${projectId}.firebasestorage.app`).trim();
-
-fs.writeFileSync(outputPath, JSON.stringify({
-  apiKey: config.apiKey,
-  authDomain: config.authDomain || `${projectId}.firebaseapp.com`,
-  projectId: config.projectId,
-  appId: config.appId,
-  storageBucket,
-}, null, 2), { mode: 0o600 });
-
-console.log(`✅ Firebase Web App lista para smoke E2E (${app.displayName || 'TuTop staging'}).`);
-console.log(`✅ Config runtime escrita en ${outputPath} sin imprimir credenciales de sesión.`);
-console.log('ℹ️ Bucket de Storage sólo se declara como configuración; Storage/billing no se habilitaron.');
+const root=`projects/${projectId}`;
+const listed=await read(`https://firebase.googleapis.com/v1beta1/${root}/webApps?pageSize=100`);
+if(listed?.nextPageToken) throw Error('STAGING_WEB_LIST_PAGINATION_UNPROVEN');
+const app=selectExistingStagingWebApp(listed?.apps,projectId);
+const config=await read(`https://firebase.googleapis.com/v1beta1/${app.name}/config`);
+const client=validateExistingWebConfig(config,projectId);
+fs.writeFileSync(output,JSON.stringify(client,null,2)+'\n',{mode:0o600,flag:'wx'});
+console.log('PASS previously registered Firebase Web client config validated read-only.');
+console.log('No service/API enabling, app registration, API-key widening or billing performed.');
+console.log('Cloud Storage remains disabled unless expressly authorized.');

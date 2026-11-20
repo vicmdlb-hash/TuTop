@@ -104,8 +104,17 @@ const scopedAdminHelpers = `${isAdminLine}
         && get(adminDoc()).data.institution_id == get(/databases/$(database)/documents/users/$(uid)).data.institution_id
       );
     }
+    // Queue visibility can exceed decision authority (e.g. global moderator
+    // may inspect credentials but must never decide on them).
     function canHandleModerationCase(data) {
       return canModerateInstitution(data)
+        || (adminHasRole('verification_reviewer') && ('kind' in data) && data.kind == 'credential')
+        || (adminHasRole('support') && ('kind' in data) && data.kind == 'appeal');
+    }
+    function canDecideModerationCase(data) {
+      return adminHasRole('super_admin') || adminHasRole('trust_safety')
+        || (adminHasRole('moderator') && ('kind' in data) && data.kind != 'credential')
+        || (institutionModeratorFor(data) && ('kind' in data) && data.kind != 'credential')
         || (adminHasRole('verification_reviewer') && ('kind' in data) && data.kind == 'credential')
         || (adminHasRole('support') && ('kind' in data) && data.kind == 'appeal');
     }`;
@@ -116,7 +125,7 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
         || request.auth.uid == resource.data.seller_id
         || canModerateInstitution(resource.data)
       );
-      allow create: if signedIn() && notSuspended()
+      allow create: if signedIn() && notSuspended() && commerceAccountEligible(request.auth.uid)
         && request.resource.data.keys().hasOnly([
           'schema_version','seller_id','institution_id','campus_id','city_id','faculty_id','career_id','community_id',
           'category_id','subcategory_id','title','description','attributes','price_mxn','negotiable','quantity','condition',
@@ -152,6 +161,8 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
         && request.resource.data.moderation_status == 'pending'
         && (!('availability_status' in request.resource.data) || request.resource.data.availability_status == 'available')
         && validVisibilityScope(request.resource.data.visibility_scope)
+        // Shipping is optional nationally; if declared available it must match a delivery method.
+        && request.resource.data.shipping_available == ('shipping' in request.resource.data.delivery_methods)
         && (!('published_at' in request.resource.data) || request.resource.data.published_at is timestamp)
         && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
       allow update: if signedIn() && notSuspended() && (
@@ -174,6 +185,7 @@ const canonicalListingsV2 = `    match /listings_v2/{listingId} {
           )
           && validUniversityMetadata(request.resource.data)
           && request.resource.data.visibility_scope in ['campus','institution','university-zone','city','national']
+          && request.resource.data.shipping_available == ('shipping' in request.resource.data.delivery_methods)
           && fresh(request.resource.data.updated_at)
         )
         ||
@@ -252,26 +264,50 @@ generated = replaceSection(
   '    match /moderation_cases/{caseId}',
   (section) => section
     .replace('allow read: if isAdmin() || (signedIn() && resource.data.created_by == request.auth.uid);', 'allow read: if (signedIn() && resource.data.created_by == request.auth.uid) || canModerateInstitution(resource.data);')
-    .replace('allow update: if isAdmin()', 'allow update: if canModerateInstitution(resource.data)'),
+    // A closed report cannot be silently re-opened by a stale admin client.
+    // Priority-only changes stay possible while open/reviewing. Status
+    // transitions must advance, never loop or regress.
+    .replace('allow update: if isAdmin()', `allow update: if canModerateInstitution(resource.data)
+        && resource.data.status in ['open','reviewing']
+        && (
+          (request.resource.data.status == resource.data.status
+            && request.resource.data.diff(resource.data).affectedKeys().hasAny(['priority']))
+          ||
+          (request.resource.data.status in ['reviewing','resolved','dismissed']
+            && request.resource.data.status != resource.data.status)
+        )`),
   'reports institutional scope',
 );
 
 const permissiveModeration = '    match /moderation_cases/{caseId} { allow read, write: if isAdmin(); }';
 const strictModerationAndPrivacy = `    match /moderation_cases/{caseId} {
       allow read: if canHandleModerationCase(resource.data);
-      allow create: if isAdmin()
+      allow create: if canDecideModerationCase(request.resource.data)
         && request.resource.data.keys().hasOnly(['kind','target_type','target_id','institution_id','status','priority','assigned_to','evidence_refs','action','reason','internal_notes','result','created_at','updated_at'])
         && request.resource.data.kind in ['credential','product','user','chat','possible_scam','prohibited_content','appeal','urgent_incident']
-        && request.resource.data.status in ['open','reviewing','resolved','dismissed']
+        // A new case must enter the moderation queue; terminal decisions
+        // require a separate authorized transition and auditable action.
+        && request.resource.data.status == 'open'
         && request.resource.data.priority in ['normal','high','urgent']
-        && canHandleModerationCase(request.resource.data)
         && fresh(request.resource.data.created_at) && fresh(request.resource.data.updated_at);
-      allow update: if canHandleModerationCase(resource.data)
+      allow update: if canDecideModerationCase(resource.data)
         && request.resource.data.kind == resource.data.kind
         && request.resource.data.target_type == resource.data.target_type
         && request.resource.data.target_id == resource.data.target_id
         && (!('institution_id' in resource.data) || request.resource.data.institution_id == resource.data.institution_id)
+        // Keep provenance immutable, including an absent institution_id on legacy cases.
+        // Only these workflow fields may change; the target and audit origin cannot.
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status','priority','assigned_to','evidence_refs','action','reason','internal_notes','result','updated_at'
+        ])
+        && resource.data.status in ['open','reviewing']
         && request.resource.data.status in ['open','reviewing','resolved','dismissed']
+        && (
+          (request.resource.data.status == resource.data.status
+            && request.resource.data.diff(resource.data).affectedKeys().hasAny(['priority','assigned_to','evidence_refs','action','reason','internal_notes','result']))
+          || (request.resource.data.status in ['reviewing','resolved','dismissed']
+            && request.resource.data.status != resource.data.status)
+        )
         && request.resource.data.priority in ['normal','high','urgent']
         && fresh(request.resource.data.updated_at);
       allow delete: if false;
@@ -310,15 +346,28 @@ const strictModerationAndPrivacy = `    match /moderation_cases/{caseId} {
         && request.resource.data.status == 'pending'
         && fresh(request.resource.data.requested_at)
         && fresh(request.resource.data.updated_at);
-      allow update: if canSupportAppeals()
-        && request.resource.data.uid == uid
-        && request.resource.data.requested_at == resource.data.requested_at
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
-        && (
-          (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
-          || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
-        )
-        && fresh(request.resource.data.updated_at);
+      // Owner may repeat a rejected request but cannot process or complete it.
+      allow update: if (
+        (owner(uid)
+          && resource.data.status == 'rejected'
+          && request.resource.data.uid == uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','requested_at','updated_at'])
+          && request.resource.data.requested_at is timestamp
+          && request.resource.data.requested_at >= resource.data.requested_at
+          && fresh(request.resource.data.requested_at)
+          && fresh(request.resource.data.updated_at))
+        ||
+        (canSupportAppeals()
+          && request.resource.data.uid == uid
+          && request.resource.data.requested_at == resource.data.requested_at
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updated_at'])
+          && (
+            (resource.data.status == 'pending' && request.resource.data.status in ['processing','rejected'])
+            || (resource.data.status == 'processing' && request.resource.data.status == 'rejected')
+          )
+          && fresh(request.resource.data.updated_at))
+      );
       allow delete: if false;
     }
 
