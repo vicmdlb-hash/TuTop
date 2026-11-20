@@ -60,3 +60,22 @@ No reemplazar `PENDIENTE LEGAL` por una duración, base jurídica, jurisdicción
 6. Exigir evidencia de idempotencia/reintento, ausencia de residuos personales, conservación legal aprobada y ausencia de impactos sobre cuentas no participantes. Reportar fallos como **FAIL/BLOCKED**, nunca inventar limpieza. Preservar evidencia técnica, sin borrar cuentas originales.
 
 **Condición actual:** ninguna ejecución destructiva ni envío de datos, no se confirma proceso real de borrado, no hay política legal aprobada ni alcance firmado; `RELEASE=false`. Este dossier continúa en estado **PENDIENTE REVISIÓN LEGAL**.
+
+
+## R113 — Scope ACK for disposable-account erasure protocol (19 Nov 2026 CDMX)
+<!-- TUTOP_OWNER1_R113_20261119_DISPOSABLE_ERASURE_PREPARATION_ONLY_OWNER_ACK -->
+
+**Owner's explicit authority on 19 November 2026 is ONLY to prepare the protocol.**
+No staging account creation, account deletion, UI deletion request, Firebase writes, admin privilege changes, queue processing, retention decision, server `--apply` invocation, public URL change or real account testing is authorized by this ACK. The two pre-existing verified-email accounts are excluded entirely; their legitimate ownership remains unproven. Continue to apply the R105 fail-closed design and leave `scripts/staging-account-erasure-smoke.mjs` STOP intact.
+
+**Pre-execution review checklist; each item is a separate gate:**
+
+- **Identity boundary:** personally verified, deliberately created and disposable staging account belonging to an authorized tester; verify non-reuse of either existing verified account and exclude all minors/real chats/transactions. No account exists by virtue of this document.
+- **Environment boundary:** independently verify staging project, release SHA, isolated rules, server freeze admission and functional web + in-app *request* resources. Viewer access to a web page is not proof of account deletion.
+- **Inventory boundary:** enumerate anticipated Auth, Firestore documents and nested subcollections, Storage objects, FCM/device tokens, moderation references, notification outbox, reservation locks and cross-account edges. A dry run may inspect only authorized synthetic data after its own approval; no real user records or production.
+- **Race boundary:** server-side atomic freeze must reject new chats, offers, reservations and incoming notification jobs once the erasure begins; test convergence and idempotent retries, including child collections and paginated inventory.
+- **Legal boundary:** controller identity, publicly authorized ARCO email and each retention exception must be decided by an authorized human reviewer before any destructive step. Do not invent deadlines, retention periods or legal bases.
+- **Final destructive authorization:** requires a *new* explicit instruction naming the isolated disposable test account and the precise scope. Preparation does not grant an `--apply` or manual deletion approval.
+- **Post-run evidence only after authorization:** validate independently all expected deletions/retentions and residuals; never set a request to `completed` on the basis of a client response or synthetic CI. Protect evidence and user-owned original data.
+
+The owner also permits future **private staging QA** on two disconnected devices without remote AI, but that is *not* consent to erase an account or seed a live backend. The first moderator, audience (18+ vs all ages with minor features blocked), legal controller and ARCO mailbox all remain unresolved. **STATUS: PROTOCOL PREPARED / NO REAL BORRADO / NO LEGAL APPROVAL / NO RELEASE.**
