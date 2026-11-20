@@ -90,6 +90,7 @@ const commonSteps = [
   [process.execPath, ['scripts/connected-staging-compile-workflow-tests.mjs']],
   [process.execPath, ['scripts/next-candidate-signing-binding-tests.mjs']],
   [process.execPath, ['scripts/local-private-qa-sign-encrypt-tests.mjs']],
+  [process.execPath, ['scripts/owner-local-qa-custody-preflight-tests.mjs']],
   [process.execPath, ['scripts/v2-snapshot-cost-audit.mjs']],
   [process.execPath, ['scripts/v2-snapshot-budget-tests.mjs']],
   [process.execPath, ['scripts/v2-cost-cutover-flags-tests.mjs']],
