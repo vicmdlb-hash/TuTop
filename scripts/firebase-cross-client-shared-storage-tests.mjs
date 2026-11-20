@@ -197,7 +197,7 @@ for (const [remote, expected] of [
   const pending = await h.waitForRequest();
   h.reject(pending, remote);
   await assert.rejects(p, (error) =>
-    error instanceof Error && error.message === expected
+    error && typeof error.message === 'string' && error.message === expected
     && error.status === 400 && !Object.hasOwn(error, 'payload')
     && !String(error).includes('private@example.test')
     && !String(error).includes('secret-token'),
