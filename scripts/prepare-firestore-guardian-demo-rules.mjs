@@ -135,7 +135,34 @@ const helpers = `
         && !exists(/databases/$(database)/documents/listing_reservation_locks/$(data.listing_id))
         && data.listing_id == chat.product_id
         && data.buyer_id == chat.buyer_id
-        && data.seller_id == chat.seller_id;
+        && data.seller_id == chat.seller_id
+        // R102: a linked chat is not a trusted admission merely because
+        // its buyer/seller and listing IDs match. Reject stale/revoked/
+        // unvetted pair authority before any offer is written (DEMO only).
+        && guardianPairReady(chat);
+    }
+    // DEMO-ONLY: consent lives in the same server-written atomic age record.
+    // A client checkbox and an independent legacy consent document do not
+    // authorize UGC. Version and guardian epoch must be current.
+    function guardianUgcConsentReady(uid, ageProof) {
+      return ageProof.keys().hasAll(['ugc'])
+        && ageProof.ugc is map
+        && ageProof.ugc.keys().hasAll([
+          'subjectUid','issuer','rulesVersion','granted','revoked','expires_at'
+        ])
+        && ageProof.ugc.subjectUid == uid
+        && ageProof.ugc.issuer == 'trusted_server'
+        && ageProof.ugc.rulesVersion == 'ugc-beta-draft-2026-11-14-v1'
+        && ageProof.ugc.granted == true
+        && ageProof.ugc.revoked == false
+        && ageProof.ugc.expires_at is timestamp
+        && ageProof.ugc.expires_at > request.time
+        && (ageProof.band == 'adult'
+          || (ageProof.keys().hasAll(['guardian'])
+            && ageProof.guardian is map
+            && ageProof.guardian.keys().hasAll(['consentVersion'])
+            && ageProof.ugc.keys().hasAll(['guardianConsentVersion'])
+            && ageProof.ugc.guardianConsentVersion == ageProof.guardian.consentVersion));
     }
     function guardianCanPublish(uid) {
       // One age proof read, then one grant read only for the under13 branch.
@@ -143,7 +170,8 @@ const helpers = `
       return signedIn() && uid is string
         && guardianAgeDataAllowed(uid, ['adult','teen_13_17','under_13'], proof)
         && (proof.band == 'adult'
-          || guardianValidGrant(uid, 'publish_listing', proof));
+          || guardianValidGrant(uid, 'publish_listing', proof))
+        && guardianUgcConsentReady(uid, proof);
     }
 `;
 rules = rules.replace(signedIn, signedIn + helpers);
@@ -234,6 +262,91 @@ const originalOfferLinks = "        && listingDoc(request.resource.data.listing_
 exactlyOne(rules, originalOfferLinks, 'offer create repeated reads');
 rules = rules.replace(originalOfferLinks,
   '        && guardianOfferLinksValid(request.resource.data)');
+
+// DEMO-ONLY: preserve the FULL canonical listing-create predicate byte-for-byte
+// apart from replacing repeated request.resource.data dereferences with a
+// single function parameter. This changes no permission or trust condition.
+// Firebase limits whole-request rule evaluation to 1,000 expressions; the
+// positive minor-with-guardian publication paths hit that ceiling.
+const listingMatch = '    match /listings_v2/{listingId} {';
+const createPrefix = '      allow create: if ';
+const updatePrefix = '      allow update: if ';
+exactlyOne(rules, listingMatch, 'single canonical listings V2 match');
+const listingStart = rules.indexOf(listingMatch);
+const createStart = rules.indexOf(createPrefix, listingStart + listingMatch.length);
+const updateStart = rules.indexOf(updatePrefix, createStart + createPrefix.length);
+if (createStart < 0 || updateStart < 0 || createStart > listingStart + 1200) {
+  throw new Error('GUARDIAN_DEMO_LISTING_CREATE_DRIFT');
+}
+const originalListingCreate = rules.slice(createStart + createPrefix.length, updateStart).trimEnd();
+if (!originalListingCreate.endsWith(';')) {
+  throw new Error('GUARDIAN_DEMO_LISTING_CREATE_TERMINATOR_DRIFT');
+}
+const originalListingPredicate = originalListingCreate.slice(0, -1).trimEnd();
+if (!originalListingPredicate.includes('guardianCanPublish(request.auth.uid)')
+  || !originalListingPredicate.includes('commerceAccountEligible(request.auth.uid)')
+  || !originalListingPredicate.includes('validUniversityMetadata(request.resource.data)')
+  || originalListingPredicate.includes('listingData')) {
+  throw new Error('GUARDIAN_DEMO_LISTING_AUTHORITY_DRIFT');
+}
+const cachedListingPredicate = originalListingPredicate.replaceAll('request.resource.data', 'listingData');
+if (cachedListingPredicate === originalListingPredicate
+  || cachedListingPredicate.replaceAll('listingData', 'request.resource.data') !== originalListingPredicate) {
+  throw new Error('GUARDIAN_DEMO_LISTING_PREDICATE_EQUIVALENCE_FAILED');
+}
+rules = rules.slice(0, createStart)
+  + createPrefix + 'guardianListingCreateCached(request.resource.data);\n'
+  + rules.slice(updateStart);
+const cachedListingFunction = '    function guardianListingCreateCached(listingData) {\n'
+  + '      return ' + cachedListingPredicate + ';\n'
+  + '    }\n';
+const newListingStart = rules.indexOf(listingMatch);
+rules = rules.slice(0, newListingStart) + cachedListingFunction + rules.slice(newListingStart);
+console.log('GUARDIAN_LISTING_CREATE_CACHED_EQUIVALENT: source round-trip verified, no rule bypass');
+
+// DEMO-ONLY: cache the offer request payload in the base predicate without
+// duplicating canonical listing/chat reads already in guardianOfferLinksValid. The
+// capability-specific dual trusted age/guardian checks AND canonical
+// moderation/reservation-lock check remain mandatory direct allow clauses.
+// Round-trip source assertions prevent accidentally dropping a predicate.
+const offerMatch = '    match /offers/{offerId} {';
+exactlyOne(rules, offerMatch, 'single canonical offer match');
+const offerStart = rules.indexOf(offerMatch);
+const offerCreateStart = rules.indexOf(createPrefix, offerStart + offerMatch.length);
+const offerUpdateStart = rules.indexOf(updatePrefix, offerCreateStart + createPrefix.length);
+if (offerCreateStart < 0 || offerUpdateStart < 0
+  || offerCreateStart > offerStart + 1200) {
+  throw new Error('GUARDIAN_DEMO_OFFER_CREATE_DRIFT');
+}
+const originalOfferCreate = rules.slice(offerCreateStart + createPrefix.length, offerUpdateStart).trimEnd();
+if (!originalOfferCreate.endsWith(';')) throw new Error('GUARDIAN_DEMO_OFFER_CREATE_TERMINATOR_DRIFT');
+const originalOfferPredicate = originalOfferCreate.slice(0, -1).trimEnd();
+const pairCall = "guardianPairCapabilityAllowed(request.resource.data.buyer_id, request.resource.data.seller_id, 'make_offer')";
+const linkCall = 'guardianOfferLinksValid(request.resource.data)';
+const pairSegment = ' && (' + pairCall + ')';
+const linkSegment = '\n        && ' + linkCall;
+if (originalOfferPredicate.split(pairSegment).length !== 2
+  || originalOfferPredicate.split(linkSegment).length !== 2
+  || !originalOfferPredicate.includes('commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)')
+) {
+  throw new Error('GUARDIAN_DEMO_OFFER_GUARD_DRIFT');
+}
+const offerBasePredicate = originalOfferPredicate.replace(pairSegment, '').replace(linkSegment, '');
+const cachedOfferBase = offerBasePredicate.replaceAll('request.resource.data', 'offerData');
+const offerRestored = cachedOfferBase.replaceAll('offerData', 'request.resource.data');
+if (offerRestored !== offerBasePredicate || cachedOfferBase === offerBasePredicate) {
+  throw new Error('GUARDIAN_DEMO_OFFER_PREDICATE_EQUIVALENCE_FAILED');
+}
+rules = rules.slice(0, offerCreateStart)
+  + createPrefix + '(' + pairCall + ') && (' + linkCall + ')'
+  + ' && guardianOfferCreateBaseCached(request.resource.data);\n'
+  + rules.slice(offerUpdateStart);
+const offerHelper = '    function guardianOfferCreateBaseCached(offerData) {\n'
+  + '      return ' + cachedOfferBase + ';\n'
+  + '    }\n';
+const newOfferStart = rules.indexOf(offerMatch);
+rules = rules.slice(0, newOfferStart) + offerHelper + rules.slice(newOfferStart);
+console.log('GUARDIAN_OFFER_CREATE_CACHED_EQUIVALENT: all predicates restored, reservation lock retained');
 
 // Minimal DEMO-ONLY diagnostic isolates proof verification from marketplace
 // payload/rate/participant preconditions; it is never part of default V2.
