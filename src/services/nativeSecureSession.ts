@@ -1,3 +1,26 @@
+import type { AuthSession } from './firebaseRest';
+
+// The same strict structural rules apply BEFORE a stored Android identity can
+// be restored or a legacy cleartext record is migrated into Keystore. A
+// malformed encrypted record is retained for diagnosis but is never trusted.
+export function parseValidNativeAuthSession(raw: string): AuthSession | null {
+  try {
+    const parsed = JSON.parse(raw) as AuthSession;
+    const validIdentity = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      && typeof parsed.uid === 'string' && parsed.uid.length > 0
+      && parsed.uid.length <= 256 && parsed.uid.trim() === parsed.uid
+      && typeof parsed.idToken === 'string' && parsed.idToken.length > 0
+      && parsed.idToken.length <= 16384
+      && typeof parsed.refreshToken === 'string' && parsed.refreshToken.length > 0
+      && parsed.refreshToken.length <= 16384
+      && Number.isFinite(parsed.expiresAt) && parsed.expiresAt >= 0
+      && (parsed.phone === undefined || typeof parsed.phone === 'string');
+    return validIdentity ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 type CapacitorPlugin = Record<string, (...args: any[]) => Promise<any>>;
 type CapacitorRuntime = {
   isNativePlatform?: () => boolean;
@@ -78,6 +101,13 @@ export async function restoreNativeSessionForProject(projectId: string) {
     const stored = await plugin.get({ key });
     const raw = typeof stored?.value === 'string' ? stored.value : '';
     if (raw) {
+      // A corrupt encrypted record must not trigger a false "restored" report
+      // or quietly fall back to an older cleartext identity from localStorage.
+      // Do not delete the encrypted original: retain it for authorized review.
+      if (!parseValidNativeAuthSession(raw)) {
+        sessionStorage.removeItem(key);
+        return { restored: false, migrated: false };
+      }
       sessionStorage.setItem(key, raw);
       localStorage.removeItem(key);
       localStorage.removeItem(LEGACY_SESSION_KEY);
@@ -90,8 +120,7 @@ export async function restoreNativeSessionForProject(projectId: string) {
   const legacyRaw = localStorage.getItem(key) || localStorage.getItem(LEGACY_SESSION_KEY);
   if (!legacyRaw) return { restored: false, migrated: false };
   try {
-    const parsed = JSON.parse(legacyRaw) as { uid?: string; idToken?: string; refreshToken?: string };
-    if (!parsed.uid || !parsed.idToken || !parsed.refreshToken) return { restored: false, migrated: false };
+    if (!parseValidNativeAuthSession(legacyRaw)) return { restored: false, migrated: false };
     await plugin.set({ key, value: legacyRaw });
     sessionStorage.setItem(key, legacyRaw);
     localStorage.removeItem(key);
