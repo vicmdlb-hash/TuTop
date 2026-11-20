@@ -99,10 +99,26 @@ async function readJson(response: Response) {
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
   }
   if (!response.ok) {
-    const message = data?.error?.message || data?.error?.status || data?.raw || `HTTP ${response.status}`;
-    const error = new Error(String(message));
+    // Firebase errors are untrusted HTTP content. Never surface remote text,
+    // email addresses or bearer credentials in UI/logs via Error or payload.
+    // Preserve only exact known diagnostic codes and the numeric HTTP status.
+    const safeCodes = new Set([
+      'INVALID_REFRESH_TOKEN','TOKEN_EXPIRED','USER_DISABLED','USER_NOT_FOUND',
+      'INVALID_GRANT','MISSING_REFRESH_TOKEN','INVALID_ID_TOKEN',
+      'INVALID_PASSWORD','INVALID_LOGIN_CREDENTIALS','EMAIL_NOT_FOUND',
+      'EMAIL_EXISTS','INVALID_EMAIL','WEAK_PASSWORD','TOO_MANY_ATTEMPTS_TRY_LATER',
+      'PERMISSION_DENIED','UNAUTHENTICATED','NOT_FOUND','ALREADY_EXISTS',
+      'RESOURCE_EXHAUSTED','FAILED_PRECONDITION','ABORTED','UNAVAILABLE',
+      'DEADLINE_EXCEEDED','INVALID_ARGUMENT','INTERNAL',
+    ]);
+    let code = '';
+    for (const value of [data?.error?.message, data?.error?.status]) {
+      if (typeof value !== 'string') continue;
+      const match = /^([A-Z][A-Z0-9_]{1,79})(?=[: ]|$)/.exec(value);
+      if (match && safeCodes.has(match[1])) { code = match[1]; break; }
+    }
+    const error = new Error(code || `FIREBASE_HTTP_${response.status}`);
     (error as any).status = response.status;
-    (error as any).payload = data;
     throw error;
   }
   return data;

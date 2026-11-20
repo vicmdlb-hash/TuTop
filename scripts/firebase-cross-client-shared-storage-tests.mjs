@@ -183,5 +183,27 @@ for (const malformed of [
 }
 assert.equal(makeHarness(session('A', 'valid')).client().currentSession?.uid, 'A',
   'valid previously persisted session must continue to restore');
+// The real REST client must never reveal malicious Firebase response bodies
+// as user-visible errors or stash those bodies on exception payloads.
+for (const [remote, expected] of [
+  ['INVALID_REFRESH_TOKEN: user=private@example.test bearer=secret-token', 'INVALID_REFRESH_TOKEN'],
+  ['USER_DISABLED: private@example.test', 'USER_DISABLED'],
+  ['Invalid account private@example.test bearer=secret-token', 'FIREBASE_HTTP_400'],
+  ['INVALID_REFRESH_TOKEN_SUFFIX private@example.test', 'FIREBASE_HTTP_400'],
+  ['PERMISSION_DENIED: private@example.test', 'PERMISSION_DENIED'],
+]) {
+  const h = makeHarness();
+  const p = h.client().getIdToken();
+  const pending = await h.waitForRequest();
+  h.reject(pending, remote);
+  await assert.rejects(p, (error) =>
+    error instanceof Error && error.message === expected
+    && error.status === 400 && !Object.hasOwn(error, 'payload')
+    && !String(error).includes('private@example.test')
+    && !String(error).includes('secret-token'),
+    'Firebase REST errors must be allowlisted and data-free');
+}
+console.log('PASS Firebase REST errors expose only safe diagnostics and HTTP status (synthetic)');
+
 console.log('PASS malformed Firestore REST persisted sessions rejected before network (synthetic)');
 console.log('PASS 7 synthetic cross-client shared-session scenarios using actual FirebaseRestClient/lifecycle/bridge; no Firebase traffic');
