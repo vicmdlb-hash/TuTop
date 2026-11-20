@@ -5,14 +5,21 @@
 La prioridad es comprobar si los materiales QA de 16NOV están accesibles en la PC propietaria. La firma QA pública está reconciliada con el registro R88, pero el código actual no tiene APK firmada.
 
 ## Opción rápida: Windows PowerShell (sin repositorio)
-Abre Windows PowerShell y pega **solo** este código. Usa `Test-Path`: no abre, descifra, mueve ni modifica ningún archivo.
+Abre Windows PowerShell y pega **solo** este código. Comprueba metadatos de tres archivos concretos: archivo ordinario, tamaño mayor a cero y ausencia de enlace simbólico/reparse point. No lee contenido, descifra, mueve ni modifica ningún archivo; los errores se traducen a `false` sin revelar rutas. La presencia no demuestra que el certificado o la clave sean válidos.
 
 ```powershell
 $base = Join-Path $env:USERPROFILE 'TuTop-Private\keys'
+function Test-OwnerQaFile([string]$Name) {
+  try {
+    $item = Get-Item -LiteralPath (Join-Path $base $Name) -Force -ErrorAction Stop
+    if (-not ($item -is [System.IO.FileInfo])) { return $false }
+    return [bool](($item.Length -gt 0) -and (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0))
+  } catch { return $false }
+}
 [pscustomobject]@{
-  P12 = Test-Path -LiteralPath (Join-Path $base 'TuTop-QA-ONLY-20261116.p12') -PathType Leaf
-  AGE = Test-Path -LiteralPath (Join-Path $base 'TuTop-age-identity-OWNER-ONLY-20261116.txt') -PathType Leaf
-  RECOVERY = Test-Path -LiteralPath (Join-Path $base 'RECOVERY_SECRET_LOCAL_ONLY_20261116.txt') -PathType Leaf
+  P12 = Test-OwnerQaFile 'TuTop-QA-ONLY-20261116.p12'
+  AGE = Test-OwnerQaFile 'TuTop-age-identity-OWNER-ONLY-20261116.txt'
+  RECOVERY = Test-OwnerQaFile 'RECOVERY_SECRET_LOCAL_ONLY_20261116.txt'
 } | ConvertTo-Json -Compress
 ```
 
