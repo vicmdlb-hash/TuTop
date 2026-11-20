@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { extractApkSignerDigest } from './apksigner-certificate-digest.mjs';
+import { parseApkBadgingVersionIdentity } from './apk-badging-version-identity.mjs';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
 const PACKAGE='mx.tutop.app';
@@ -38,15 +39,7 @@ if(!packageName)throw new Error('APK_PACKAGE_NAME_MISSING');
 if(packageName!==PACKAGE)throw new Error('APK_PACKAGE_MISMATCH');
 // A package match alone does not prove update safety; retain exact APK
 // version identity for comparison against the owner's installed version.
-const versionCodeMatch=badging.match(/(?:^|\n)package:[^\r\n]*\bversionCode='([^']*)'/);
-const versionNameMatch=badging.match(/(?:^|\n)package:[^\r\n]*\bversionName='([^']*)'/);
-const versionCodeText=String(versionCodeMatch?.[1]||'');
-const versionCode=Number(versionCodeText);
-if(!/^\d{1,10}$/.test(versionCodeText)||!Number.isSafeInteger(versionCode)||versionCode<1)
-  throw new Error('APK_VERSION_CODE_INVALID');
-const versionName=String(versionNameMatch?.[1]||'');
-if(!/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,79}$/.test(versionName))
-  throw new Error('APK_VERSION_NAME_INVALID');
+const {versionCode,versionName}=parseApkBadgingVersionIdentity(badging);
 
 const output=execFileSync(apksigner,['verify','--print-certs',apk],{encoding:'utf8'});
 const certSha1=extractApkSignerDigest(output,'SHA-1',40);

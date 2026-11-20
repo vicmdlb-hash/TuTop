@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { parseApkBadgingVersionIdentity, validateApkVersionCode, validateApkVersionName } from './apk-badging-version-identity.mjs';
 
 const extract=fs.readFileSync('scripts/extract-next-candidate-apk-identity.mjs','utf8');
 const sha256=fs.readFileSync('scripts/register-staging-android-sha256.mjs','utf8');
@@ -14,11 +15,35 @@ assert.match(extract,/dump','badging/);
 assert.match(extract,/mx\.tutop\.app/);
 assert.match(extract,/APK_PACKAGE_NAME_MISSING/);
 assert.match(extract,/APK_PACKAGE_MISMATCH/);
-assert.match(extract,/APK_VERSION_CODE_INVALID/);
-assert.match(extract,/APK_VERSION_NAME_INVALID/);
+assert.match(extract,/parseApkBadgingVersionIdentity/);
+const pureParser=fs.readFileSync('scripts/apk-badging-version-identity.mjs','utf8');
+assert.match(pureParser,/APK_VERSION_CODE_INVALID/);
+assert.match(pureParser,/APK_VERSION_NAME_INVALID/);
 assert.match(extract,/TUTOP_NEXT_CANDIDATE_APK_VERSION_CODE/);
 assert.match(extract,/TUTOP_NEXT_CANDIDATE_APK_VERSION_NAME/);
 assert.match(extract,/UNVERIFIED_REQUIRE_DEVICE_INVENTORY/);
+// Execute real pure parsing with synthetic aapt2 output; no Android/Firebase.
+const goodBadging="package: name='mx.tutop.app' versionCode='90215' versionName='0.9.2-beta.11'\napplication-label:'TuTop'";
+assert.deepEqual(parseApkBadgingVersionIdentity(goodBadging),
+  {versionCode:90215,versionName:'0.9.2-beta.11'});
+assert.equal(validateApkVersionCode('90200'),90200);
+assert.equal(validateApkVersionName('0.9.2-beta.0'),'0.9.2-beta.0');
+for (const bad of ['', '0', '-1', '1e3', 'abc', '12345678901', 90215, null]) {
+  assert.throws(() => validateApkVersionCode(bad),/APK_VERSION_CODE_INVALID/);
+}
+for (const bad of ['', '0.9.2 beta', 'evil\nname', 90215, null]) {
+  assert.throws(() => validateApkVersionName(bad),/APK_VERSION_NAME_INVALID/);
+}
+for (const bad of [
+  "package: name='mx.tutop.app' versionCode='0' versionName='0.9.2-beta.0'",
+  "package: name='mx.tutop.app' versionName='0.9.2-beta.0'",
+  "package: name='mx.tutop.app' versionCode='90215'",
+  "package: name='mx.tutop.app' versionCode='90215' versionCode='90216' versionName='0.9.2-beta.11'",
+  "application-label:'TuTop'",
+]) {
+  assert.throws(() => parseApkBadgingVersionIdentity(bad),/APK_VERSION_(CODE|NAME)_INVALID/);
+}
+assert.throws(() => parseApkBadgingVersionIdentity(null),/APK_BADGING_INVALID/);
 assert.match(extract,/extractApkSignerDigest/);
 assert.match(extract,/GITHUB_REF_NAME/);
 assert.match(extract,/EXACT_EXTRACTION_BRANCH_REQUIRED/);
@@ -65,6 +90,12 @@ assert.match(external,/EXTRACTED_SOURCE_SHA_INVALID/);
 assert.match(external,/CANDIDATE_SOURCE_SHA_MISMATCH/);
 assert.match(external,/TUTOP_NEXT_CANDIDATE_APK_SHA256/);
 assert.match(external,/APK_SHA256_INVALID/);
+assert.match(external,/TUTOP_NEXT_CANDIDATE_APK_VERSION_CODE/);
+assert.match(external,/TUTOP_NEXT_CANDIDATE_APK_VERSION_NAME/);
+assert.match(external,/validateApkVersionCode/);
+assert.match(external,/validateApkVersionName/);
+assert.match(external,/UNVERIFIED_REQUIRE_DEVICE_INVENTORY/);
+assert.ok(external.indexOf("validateApkVersionCode(required(") < external.indexOf('const token=await firebaseCiAccessToken()'), 'invalid APK version must abort before Firebase access');
 assert.match(external,/source_sha:sourceSha/);
 assert.match(external,/apk_sha256:apkSha256/);
 assert.match(external,/NEXT_CANDIDATE_SIGNED_CERT_SHA256_REQUIRED/);
