@@ -58,3 +58,20 @@ Se añadió el comprobador **puramente declarativo** `scripts/owner-local-instal
 **Ejemplo de incompatibilidad conocida del plan:** el candidato actual es `90200`; si (y solo si) se confirma que un teléfono tiene instalado el Build121 histórico `90215`, la comparación devuelve `DOWNGRADE_BLOCKED`. No asumir que el dispositivo lo tiene instalado. Fuente Android: https://developer.android.com/google/play/app-updates y https://developer.android.com/studio/publish/versioning.
 
 **Siguiente gate owner-only:** tras obtener una APK del HEAD exacto, recopilar localmente paquete/código/firma de esa APK y, sin desinstalar ni borrar datos, compararlos con el inventario auténtico del dispositivo. En caso de desconocimiento o discrepancia, no instalar. Este módulo no sustituye la custodia P12/AGE/RECOVERY ni la aceptación física R6.
+ 
+## Inventario Android de lectura local (R139)
+
+**Ejecutable únicamente por el titular con un teléfono conectado y depuración USB autorizada.** Esta herramienta no lee credenciales, mensajes, datos de cuenta, GPS, contenido del teléfono ni APKs y no instala, desinstala, borra, restaura o despliega nada. Requiere Platform-tools (adb) en el PATH y ejecutar desde el directorio exacto del proyecto TuTop:
+
+Windows PowerShell:
+```powershell
+$env:TUTOP_OWNER_DEVICE_INVENTORY_ACK = 'READ_ONLY_PHONE_METADATA'
+node scripts/owner-local-android-device-inventory.mjs --owner-read-only
+Remove-Item Env:TUTOP_OWNER_DEVICE_INVENTORY_ACK
+```
+
+Consulta solo `adb devices`, `adb shell pm list packages mx.tutop.app` y, si la app está presente, `adb shell dumpsys package mx.tutop.app`. Debe detectar **un solo dispositivo USB autorizado**: desconectar el otro teléfono durante cada lectura. Nunca imprime número de serie, dumpsys completo, rutas ni datos privados; informa únicamente si `mx.tutop.app` parece instalado y un `versionCode` visible. Si la herramienta ADB no está instalada, el teléfono no está autorizado o el sistema no reconoce una versión inequívoca, devuelve UNKNOWN o ERROR sin cambios.
+
+**No modifica el estado de certificación:** ningún resultado verifica todavía el certificado instalado, ni autoriza una instalación. Ejemplo: `90215` detectado en POCO + APK candidata `90200` implica `DOWNGRADE_BLOCKED` en el comparador previo; no instalar ni desinstalar. No envíes capturas de ADB o identificadores; solo el campo `status` y `installed_version_code` si aparece. Comprobar luego la huella de firma por un método separado con evidencia real y aprobación humana.
+
+No ejecutar esta utilidad automáticamente desde CI: `npm run check` ejecuta **solo pruebas sintéticas** (sin ADB). Código: `scripts/owner-local-android-device-inventory.mjs`; test: `scripts/owner-local-android-device-inventory-tests.mjs`.
