@@ -64,6 +64,12 @@ assert.match(external,/source_sha:sourceSha/);
 assert.match(external,/apk_sha256:apkSha256/);
 assert.match(external,/NEXT_CANDIDATE_SIGNED_CERT_SHA256_REQUIRED/);
 assert.match(external,/NEXT_CANDIDATE_EXACT_ANDROID_SHA256_NOT_REGISTERED/);
+// Regression for the read-only Auth callback pre-promotion gate:
+// never permit HTTP or embedded URL credentials before contacting the handler.
+assert.match(external,/callbackUrl\.protocol\s*!==\s*'https:'/);
+assert.match(external,/callbackUrl\.username\s*\|\|\s*callbackUrl\.password/);
+assert.match(external,/NEXT_CANDIDATE_AUTH_HANDLER_INSECURE_URL/);
+assert.ok(external.indexOf('NEXT_CANDIDATE_AUTH_HANDLER_INSECURE_URL') < external.indexOf('const customHandler='));
 assert.doesNotMatch(external,/NEXT_CANDIDATE_ANDROID_SHA256_REQUIRED/);
 
 console.log('PASS exact source SHA + TuTop package + signed APK identity are extracted together');
