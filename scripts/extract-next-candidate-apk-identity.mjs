@@ -36,6 +36,17 @@ const badging=execFileSync(aapt2,['dump','badging',apk],{encoding:'utf8'});
 const packageName=String(badging.match(/package:\s+name='([^']+)'/i)?.[1]||'').trim();
 if(!packageName)throw new Error('APK_PACKAGE_NAME_MISSING');
 if(packageName!==PACKAGE)throw new Error('APK_PACKAGE_MISMATCH');
+// A package match alone does not prove update safety; retain exact APK
+// version identity for comparison against the owner's installed version.
+const versionCodeMatch=badging.match(/(?:^|\n)package:[^\r\n]*\bversionCode='([^']*)'/);
+const versionNameMatch=badging.match(/(?:^|\n)package:[^\r\n]*\bversionName='([^']*)'/);
+const versionCodeText=String(versionCodeMatch?.[1]||'');
+const versionCode=Number(versionCodeText);
+if(!/^\d{1,10}$/.test(versionCodeText)||!Number.isSafeInteger(versionCode)||versionCode<1)
+  throw new Error('APK_VERSION_CODE_INVALID');
+const versionName=String(versionNameMatch?.[1]||'');
+if(!/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,79}$/.test(versionName))
+  throw new Error('APK_VERSION_NAME_INVALID');
 
 const output=execFileSync(apksigner,['verify','--print-certs',apk],{encoding:'utf8'});
 const certSha1=extractApkSignerDigest(output,'SHA-1',40);
@@ -44,6 +55,8 @@ const githubEnv=required('GITHUB_ENV');
 fs.appendFileSync(githubEnv,[
   `TUTOP_NEXT_CANDIDATE_SOURCE_SHA=${sourceSha}`,
   `TUTOP_NEXT_CANDIDATE_APK_SHA256=${apkSha256}`,
+  `TUTOP_NEXT_CANDIDATE_APK_VERSION_CODE=${versionCode}`,
+  `TUTOP_NEXT_CANDIDATE_APK_VERSION_NAME=${versionName}`,
   `TUTOP_ANDROID_CERT_SHA1=${certSha1}`,
   `TUTOP_ANDROID_CERT_SHA256=${certSha256}`,
   `TUTOP_EXPECTED_ANDROID_CERT_SHA256=${certSha256}`,
@@ -51,6 +64,7 @@ fs.appendFileSync(githubEnv,[
 
 console.log(JSON.stringify({
  status:'PASS',project:PROJECT,package:packageName,source_sha:sourceSha,apk_sha256:apkSha256,
+ version_code:versionCode,version_name:versionName,install_compatibility:'UNVERIFIED_REQUIRE_DEVICE_INVENTORY',
  cert_sha1:certSha1,cert_sha256:certSha256,
  mutation:false,production:false,play:false,
 },null,2));
