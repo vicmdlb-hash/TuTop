@@ -5,6 +5,7 @@ on:
       - fix/notification-session-guard-20261021
       - fix/firebase-cross-client-refresh-ownership-20261021
       - integration/tutop-121-122-fcm-owner-ci-20261022
+      - review/r107-r109-minimal-no-release-20261119
 
 # Both branches are isolated draft PRs. Never read secrets, publish artifacts,
 # access staging/Firebase, create APKs, or invoke admin/maintenance commands.
@@ -57,6 +58,15 @@ jobs:
               node scripts/native-secure-session-write-queue-tests.mjs
               # Read-only regressions: validate erasure plans and boundaries.
               # These run with no credentials or network and cannot delete users.
+              node scripts/account-erasure-synthetic-tests.mjs
+              node scripts/account-erasure-tests.mjs
+              ;;
+            review/r107-r109-minimal-no-release-20261119)
+              # Only read-only synthetic suites. No Firebase, APK, release or secrets.
+              node --experimental-strip-types scripts/post116-push-account-isolation-tests.mjs
+              node scripts/firebase-cross-client-shared-storage-tests.mjs
+              node scripts/native-secure-session-write-queue-tests.mjs
+              node scripts/candidate120-web-deletion-contract-tests.mjs
               node scripts/account-erasure-synthetic-tests.mjs
               node scripts/account-erasure-tests.mjs
               ;;
