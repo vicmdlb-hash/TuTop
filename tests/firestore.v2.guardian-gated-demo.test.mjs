@@ -145,11 +145,20 @@ test('teen with current guardian make_offer grant can submit an offer', async ()
       // Inspect ONLY the relevant offer-create source lines; never dump
       // full rule expressions, raw test documents, paths or auth credentials.
       const coverage = JSON.parse(report);
+      // Follow the exact generated rule line numbers; the prior fixed range
+      // 815-860 excludes the offer create permission in current HEAD1057.
+      const rulesLines = rules.split('\n');
+      const offerLine = rulesLines.findIndex(line => line.includes('match /offers/{offerId} {')) + 1;
+      const rateLimitLine = rulesLines.findIndex(line => line.includes('match /rate_limits/')) + 1;
+      if (!offerLine) throw new Error('GUARDIAN_OFFER_DEMO_COVERAGE_ANCHOR_MISSING');
+      const near = (line, anchor, before, after) =>
+        anchor > 0 && line >= anchor - before && line <= anchor + after;
       const relevant = [];
       const visit = (node) => {
         if (!node || typeof node !== 'object') return;
         const line = node.sourcePosition?.line;
-        if (Number.isInteger(line) && line >= 815 && line <= 860
+        if (Number.isInteger(line)
+          && (near(line, offerLine, 6, 90) || near(line, rateLimitLine, 6, 60))
           && Array.isArray(node.values) && node.values.length) {
           const summary = JSON.stringify(node.values);
           relevant.push({
@@ -159,14 +168,20 @@ test('teen with current guardian make_offer grant can submit an offer', async ()
             denied: /boolValue\":false/.test(summary),
           });
         }
+        // The else must pair with the array check, not the inner child loop:
+        // the previous missing braces skipped nested object-valued nodes.
         for (const value of Object.values(node)) {
-          if (Array.isArray(value)) for (const child of value) visit(child);
-          else if (value && typeof value === 'object') visit(value);
+          if (Array.isArray(value)) {
+            for (const child of value) visit(child);
+          } else if (value && typeof value === 'object') {
+            visit(value);
+          }
         }
       };
       visit(coverage);
-      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_LINE_815_860',
-        JSON.stringify(relevant.slice(0, 45)));
+      console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_DYNAMIC',
+        JSON.stringify({ offerLine, rateLimitLine: rateLimitLine || null,
+          nodes: relevant.slice(0, 45) }));
     } catch {
       console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_UNAVAILABLE');
     }
