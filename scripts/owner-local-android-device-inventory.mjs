@@ -9,12 +9,13 @@ import { pathToFileURL } from 'node:url';
 const PACKAGE = 'mx.tutop.app';
 const ACK = 'READ_ONLY_PHONE_METADATA';
 const SCHEMA = 'tutop.owner-device-inventory.v1';
-function output(status, versionCode = null) {
+function output(status, versionCode = null, androidRelease = null) {
   return {
     schema: SCHEMA,
     status,
     package: PACKAGE,
     installed_version_code: versionCode,
+    android_release: androidRelease,
     certificate_verified: false,
     current_apk_verified: false,
     install_authorized: false,
@@ -65,7 +66,15 @@ export function parseInstalledVersionCode(raw) {
   return codes.length === 1 ? codes[0] : null;
 }
 
-/** Tool execution is opt-in, exactly one authorized device and three read-only commands. */
+// Public Android OS version only: no unique device ID, build fingerprint,
+// paths or raw getprop output. Unexpected values remain UNKNOWN.
+export function parseAndroidRelease(raw) {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim();
+  return /^(?:[1-9]|[1-9][0-9])(?:\.[0-9]{1,2}){0,2}$/.test(value) ? value : null;
+}
+
+/** Tool execution is opt-in, exactly one authorized device and read-only commands. */
 export function collectOwnerDeviceInventory({
   argv = [],
   env = {},
@@ -94,7 +103,15 @@ export function collectOwnerDeviceInventory({
     if (installed !== 'present') return output('PACKAGE_INVENTORY_UNKNOWN');
     const version = parseInstalledVersionCode(safeRun(['shell', 'dumpsys', 'package', PACKAGE]));
     if (version === null) return output('INSTALLED_VERSION_UNKNOWN');
-    return output('INSTALLED_VERSION_OBSERVED_REQUIRES_CERT_AND_OWNER_REVIEW', version);
+    // The OS release is useful for R6 without another owner device session.
+    // It is optional and cannot prevent verified installed-version reporting.
+    let androidRelease = null;
+    try {
+      androidRelease = parseAndroidRelease(
+        safeRun(['shell', 'getprop', 'ro.build.version.release']));
+    } catch { /* Failed read remains unknown; never print raw output. */ }
+    return output('INSTALLED_VERSION_OBSERVED_REQUIRES_CERT_AND_OWNER_REVIEW',
+      version, androidRelease);
   } catch {
     // Never print raw device output, adb serial, host paths or tool errors.
     return output('ADB_UNAVAILABLE_OR_QUERY_FAILED');
