@@ -259,6 +259,26 @@ test('teen offer cannot use overlong pair clearance', async () => {
   await assertFails(createOffer(verifiedContext(env, 'buyer').firestore()));
 });
 
+// Isolate the exact bilateral user_blocks exists() calls implicated by the
+// emulator's guardian-offer error. The full offer positive contract stays
+// unchanged: this experiment cannot waive moderation, age or rate guards.
+test('isolated bilateral user-block probe permits a genuinely unblocked pair', async () => {
+  await seed('adult', 'adult');
+  const db = verifiedContext(env, 'buyer').firestore();
+  await assertSucceeds(setDoc(doc(db, 'guardian_user_block_probe/buyer'), { signal: true }));
+});
+
+test('isolated bilateral user-block probe denies a block from seller to buyer', async () => {
+  await seed('adult', 'adult');
+  await env.withSecurityRulesDisabled(async ctx => {
+    await setDoc(doc(ctx.firestore(), 'user_blocks/seller/targets/buyer'), {
+      blocker_uid: 'seller', blocked_uid: 'buyer', created_at: now(),
+    });
+  });
+  const db = verifiedContext(env, 'buyer').firestore();
+  await assertFails(setDoc(doc(db, 'guardian_user_block_probe/buyer'), { signal: true }));
+});
+
 test('isolated age proof gate accepts a server-issued adult claim and rejects revoked claim', async () => {
   await seed('adult');
   const buyer = verifiedContext(env, 'buyer').firestore();
