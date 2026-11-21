@@ -6,6 +6,7 @@ import {
   parseConnectedDeviceState as devices,
   parsePackageListing as packages,
   parseInstalledVersionCode as version,
+  parseAndroidRelease as androidRelease,
 } from './owner-local-android-device-inventory.mjs';
 
 const ack = {TUTOP_OWNER_DEVICE_INVENTORY_ACK:'READ_ONLY_PHONE_METADATA'};
@@ -16,6 +17,7 @@ const expectedQueries = [
   ['devices'],
   ['shell','pm','list','packages','mx.tutop.app'],
   ['shell','dumpsys','package','mx.tutop.app'],
+  ['shell','getprop','ro.build.version.release'],
 ];
 function fakeRunner(outputs, calls) {
   return (binary, args, options) => {
@@ -37,6 +39,11 @@ assert.equal(packages(''),'absent_claim_only');
 assert.equal(packages('package:mx.tutop.app.beta\n'),'unknown');
 assert.equal(packages('error: no devices\n'),'unknown');
 assert.equal(version(dump),90215);
+assert.equal(androidRelease('15\n'),'15');
+assert.equal(androidRelease('8.1.0\n'),'8.1.0');
+assert.equal(androidRelease('SENSITIVE_TEST_SERIAL: 15'),null);
+assert.equal(androidRelease('15\n16'),null);
+assert.equal(androidRelease('0'),null);
 assert.equal(version('Package [other.app] (abc):\n  versionCode=90215'),null);
 assert.equal(version('Package [mx.tutop.app] (abc):\n  versionCode=0'),null);
 assert.equal(version('Package [mx.tutop.app] (abc):\n  versionCode=90215\n  versionCode=90216'),null);
@@ -45,9 +52,10 @@ let calls=[];
 const never=()=>{throw Error('must not call adb');};
 assert.equal(collect({argv:[],env:ack,run:never}).status,'OWNER_READ_ONLY_ACK_REQUIRED');
 assert.equal(collect({argv:['--owner-read-only'],env:{},run:never}).status,'OWNER_READ_ONLY_ACK_REQUIRED');
-const good=collect({argv:['--owner-read-only'],env:ack,run:fakeRunner([listed,packageOk,dump],calls)});
+const good=collect({argv:['--owner-read-only'],env:ack,run:fakeRunner([listed,packageOk,dump,'15\n'],calls)});
 assert.equal(good.status,'INSTALLED_VERSION_OBSERVED_REQUIRES_CERT_AND_OWNER_REVIEW');
 assert.equal(good.installed_version_code,90215);
+assert.equal(good.android_release,'15');
 assert.equal(good.certificate_verified,false);
 assert.equal(good.current_apk_verified,false);
 assert.equal(good.install_authorized,false);
@@ -56,6 +64,14 @@ assert.equal(good.phone_data_modified,false);
 assert.deepEqual(calls,expectedQueries);
 assert(!JSON.stringify(good).includes('SENSITIVE_TEST_SERIAL'));
 assert(!JSON.stringify(good).includes('0.9.2-beta.11'));
+calls=[];
+const invalidRelease = collect({
+  argv:['--owner-read-only'],env:ack,
+  run:fakeRunner([listed,packageOk,dump,'PRIVATE_SERIAL\n'],calls),
+});
+assert.equal(invalidRelease.status,'INSTALLED_VERSION_OBSERVED_REQUIRES_CERT_AND_OWNER_REVIEW');
+assert.equal(invalidRelease.android_release,null);
+assert(!JSON.stringify(invalidRelease).includes('PRIVATE_SERIAL'));
 calls=[];
 const absent=collect({argv:['--owner-read-only'],env:ack,run:fakeRunner([listed,''],calls)});
 assert.equal(absent.status,'NOT_INSTALLED_CLAIM_REQUIRES_OWNER_CONFIRMATION');
