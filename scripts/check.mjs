@@ -93,6 +93,7 @@ const commonSteps = [
   [process.execPath, ['scripts/owner-local-qa-custody-preflight-tests.mjs']],
   [process.execPath, ['scripts/owner-local-install-identity-preflight-tests.mjs']],
   [process.execPath, ['scripts/owner-local-android-device-inventory-tests.mjs']],
+  [process.execPath, ['scripts/android-doctor-tests.mjs']],
   [process.execPath, ['scripts/v2-snapshot-cost-audit.mjs']],
   [process.execPath, ['scripts/v2-snapshot-budget-tests.mjs']],
   [process.execPath, ['scripts/v2-cost-cutover-flags-tests.mjs']],
