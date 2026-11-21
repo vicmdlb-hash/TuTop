@@ -168,8 +168,8 @@ test('teen with current guardian make_offer grant can submit an offer', async ()
             denied: /boolValue\":false/.test(summary),
           });
         }
-        // The else must pair with the array check, not the inner child loop:
-        // the previous missing braces skipped nested object-valued nodes.
+        // Explicit braces clarify the original array/object traversal.
+        // They do not change the existing control flow or coverage results.
         for (const value of Object.values(node)) {
           if (Array.isArray(value)) {
             for (const child of value) visit(child);
