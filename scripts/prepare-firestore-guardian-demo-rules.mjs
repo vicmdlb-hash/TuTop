@@ -356,6 +356,12 @@ rules = rules.replace(catchAll, `    match /guardian_demo_probe/{uid} {
       allow create: if owner(uid) && guardianAdultOrTeen(uid, 'direct_chat');
       allow read, update, delete: if false;
     }
+    // DEMO-ONLY isolated diagnostic: permit only an authenticated owner whose
+    // pair has NO user-block record in either direction. Do not add to V2.
+    match /guardian_user_block_probe/{uid} {
+      allow create: if owner(uid) && usersUnblocked(uid, 'seller');
+      allow read, update, delete: if false;
+    }
 ` + catchAll);
 
 fs.writeFileSync(outputPath, rules);
