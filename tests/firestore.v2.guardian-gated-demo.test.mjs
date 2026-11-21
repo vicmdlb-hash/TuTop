@@ -201,6 +201,16 @@ for (const round of [2, 3, 4, 5, 6]) {
   });
 }
 
+// Differential positive control for the SAME canonical offer and rate-limit
+// batch, approved listing, vetted pair and verified identities. Compare this
+// adult fixture with the teen/guardian positive above: if both fail, do not
+// attribute the denial to guardian permission alone. No rules are relaxed.
+test('adult with current vetted pair can make an offer without guardian approval', async () => {
+  await seed('adult', 'adult');
+  await seedChat({ vetted: true });
+  await assertSucceeds(createOffer(verifiedContext(env, 'buyer').firestore()));
+});
+
 // R102: the linked chat's trusted PAIR clearance is mandatory to authorize an
 // offer. Actor age/grant and matching IDs alone MUST NOT launder a revoked,
 // expired or never-vetted chat into a new financial/commerce offer.
