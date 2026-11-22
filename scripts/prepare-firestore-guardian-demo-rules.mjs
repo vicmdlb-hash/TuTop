@@ -362,6 +362,13 @@ rules = rules.replace(catchAll, `    match /guardian_demo_probe/{uid} {
       allow create: if owner(uid) && usersUnblocked(uid, 'seller');
       allow read, update, delete: if false;
     }
+    // DEMO-ONLY positive/negative control for the EXACT atomic offer counter.
+    // Uses the unchanged offerRateLimitConsumed() helper from V2; this probe
+    // never authorizes real offers or deployable security rules.
+    match /guardian_offer_rate_probe/{uid} {
+      allow create: if owner(uid) && offerRateLimitConsumed();
+      allow read, update, delete: if false;
+    }
 ` + catchAll);
 
 fs.writeFileSync(outputPath, rules);
