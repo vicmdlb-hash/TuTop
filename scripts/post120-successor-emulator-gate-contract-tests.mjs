@@ -18,6 +18,23 @@ for (const required of ['demo-tutop-post120-rules','@firebase/rules-unit-testing
   assert.equal(workflow.includes(required), true, 'missing emulator-gate token: ' + required);
 }
 
+// The independent erasure and base suites must still report results when
+// the guardian challenge fails. This does NOT convert a failed job to success.
+// Preserve demo-only project, read-only permissions and the prerequisite rules.
+function workflowStep(name) {
+  const start = workflow.indexOf('      - name: ' + name + '\n');
+  assert(start >= 0, 'missing workflow step: ' + name);
+  const next = workflow.indexOf('\n      - name: ', start + 1);
+  return workflow.slice(start, next >= 0 ? next : undefined);
+}
+assert.match(workflowStep('Prepare strict V2 Rules'), /id: prepare_v2_rules/);
+assert.match(workflowStep('Prepare isolated account-erasure admission demo Rules (no staging\/prod)'),
+  /if: \$\{\{ !cancelled\(\) && steps\.prepare_v2_rules\.outcome == 'success' \}\}/);
+assert.match(workflowStep('Erasure admission freeze emulator challenge (synthetic; no admin apply)'),
+  /if: \$\{\{ !cancelled\(\) && steps\.prepare_erasure_demo\.outcome == 'success' \}\}/);
+assert.match(workflowStep('Firestore + Storage emulator security suite'),
+  /if: \$\{\{ !cancelled\(\) && steps\.prepare_v2_rules\.outcome == 'success' \}\}/);
+
 const firestoreTests = [
   'tests/firestore.v2.rules.test.mjs',
   'tests/firestore.v2.atomic.test.mjs',
