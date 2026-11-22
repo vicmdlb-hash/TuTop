@@ -51,6 +51,7 @@ jobs:
         run: git diff --exit-code -- package.json package-lock.json
 
       - name: Prepare strict V2 Rules
+        id: prepare_v2_rules
         run: npm run v2:rules:prepare
 
       - name: Verify generated least-privilege private-read contracts (read-only)
@@ -96,9 +97,14 @@ jobs:
           "node --test --test-concurrency=1 tests/firestore.v2.guardian-gated-demo.test.mjs tests/firestore.v2.guardian-publication-demo.test.mjs"
 
       - name: Prepare isolated account-erasure admission demo Rules (no staging/prod)
+        id: prepare_erasure_demo
+        # An unrelated guardian-test failure must not mask this independent safety gate.
+        # Run only if core rules were prepared; never run after cancellation.
+        if: ${{ !cancelled() && steps.prepare_v2_rules.outcome == 'success' }}
         run: node scripts/prepare-firestore-erasure-admission-demo-rules.mjs
 
       - name: Erasure admission freeze emulator challenge (synthetic; no admin apply)
+        if: ${{ !cancelled() && steps.prepare_erasure_demo.outcome == 'success' }}
         run: >
           npx --yes firebase-tools@15.29.0 emulators:exec
           --only firestore,storage
@@ -107,6 +113,8 @@ jobs:
           "node --test --test-concurrency=1 tests/firestore.v2.erasure-admission-demo.test.mjs"
 
       - name: Firestore + Storage emulator security suite
+        # Preserve strict failure reporting, while collecting independent findings.
+        if: ${{ !cancelled() && steps.prepare_v2_rules.outcome == 'success' }}
         run: >
           npx --yes firebase-tools@15.29.0 emulators:exec
           --only firestore,storage
