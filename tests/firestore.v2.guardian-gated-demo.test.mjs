@@ -279,6 +279,23 @@ test('isolated bilateral user-block probe denies a block from seller to buyer', 
   await assertFails(setDoc(doc(db, 'guardian_user_block_probe/buyer'), { signal: true }));
 });
 
+// A comparison probe for the SAME offer_create counter rules, without age,
+// guardian, listing, chat or block evaluation. The regular full offer tests
+// remain mandatory and must still fail if the composite operation is denied.
+test('isolated atomic offer rate probe accepts exactly one valid counter batch', async () => {
+  await seed('adult', 'adult');
+  const db = verifiedContext(env, 'buyer').firestore();
+  await assertSucceeds(countedWrite(db, 'offer_create', batch => {
+    batch.set(doc(db, 'guardian_offer_rate_probe/buyer'), { probe: true });
+  }));
+});
+
+test('isolated atomic offer rate probe rejects a write without its rate counter', async () => {
+  await seed('adult', 'adult');
+  const db = verifiedContext(env, 'buyer').firestore();
+  await assertFails(setDoc(doc(db, 'guardian_offer_rate_probe/buyer'), { probe: true }));
+});
+
 test('isolated age proof gate accepts a server-issued adult claim and rejects revoked claim', async () => {
   await seed('adult');
   const buyer = verifiedContext(env, 'buyer').firestore();
