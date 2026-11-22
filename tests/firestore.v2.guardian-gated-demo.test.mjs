@@ -179,9 +179,35 @@ test('teen with current guardian make_offer grant can submit an offer', async ()
         }
       };
       visit(coverage);
+      // Keep the *highest-signal* failures first. The old first-45 cap only
+      // showed ordinary nodes preceding the offer and concealed rate/budget
+      // errors. Emit counts/coordinates, NEVER raw rule values or identities.
+      const grouped = new Map();
+      const areas = {
+        offer: { nodes: 0, errorNodes: 0, deniedNodes: 0 },
+        rate: { nodes: 0, errorNodes: 0, deniedNodes: 0 },
+      };
+      for (const item of relevant) {
+        const area = near(item.line, rateLimitLine, 6, 60) ? 'rate' : 'offer';
+        const stats = areas[area];
+        stats.nodes += 1;
+        stats.errorNodes += item.error ? 1 : 0;
+        stats.deniedNodes += item.denied ? 1 : 0;
+        const key = item.line + ':' + item.column;
+        const entry = grouped.get(key) || { line: item.line, column: item.column,
+          evaluated: 0, errors: 0, denies: 0 };
+        entry.evaluated += item.evaluated;
+        entry.errors += item.error ? 1 : 0;
+        entry.denies += item.denied ? 1 : 0;
+        grouped.set(key, entry);
+      }
+      const highSignal = [...grouped.values()]
+        .sort((a, b) => b.errors - a.errors || b.denies - a.denies
+          || a.line - b.line || a.column - b.column)
+        .slice(0, 45);
       console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_DYNAMIC',
         JSON.stringify({ offerLine, rateLimitLine: rateLimitLine || null,
-          nodes: relevant.slice(0, 45) }));
+          areas, distinctPositions: grouped.size, highSignal }));
     } catch {
       console.error('GUARDIAN_OFFER_DEMO_RULE_COVERAGE_UNAVAILABLE');
     }
