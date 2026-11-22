@@ -10,6 +10,11 @@ if (process.env.GCLOUD_PROJECT !== 'demo-tutop-post120-rules'
 const inputPath = 'firebase/firestore.v2.generated.rules';
 const outputPath = 'firebase/firestore.v2.guardian-demo.rules';
 let rules = fs.readFileSync(inputPath, 'utf8');
+// The V2 preparation pipeline migrated offers and chats to listings_v2.
+// Refuse stale legacy product rules; a demo must never reintroduce them.
+if (rules.includes('productDoc(') || !rules.includes('    function listingDoc(')) {
+  throw new Error('GUARDIAN_DEMO_CANONICAL_LISTING_RULES_REQUIRED');
+}
 
 function exactlyOne(scope, token, name) {
   const count = scope.split(token).length - 1;
@@ -128,11 +133,7 @@ const helpers = `
     function guardianOfferLinksValid(data) {
       let listing = listingDoc(data.listing_id).data;
       let chat = chatDoc(data.chat_id).data;
-      // Preserve BOTH legacy product checks, once per canonical product snapshot.
-      let legacyProduct = productDoc(data.listing_id).data;
-      return legacyProduct.vendedor_id == data.seller_id
-        && legacyProduct.estado == 'Activo'
-        && listing.seller_id == data.seller_id
+      return listing.seller_id == data.seller_id
         && listing.status == 'active'
         && listing.moderation_status == 'approved'
         && (!('availability_status' in listing) || listing.availability_status == 'available')
@@ -266,14 +267,6 @@ const originalOfferLinks = "        && listingDoc(request.resource.data.listing_
 exactlyOne(rules, originalOfferLinks, 'offer create repeated reads');
 rules = rules.replace(originalOfferLinks,
   '        && guardianOfferLinksValid(request.resource.data)');
-
-// DEMO-ONLY: retain both original legacy product permissions while sharing
-// one product snapshot with the canonical listing/chat helper. An absent or
-// invalid legacy product must still DENY, including adult/guardian positives.
-// The source guard fails closed if its exact original predicate drifts.
-const originalOfferLegacyProduct = "        && productDoc(request.resource.data.listing_id).data.vendedor_id == request.resource.data.seller_id\n        && productDoc(request.resource.data.listing_id).data.estado == 'Activo'";
-exactlyOne(rules, originalOfferLegacyProduct, 'offer create legacy product constraints');
-rules = rules.replace(originalOfferLegacyProduct, '');
 
 // DEMO-ONLY: preserve the FULL canonical listing-create predicate byte-for-byte
 // apart from replacing repeated request.resource.data dereferences with a
