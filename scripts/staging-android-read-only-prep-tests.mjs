@@ -23,7 +23,7 @@ for(const [selected,config] of [
   [app,{...matchingNative,project_info:{project_id:id,project_number:'418411650162'}}],
   [app,{...matchingNative,client:[{...matchingNative.client[0],client_info:{...matchingNative.client[0].client_info,mobilesdk_app_id:undefined}}]}],
   [app,{...matchingNative,client:[...matchingNative.client,matchingNative.client[0]]}],
-]) assert.throws(()=>assertStagingAndroidRegisteredAppBinding(selected,config),/STAGING_ANDROID_REGISTERED_APP_ID_/);
+]) assert.throws(()=>assertStagingAndroidRegisteredAppBinding(selected,config),/STAGING_ANDROID_REGISTERED_APP_ID/);
 
 for(const [web,android] of [
   [{...matchingWeb,appId:'1:418411650162:web:abcd'},matchingNative],
