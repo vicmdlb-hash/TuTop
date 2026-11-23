@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = '82ff47c45c366f97dad278b2c189413f309d48b0'
+          test "$(git rev-parse HEAD^)" = 'b7c7d051d6a40c4be881fa2d012740fe0f901a2a'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -169,6 +169,8 @@ jobs:
           test "$audit_fail" -eq 0
       - name: Diagnose LIVE staging Rules against synthetic five-document email bootstrap (NO staging writes)
         if: ${{ success() }}
+        env:
+          GCLOUD_PROJECT: demo-tutop-post120-rules
         shell: bash
         run: |
           set -euo pipefail
@@ -195,6 +197,21 @@ jobs:
           set -e
           # Emit only counts / failed test names; never print live Rules or Auth data.
           grep -E '(^|[[:space:]])(not ok|# tests|# pass|# fail)' "$RUNNER_TEMP/TuTop-active-five-doc-probe.log" | tail -n 12 || true
+          # Structured error categories only, no sensitive rule expressions or logs.
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const diagnostic=fs.readFileSync(process.env.RUNNER_TEMP+'/TuTop-active-five-doc-probe.log','utf8');
+          const flags={
+            harness_setup_failure:/not ok 1 - tests\/firestore\.v2\.post106-verified-identity\.test\.mjs/.test(diagnostic),
+            permission_denied:/PERMISSION_DENIED/.test(diagnostic),
+            wrong_project:/project.{0,20}mismatch|different project id/i.test(diagnostic),
+            rules_compile_error:/rules.{0,35}(?:compile|parse|syntax).{0,20}(?:error|failed)|Error parsing function/i.test(diagnostic),
+            emulator_unavailable:/ECONNREFUSED|UNAVAILABLE|Failed to connect|emulator did not start/i.test(diagnostic),
+            missing_module:/ERR_MODULE_NOT_FOUND|Cannot find package/i.test(diagnostic),
+            test_assertion_failure:/AssertionError|FirebaseError/i.test(diagnostic),
+          };
+          console.log('STAGING_ACTIVE_FIVE_DOC_PROBE_DIAGNOSTIC '+JSON.stringify(flags));
+          NODE
           if test "$probe_rc" -eq 0; then
             echo "STAGING_ACTIVE_FIVE_DOC_BOOTSTRAP_SYNTHETIC_PASS: 1 positive fixture"
           else
