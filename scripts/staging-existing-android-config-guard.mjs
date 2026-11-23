@@ -28,3 +28,15 @@ export function validateExistingStagingAndroidConfig(config, projectId=STAGING_I
     throw Error('STAGING_ANDROID_API_KEY_MISSING');
   return parsed;
 }
+
+// Bind the read-only web SDK app to the Android app's authoritative project number.
+// Checking projectId strings alone misses cross-project appId/API-key bundles.
+export function assertStagingWebAndroidProjectBinding(web, android, projectId=STAGING_ID) {
+  if (web?.projectId !== projectId || android?.project_info?.project_id !== projectId)
+    throw Error('STAGING_WEB_ANDROID_PROJECT_MISMATCH');
+  const webProjectNumber = /^1:([0-9]+):web:[a-zA-Z0-9]+$/.exec(String(web?.appId || '').trim())?.[1];
+  const androidProjectNumber = String(android?.project_info?.project_number || '').trim();
+  if (!webProjectNumber || !/^[0-9]+$/.test(androidProjectNumber) || webProjectNumber !== androidProjectNumber)
+    throw Error('STAGING_WEB_ANDROID_PROJECT_NUMBER_MISMATCH');
+  return true;
+}

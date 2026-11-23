@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import {selectExistingStagingAndroidApp,validateExistingStagingAndroidConfig} from './staging-existing-android-config-guard.mjs';
+import {selectExistingStagingAndroidApp,validateExistingStagingAndroidConfig,assertStagingWebAndroidProjectBinding} from './staging-existing-android-config-guard.mjs';
 const id='tutop-beta-vicmdlb-1356585881',pkg='mx.tutop.app';
 const app={name:`projects/${id}/androidApps/1:123:android:abc`,appId:'1:123:android:abc',packageName:pkg,state:'ACTIVE'};
 assert.equal(selectExistingStagingAndroidApp([app]),app);
@@ -12,8 +12,21 @@ const enc=x=>({configFilename:'google-services.json',configFileContents:Buffer.f
 assert.equal(validateExistingStagingAndroidConfig(enc(valid)).project_info.project_id,id);
 for(const bad of [null,{},enc({...valid,project_info:{project_id:'other'}}),enc({...valid,client:[]}),enc({...valid,client:[valid.client[0],valid.client[0]]}),enc({...valid,client:[{...valid.client[0],api_key:[]}]}),{configFilename:'wrong.json',configFileContents:'xx'},{configFilename:'google-services.json',configFileContents:'%%%'}])
   assert.throws(()=>validateExistingStagingAndroidConfig(bad),/STAGING_ANDROID_/);
+const matchingNative={...valid,project_info:{project_id:id,project_number:'900056291310'}};
+const matchingWeb={projectId:id,appId:'1:900056291310:web:abcd'};
+assert.equal(assertStagingWebAndroidProjectBinding(matchingWeb,matchingNative),true);
+for(const [web,android] of [
+  [{...matchingWeb,appId:'1:418411650162:web:abcd'},matchingNative],
+  [{...matchingWeb,appId:'invalid'},matchingNative],
+  [{...matchingWeb,projectId:'tutop-3a4f7'},matchingNative],
+  [matchingWeb,{...matchingNative,project_info:{project_id:id,project_number:'418411650162'}}],
+  [matchingWeb,{...matchingNative,project_info:{project_id:id}}],
+]) assert.throws(()=>assertStagingWebAndroidProjectBinding(web,android),/STAGING_WEB_ANDROID_PROJECT_/);
+// Historical HEAD1056 debug APK had staging Android project number 900056291310
+// but bundled a historical web app ID with number 418411650162: now fail closed.
 const source=fs.readFileSync('scripts/prepare-staging-android-app.mjs','utf8');
 assert.match(source,/assertStagingConfigReadContext/);
+assert.match(source,/assertStagingWebAndroidProjectBinding\(web,validated,projectId\)/);
 assert.match(source,/method:'GET'/);
 assert.match(source,/flag:'wx'/);
 assert.doesNotMatch(source,/reset-staging-accounts|staging-app-registration-smoke|ensureFirebaseAiServices|ensureFirebaseAiApiKeyAllowlist|spawnSync|method:'POST'|method:'PATCH'|method:'DELETE'/);
