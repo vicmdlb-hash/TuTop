@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = 'a6829b12145de18eb5de27435ab8eb51a5dcd415'
+          test "$(git rev-parse HEAD^)" = '82ff47c45c366f97dad278b2c189413f309d48b0'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -150,7 +150,16 @@ jobs:
             active_auth_status_signed_gate:statusLive.includes('request.auth.token.email_verified'),
             mutation:false,scope:'READ_ONLY'
           }));
-          if(!equal)throw Error('STAGING_RULES_SOURCE_DEPLOY_DRIFT');
+          // Staging Rules never replace candidate Rules in the source tree for
+          // production. Capture a GET-only live snapshot for an isolated
+          // synthetic emulator probe, then fail closed before compiling Android.
+          if (!equal) {
+            const base=process.env.RUNNER_TEMP;
+            if (!base || !process.env.GITHUB_ENV) throw Error('STAGING_PROBE_RUNTIME_MISSING');
+            fs.writeFileSync(base+'/TuTop-active-staging.rules',active,{mode:0o600});
+            fs.appendFileSync(process.env.GITHUB_ENV,'TUTOP_STAGING_RULES_DRIFT=1\n');
+            console.log('STAGING_RULES_SOURCE_DEPLOY_DRIFT: offline five-document bootstrap probe scheduled; APK compile BLOCKED');
+          }
           if(!evidence.active_email_mode||!evidence.active_email_verified_claim_gate)
             throw Error('STAGING_RULES_VERIFIED_EMAIL_PROOF_MISSING');
           NODE
@@ -158,6 +167,43 @@ jobs:
             audit_fail=1
           fi
           test "$audit_fail" -eq 0
+      - name: Diagnose LIVE staging Rules against synthetic five-document email bootstrap (NO staging writes)
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test "${TUTOP_STAGING_RULES_DRIFT:-0}" != 1; then
+            echo "STAGING_RULES_EQUAL: active Rules already match generated; no differential probe"
+            exit 0
+          fi
+          # The preceding credential-scoped step retrieved a GET-only ruleset.
+          # This step has NO Firebase credentials and runs an isolated demo emulator.
+          test -s "$RUNNER_TEMP/TuTop-active-staging.rules"
+          test -s firebase/firestore.v2.generated.rules
+          cp firebase/firestore.v2.generated.rules "$RUNNER_TEMP/TuTop-source-generated.rules"
+          trap 'cp "$RUNNER_TEMP/TuTop-source-generated.rules" firebase/firestore.v2.generated.rules; rm -f "$RUNNER_TEMP/TuTop-source-generated.rules" "$RUNNER_TEMP/TuTop-active-staging.rules" "$RUNNER_TEMP/TuTop-active-five-doc-probe.log"' EXIT
+          cp "$RUNNER_TEMP/TuTop-active-staging.rules" firebase/firestore.v2.generated.rules
+          # Only a synthetic, already-tested five-document onboarding fixture.
+          # Never call Firebase Auth, use actual user accounts or deploy Rules.
+          set +e
+          npx --yes firebase-tools@15.29.0 emulators:exec \
+            --only firestore --config firebase.v2.json \
+            --project demo-tutop-post120-rules \
+            "node --test --test-name-pattern='post106 permite bootstrap inicial' tests/firestore.v2.post106-verified-identity.test.mjs" \
+            > "$RUNNER_TEMP/TuTop-active-five-doc-probe.log" 2>&1
+          probe_rc=$?
+          set -e
+          # Emit only counts / failed test names; never print live Rules or Auth data.
+          grep -E '(^|[[:space:]])(not ok|# tests|# pass|# fail)' "$RUNNER_TEMP/TuTop-active-five-doc-probe.log" | tail -n 12 || true
+          if test "$probe_rc" -eq 0; then
+            echo "STAGING_ACTIVE_FIVE_DOC_BOOTSTRAP_SYNTHETIC_PASS: 1 positive fixture"
+          else
+            echo "::error::STAGING_ACTIVE_FIVE_DOC_BOOTSTRAP_FAIL_OR_EMULATOR_ERROR (no live write)"
+          fi
+          # Even a passing bootstrap does not establish equality for the other
+          # 20 changed Rules sections. Preserve the original fail-closed gate.
+          echo "::error::STAGING_RULES_SOURCE_DEPLOY_DRIFT: Android build blocked pending scoped review"
+          exit 42
       - name: Export masked Firebase client bundle environment
         shell: bash
         run: |
