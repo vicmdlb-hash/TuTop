@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = 'deb47b9c798a7924827213824cd46c1e3a32c26b'
+          test "$(git rev-parse HEAD^)" = '02407295c1d959e54beba139f398316bd228b421'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -189,7 +189,7 @@ jobs:
             firebase@12.18.0 @firebase/rules-unit-testing@5.0.2
           git diff --exit-code -- package.json package-lock.json
           cp firebase/firestore.v2.generated.rules "$RUNNER_TEMP/TuTop-source-generated.rules"
-          trap 'cp "$RUNNER_TEMP/TuTop-source-generated.rules" firebase/firestore.v2.generated.rules; rm -f "$RUNNER_TEMP/TuTop-source-generated.rules" "$RUNNER_TEMP/TuTop-active-staging.rules" "$RUNNER_TEMP/TuTop-active-five-doc-probe.log"' EXIT
+          trap 'cp "$RUNNER_TEMP/TuTop-source-generated.rules" firebase/firestore.v2.generated.rules; rm -f "$RUNNER_TEMP/TuTop-source-generated.rules" "$RUNNER_TEMP/TuTop-active-staging.rules" "$RUNNER_TEMP/TuTop-active-five-doc-probe.log" "$RUNNER_TEMP/TuTop-auth-status-only-preview.rules" "$RUNNER_TEMP/TuTop-auth-status-only-preview.log"' EXIT
           cp "$RUNNER_TEMP/TuTop-active-staging.rules" firebase/firestore.v2.generated.rules
           # Only a synthetic, already-tested five-document onboarding fixture.
           # Never call Firebase Auth, use actual user accounts or deploy Rules.
@@ -225,6 +225,63 @@ jobs:
           console.log('STAGING_ACTIVE_RULES_TEST_SOURCE_LOCATORS '+JSON.stringify(locations));
           console.log('STAGING_ACTIVE_FIVE_DOC_PROBE_DIAGNOSTIC '+JSON.stringify(flags));
           NODE
+          # Diagnose the MINIMAL auth_status section change against the ACTUAL
+          # active Rules snapshot. This is in-memory, demo-emulator-only;
+          # it never mutates staging, never relaxes the fail-closed compile gate.
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const folder=process.env.RUNNER_TEMP;
+          if(!folder) throw Error('STAGING_PREVIEW_TEMP_REQUIRED');
+          const active=fs.readFileSync(folder+'/TuTop-active-staging.rules','utf8');
+          const desired=fs.readFileSync(folder+'/TuTop-source-generated.rules','utf8');
+          function section(source){
+            const hits=[...source.matchAll(/^    match \/auth_status\/\{uid\} \{/gm)];
+            if(hits.length!==1) throw Error('STAGING_AUTH_STATUS_MATCH_NOT_UNIQUE');
+            const start=hits[0].index;
+            const matcher=/^    match \//gm;
+            matcher.lastIndex=start+hits[0][0].length;
+            const next=matcher.exec(source);
+            if(!next) throw Error('STAGING_AUTH_STATUS_SECTION_END_UNKNOWN');
+            return {start,end:next.index};
+          }
+          const a=section(active),b=section(desired);
+          const replacement=desired.slice(b.start,b.end);
+          const preview=active.slice(0,a.start)+replacement+active.slice(a.end);
+          if(preview===active) throw Error('STAGING_AUTH_STATUS_PREVIEW_NO_DIFFERENCE');
+          if(preview.slice(0,a.start)!==active.slice(0,a.start)
+             ||preview.slice(a.start+replacement.length)!==active.slice(a.end))
+            throw Error('STAGING_AUTH_STATUS_PREVIEW_UNSCOPED_CHANGE');
+          fs.writeFileSync(folder+'/TuTop-auth-status-only-preview.rules',preview,{mode:0o600});
+          console.log('STAGING_AUTH_STATUS_ONLY_PREVIEW_ONE_SECTION_OFFLINE');
+          NODE
+          cp "$RUNNER_TEMP/TuTop-auth-status-only-preview.rules" firebase/firestore.v2.generated.rules
+          set +e
+          npx --yes firebase-tools@15.29.0 emulators:exec \
+            --only firestore --config firebase.v2.json \
+            --project demo-tutop-post120-rules \
+            "node --test --test-concurrency=1 --test-name-pattern='post106 permite bootstrap inicial|auth_status binds email_verified' tests/firestore.v2.post106-verified-identity.test.mjs tests/firestore.v2.auth-status.test.mjs" \
+            > "$RUNNER_TEMP/TuTop-auth-status-only-preview.log" 2>&1
+          preview_rc=$?
+          set -e
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const raw=fs.readFileSync(process.env.RUNNER_TEMP+'/TuTop-auth-status-only-preview.log','utf8');
+          function count(k){
+            const results=[...raw.matchAll(new RegExp('^# '+k+' ([0-9]+)$','gm'))];
+            return results.length?Number(results.at(-1)[1]):null;
+          }
+          console.log('STAGING_AUTH_STATUS_ONLY_PREVIEW_RESULT '+JSON.stringify({
+            tests:count('tests'),pass:count('pass'),fail:count('fail'),
+            permission_denied:/PERMISSION_DENIED/.test(raw),
+            harness_failure:/ERR_MODULE_NOT_FOUND|ECONNREFUSED/.test(raw)
+          }));
+          NODE
+          if test "$preview_rc" -eq 0; then
+            echo 'STAGING_AUTH_STATUS_ONLY_PREVIEW_PASS: offline ONLY, deploy still BLOCKED'
+          else
+            echo 'STAGING_AUTH_STATUS_ONLY_PREVIEW_INSUFFICIENT: investigate other Rules'
+          fi
+          cp "$RUNNER_TEMP/TuTop-source-generated.rules" firebase/firestore.v2.generated.rules
           if test "$probe_rc" -eq 0; then
             echo "STAGING_ACTIVE_FIVE_DOC_AND_AUTH_STATUS_SYNTHETIC_PASS: two scoped fixtures"
           else
