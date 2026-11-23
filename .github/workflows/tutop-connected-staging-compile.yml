@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = '02407295c1d959e54beba139f398316bd228b421'
+          test "$(git rev-parse HEAD^)" = '9c3d5c0151454fbae2bd54a4dbf544270d50052e'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -244,6 +244,12 @@ jobs:
             if(!next) throw Error('STAGING_AUTH_STATUS_SECTION_END_UNKNOWN');
             return {start,end:next.index};
           }
+          // A duplicate or missing section is a security ambiguity, not a
+          // reason to guess or overwrite live rules. Log only the counts.
+          const count=(src)=>[...src.matchAll(/^    match \/auth_status\/\{uid\} \{/gm)].length;
+          console.log('STAGING_AUTH_STATUS_SECTION_COUNTS '+JSON.stringify({
+            active:count(active),generated:count(desired)
+          }));
           const a=section(active),b=section(desired);
           const replacement=desired.slice(b.start,b.end);
           const preview=active.slice(0,a.start)+replacement+active.slice(a.end);
