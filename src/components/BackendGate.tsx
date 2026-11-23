@@ -20,7 +20,9 @@ function friendlyError(raw: string) {
   if (/TOO_MANY_ATTEMPTS|TOO_MANY_REQUESTS/i.test(raw)) return 'Hubo demasiados intentos. Inténtalo de nuevo más tarde.';
   if (/FIREBASE_REQUEST_TIMEOUT|NETWORK|FETCH|OFFLINE/i.test(raw)) return 'No pudimos conectar. Revisa tu internet e inténtalo otra vez.';
   if (/OPERATION_NOT_ALLOWED|CONFIGURATION_NOT_FOUND/i.test(raw)) return 'Ese método de recuperación no está disponible en esta beta. Usa “Entrar” con tu correo o crea una cuenta nueva.';
-  if (/PERMISSION_DENIED|403/i.test(raw)) return 'Tu identidad todavía no autoriza esta acción. Verifica tu correo e inténtalo otra vez.';
+  // Firebase may deny a profile commit before any verification email is requested.
+  // A generic 403 is NOT evidence that the user has an unverified email.
+  if (/PERMISSION_DENIED|403/i.test(raw)) return 'Firebase rechazó esta operación por permisos o configuración. Si intentabas registrarte y no recibiste correo, no repitas el alta hasta revisar el servicio.';
   if (/PROFILE_MISSING|WALLET_MISSING|PRIVATE_IDENTITY_MISSING/i.test(raw)) return 'Tu cuenta necesita una reparación rápida. Vuelve a intentarlo.';
   if (/AUTH_UID_MISMATCH/i.test(raw)) return 'Detuvimos la migración porque la cuenta no coincidió. No se creó una cuenta nueva.';
   return raw.length < 120 ? raw : 'Algo no salió como esperábamos. Inténtalo otra vez.';

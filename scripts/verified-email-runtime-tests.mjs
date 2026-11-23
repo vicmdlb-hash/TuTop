@@ -169,6 +169,14 @@ const tests = [
  ['definite denied profile commit still rolls back Auth',async()=>{
    const h=harness(); h.commitError='PERMISSION_DENIED'; await assert.rejects(h.auth.register('a@example.test','password123',profile),/PERMISSION_DENIED/);
    assert.equal(h.session,null); assert.equal(h.calls.filter(c=>c.kind.includes('accounts:delete')).length,1);
+   assert.equal(h.calls.filter(c=>String(c.kind).includes('accounts:sendOobCode')).length,0,
+     'a rejected profile commit must not claim verification email was sent');
+ }],
+ ['a generic Firebase 403 must not tell the user to verify a mail never requested',async()=>{
+   const gate=fs.readFileSync('src/components/BackendGate.tsx','utf8');
+   const match=gate.split('\n').find(line=>line.includes('if (/PERMISSION_DENIED|403/i.test(raw))')) || '';
+   assert.match(match,/Firebase rechazó esta operación/);
+   assert.doesNotMatch(match,/Verifica tu correo e inténtalo otra vez/i);
  }],
  ['ambiguous profile commit timeout preserves Auth session and avoids destructive rollback',async()=>{
    const h=harness(); h.commitError='FIREBASE_REQUEST_TIMEOUT'; await assert.rejects(h.auth.register('a@example.test','password123',profile),/FIREBASE_REQUEST_TIMEOUT/);
