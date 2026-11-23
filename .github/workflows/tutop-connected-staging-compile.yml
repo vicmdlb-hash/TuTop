@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = 'b7c7d051d6a40c4be881fa2d012740fe0f901a2a'
+          test "$(git rev-parse HEAD^)" = '108a86ee16b5af20dc451980b5a762495c02dffe'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -182,6 +182,12 @@ jobs:
           # This step has NO Firebase credentials and runs an isolated demo emulator.
           test -s "$RUNNER_TEMP/TuTop-active-staging.rules"
           test -s firebase/firestore.v2.generated.rules
+          # Firebase test packages are intentionally absent from production deps.
+          # Install pinned disposable emulator harness dependencies only here;
+          # the earlier missing-module failure is a test-harness error, not a Rule denial.
+          npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund \
+            firebase@12.18.0 @firebase/rules-unit-testing@5.0.2
+          git diff --exit-code -- package.json package-lock.json
           cp firebase/firestore.v2.generated.rules "$RUNNER_TEMP/TuTop-source-generated.rules"
           trap 'cp "$RUNNER_TEMP/TuTop-source-generated.rules" firebase/firestore.v2.generated.rules; rm -f "$RUNNER_TEMP/TuTop-source-generated.rules" "$RUNNER_TEMP/TuTop-active-staging.rules" "$RUNNER_TEMP/TuTop-active-five-doc-probe.log"' EXIT
           cp "$RUNNER_TEMP/TuTop-active-staging.rules" firebase/firestore.v2.generated.rules
