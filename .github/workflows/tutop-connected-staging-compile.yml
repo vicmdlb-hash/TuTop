@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = '9c3d5c0151454fbae2bd54a4dbf544270d50052e'
+          test "$(git rev-parse HEAD^)" = 'e6ff532c08284dbfe45dd734bd90aa3fe66e1b81'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -250,13 +250,31 @@ jobs:
           console.log('STAGING_AUTH_STATUS_SECTION_COUNTS '+JSON.stringify({
             active:count(active),generated:count(desired)
           }));
-          const a=section(active),b=section(desired);
+          const b=section(desired);
           const replacement=desired.slice(b.start,b.end);
-          const preview=active.slice(0,a.start)+replacement+active.slice(a.end);
+          let preview;
+          if(count(active)===0){
+            // No canonical auth_status match in LIVE; add only that one scope,
+            // anchored before the unique wallets match. Reject aliases/duplicates.
+            if(/match\s+\/auth_status\//.test(active))
+              throw Error('STAGING_AUTH_STATUS_NONCANONICAL_MATCH_NEEDS_REVIEW');
+            const anchors=[...active.matchAll(/^    match \/wallets\/\{uid\} \{/gm)];
+            if(anchors.length!==1) throw Error('STAGING_WALLETS_INSERT_ANCHOR_NOT_UNIQUE');
+            const at=anchors[0].index;
+            preview=active.slice(0,at)+replacement+active.slice(at);
+            if(preview.slice(0,at)!==active.slice(0,at)
+                ||preview.slice(at+replacement.length)!==active.slice(at))
+              throw Error('STAGING_AUTH_STATUS_INSERTION_UNSCOPED_CHANGE');
+            console.log('STAGING_AUTH_STATUS_PREVIEW_METHOD_ADD_ONE_SCOPE');
+          } else {
+            const a=section(active);
+            preview=active.slice(0,a.start)+replacement+active.slice(a.end);
+            if(preview.slice(0,a.start)!==active.slice(0,a.start)
+                ||preview.slice(a.start+replacement.length)!==active.slice(a.end))
+              throw Error('STAGING_AUTH_STATUS_REPLACEMENT_UNSCOPED_CHANGE');
+            console.log('STAGING_AUTH_STATUS_PREVIEW_METHOD_REPLACE_ONE_SCOPE');
+          }
           if(preview===active) throw Error('STAGING_AUTH_STATUS_PREVIEW_NO_DIFFERENCE');
-          if(preview.slice(0,a.start)!==active.slice(0,a.start)
-             ||preview.slice(a.start+replacement.length)!==active.slice(a.end))
-            throw Error('STAGING_AUTH_STATUS_PREVIEW_UNSCOPED_CHANGE');
           fs.writeFileSync(folder+'/TuTop-auth-status-only-preview.rules',preview,{mode:0o600});
           console.log('STAGING_AUTH_STATUS_ONLY_PREVIEW_ONE_SECTION_OFFLINE');
           NODE
