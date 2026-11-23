@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = '763ce51a69f87cc8b67ab8177584ad7896503969'
+          test "$(git rev-parse HEAD^)" = 'deb47b9c798a7924827213824cd46c1e3a32c26b'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -216,6 +216,13 @@ jobs:
             missing_module:/ERR_MODULE_NOT_FOUND|Cannot find package/i.test(diagnostic),
             test_assertion_failure:/AssertionError|FirebaseError/i.test(diagnostic),
           };
+          // The authenticated log is never exposed: report only public test
+          // source-file line numbers to distinguish expected-deny from
+          // unexpected-deny, without leaking active staging Rules.
+          const locations=[...new Set([...diagnostic.matchAll(
+            /tests\/(firestore\.v2\.(?:auth-status|post106-verified-identity)\.test\.mjs):([0-9]{1,4}):([0-9]{1,4})/g,
+          )].map(match=>match[1]+':'+match[2]))].slice(0,8);
+          console.log('STAGING_ACTIVE_RULES_TEST_SOURCE_LOCATORS '+JSON.stringify(locations));
           console.log('STAGING_ACTIVE_FIVE_DOC_PROBE_DIAGNOSTIC '+JSON.stringify(flags));
           NODE
           if test "$probe_rc" -eq 0; then
