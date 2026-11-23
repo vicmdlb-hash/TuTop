@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { validateLocalQaIntent, formatLocalQaProvenance } from './local-private-qa-sign-encrypt.mjs';
+import { validateLocalQaIntent, formatLocalQaProvenance, validateOwnerPublicManifest } from './local-private-qa-sign-encrypt.mjs';
 import { parseQaProvenance, assessPrivateNoAiSmoke } from './private-qa-no-ai-smoke-gate.mjs';
 
 const good={
@@ -9,6 +9,25 @@ const good={
  alias:'tutop-qa-private-20261116'
 };
 const intent=validateLocalQaIntent(good);
+
+const canonicalPublic = {
+  schema:'tutop.qa.public-provenance.v1',package:'mx.tutop.app',
+  qa_cert_sha256:good.signerSha256,qa_keystore_sha256:'c'.repeat(64),
+  age_public_recipient:good.ageRecipient,signing_alias:good.alias
+};
+assert.deepEqual(validateOwnerPublicManifest(canonicalPublic,intent),
+  {qa_keystore_sha256:'c'.repeat(64)});
+for (const bad of [
+  {...canonicalPublic,schema:'wrong'},
+  {...canonicalPublic,package:'mx.other.app'},
+  {...canonicalPublic,qa_cert_sha256:'d'.repeat(64)},
+  {...canonicalPublic,qa_keystore_sha256:'invalid'},
+  {...canonicalPublic,age_public_recipient:'age1different'},
+  {...canonicalPublic,signing_alias:'androiddebugkey'},
+  {...canonicalPublic,qa_cert_sha256:undefined,certificate_sha256:good.signerSha256},
+]) assert.throws(()=>validateOwnerPublicManifest(bad,intent),
+  /LOCAL_QA_PUBLIC_MANIFEST_MISMATCH/);
+
 const p=parseQaProvenance(formatLocalQaProvenance(intent,'b'.repeat(64)));
 assert.equal(p.source_sha,good.sourceSha);
 assert.equal(p.qa_certificate_sha256,good.signerSha256);
@@ -32,4 +51,8 @@ assert.equal(invocation.status,2);
 assert.equal(invocation.stdout,'');
 assert.match(invocation.stderr,/LOCAL_QA_EXPLICIT_ACK_REQUIRED/);
 assert(!invocation.stderr.includes('PRIVATE_QA_ENCRYPTED_OWNER_RECOVERY_PASS'));
+const guardSource = (await import('node:fs')).readFileSync('scripts/local-private-qa-sign-encrypt.mjs','utf8');
+assert.match(guardSource,/LOCAL_QA_KEYSTORE_DIGEST_MISMATCH/);
+assert.match(guardSource,/LOCAL_QA_EXPLICIT_ACK_REQUIRED/);
+assert.match(guardSource,/LOCAL_QA_REFUSE_OVERWRITE/);
 console.log('PASS owner-local private QA signer contract: fail-closed, same exact provenance, no remote secrets, R6 never self-authorized');

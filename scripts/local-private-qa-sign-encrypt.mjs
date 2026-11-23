@@ -75,15 +75,28 @@ function verifyPackage(aapt2, apk) {
   if (!m || m[1] !== PACKAGE || m[2] !== '90200' || m[3] !== VERSION)
     throw Error('LOCAL_QA_PACKAGE_VERSION_MISMATCH');
 }
+export function validateOwnerPublicManifest(m, intent) {
+  const expectedCert = String(intent?.expected_cert_sha256 || '').toLowerCase();
+  const expectedAge = String(intent?.age_public_recipient || '');
+  const expectedAlias = String(intent?.alias || '');
+  const keystoreHash = String(m?.qa_keystore_sha256 || '').toLowerCase();
+  // The owner's 2026-11-16 public manifest uses qa_cert_sha256, not
+  // certificate_sha256. Both cert and original .p12 hash are public digests.
+  if (!m || Array.isArray(m) || typeof m !== 'object'
+      || m.schema !== 'tutop.qa.public-provenance.v1'
+      || m.package !== PACKAGE
+      || !SHA256.test(expectedCert) || !AGE_RECIPIENT.test(expectedAge)
+      || !ALIAS.test(expectedAlias) || !SHA256.test(keystoreHash)
+      || String(m.qa_cert_sha256 || '').toLowerCase() !== expectedCert
+      || m.age_public_recipient !== expectedAge
+      || m.signing_alias !== expectedAlias)
+    throw Error('LOCAL_QA_PUBLIC_MANIFEST_MISMATCH');
+  return { qa_keystore_sha256: keystoreHash };
+}
 function validateOwnerManifest(filename,intent) {
   const raw=fs.readFileSync(filename,'utf8');
   if (raw.length>65536) throw Error('LOCAL_QA_PUBLIC_MANIFEST_INVALID');
-  const m=JSON.parse(raw);
-  if (!m || Array.isArray(m) || typeof m !== 'object'
-      || String(m.certificate_sha256||'').toLowerCase()!==intent.expected_cert_sha256
-      || m.age_public_recipient!==intent.age_public_recipient
-      || m.signing_alias!==intent.alias)
-    throw Error('LOCAL_QA_PUBLIC_MANIFEST_MISMATCH');
+  return validateOwnerPublicManifest(JSON.parse(raw),intent);
 }
 function secureOutputRoot() {
   const dir=path.resolve(required('TUTOP_QA_PRIVATE_DIR'));
@@ -107,10 +120,12 @@ function execute() {
   const exactHead=run('git',['rev-parse','HEAD']).trim().toLowerCase();
   if (exactHead!==intent.source_sha || run('git',['status','--porcelain']).trim())
     throw Error('LOCAL_QA_SOURCE_DIRTY_OR_MISMATCH');
-  validateOwnerManifest(requireFile('TUTOP_QA_PUBLIC_MANIFEST_PATH'),intent);
+  const publicManifest=validateOwnerManifest(requireFile('TUTOP_QA_PUBLIC_MANIFEST_PATH'),intent);
   const input=requireFile('TUTOP_QA_INPUT_APK');
   if (fs.statSync(input).size>MAX_APK) throw Error('LOCAL_QA_APK_TOO_LARGE');
   const keystore=requireFile('TUTOP_QA_KEYSTORE_PATH');
+  if (HASH(fs.readFileSync(keystore)) !== publicManifest.qa_keystore_sha256)
+    throw Error('LOCAL_QA_KEYSTORE_DIGEST_MISMATCH');
   const ageIdentity=requireFile('TUTOP_QA_AGE_IDENTITY_PATH');
   const java=requireFile('TUTOP_QA_JAVA_BIN');
   const signerJar=requireFile('TUTOP_QA_APKSIGNER_JAR');
@@ -174,7 +189,8 @@ if (process.argv[1] && import.meta.url===pathToFileURL(path.resolve(process.argv
   catch (e) {
     const safeCodes=new Set([
       'LOCAL_QA_EXPLICIT_ACK_REQUIRED','LOCAL_QA_SOURCE_DIRTY_OR_MISMATCH',
-      'LOCAL_QA_PUBLIC_MANIFEST_MISMATCH','LOCAL_QA_OWNER_AGE_IDENTITY_MISMATCH',
+      'LOCAL_QA_PUBLIC_MANIFEST_MISMATCH','LOCAL_QA_KEYSTORE_DIGEST_MISMATCH',
+      'LOCAL_QA_OWNER_AGE_IDENTITY_MISMATCH',
       'LOCAL_QA_SIGNER_MISMATCH','LOCAL_QA_OWNER_DECRYPTION_MISMATCH',
       'LOCAL_QA_PACKAGE_VERSION_MISMATCH','LOCAL_QA_REFUSE_OVERWRITE',
       'LOCAL_QA_TOOL_FAILED',
