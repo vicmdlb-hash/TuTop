@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = '75a98b8c5b8f83524523511d55f41174e33123f1'
+          test "$(git rev-parse HEAD^)" = 'a6829b12145de18eb5de27435ab8eb51a5dcd415'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -126,6 +126,30 @@ jobs:
             mutation:false,spent:0
           };
           console.log(JSON.stringify(evidence));
+          // Difference localization only. No live rules content or user data in logs.
+          const sections=source=>{
+            const matches=[...source.matchAll(/^    match \/([^\n]+) \{/gm)];
+            return new Map(matches.map((m,i)=>[
+              m[1],compact(source.slice(m.index,i+1<matches.length?matches[i+1].index:source.length))
+            ]));
+          };
+          const liveSections=sections(active), sourceSections=sections(generated);
+          const names=[...new Set([...liveSections.keys(),...sourceSections.keys()])].sort();
+          const changes=names.filter(n=>liveSections.get(n)!==sourceSections.get(n));
+          const privateLive=liveSections.get('user_private/{uid}')||'';
+          const privateCandidate=sourceSections.get('user_private/{uid}')||'';
+          const statusLive=liveSections.get('auth_status/{uid}')||'';
+          const statusCandidate=sourceSections.get('auth_status/{uid}')||'';
+          console.log('STAGING_RULES_SCOPED_DIAGNOSTIC '+JSON.stringify({
+            active_section_count:liveSections.size,candidate_section_count:sourceSections.size,
+            different_section_count:changes.length,different_sections:changes.slice(0,45),
+            private_rule_equal:privateLive===privateCandidate,
+            auth_status_rule_equal:statusLive===statusCandidate,
+            active_private_email_mode:privateLive.includes('email_password_verified_beta'),
+            active_private_binds_auth_email:privateLive.includes('request.auth.token.email'),
+            active_auth_status_signed_gate:statusLive.includes('request.auth.token.email_verified'),
+            mutation:false,scope:'READ_ONLY'
+          }));
           if(!equal)throw Error('STAGING_RULES_SOURCE_DEPLOY_DRIFT');
           if(!evidence.active_email_mode||!evidence.active_email_verified_claim_gate)
             throw Error('STAGING_RULES_VERIFIED_EMAIL_PROOF_MISSING');
