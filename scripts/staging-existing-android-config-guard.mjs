@@ -40,3 +40,29 @@ export function assertStagingWebAndroidProjectBinding(web, android, projectId=ST
     throw Error('STAGING_WEB_ANDROID_PROJECT_NUMBER_MISMATCH');
   return true;
 }
+
+/**
+ * Bind downloaded google-services.json to the SAME existing registered Firebase
+ * Android app, not just a matching package name and Firebase projectId. The
+ * registered appId is authoritative; this pure check never calls Google APIs.
+ * A stale/mixed native config must not become a signed QA candidate.
+ */
+export function assertStagingAndroidRegisteredAppBinding(existing, android, projectId=STAGING_ID, packageName=ANDROID_ID) {
+  if (projectId !== STAGING_ID || packageName !== ANDROID_ID ||
+      existing?.packageName !== packageName ||
+      typeof existing?.appId !== 'string' ||
+      existing.name !== `projects/${projectId}/androidApps/${existing.appId}`)
+    throw Error('STAGING_ANDROID_REGISTERED_APP_IDENTITY_INVALID');
+  const clients = Array.isArray(android?.client) ? android.client : [];
+  const matched = clients.filter(c => c?.client_info?.android_client_info?.package_name === packageName);
+  const appId = matched.length === 1 ? matched[0]?.client_info?.mobilesdk_app_id : null;
+  const projectNumber = String(android?.project_info?.project_number || '').trim();
+  if (android?.project_info?.project_id !== projectId ||
+      !/^[0-9]+$/.test(projectNumber) ||
+      typeof appId !== 'string' ||
+      !/^1:[0-9]+:android:[A-Za-z0-9]+$/.test(appId) ||
+      appId !== existing.appId ||
+      !appId.startsWith(`1:${projectNumber}:android:`))
+    throw Error('STAGING_ANDROID_REGISTERED_APP_ID_MISMATCH');
+  return true;
+}

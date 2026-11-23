@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
 import { assertStagingConfigReadContext } from './staging-freeze-guard.mjs';
-import {selectExistingStagingAndroidApp,validateExistingStagingAndroidConfig,assertStagingWebAndroidProjectBinding} from './staging-existing-android-config-guard.mjs';
+import {selectExistingStagingAndroidApp,validateExistingStagingAndroidConfig,assertStagingWebAndroidProjectBinding,assertStagingAndroidRegisteredAppBinding} from './staging-existing-android-config-guard.mjs';
 const projectId=assertStagingConfigReadContext({legacyAllowEnv:'TUTOP_ALLOW_ANDROID_APP_SETUP',legacyAllowValue:'staging-v2'});
 const packageName=String(process.env.TUTOP_ANDROID_PACKAGE_NAME||'mx.tutop.app').trim();
 const output=String(process.env.TUTOP_ANDROID_GOOGLE_SERVICES_PATH||'.tutop-staging-google-services.json').trim();
@@ -29,6 +29,7 @@ let web;
 try { web=JSON.parse(fs.readFileSync(webPath,'utf8')); }
 catch { throw Error('STAGING_WEB_CONFIG_REQUIRED'); }
 assertStagingWebAndroidProjectBinding(web,validated,projectId);
+assertStagingAndroidRegisteredAppBinding(existing,validated,projectId,packageName);
 fs.writeFileSync(output,`${JSON.stringify(validated,null,2)}\n`,{mode:0o600,flag:'wx'});
 console.log('PASS existing Firebase Android app config verified without staging mutation.');
 console.log('No account wipe, synthetic user creation, paid AI/API enabling or app registration executed.');
