@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = '108a86ee16b5af20dc451980b5a762495c02dffe'
+          test "$(git rev-parse HEAD^)" = '763ce51a69f87cc8b67ab8177584ad7896503969'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -197,7 +197,7 @@ jobs:
           npx --yes firebase-tools@15.29.0 emulators:exec \
             --only firestore --config firebase.v2.json \
             --project demo-tutop-post120-rules \
-            "node --test --test-name-pattern='post106 permite bootstrap inicial' tests/firestore.v2.post106-verified-identity.test.mjs" \
+            "node --test --test-concurrency=1 --test-name-pattern='post106 permite bootstrap inicial|auth_status binds email_verified' tests/firestore.v2.post106-verified-identity.test.mjs tests/firestore.v2.auth-status.test.mjs" \
             > "$RUNNER_TEMP/TuTop-active-five-doc-probe.log" 2>&1
           probe_rc=$?
           set -e
@@ -219,7 +219,7 @@ jobs:
           console.log('STAGING_ACTIVE_FIVE_DOC_PROBE_DIAGNOSTIC '+JSON.stringify(flags));
           NODE
           if test "$probe_rc" -eq 0; then
-            echo "STAGING_ACTIVE_FIVE_DOC_BOOTSTRAP_SYNTHETIC_PASS: 1 positive fixture"
+            echo "STAGING_ACTIVE_FIVE_DOC_AND_AUTH_STATUS_SYNTHETIC_PASS: two scoped fixtures"
           else
             echo "::error::STAGING_ACTIVE_FIVE_DOC_BOOTSTRAP_FAIL_OR_EMULATOR_ERROR (no live write)"
           fi
