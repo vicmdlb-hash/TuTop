@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = 'db596161e12180861fc2556e7a6e63e311d5e7ab'
+          test "$(git rev-parse HEAD^)" = '75a98b8c5b8f83524523511d55f41174e33123f1'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -80,6 +80,60 @@ jobs:
           test -n "${FIREBASE_TOKEN:-}" || { echo 'BLOCKED: Firebase read-only config credentials not connected'; exit 42; }
           node scripts/prepare-staging-v2-auth.mjs
           node scripts/prepare-staging-android-app.mjs
+
+          # R190: independent GET-only live diagnostics; no mutation permissions,
+          # no Auth signups, no App Check certificate registration, no deploy.
+          audit_fail=0
+          node scripts/audit-staging-auth-client-config.mjs || audit_fail=1
+          node scripts/audit-staging-auth-email-config.mjs || audit_fail=1
+          # With no expected QA signing fingerprint, this only reads live policy.
+          node scripts/audit-staging-offplay-app-check.mjs || audit_fail=1
+          npm run v2:rules:prepare >/dev/null || audit_fail=1
+          if test -s firebase/firestore.v2.generated.rules; then
+            node --input-type=module <<'NODE' || audit_fail=1
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          import {firebaseCiAccessToken} from './scripts/firebase-ci-auth.mjs';
+          const project='tutop-beta-vicmdlb-1356585881';
+          if(process.env.GITHUB_REF_NAME!=='integration/tutop-121-122-fcm-owner-ci-20261022' ||
+             process.env.TUTOP_FIREBASE_PROJECT_ID!==project ||
+             process.env.TUTOP_ALLOW_STAGING_CONFIG_READ!=='read-only-v2')
+            throw Error('STAGING_RULES_READ_CONTEXT_REJECTED');
+          const accessToken=await firebaseCiAccessToken();
+          const get=async url=>{
+            const r=await fetch(url,{method:'GET',headers:{
+              Authorization:'Bearer '+accessToken,'X-Goog-User-Project':project,
+            }});
+            if(!r.ok)throw Error('STAGING_RULES_GET_HTTP_'+r.status);
+            return await r.json();
+          };
+          const root='projects/'+project;
+          const release=await get('https://firebaserules.googleapis.com/v1/'+root+'/releases/cloud.firestore');
+          const name=String(release?.rulesetName||'');
+          if(!name.startsWith(root+'/rulesets/'))throw Error('STAGING_RULESET_IDENTITY_MISSING');
+          const ruleset=await get('https://firebaserules.googleapis.com/v1/'+name);
+          const active=(ruleset?.source?.files||[]).map(f=>f.content||'').join('\n');
+          const generated=fs.readFileSync('firebase/firestore.v2.generated.rules','utf8');
+          const compact=t=>String(t||'').replace(/\r\n/g,'\n').replace(/\/\/[^\n]*/g,'').replace(/\s+/g,' ').trim();
+          const equal=compact(active)===compact(generated);
+          const hash=t=>crypto.createHash('sha256').update(String(t)).digest('hex');
+          const evidence={
+            status:'READ_ONLY',source_sha:process.env.GITHUB_SHA,
+            active_ruleset_found:true,active_sha256:hash(active),
+            generated_sha256:hash(generated),active_equals_generated:equal,
+            active_email_mode:active.includes("email_password_verified_beta"),
+            active_email_verified_claim_gate:active.includes("request.auth.token.email_verified == true"),
+            mutation:false,spent:0
+          };
+          console.log(JSON.stringify(evidence));
+          if(!equal)throw Error('STAGING_RULES_SOURCE_DEPLOY_DRIFT');
+          if(!evidence.active_email_mode||!evidence.active_email_verified_claim_gate)
+            throw Error('STAGING_RULES_VERIFIED_EMAIL_PROOF_MISSING');
+          NODE
+          else
+            audit_fail=1
+          fi
+          test "$audit_fail" -eq 0
       - name: Export masked Firebase client bundle environment
         shell: bash
         run: |
