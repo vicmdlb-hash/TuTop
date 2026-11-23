@@ -172,6 +172,19 @@ const tests = [
    assert.equal(h.calls.filter(c=>String(c.kind).includes('accounts:sendOobCode')).length,0,
      'a rejected profile commit must not claim verification email was sent');
  }],
+ ['staging Firebase client credentials may never reuse historical V1 Auth identity',async()=>{
+   const env={VITE_TUTOP_SCHEMA_V2:'true',VITE_TUTOP_ENVIRONMENT:'staging'};
+   const typed=fs.readFileSync('src/services/runtimeConfig.ts','utf8').replace(/import\.meta\.env/g,'__env');
+   const js=stripTypeScriptTypes(typed).replace(/^export /gm,'');
+   const {assertRuntimeEnvironment,builtIn}=new Function('__env',js+'; return {assertRuntimeEnvironment,builtIn:BUILT_IN_CONFIG};')(env);
+   const stage={apiKey:'synthetic-stage-key',projectId:'tutop-beta-vicmdlb-1356585881',appId:'1:987654321:web:abcdef'};
+   assert.deepEqual(assertRuntimeEnvironment(stage),stage);
+   for(const invalid of [{...stage,apiKey:builtIn.apiKey},{...stage,appId:builtIn.appId},{...stage,appId:undefined}]) {
+     assert.throws(()=>assertRuntimeEnvironment(invalid),/V2_STAGING_CLIENT_IDENTITY_MISMATCH/);
+   }
+   const gate=fs.readFileSync('src/components/BackendGate.tsx','utf8');
+   assert.match(gate,/V2_STAGING_CLIENT_IDENTITY_MISMATCH/);
+ }],
  ['a generic Firebase 403 must not tell the user to verify a mail never requested',async()=>{
    const gate=fs.readFileSync('src/components/BackendGate.tsx','utf8');
    const match=gate.split('\n').find(line=>line.includes('if (/PERMISSION_DENIED|403/i.test(raw))')) || '';

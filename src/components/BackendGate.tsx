@@ -22,6 +22,7 @@ function friendlyError(raw: string) {
   if (/OPERATION_NOT_ALLOWED|CONFIGURATION_NOT_FOUND/i.test(raw)) return 'Ese método de recuperación no está disponible en esta beta. Usa “Entrar” con tu correo o crea una cuenta nueva.';
   // Firebase may deny a profile commit before any verification email is requested.
   // A generic 403 is NOT evidence that the user has an unverified email.
+  if (/V2_STAGING_CLIENT_IDENTITY_MISMATCH/i.test(raw)) return 'Esta APK tiene una configuración Firebase incorrecta. No intentes crear otra cuenta; necesitamos una versión corregida.';
   if (/PERMISSION_DENIED|403/i.test(raw)) return 'Firebase rechazó esta operación por permisos o configuración. Si intentabas registrarte y no recibiste correo, no repitas el alta hasta revisar el servicio.';
   if (/PROFILE_MISSING|WALLET_MISSING|PRIVATE_IDENTITY_MISSING/i.test(raw)) return 'Tu cuenta necesita una reparación rápida. Vuelve a intentarlo.';
   if (/AUTH_UID_MISMATCH/i.test(raw)) return 'Detuvimos la migración porque la cuenta no coincidió. No se creó una cuenta nueva.';
