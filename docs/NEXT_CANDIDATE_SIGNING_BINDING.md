@@ -168,3 +168,9 @@ This guard remains isolated to single-device private **no-AI** smoke; it
 does not change full two-device R6, App Check, legal review, remote Topi AI,
 or any release acceptance state.
 
+
+## Owner-local successor input and archive isolation — 23 Nov 2026 (CDMX)
+
+After approved staging Rules and build checks, calculate the freshly built APK SHA-256 locally (PowerShell: `Get-FileHash -Algorithm SHA256 -LiteralPath $apkPath`) and supply `TUTOP_QA_INPUT_APK_SHA256` with the existing exact-source SHA and signing settings. This is owner-observed evidence, not independent reproducible-build attestation. Only a private snapshot matching the digest is signed. Do not reuse an old APK.
+
+Successful candidates are written under the original private root at `qa-output/<exact-source-sha>/TuTop-Private-QA.apk.age` and adjacent `TuTop-Private-QA.provenance.txt`. The historical root archive is preserved. Existing or partial output blocks another attempt; preserve it for review, never delete or overwrite it to force a retry. No signing secrets, plaintext APKs or age identity uploaded. Encryption success does not establish App Check, physical QA or release acceptance.

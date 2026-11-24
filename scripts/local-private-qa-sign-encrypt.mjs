@@ -49,6 +49,19 @@ export function formatLocalQaProvenance(intent, signedApkSha256) {
   ].join('\n')+'\n';
 }
 
+// Owner-observed input bytes, not an independent build attestation.
+export function validateLocalQaInputDigest(expected, actual) {
+  if (typeof expected !== 'string' || !SHA256.test(expected) ||
+      typeof actual !== 'string' || !SHA256.test(actual) || expected !== actual)
+    throw Error('LOCAL_QA_INPUT_APK_DIGEST_MISMATCH');
+  return actual;
+}
+export function localQaCandidateDirectory(root, sourceSha) {
+  if (typeof root !== 'string' || !path.isAbsolute(root) ||
+      typeof sourceSha !== 'string' || !SHA40.test(sourceSha))
+    throw Error('LOCAL_QA_CANDIDATE_DIRECTORY_INVALID');
+  return path.join(root, 'qa-output', sourceSha);
+}
 function required(name) {
   const v = process.env[name];
   if (typeof v !== 'string' || !v.trim()) throw Error('LOCAL_QA_REQUIRED_SETTING_MISSING');
@@ -98,7 +111,7 @@ function validateOwnerManifest(filename,intent) {
   if (raw.length>65536) throw Error('LOCAL_QA_PUBLIC_MANIFEST_INVALID');
   return validateOwnerPublicManifest(JSON.parse(raw),intent);
 }
-function secureOutputRoot() {
+function secureOutputRoot(sourceSha) {
   const dir=path.resolve(required('TUTOP_QA_PRIVATE_DIR'));
   const st=fs.lstatSync(dir);
   if (!st.isDirectory() || st.isSymbolicLink()) throw Error('LOCAL_QA_PRIVATE_DIRECTORY_INVALID');
@@ -107,7 +120,7 @@ function secureOutputRoot() {
   fs.mkdirSync(out,{recursive:true,mode:0o700});
   const st2=fs.lstatSync(out);
   if (!st2.isDirectory() || st2.isSymbolicLink()) throw Error('LOCAL_QA_OUTPUT_DIRECTORY_INVALID');
-  return {dir,out};
+  return {dir,out:localQaCandidateDirectory(dir,sourceSha)};
 }
 function execute() {
   if (process.env.TUTOP_LOCAL_QA_ACK !== ACK) throw Error('LOCAL_QA_EXPLICIT_ACK_REQUIRED');
@@ -123,6 +136,7 @@ function execute() {
   const publicManifest=validateOwnerManifest(requireFile('TUTOP_QA_PUBLIC_MANIFEST_PATH'),intent);
   const input=requireFile('TUTOP_QA_INPUT_APK');
   if (fs.statSync(input).size>MAX_APK) throw Error('LOCAL_QA_APK_TOO_LARGE');
+  const inputHash=validateLocalQaInputDigest(required('TUTOP_QA_INPUT_APK_SHA256').toLowerCase(), HASH(fs.readFileSync(input)));
   const keystore=requireFile('TUTOP_QA_KEYSTORE_PATH');
   if (HASH(fs.readFileSync(keystore)) !== publicManifest.qa_keystore_sha256)
     throw Error('LOCAL_QA_KEYSTORE_DIGEST_MISMATCH');
@@ -137,21 +151,26 @@ function execute() {
   if (run(ageKeygen,['-y',ageIdentity]).trim()!==intent.age_public_recipient)
     throw Error('LOCAL_QA_OWNER_AGE_IDENTITY_MISMATCH');
   verifyPackage(aapt2,input);
-  const {dir,out}=secureOutputRoot();
+  const {dir,out}=secureOutputRoot(intent.source_sha);
   const destination=path.join(out,'TuTop-Private-QA.apk.age');
   const prov=path.join(out,'TuTop-Private-QA.provenance.txt');
-  if (fs.existsSync(destination)||fs.existsSync(prov))
+  if (fs.existsSync(out)||fs.existsSync(destination)||fs.existsSync(prov))
     throw Error('LOCAL_QA_REFUSE_OVERWRITE');
   const temporary=fs.mkdtempSync(path.join(dir,'.qa-candidate-'));
+  const snapshot=path.join(temporary,'qa-input.apk');
   const signed=path.join(temporary,'qa-signed.apk');
   const encrypted=path.join(temporary,'qa.apk.age');
   const decrypted=path.join(temporary,'qa-decrypted.apk');
-  let moved=false;
   try {
+    // Sign only a private snapshot matching the independently supplied digest.
+    fs.copyFileSync(input,snapshot,fs.constants.COPYFILE_EXCL);
+    if (fs.statSync(snapshot).size>MAX_APK) throw Error('LOCAL_QA_APK_TOO_LARGE');
+    validateLocalQaInputDigest(inputHash,HASH(fs.readFileSync(snapshot)));
+    verifyPackage(aapt2,snapshot);
     const apksigner=['-jar',signerJar];
     run(java,[...apksigner,'sign','--ks',keystore,
       '--ks-key-alias',intent.alias,'--ks-pass','env:TUTOP_QA_JKS_PASSWORD',
-      '--key-pass','env:TUTOP_QA_KEY_PASSWORD','--out',signed,input]);
+      '--key-pass','env:TUTOP_QA_KEY_PASSWORD','--out',signed,snapshot]);
     verifyPackage(aapt2,signed);
     const certOutput=run(java,[...apksigner,'verify','--print-certs',signed]);
     const cert=extractApkSignerDigest(certOutput,'SHA-256',64).toLowerCase();
@@ -163,22 +182,21 @@ function execute() {
     if (HASH(fs.readFileSync(decrypted))!==signedHash)
       throw Error('LOCAL_QA_OWNER_DECRYPTION_MISMATCH');
     const provenance=formatLocalQaProvenance(intent,signedHash);
-    fs.renameSync(encrypted,destination);
-    moved=true;
+    // Exclusively reserve a SHA-specific output directory. Preserve old
+    // archives and any incomplete result; never overwrite or auto-delete it.
+    if (fs.existsSync(out)) throw Error('LOCAL_QA_REFUSE_OVERWRITE');
+    fs.mkdirSync(out,{mode:0o700});
+    fs.copyFileSync(encrypted,destination,fs.constants.COPYFILE_EXCL);
     fs.writeFileSync(prov,provenance,{flag:'wx',mode:0o600});
+    validateLocalQaInputDigest(HASH(fs.readFileSync(encrypted)),HASH(fs.readFileSync(destination)));
+    if (fs.readFileSync(prov,'utf8')!==provenance) throw Error('LOCAL_QA_OUTPUT_READBACK_MISMATCH');
     console.log(JSON.stringify({status:'PRIVATE_QA_ENCRYPTED_OWNER_RECOVERY_PASS',
       scope:'LOCAL_OWNER_ONLY_NO_FIREBASE_NO_RELEASE',source_sha:intent.source_sha,
       qa_signed_apk_sha256:signedHash,qa_certificate_sha256:cert,
+      input_apk_sha256:inputHash,
       age_public_recipient:intent.age_public_recipient,
       ciphertext_sha256:HASH(fs.readFileSync(destination)),
       release_blocked:true,r6_release_blocked:true}));
-  } catch (error) {
-    if (moved) {
-      // Both files are newly created by this invocation, never originals.
-      if (fs.existsSync(destination)) fs.unlinkSync(destination);
-      if (fs.existsSync(prov)) fs.unlinkSync(prov);
-    }
-    throw error;
   } finally {
     // Ephemeral plaintext never leaves the owner's private folder.
     fs.rmSync(temporary,{recursive:true,force:true});
@@ -193,7 +211,8 @@ if (process.argv[1] && import.meta.url===pathToFileURL(path.resolve(process.argv
       'LOCAL_QA_OWNER_AGE_IDENTITY_MISMATCH',
       'LOCAL_QA_SIGNER_MISMATCH','LOCAL_QA_OWNER_DECRYPTION_MISMATCH',
       'LOCAL_QA_PACKAGE_VERSION_MISMATCH','LOCAL_QA_REFUSE_OVERWRITE',
-      'LOCAL_QA_TOOL_FAILED',
+      'LOCAL_QA_INPUT_APK_DIGEST_MISMATCH','LOCAL_QA_OUTPUT_READBACK_MISMATCH',
+      'LOCAL_QA_CANDIDATE_DIRECTORY_INVALID','LOCAL_QA_TOOL_FAILED',
     ]);
     console.error(safeCodes.has(e?.message)?e.message:'LOCAL_QA_BLOCKED_REDACTED');
     process.exitCode=2;

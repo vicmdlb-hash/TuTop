@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { validateLocalQaIntent, formatLocalQaProvenance, validateOwnerPublicManifest } from './local-private-qa-sign-encrypt.mjs';
+import path from 'node:path';
+import { validateLocalQaIntent, formatLocalQaProvenance, validateOwnerPublicManifest, validateLocalQaInputDigest, localQaCandidateDirectory } from './local-private-qa-sign-encrypt.mjs';
 import { parseQaProvenance, assessPrivateNoAiSmoke } from './private-qa-no-ai-smoke-gate.mjs';
 
 const good={
@@ -9,6 +10,16 @@ const good={
  alias:'tutop-qa-private-20261116'
 };
 const intent=validateLocalQaIntent(good);
+const inputHash='a'.repeat(64);
+assert.equal(validateLocalQaInputDigest(inputHash,inputHash),inputHash);
+for (const [expected,actual] of [[inputHash,'b'.repeat(64)],['invalid',inputHash],[null,inputHash],[inputHash,null]]) {
+  assert.throws(()=>validateLocalQaInputDigest(expected,actual),/LOCAL_QA_INPUT_APK_DIGEST_MISMATCH/);
+}
+const privateRoot=path.resolve('synthetic-private-root');
+assert.equal(localQaCandidateDirectory(privateRoot,good.sourceSha),path.join(privateRoot,'qa-output',good.sourceSha));
+assert.notEqual(localQaCandidateDirectory(privateRoot,good.sourceSha),localQaCandidateDirectory(privateRoot,'b'.repeat(40)));
+assert.throws(()=>localQaCandidateDirectory(privateRoot,'../escape'),/LOCAL_QA_CANDIDATE_DIRECTORY_INVALID/);
+assert.throws(()=>localQaCandidateDirectory('relative',good.sourceSha),/LOCAL_QA_CANDIDATE_DIRECTORY_INVALID/);
 
 const canonicalPublic = {
   schema:'tutop.qa.public-provenance.v1',package:'mx.tutop.app',
@@ -55,4 +66,7 @@ const guardSource = (await import('node:fs')).readFileSync('scripts/local-privat
 assert.match(guardSource,/LOCAL_QA_KEYSTORE_DIGEST_MISMATCH/);
 assert.match(guardSource,/LOCAL_QA_EXPLICIT_ACK_REQUIRED/);
 assert.match(guardSource,/LOCAL_QA_REFUSE_OVERWRITE/);
+for (const required of ['TUTOP_QA_INPUT_APK_SHA256','validateLocalQaInputDigest(inputHash,HASH(fs.readFileSync(snapshot)))',"'--out',signed,snapshot]",'fs.mkdirSync(out,{mode:0o700})','fs.copyFileSync(encrypted,destination,fs.constants.COPYFILE_EXCL)']) assert(guardSource.includes(required));
+for (const forbidden of ['unlinkSync(destination)','unlinkSync(prov)','renameSync(encrypted,destination)']) assert(!guardSource.includes(forbidden));
+console.log('PASS owner-local input digest and SHA-isolated output contract');
 console.log('PASS owner-local private QA signer contract: fail-closed, same exact provenance, no remote secrets, R6 never self-authorized');
