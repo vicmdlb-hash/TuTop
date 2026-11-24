@@ -82,6 +82,9 @@ jobs:
           set -euo pipefail
           node scripts/connected-staging-compile-workflow-tests.mjs
           node --experimental-strip-types scripts/native-push-session-epoch-tests.mjs
+          # Generate the exact reviewed Rules without Firebase credentials.
+          npm run v2:rules:prepare >/dev/null
+          test -s firebase/firestore.v2.generated.rules
       - name: Fetch existing Firebase Web and Android V2 configs READ ONLY
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
@@ -93,6 +96,50 @@ jobs:
           test -n "${FIREBASE_TOKEN:-}" || { echo 'BLOCKED: Firebase read-only config credentials not connected'; exit 42; }
           node scripts/prepare-staging-v2-auth.mjs
           node scripts/prepare-staging-android-app.mjs
+          # PRIVATE_QA_STAGING_RULES_EXACT_MATCH_REQUIRED
+          # Fail closed before Vite/Gradle if active staging Rules are not the
+          # exact candidate. No live Rules writes and no contents in logs.
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {firebaseCiAccessToken} from './scripts/firebase-ci-auth.mjs';
+          const project='tutop-beta-vicmdlb-1356585881';
+          if(process.env.GITHUB_REF_NAME!=='integration/tutop-121-122-fcm-owner-ci-20261022' ||
+             process.env.TUTOP_FIREBASE_PROJECT_ID!==project ||
+             process.env.TUTOP_ALLOW_STAGING_CONFIG_READ!=='read-only-v2')
+            throw Error('PRIVATE_QA_RULES_CONTEXT_REJECTED');
+          const token=await firebaseCiAccessToken();
+          const root='projects/'+project;
+          const get=async name=>{
+            const response=await fetch('https://firebaserules.googleapis.com/v1/'+name,{
+              method:'GET',redirect:'error',signal:AbortSignal.timeout(20000),
+              headers:{Authorization:'Bearer '+token,'X-Goog-User-Project':project}
+            });
+            if(!response.ok) throw Error('PRIVATE_QA_RULES_GET_HTTP_'+response.status);
+            return await response.json();
+          };
+          const releaseName=root+'/releases/cloud.firestore';
+          const release=await get(releaseName);
+          const rulesetName=release?.rulesetName;
+          if(release?.name!==releaseName || typeof rulesetName!=='string' ||
+             !rulesetName.startsWith(root+'/rulesets/') ||
+             !/^[A-Za-z0-9_-]+$/.test(rulesetName.slice((root+'/rulesets/').length)))
+            throw Error('PRIVATE_QA_RULESET_IDENTITY_REJECTED');
+          const ruleset=await get(rulesetName);
+          const files=ruleset?.source?.files;
+          if(ruleset?.name!==rulesetName || !Array.isArray(files) || files.length!==1 ||
+             typeof files[0]?.content!=='string' || !files[0].content.trim())
+            throw Error('PRIVATE_QA_RULESET_SOURCE_AMBIGUOUS');
+          const desired=fs.readFileSync('firebase/firestore.v2.generated.rules','utf8');
+          const normalize=s=>s.replace(/\r\n/g,'\n');
+          if(!desired.trim() || normalize(files[0].content)!==normalize(desired))
+            throw Error('PRIVATE_QA_STAGING_RULES_SOURCE_DEPLOY_DRIFT');
+          // Re-read release identity before allowing compilation; changes after
+          // this check still require a separate device/release preflight.
+          const recheck=await get(releaseName);
+          if(recheck?.name!==releaseName || recheck?.rulesetName!==rulesetName)
+            throw Error('PRIVATE_QA_RULESET_CHANGED_DURING_PREFLIGHT');
+          console.log('PRIVATE_QA_STAGING_RULES_EXACT_MATCH_READ_ONLY_PASS');
+          NODE
       - name: Export masked Firebase client bundle environment
         shell: bash
         run: |
