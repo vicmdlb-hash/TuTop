@@ -43,7 +43,7 @@ jobs:
           test "${TUTOP_FIREBASE_PROJECT_ID}" = tutop-beta-vicmdlb-1356585881
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           # Exact parent + one-file allowlist: read-only Android compile of the new integration HEAD. No APK upload.
-          test "$(git rev-parse HEAD^)" = 'e6ff532c08284dbfe45dd734bd90aa3fe66e1b81'
+          test "$(git rev-parse HEAD^)" = 'ce66a489bf86ada3ca55c169fb837b9691c710a2'
           changed="$(git diff --name-only HEAD^ HEAD)"
           expected='.github/workflows/tutop-connected-staging-compile.yml'
           test "$changed" = "$expected"
@@ -101,7 +101,7 @@ jobs:
             throw Error('STAGING_RULES_READ_CONTEXT_REJECTED');
           const accessToken=await firebaseCiAccessToken();
           const get=async url=>{
-            const r=await fetch(url,{method:'GET',headers:{
+            const r=await fetch(url,{method:'GET',redirect:'error',signal:AbortSignal.timeout(20000),headers:{
               Authorization:'Bearer '+accessToken,'X-Goog-User-Project':project,
             }});
             if(!r.ok)throw Error('STAGING_RULES_GET_HTTP_'+r.status);
@@ -110,12 +110,18 @@ jobs:
           const root='projects/'+project;
           const release=await get('https://firebaserules.googleapis.com/v1/'+root+'/releases/cloud.firestore');
           const name=String(release?.rulesetName||'');
-          if(!name.startsWith(root+'/rulesets/'))throw Error('STAGING_RULESET_IDENTITY_MISSING');
+          if(release?.name!==root+'/releases/cloud.firestore'||!name.startsWith(root+'/rulesets/')||!(/^[A-Za-z0-9_-]+$/).test(name.slice((root+'/rulesets/').length)))throw Error('STAGING_RULESET_IDENTITY_MISSING');
           const ruleset=await get('https://firebaserules.googleapis.com/v1/'+name);
-          const active=(ruleset?.source?.files||[]).map(f=>f.content||'').join('\n');
+          const files=ruleset?.source?.files;
+          if(ruleset?.name!==name||!Array.isArray(files)||files.length!==1||typeof files[0]?.content!=='string'||!files[0].content.trim())throw Error('STAGING_RULESET_SOURCE_AMBIGUOUS');
+          const active=files[0].content;
+          const again=await get('https://firebaserules.googleapis.com/v1/'+root+'/releases/cloud.firestore');
+          if(again?.name!==release.name||again?.rulesetName!==name)throw Error('STAGING_RULESET_CONCURRENT_CHANGE');
           const generated=fs.readFileSync('firebase/firestore.v2.generated.rules','utf8');
-          const compact=t=>String(t||'').replace(/\r\n/g,'\n').replace(/\/\/[^\n]*/g,'').replace(/\s+/g,' ').trim();
-          const equal=compact(active)===compact(generated);
+          // R228: exact semantic source gate; never strip spaces or comments inside literals.
+          const normalize=t=>t.replace(/\r\n/g,'\n');
+          if(!generated.trim())throw Error('STAGING_GENERATED_RULES_EMPTY');
+          const equal=normalize(active)===normalize(generated);
           const hash=t=>crypto.createHash('sha256').update(String(t)).digest('hex');
           const evidence={
             status:'READ_ONLY',source_sha:process.env.GITHUB_SHA,
@@ -130,7 +136,7 @@ jobs:
           const sections=source=>{
             const matches=[...source.matchAll(/^    match \/([^\n]+) \{/gm)];
             return new Map(matches.map((m,i)=>[
-              m[1],compact(source.slice(m.index,i+1<matches.length?matches[i+1].index:source.length))
+              m[1],normalize(source.slice(m.index,i+1<matches.length?matches[i+1].index:source.length))
             ]));
           };
           const liveSections=sections(active), sourceSections=sections(generated);
@@ -191,13 +197,13 @@ jobs:
           cp firebase/firestore.v2.generated.rules "$RUNNER_TEMP/TuTop-source-generated.rules"
           trap 'cp "$RUNNER_TEMP/TuTop-source-generated.rules" firebase/firestore.v2.generated.rules; rm -f "$RUNNER_TEMP/TuTop-source-generated.rules" "$RUNNER_TEMP/TuTop-active-staging.rules" "$RUNNER_TEMP/TuTop-active-five-doc-probe.log" "$RUNNER_TEMP/TuTop-auth-status-only-preview.rules" "$RUNNER_TEMP/TuTop-auth-status-only-preview.log"' EXIT
           cp "$RUNNER_TEMP/TuTop-active-staging.rules" firebase/firestore.v2.generated.rules
-          # Only a synthetic, already-tested five-document onboarding fixture.
+          # Full existing synthetic verified-identity and auth_status fixture suites.
           # Never call Firebase Auth, use actual user accounts or deploy Rules.
           set +e
           npx --yes firebase-tools@15.29.0 emulators:exec \
             --only firestore --config firebase.v2.json \
             --project demo-tutop-post120-rules \
-            "node --test --test-concurrency=1 --test-name-pattern='post106 permite bootstrap inicial|auth_status binds email_verified' tests/firestore.v2.post106-verified-identity.test.mjs tests/firestore.v2.auth-status.test.mjs" \
+            "node --test --test-concurrency=1 tests/firestore.v2.post106-verified-identity.test.mjs tests/firestore.v2.auth-status.test.mjs" \
             > "$RUNNER_TEMP/TuTop-active-five-doc-probe.log" 2>&1
           probe_rc=$?
           set -e
@@ -276,6 +282,10 @@ jobs:
           }
           if(preview===active) throw Error('STAGING_AUTH_STATUS_PREVIEW_NO_DIFFERENCE');
           fs.writeFileSync(folder+'/TuTop-auth-status-only-preview.rules',preview,{mode:0o600});
+          // Fingerprint the precise offline candidate; never print the live source.
+          const {createHash}=await import('node:crypto');
+          const sha=t=>createHash('sha256').update(t).digest('hex');
+          console.log('STAGING_AUTH_STATUS_PREVIEW_SHA256 '+JSON.stringify({active:sha(active),preview:sha(preview),inserted_section:sha(replacement)}));
           console.log('STAGING_AUTH_STATUS_ONLY_PREVIEW_ONE_SECTION_OFFLINE');
           NODE
           cp "$RUNNER_TEMP/TuTop-auth-status-only-preview.rules" firebase/firestore.v2.generated.rules
@@ -283,7 +293,7 @@ jobs:
           npx --yes firebase-tools@15.29.0 emulators:exec \
             --only firestore --config firebase.v2.json \
             --project demo-tutop-post120-rules \
-            "node --test --test-concurrency=1 --test-name-pattern='post106 permite bootstrap inicial|auth_status binds email_verified' tests/firestore.v2.post106-verified-identity.test.mjs tests/firestore.v2.auth-status.test.mjs" \
+            "node --test --test-concurrency=1 tests/firestore.v2.post106-verified-identity.test.mjs tests/firestore.v2.auth-status.test.mjs" \
             > "$RUNNER_TEMP/TuTop-auth-status-only-preview.log" 2>&1
           preview_rc=$?
           set -e
@@ -300,6 +310,23 @@ jobs:
             harness_failure:/ERR_MODULE_NOT_FOUND|ECONNREFUSED/.test(raw)
           }));
           NODE
+          # R228: compare all known TAP test names and outcomes; no raw logs exposed.
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const root=process.env.RUNNER_TEMP;
+          const names=['auth_status binds email_verified to Firebase Auth claim and is admin-readable','post106 permite bootstrap inicial de cuenta antes de verificar email sin abrir writes sensibles','post106 rechaza publicación canónica si email_verified=false','post106 permite publicación canónica verificada con una foto','post106 permite publicación canónica verificada con cuatro fotos','post106 rechaza mutación sensible de transacción si email_verified=false y la permite verificada'];
+          function results(file){
+            const log=fs.readFileSync(root+'/'+file,'utf8');
+            return names.map(name=>{
+              const matches=log.split('\n').filter(line=>/^(?:not )?ok \d+ - /.test(line)&&line.replace(/^(?:not )?ok \d+ - /,'').trim()===name);
+              return matches.length===1?(matches[0].startsWith('not ok')?'FAIL':'PASS'):'UNKNOWN';
+            });
+          }
+          const before=results('TuTop-active-five-doc-probe.log'),after=results('TuTop-auth-status-only-preview.log');
+          const regressions=before.filter((v,i)=>v==='PASS'&&after[i]!=='PASS').length;
+          const improvements=before.filter((v,i)=>v==='FAIL'&&after[i]==='PASS').length;
+          console.log('STAGING_AUTH_STATUS_DIFFERENTIAL_IDENTITY '+JSON.stringify({expected:names.length,before,after,regressions,improvements,complete:before.every(v=>v!=='UNKNOWN')&&after.every(v=>v!=='UNKNOWN'),offline:true}));
+          NODE
           if test "$preview_rc" -eq 0; then
             echo 'STAGING_AUTH_STATUS_ONLY_PREVIEW_PASS: offline ONLY, deploy still BLOCKED'
           else
@@ -307,7 +334,7 @@ jobs:
           fi
           cp "$RUNNER_TEMP/TuTop-source-generated.rules" firebase/firestore.v2.generated.rules
           if test "$probe_rc" -eq 0; then
-            echo "STAGING_ACTIVE_FIVE_DOC_AND_AUTH_STATUS_SYNTHETIC_PASS: two scoped fixtures"
+            echo "STAGING_ACTIVE_FIVE_DOC_AND_AUTH_STATUS_SYNTHETIC_PASS: full scoped identity suites"
           else
             echo "::error::STAGING_ACTIVE_FIVE_DOC_BOOTSTRAP_FAIL_OR_EMULATOR_ERROR (no live write)"
           fi
