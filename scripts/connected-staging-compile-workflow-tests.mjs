@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 const w=fs.readFileSync('.github/workflows/tutop-connected-staging-compile.yml','utf8').replace(/\r\n?/g, '\n');
 assert.match(w,/TUTOP_ALLOW_STAGING_CONFIG_READ: read-only-v2/);
 assert.match(w,/prepare-staging-v2-auth\.mjs/);
@@ -97,3 +98,93 @@ assert.doesNotMatch(upload, /(?:^|\n)\s+\$\{\{ runner\.temp \}\}\/TuTop-Private-
 assert.match(encryptedQa, /rm -f "\$RUNNER_TEMP\/TuTop-Private-QA\.apk"/);
 assert.match(encryptedQa, /retention-days: 1/);
 console.log('PASS private QA encryption gate: no plaintext artifact, trigger-guarded, owner signing, exact App Check, read-only Firebase');
+
+
+// PRIVATE_QA_RULES_GATE_SYNTHETIC_CONTRACT: execute the actual inline gate
+// with a hermetic fake Firebase API, never using credentials or the network.
+const privateGate = encryptedQa.match(/# PRIVATE_QA_STAGING_RULES_EXACT_MATCH_REQUIRED[\s\S]*?node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/);
+assert(privateGate, 'the encrypted QA path must contain its own fail-closed Rules gate');
+assert(encryptedQa.indexOf('npm run v2:rules:prepare') < encryptedQa.indexOf('      - name: Fetch existing Firebase Web and Android V2 configs READ ONLY'));
+assert(encryptedQa.indexOf('# PRIVATE_QA_STAGING_RULES_EXACT_MATCH_REQUIRED') < encryptedQa.indexOf('      - name: Build connected Firebase app web code'));
+const gateProgram = privateGate[1]
+  .replace("import fs from 'node:fs';", '')
+  .replace("import {firebaseCiAccessToken} from './scripts/firebase-ci-auth.mjs';", '');
+assert.doesNotMatch(gateProgram, /\bimport\b|\brequire\s*\(/);
+const root = 'projects/tutop-beta-vicmdlb-1356585881';
+const releaseName = root + '/releases/cloud.firestore';
+const rulesetName = root + '/rulesets/synthetic-ruleset-1';
+const desiredRules = 'rules_version = "2";\nservice cloud.firestore {}\n';
+const releaseFixture = { name: releaseName, rulesetName };
+const ruleFixture = { name: rulesetName, source: { files: [{ content: desiredRules }] } };
+function mockGate({
+  env = {}, desired = desiredRules, responses = [releaseFixture, ruleFixture, releaseFixture],
+} = {}) {
+  const requests = [], messages = [];
+  const context = {
+    process: { env: {
+      GITHUB_REF_NAME: 'integration/tutop-121-122-fcm-owner-ci-20261022',
+      TUTOP_FIREBASE_PROJECT_ID: 'tutop-beta-vicmdlb-1356585881',
+      TUTOP_ALLOW_STAGING_CONFIG_READ: 'read-only-v2',
+      ...env,
+    } },
+    fs: { readFileSync(path, encoding) {
+      assert.equal(path, 'firebase/firestore.v2.generated.rules');
+      assert.equal(encoding, 'utf8');
+      return desired;
+    } },
+    firebaseCiAccessToken: async () => 'synthetic-token-not-a-credential',
+    AbortSignal: { timeout(ms) { assert.equal(ms, 20000); return {}; } },
+    console: { log: (...args) => messages.push(args.join(' ')) },
+    fetch: async (url, options) => {
+      assert.equal(options.method, 'GET');
+      assert.equal(options.redirect, 'error');
+      assert.equal(options.headers.Authorization, 'Bearer synthetic-token-not-a-credential');
+      assert.equal(options.headers['X-Goog-User-Project'], 'tutop-beta-vicmdlb-1356585881');
+      const i = requests.length;
+      requests.push(url);
+      const expected = [releaseName, rulesetName, releaseName][i];
+      assert.equal(url, 'https://firebaserules.googleapis.com/v1/' + expected);
+      assert(i < responses.length, 'unexpected mock request');
+      const fixture = responses[i];
+      if (typeof fixture === 'number') return { ok: false, status: fixture };
+      return { ok: true, json: async () => fixture };
+    },
+  };
+  const result = vm.runInNewContext('(async()=>{\n' + gateProgram + '\n})()', context, {
+    timeout: 1000, contextCodeGeneration: { strings: false, wasm: false },
+  });
+  return { result, requests, messages };
+}
+const passing = mockGate();
+await passing.result;
+assert.equal(passing.requests.length, 3);
+assert.deepEqual(passing.messages, ['PRIVATE_QA_STAGING_RULES_EXACT_MATCH_READ_ONLY_PASS']);
+const crlf = mockGate({ responses: [releaseFixture, {
+  ...ruleFixture, source: { files: [{ content: desiredRules.replace(/\n/g, '\r\n') }] },
+}, releaseFixture] });
+await crlf.result;
+assert.equal(crlf.requests.length, 3);
+const drift = mockGate({ responses: [releaseFixture, {
+  ...ruleFixture, source: { files: [{ content: desiredRules + '// drift\n' }] },
+}] });
+await assert.rejects(drift.result, /PRIVATE_QA_STAGING_RULES_SOURCE_DEPLOY_DRIFT/);
+assert.equal(drift.requests.length, 2);
+const ambiguous = mockGate({ responses: [releaseFixture, {
+  ...ruleFixture, source: { files: [{ content: desiredRules }, { content: desiredRules }] },
+}] });
+await assert.rejects(ambiguous.result, /PRIVATE_QA_RULESET_SOURCE_AMBIGUOUS/);
+const foreign = mockGate({ responses: [{ ...releaseFixture, rulesetName: 'projects/foreign/rulesets/x' }] });
+await assert.rejects(foreign.result, /PRIVATE_QA_RULESET_IDENTITY_REJECTED/);
+assert.equal(foreign.requests.length, 1);
+const concurrent = mockGate({ responses: [releaseFixture, ruleFixture, {
+  ...releaseFixture, rulesetName: root + '/rulesets/synthetic-ruleset-2',
+}] });
+await assert.rejects(concurrent.result, /PRIVATE_QA_RULESET_CHANGED_DURING_PREFLIGHT/);
+const denied = mockGate({ responses: [403] });
+await assert.rejects(denied.result, /PRIVATE_QA_RULES_GET_HTTP_403/);
+const wrongProject = mockGate({ env: { TUTOP_FIREBASE_PROJECT_ID: 'foreign' }, responses: [] });
+await assert.rejects(wrongProject.result, /PRIVATE_QA_RULES_CONTEXT_REJECTED/);
+assert.equal(wrongProject.requests.length, 0);
+const emptyCandidate = mockGate({ desired: '', responses: [releaseFixture, ruleFixture] });
+await assert.rejects(emptyCandidate.result, /PRIVATE_QA_STAGING_RULES_SOURCE_DEPLOY_DRIFT/);
+console.log('PASS private QA staging Rules gate: 9 synthetic exact-match, drift and fail-closed cases; no network');
