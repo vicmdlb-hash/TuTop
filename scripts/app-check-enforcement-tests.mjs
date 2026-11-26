@@ -289,3 +289,75 @@ try {
 }
 console.log('PASS synthetic late native App Check plugin registration recovery');
 
+
+
+// R258/R265/R266: execute the actual staging auditor with synthetic GET replies.
+// No credentials, actual fetch, Firebase writes, or physical acceptance.
+const offplaySource = fs.readFileSync('scripts/audit-staging-offplay-app-check.mjs', 'utf8');
+const offplayImport = "import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';";
+assert.equal(offplaySource.split(offplayImport).length, 2);
+const offplayInjected = offplaySource.replace(offplayImport,
+  "const { firebaseCiAccessToken, fetch, process, console } = globalThis.__tutopOffplayFixture;");
+const projectId = 'tutop-beta-vicmdlb-1356585881';
+const appId = 'synthetic-app';
+const appName = 'projects/' + projectId + '/androidApps/' + appId;
+const configName = 'projects/123/apps/' + appId + '/playIntegrityConfig';
+const certHash = 'A'.repeat(64);
+const offplayBase = [
+  {projectId, projectNumber:'123'},
+  {apps:[{projectId, appId, name:appName, packageName:'mx.tutop.app',state:'ACTIVE'}]},
+  {certificates:[{name:appName+'/sha/synthetic',certType:'SHA_256',shaHash:certHash}]},
+  {name:configName, appIntegrity:{allowUnrecognizedVersion:true},accountDetails:{requireLicensed:false},deviceIntegrity:{minDeviceRecognitionLevel:'MEETS_DEVICE_INTEGRITY'}},
+];
+let offplaySequence = 0;
+async function offplayCase(mutate, error, expected=certHash) {
+  const replies=structuredClone(offplayBase);
+  mutate(replies);
+  let calls=0;
+  const output=[];
+  const previous=globalThis.__tutopOffplayFixture;
+  globalThis.__tutopOffplayFixture={
+    firebaseCiAccessToken:async()=> 'synthetic',
+    process:{env:{TUTOP_FIREBASE_PROJECT_ID:projectId,TUTOP_EXPECTED_ANDROID_CERT_SHA256:expected}},
+    console:{log:x=>output.push(x)},
+    fetch:async(url,opts)=>{
+      assert.equal(opts.method,'GET');
+      assert.equal(opts.redirect,'error');
+      assert(opts.signal instanceof AbortSignal);
+      assert.match(url,/^https:\/\//);
+      assert(calls<replies.length);
+      const reply=replies[calls++];
+      return {ok:true,status:200,text:async()=>JSON.stringify(reply)};
+    },
+  };
+  try{
+    const run=()=>import('data:text/javascript;base64,'+Buffer.from(offplayInjected+'\n// fixture '+(++offplaySequence)).toString('base64'));
+    if(error){
+      await assert.rejects(run, e=>e.message===error);
+      assert(!output.some(x=>String(x).startsWith('POLICY_')));
+    }else{
+      await run();
+      assert.equal(calls,4);
+      assert.equal(output.at(-1),expected?'POLICY_AND_EXACT_CERT_BINDING_READ_ONLY_PASS':'POLICY_READ_ONLY_PASS_BINDING_UNVERIFIED');
+    }
+  }finally{
+    if(previous===undefined)delete globalThis.__tutopOffplayFixture;
+    else globalThis.__tutopOffplayFixture=previous;
+  }
+}
+await offplayCase(()=>{},null);
+await offplayCase(()=>{},null,'');
+await offplayCase(x=>{x[0].projectId='other';},'STAGING_ANDROID_APP_IDENTITY_MISMATCH');
+await offplayCase(x=>{x[1].apps.push({...x[1].apps[0]});},'STAGING_ANDROID_APP_IDENTITY_AMBIGUOUS');
+await offplayCase(x=>{x[1].apps.push(null);},'STAGING_ANDROID_APP_LIST_MALFORMED');
+await offplayCase(x=>{x[1].nextPageToken='next';},'STAGING_ANDROID_APP_LIST_INCOMPLETE');
+for(const invalid of ['a/b','a\\b','a?b','a#b','a%b','a b','.','..','']){
+  await offplayCase(x=>{x[1].apps[0].appId=invalid;x[1].apps[0].name='projects/'+projectId+'/androidApps/'+invalid;},'STAGING_ANDROID_APP_IDENTITY_MISMATCH');
+}
+await offplayCase(x=>{x[2].certificates[0].name='other/sha/c';},'STAGING_CERT_IDENTITY_MALFORMED');
+await offplayCase(x=>{x[2].certificates.push({...x[2].certificates[0],shaHash:''});},'STAGING_CERT_IDENTITY_MALFORMED');
+await offplayCase(x=>{x[2].certificates=[];},'EXPECTED_ANDROID_CERT_SHA256_NOT_REGISTERED');
+await offplayCase(x=>{x[3].name='other';},'STAGING_PLAY_INTEGRITY_CONFIG_IDENTITY_MISMATCH');
+await offplayCase(x=>{x[3].accountDetails.requireLicensed='false';},'OFFPLAY_LICENSE_POLICY_MALFORMED');
+await offplayCase(x=>{x[3]=null;},'STAGING_RESPONSE_INVALID');
+console.log('PASS synthetic off-Play identity, response and exact binding contract');
