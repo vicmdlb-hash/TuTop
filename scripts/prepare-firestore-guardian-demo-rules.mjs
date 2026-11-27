@@ -353,6 +353,50 @@ const newOfferStart = rules.indexOf(offerMatch);
 rules = rules.slice(0, newOfferStart) + offerHelper + rules.slice(newOfferStart);
 console.log('GUARDIAN_OFFER_CREATE_CACHED_EQUIVALENT: all predicates restored, reservation lock retained');
 
+// R289: cache chat-create request data and its canonical listing snapshot.
+// This is demo-only, and the original complete predicate must round-trip.
+const chatMatch = '    match /chats/{chatId} {';
+exactlyOne(rules, chatMatch, 'single canonical chat match');
+const chatStart = rules.indexOf(chatMatch);
+const chatCreateStart = rules.indexOf(createPrefix, chatStart + chatMatch.length);
+const chatUpdateStart = rules.indexOf(updatePrefix, chatCreateStart + createPrefix.length);
+if (chatCreateStart < 0 || chatUpdateStart < 0 || chatCreateStart > chatStart + 1200)
+  throw new Error('GUARDIAN_DEMO_CHAT_CREATE_DRIFT');
+const originalChatCreate = rules.slice(chatCreateStart + createPrefix.length, chatUpdateStart).trimEnd();
+if (!originalChatCreate.endsWith(';')) throw new Error('GUARDIAN_DEMO_CHAT_CREATE_TERMINATOR_DRIFT');
+const originalChatPredicate = originalChatCreate.slice(0, -1).trimEnd();
+const listingRead = 'listingDoc(chatData.product_id).data';
+if (!originalChatPredicate.includes("guardianPairCapabilityAllowed(request.auth.uid, request.resource.data.seller_id, 'direct_chat')")
+  || !originalChatPredicate.includes('usersUnblocked(request.resource.data.buyer_id, request.resource.data.seller_id)')
+  || !originalChatPredicate.includes("rateLimitConsumed('chat_create')")
+  || !originalChatPredicate.includes('commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)'))
+  throw new Error('GUARDIAN_DEMO_CHAT_AUTHORITY_DRIFT');
+const cachedChatData = originalChatPredicate.replaceAll('request.resource.data', 'chatData');
+if (cachedChatData.split(listingRead).length !== 4 || cachedChatData.includes('chatListing'))
+  throw new Error('GUARDIAN_DEMO_CHAT_LISTING_DRIFT');
+const cachedChat = cachedChatData.replaceAll(listingRead, 'chatListing');
+if (cachedChat.replaceAll('chatListing', listingRead).replaceAll('chatData', 'request.resource.data') !== originalChatPredicate)
+  throw new Error('GUARDIAN_DEMO_CHAT_PREDICATE_EQUIVALENCE_FAILED');
+rules = rules.slice(0, chatCreateStart)
+  + createPrefix + 'guardianChatCreateCached(chatId, request.resource.data);\n'
+  + rules.slice(chatUpdateStart);
+const cachedChatHelper = '    function guardianChatCreateCached(chatId, chatData) {\n'
+  + '      let chatListing = listingDoc(chatData.product_id).data;\n'
+  + '      return ' + cachedChat + ';\n    }\n';
+const newChatStart = rules.indexOf(chatMatch);
+rules = rules.slice(0, newChatStart) + cachedChatHelper + rules.slice(newChatStart);
+
+// Evaluate the same three mandatory offer predicates in base-first order.
+// This is a budget experiment, not a waiver of any condition. The bilateral
+// block and atomic counter checks run before age and link reads.
+const oldOfferOrder = createPrefix + '(' + pairCall + ') && (' + linkCall + ')'
+  + ' && guardianOfferCreateBaseCached(request.resource.data);';
+const newOfferOrder = createPrefix + 'guardianOfferCreateBaseCached(request.resource.data)'
+  + ' && (' + pairCall + ') && (' + linkCall + ');';
+exactlyOne(rules, oldOfferOrder, 'offer conjunction order');
+rules = rules.replace(oldOfferOrder, newOfferOrder);
+console.log('GUARDIAN_CHAT_CREATE_CACHED_EQUIVALENT: all predicates restored; offer conjunction reordered');
+
 // Minimal DEMO-ONLY diagnostic isolates proof verification from marketplace
 // payload/rate/participant preconditions; it is never part of default V2.
 const catchAll = '    match /{document=**} { allow read, write: if false; }';
