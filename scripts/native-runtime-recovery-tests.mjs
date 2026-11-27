@@ -8,6 +8,7 @@ function compile(source, names, bindings={}) {
  return new Function(...Object.keys(bindings),js+';return {'+names.join(',')+'};')(...Object.values(bindings));
 }
 const { topiRemoteProviderAudienceGate } = compile(read('src/lib/topiAllAgesProviderGate.ts'), ['topiRemoteProviderAudienceGate']);
+const { createNativePushOperationQueue } = compile(read('src/lib/nativePushSessionGuard.ts'), ['createNativePushOperationQueue']);
 const never=()=>new Promise(()=>{});
 async function bounded(promise) {
  let timer; try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('test watchdog: operation never settled')),100);})]);}finally{clearTimeout(timer);}
@@ -47,7 +48,7 @@ const tests=[
        ENV:{VITE_TUTOP_APP_VERSION:'0.9.2-beta.0'},
        initializeNativeAppCheck:async()=>null,isNativeFirebaseRuntime:()=>true,
        verifiedEmailBetaAuth:{readSessionIdentity:()=>null,sessionGeneration:()=>0},
-       matchesNativePushSession:()=>false,pushBackend:{},
+       matchesNativePushSession:()=>false,pushBackend:{},createNativePushOperationQueue,
      });
    await bounded(security.initializeNativeFirebaseSecurity());
    assert.deepEqual(listeners,[],'plugin absence must not register a listener');
@@ -83,7 +84,7 @@ const tests=[
        ENV:{VITE_TUTOP_APP_VERSION:'0.9.2-beta.0'},
        initializeNativeAppCheck:async()=>null,isNativeFirebaseRuntime:()=>true,
        verifiedEmailBetaAuth:{readSessionIdentity:()=>null,sessionGeneration:()=>0},
-       matchesNativePushSession:()=>false,pushBackend:{},
+       matchesNativePushSession:()=>false,pushBackend:{},createNativePushOperationQueue,
      });
    await assert.rejects(bounded(security.initializeNativeFirebaseSecurity()),
      /synthetic-listener-registration-failure/);

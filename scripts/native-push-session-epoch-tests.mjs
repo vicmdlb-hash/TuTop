@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { matchesNativePushSession, needsNativePushOwnershipReset, nativePushReconciliationStillPending } from '../src/lib/nativePushSessionGuard.ts';
+import { createNativePushOperationQueue, matchesNativePushSession, needsNativePushOwnershipReset, nativePushReconciliationStillPending } from '../src/lib/nativePushSessionGuard.ts';
 import { isNativePushOptedOut, setNativePushOptOut, NATIVE_PUSH_OPT_OUT_PREFIX } from '../src/lib/nativePushOptOut.ts';
 import { createFirstPushTokenDocument, normalizePushTokenIdentity, normalizePushAppVersion } from '../src/lib/pushTokenCreateFirst.ts';
 const A={uid:'synthetic-A',refreshToken:'synthetic-session-A',generation:3,epoch:7};
@@ -30,7 +30,7 @@ assert(callback.includes('const witness = currentPushSessionWitness();'));
 assert(callback.includes('syncGrantedPushTokenHealth(witness)'));
 assert(!callback.includes('registerToken(token)'),'cannot bind stale event token');
 const sync=native.slice(native.indexOf('async function syncGrantedPushTokenHealth('),native.indexOf('async function syncGrantedPushToken()'));
-assert(sync.includes('await messaging.getToken()'));
+assert(sync.includes('await queueNativePushOperation(() => isCurrentPushSession(witness) && !nativePushOptedOut(), () => messaging.getToken())'), 'registration must obtain token only inside the shared queue and current-owner guard');
 assert(sync.includes('if (!isCurrentPushSession(witness)) return denied;'));
 assert(sync.includes('await registerToken(token, witness);'));
 assert(
@@ -332,6 +332,9 @@ const syntheticSignOut = (plugin, resetGuard) => {
     isNativeFirebaseRuntime: () => true,
     capacitorPlugin: () => plugin,
     setPendingPushOwnershipReset: resetGuard.setPendingPushOwnershipReset,
+    pendingPushOwnershipReset: resetGuard.pendingPushOwnershipReset,
+    verifiedEmailBetaAuth: { readSessionIdentity: () => same, sessionGeneration: () => 3 },
+    matchesNativePushSession, queueNativePushOperation: createNativePushOperationQueue(),
     needsNativePushOwnershipReset,
     pushBackend: { unregisterDeviceToken: async () => undefined },
     bounded: (promise, _ms, fallback) => Promise.resolve(promise).catch(() => fallback),
@@ -392,6 +395,9 @@ const sharedContext = {
   isNativeFirebaseRuntime: () => true,
   capacitorPlugin: () => activeSyntheticPlugin,
   setPendingPushOwnershipReset: overlappingReset.setPendingPushOwnershipReset,
+  pendingPushOwnershipReset: overlappingReset.pendingPushOwnershipReset,
+  verifiedEmailBetaAuth: { readSessionIdentity: () => same, sessionGeneration: () => 3 },
+  matchesNativePushSession, queueNativePushOperation: createNativePushOperationQueue(),
   needsNativePushOwnershipReset,
   pushBackend: { unregisterDeviceToken: async () => undefined },
   bounded: (promise, _ms, fallback) => Promise.resolve(promise).catch(() => fallback),
@@ -413,8 +419,8 @@ activeSyntheticPlugin = {
   deleteToken: () => new Promise(resolve => { resolveSecondDelete = resolve; }),
 };
 const newLogout = sharedSignOut();
-for (let i = 0; i < 32 && !resolveSecondDelete; i++) await Promise.resolve();
-assert.equal(typeof resolveSecondDelete, 'function', 'new logout must start before stale completion');
+for (let i = 0; i < 32; i++) await Promise.resolve();
+assert.equal(resolveSecondDelete, undefined, 'new logout must NOT enter native deletion while old delete is unsettled');
 assert.equal(sharedContext.pushRegistrationEpoch, 2);
 resolveFirstDelete();
 const staleCleanup = await oldLogout;
@@ -423,6 +429,8 @@ assert.equal(staleCleanup.ownershipResetQueued, true,
   'stale successful deletion cannot clear the newer ownership reset');
 assert.equal(overlappingReset.pendingPushOwnershipReset(), true);
 assert.equal(overlappingStorage.entries.get('tutop.synthetic-push-reset'), '1');
+for (let i = 0; i < 64 && !resolveSecondDelete; i++) await Promise.resolve();
+assert.equal(typeof resolveSecondDelete, 'function', 'new logout must enter deletion after old native operation settles');
 resolveSecondDelete();
 const currentCleanup = await newLogout;
 assert.equal(currentCleanup.ownershipResetQueued, false);
@@ -444,12 +452,14 @@ const reconcileContext = {
   setPendingPushOwnershipReset: reconcileGuard.setPendingPushOwnershipReset,
   capacitorPlugin: () => currentReconcilePlugin,
   nativePushReconciliationStillPending,
+  queueNativePushOperation: createNativePushOperationQueue(),
   bounded: (promise, _ms, fallback) => Promise.resolve(promise).catch(() => fallback),
 };
 const runReconcile = vm.runInNewContext(
   reconcileReset + '\nreconcilePendingPushOwnershipReset', reconcileContext,
 );
 const obsoleteReconcile = runReconcile();
+for (let i = 0; i < 32 && !resolveOldReconcileDelete; i++) await Promise.resolve();
 assert.equal(typeof resolveOldReconcileDelete, 'function');
 reconcileContext.pushRegistrationEpoch += 1;
 reconcileGuard.setPendingPushOwnershipReset(true);
