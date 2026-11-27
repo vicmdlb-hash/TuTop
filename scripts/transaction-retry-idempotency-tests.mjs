@@ -42,6 +42,25 @@ const backend = fs.readFileSync('src/services/canonicalTransactionRetryBackend.t
 const bridge = fs.readFileSync('src/services/nationalBackendCanonicalBridge.ts', 'utf8');
 assert.match(backend, /tx-\$\{offer\.id\}/);
 assert.match(backend, /transactionMatchesOfferRetry/);
+
+// Source readback: the actual retry path must use the same strict RFC3339
+// expiry parser as initial offer creation. A malformed expiry is NOT fresh.
+const strictRetry = backend.slice(backend.indexOf('function assertNotExpired('),
+  backend.indexOf('\nasync function loadStoredOffer(', backend.indexOf('function assertNotExpired(')));
+assert.match(strictRetry, /assertFreshOfferExpiry\(offer\.expires_at\)/);
+assert.doesNotMatch(strictRetry, /Date\.parse\(/);
+const { assertFreshOfferExpiry, parseStrictIsoTimestamp } = await import('../src/lib/transactionRetry.ts');
+for (const value of [
+  null, '', '2026-02-31T18:00:00Z', '2026-09-05T25:01:00Z',
+  '2026-09-05T18:00:00', 'arbitrary',
+]) {
+  assert.equal(parseStrictIsoTimestamp(value), null);
+  assert.throws(() => assertFreshOfferExpiry(value, 1_800_000_000_000), /OFFER_EXPIRY_INVALID/);
+}
+assert.doesNotThrow(() => assertFreshOfferExpiry(undefined, 1_800_000_000_000));
+console.log('PASS transaction retry rejects invalid dates rather than assuming fresh offer');
+
+
 assert.match(backend, /throw originalError/);
 assert.match(bridge, /acceptOfferAndCreateTransaction: canonicalTransactionRetryBackend\.acceptOfferAndCreateTransaction/);
 assert.match(bridge, /createTransactionFromAcceptedOffer: canonicalTransactionRetryBackend\.createTransactionFromAcceptedOffer/);

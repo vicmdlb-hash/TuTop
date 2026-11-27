@@ -25,12 +25,22 @@ export type AccountDeletionDecision = {
   retention_days?: number;
 };
 
+const knownDeletionZones = new Set<DataZone>([
+  'public', 'private', 'verification', 'transactional', 'trust_safety', 'analytics',
+]);
+
 export function accountDeletionDecision(input: {
   zone: DataZone;
   active_dispute?: boolean;
   upheld_fraud_case?: boolean;
   legal_retention_required?: boolean;
 }): AccountDeletionDecision {
+  // Deserialized policy inputs can bypass the DataZone TypeScript union.
+  // An unknown collection zone requires review; never default to deletion.
+  if (!input || typeof input !== 'object' || Array.isArray(input)
+    || !knownDeletionZones.has(input.zone)) {
+    return { action: 'retain_temporarily', reason: 'unknown_data_zone_requires_review' };
+  }
   // Engineering may classify data as temporarily retained, but the actual
   // retention deadline is a legal/operational decision supplied externally.
   // Do not invent 30/60/90/180/365-day defaults here.
@@ -75,6 +85,10 @@ export function privateAccountFields() {
 }
 
 export function assertNoPrivateFieldsInPublicProfile(profile: Record<string, unknown>) {
-  const forbidden = ['telefono', 'phone', 'email', 'institutional_email', 'credential', 'image_data', 'exact_address', 'notification_tokens'];
-  return forbidden.every((key) => !(key in profile));
+  // A negative list cannot anticipate token aliases, camelCase, nested
+  // private fields or future schema changes. Public projection is an
+  // explicit allowlist: reject any unexpected field before serialization.
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return false;
+  const allowed = new Set<string>(publicProfileFields());
+  return Object.keys(profile).every((key) => allowed.has(key));
 }

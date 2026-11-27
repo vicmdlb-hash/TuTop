@@ -1,8 +1,9 @@
+import assert from 'node:assert/strict';
 import { verifiedContext } from './verified-context.mjs';
 import fs from 'node:fs';
 import test, { after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where, Timestamp, writeBatch } from 'firebase/firestore';
 
 // Rules are generated exactly once by the CI step before the emulator starts.
 // Test files must never rewrite the shared generated file because node --test runs files concurrently.
@@ -132,6 +133,84 @@ test('moderador institucional sólo puede leer y resolver reportes de su institu
   await assertFails(updateDoc(doc(uatx, 'reports/r-buap'), { status: 'reviewing', updated_at: now() }));
 });
 
+test('moderation_cases protege institución, kind, rol y finalización contra escrituras directas', async () => {
+  await seedBase();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'admins/moderator'), { active: true, role: 'moderator' });
+    const base = { target_type: 'product', target_id: 'item', status: 'open', priority: 'normal', created_at: now(), updated_at: now() };
+    await setDoc(doc(db, 'moderation_cases/uatx-product'), { ...base, kind: 'product', institution_id: 'uatx' });
+    await setDoc(doc(db, 'moderation_cases/buap-product'), { ...base, kind: 'product', institution_id: 'buap' });
+    await setDoc(doc(db, 'moderation_cases/uatx-credential'), { ...base, kind: 'credential', institution_id: 'uatx' });
+    await setDoc(doc(db, 'moderation_cases/global-appeal'), { ...base, kind: 'appeal' });
+    await setDoc(doc(db, 'moderation_cases/global-product'), { ...base, kind: 'product' });
+  });
+  const inst = verifiedContext(env, 'uatxmod').firestore();
+  const other = verifiedContext(env, 'buapmod').firestore();
+  const mod = verifiedContext(env, 'moderator').firestore();
+  const verify = verifiedContext(env, 'verify').firestore();
+  const support = verifiedContext(env, 'support').firestore();
+  const global = verifiedContext(env, 'global').firestore();
+  const legacy = verifiedContext(env, 'legacy').firestore();
+
+  // New cases must start open; no client may forge completed decisions at creation.
+  const newCase = {
+    kind: 'product', target_type: 'product', target_id: 'new-item',
+    institution_id: 'uatx', status: 'open', priority: 'normal',
+    created_at: now(), updated_at: now(),
+  };
+  await assertFails(setDoc(doc(global, 'moderation_cases/forged-resolved'), {
+    ...newCase, status: 'resolved',
+  }));
+  await assertFails(setDoc(doc(global, 'moderation_cases/forged-dismissed'), {
+    ...newCase, status: 'dismissed',
+  }));
+  await assertFails(setDoc(doc(global, 'moderation_cases/forged-reviewing'), {
+    ...newCase, status: 'reviewing',
+  }));
+  await assertSucceeds(setDoc(doc(global, 'moderation_cases/new-open'), newCase));
+
+  await assertSucceeds(getDoc(doc(inst, 'moderation_cases/uatx-product')));
+  await assertFails(getDoc(doc(inst, 'moderation_cases/buap-product')));
+  await assertSucceeds(getDoc(doc(other, 'moderation_cases/buap-product')));
+  await assertFails(getDoc(doc(legacy, 'moderation_cases/uatx-product')));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/buap-product'), { status: 'reviewing', updated_at: now() }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { kind: 'credential', status: 'reviewing', updated_at: now() }));
+  // A moderator must never rewrite case provenance or add unrecognized fields,
+  // even when changing a permitted status or case priority.
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), {
+    created_at: now(), status: 'reviewing', updated_at: now(),
+  }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), {
+    priority: 'high', created_at: now(), updated_at: now(),
+  }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), {
+    origin_trace: 'injected', status: 'reviewing', updated_at: now(),
+  }));
+  await assertFails(updateDoc(doc(global, 'moderation_cases/global-product'), {
+    institution_id: 'uatx', status: 'reviewing', updated_at: now(),
+  }));
+  await assertSucceeds(updateDoc(doc(global, 'moderation_cases/global-product'), {
+    status: 'reviewing', updated_at: now(),
+  }));
+  await assertSucceeds(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'reviewing', updated_at: now() }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'reviewing', updated_at: now() }));
+  await assertSucceeds(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'resolved', updated_at: now() }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-product'), { status: 'reviewing', updated_at: now() }));
+
+  // Queue visibility does not confer credential decision authority.
+  await assertSucceeds(getDoc(doc(mod, 'moderation_cases/uatx-credential')));
+  await assertFails(updateDoc(doc(mod, 'moderation_cases/uatx-credential'), { status: 'resolved', updated_at: now() }));
+  await assertFails(updateDoc(doc(inst, 'moderation_cases/uatx-credential'), { status: 'resolved', updated_at: now() }));
+  await assertSucceeds(getDoc(doc(verify, 'moderation_cases/uatx-credential')));
+  await assertSucceeds(updateDoc(doc(verify, 'moderation_cases/uatx-credential'), { status: 'resolved', updated_at: now() }));
+  await assertFails(getDoc(doc(verify, 'moderation_cases/uatx-product')));
+  await assertFails(getDoc(doc(support, 'moderation_cases/uatx-product')));
+  await assertSucceeds(getDoc(doc(support, 'moderation_cases/global-appeal')));
+  await assertSucceeds(updateDoc(doc(support, 'moderation_cases/global-appeal'), { status: 'dismissed', updated_at: now() }));
+  await assertSucceeds(getDoc(doc(global, 'moderation_cases/buap-product')));
+});
+
 test('trust safety conserva alcance global; admins sin rol válido fallan cerrado', async () => {
   await seedBase();
   const global = verifiedContext(env, 'global').firestore();
@@ -199,6 +278,40 @@ test('listing pendiente es privado hasta aprobación y moderación respeta insti
   await assertFails(getDoc(doc(buapMod, 'listings_v2/l1')));
   await assertSucceeds(updateDoc(doc(uatxMod, 'listings_v2/l1'), { moderation_status: 'approved', updated_at: now() }));
   await assertSucceeds(getDoc(doc(stranger, 'listings_v2/l1')));
+});
+
+test('consulta buyer sólo recupera anuncios activos aprobados; query sin filtro denegada', async () => {
+  await seedBase();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'listings_v2/query-approved'), {
+      ...canonicalListing(), moderation_status: 'approved',
+    });
+    await setDoc(doc(db, 'listings_v2/query-pending'), canonicalListing());
+  });
+
+  const viewer = verifiedContext(env, 'viewer').firestore();
+  const seller = verifiedContext(env, 'uatx-user').firestore();
+  const listings = collection(viewer, 'listings_v2');
+
+  // Rules are not filters: a broad buyer query cannot retrieve pending listings.
+  await assertFails(getDocs(listings));
+  await assertFails(getDocs(query(listings, where('moderation_status', '==', 'pending'))));
+
+  const approved = await assertSucceeds(getDocs(query(
+    listings,
+    where('moderation_status', '==', 'approved'),
+    where('status', '==', 'active'),
+  )));
+  assert.equal(approved.docs.length, 1, 'buyer query should return exactly one approved listing');
+  assert.equal(approved.docs[0].id, 'query-approved');
+
+  // A seller may access their own pending listings without broad public reads.
+  const mine = await assertSucceeds(getDocs(query(
+    collection(seller, 'listings_v2'),
+    where('seller_id', '==', 'uatx-user'),
+  )));
+  assert.equal(mine.docs.length, 2);
 });
 
 test('edición sensible del vendedor después de aprobación vuelve obligatoriamente a pending', async () => {

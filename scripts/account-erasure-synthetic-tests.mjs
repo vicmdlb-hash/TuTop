@@ -1,8 +1,39 @@
 import assert from 'node:assert/strict';
-import { buildAccountErasurePlan, residualRiskSummary } from './account-erasure-planner.mjs';
+import { buildAccountErasurePlan, reservationLockBlockers, residualRiskSummary, summarizeRetainedOperationalMatches, summarizeNestedChatResidualCounts } from './account-erasure-planner.mjs';
 
 const projectId = 'tutop-beta-vicmdlb-1356585881';
+
 const uid = 'synthetic-user-001';
+
+// Nested chat inventory must preserve total counts while omitting all
+// individual chat paths, UIDs and other report-controlled identifiers.
+const nestedSummary = summarizeNestedChatResidualCounts([
+  {nested:'messages',count:3}, {nested:'reads',count:2},
+  {nested:'confirmations',count:0}, {nested:'messages',count:4},
+  {nested:'reads',count:1},
+]);
+assert.deepEqual(nestedSummary, [
+  {collection:'chats/*/messages',field:'nested_subcollection_inventory',count:7},
+  {collection:'chats/*/reads',field:'nested_subcollection_inventory',count:3},
+]);
+const residualPlan = buildAccountErasurePlan({
+  projectId, uid, status:'pending', retained:nestedSummary,
+});
+assert.equal(residualPlan.retained_count,10);
+assert.equal(residualRiskSummary(residualPlan).safe_to_execute_in_staging,false);
+assert.equal(JSON.stringify(nestedSummary).includes(uid),false);
+for (const bad of [
+  null, 'unknown', {}, [{nested:'media',count:1}],
+  [{nested:'messages',count:-1}], [{nested:'reads',count:1.5}],
+  [{nested:'reads',count:'1'}], [{nested:'reads'}],
+]) {
+  assert.throws(()=>summarizeNestedChatResidualCounts(bad),/ERASURE_CHAT_NESTED_/);
+}
+assert.throws(()=>summarizeNestedChatResidualCounts([
+  {nested:'messages',count:Number.MAX_SAFE_INTEGER},
+  {nested:'messages',count:1},
+]),/ERASURE_CHAT_NESTED_TOTAL_INVALID/);
+console.log('PASS nested chat residuals grouped by type, no individual paths or subjects exported');
 
 const clean = buildAccountErasurePlan({
   projectId, uid, status: 'pending',
@@ -12,8 +43,38 @@ assert.equal(clean.mode, 'dry-run');
 assert.equal(clean.auth_delete_last, true);
 assert.equal(clean.blocked, false);
 assert.deepEqual(clean.delete_paths, [`user_private/${uid}`, `users/${uid}`, `wallets/${uid}`].sort());
-assert.equal(residualRiskSummary(clean).requires_retention_review, false);
-assert.equal(residualRiskSummary(clean).safe_to_execute_in_staging, true);
+assert.equal(residualRiskSummary(clean).requires_retention_review, true,
+  'zero observed retained records is not legal retention approval');
+assert.equal(residualRiskSummary(clean).legal_review_approved, false);
+assert.equal(residualRiskSummary(clean).residual_inventory_exhaustive, false);
+assert.equal(residualRiskSummary(clean).safe_to_execute_in_staging, false);
+assert.equal(residualRiskSummary(clean).admission_freeze_verified, false);
+
+// Terminal transaction alone cannot prove safe deletion while a residual
+// lock remains: lock inventory is scoped, deduped, and fail-closed.
+const mkLock = (path, buyer = uid, seller = 'seller-002') => ({
+  path, fields: { buyer_id: { stringValue: buyer }, seller_id: { stringValue: seller } },
+});
+const locks = reservationLockBlockers([
+  mkLock('listing_reservation_locks/listing-1'),
+  mkLock('listing_reservation_locks/listing-1'),
+  mkLock('listing_reservation_locks/listing-2', 'buyer-002', uid),
+], uid);
+assert.deepEqual(locks.map(item => item.id), ['listing-1', 'listing-2']);
+assert(locks.every(item => item.code === 'marketplace_reservation_lock_present'));
+const stillLocked = buildAccountErasurePlan({
+  projectId, uid, status: 'pending', blockers: locks,
+});
+assert.equal(stillLocked.blocked, true, 'residual locks must block erasure');
+assert.equal(residualRiskSummary(stillLocked).blocker_count, 2);
+for (const malformed of [
+  mkLock('chats/other'), mkLock('listing_reservation_locks/../oops'),
+  mkLock('listing_reservation_locks/listing-1', 'other-1', 'other-2'),
+  { path: 'listing_reservation_locks/listing-1', fields: {} }, null,
+]) {
+  assert.throws(() => reservationLockBlockers([malformed], uid), /ERASURE_LOCK_/);
+}
+assert.throws(() => reservationLockBlockers(null, uid), /ERASURE_LOCK_INVENTORY_INVALID/);
 
 const marketplace = buildAccountErasurePlan({
   projectId, uid, status: 'processing',
@@ -53,18 +114,125 @@ assert.equal(applied.mode, 'apply');
 assert.equal(applied.blocked, false);
 
 assert.throws(() => buildAccountErasurePlan({ projectId, uid: 'short', status: 'pending' }), /INVALID_UID/);
+for (const malformed of ['12345678/../admin', '../12345678', 'bad name_123', 'ümlaut123', '12345678\\n', { toString: () => '12345678' }]) {
+  assert.throws(() => buildAccountErasurePlan({ projectId, uid: malformed, status: 'pending' }), /INVALID_UID/);
+}
 assert.throws(() => buildAccountErasurePlan({ projectId, uid, status: 'completed' }), /UNPROCESSABLE_STATUS:completed/);
 assert.throws(() => buildAccountErasurePlan({ projectId, uid, status: 'rejected' }), /UNPROCESSABLE_STATUS:rejected/);
 
-const hostile = buildAccountErasurePlan({
+// An unsupported withdrawal is not a disposable document and must not vanish
+// from the erasure report: rejecting the whole plan prevents false clean proof.
+for (const bad of [
+  { collection: 'transactions_v2', path: 'transactions_v2/t1' },
+  { collection: 'audit_log', path: 'audit_log/a1' },
+  { collection: 'chats', path: 'chats/c1' },
+  null,
+  {},
+]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending',
+    withdrawDocs: [
+      { collection: 'listings_v2', path: 'listings_v2/l2' }, bad,
+    ],
+  }), /ERASURE_WITHDRAW_COLLECTION_INVALID/);
+}
+for (const malformedInventory of [null, 'not-an-array', {}]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending', withdrawDocs: malformedInventory,
+  }), /ERASURE_WITHDRAW_INVENTORY_INVALID/);
+}
+const deduplicatedWithdrawals = buildAccountErasurePlan({
   projectId, uid, status: 'pending',
   withdrawDocs: [
-    { collection: 'transactions_v2', path: 'transactions_v2/t1' },
-    { collection: 'audit_log', path: 'audit_log/a1' },
     { collection: 'listings_v2', path: 'listings_v2/l2' },
+    { collection: 'listings_v2', path: 'listings_v2/l2' },
+    { collection: 'demand_requests', path: 'demand_requests/q2' },
   ],
 });
-assert.deepEqual(hostile.withdraw_paths, ['listings_v2/l2'], 'planner must reject unsupported destructive withdrawal collections');
+assert.deepEqual(deduplicatedWithdrawals.withdraw_paths,
+  ['demand_requests/q2', 'listings_v2/l2'],
+  'duplicate withdrawals must not inflate mutation attempts or proof counts');
+
+// A trusted staging processor must never let a withdrawal's claimed
+// collection disguise a document in another collection or a nested path.
+for (const path of [
+  'users/another-user', 'transactions_v2/t1', 'audit_log/a1',
+  'listings_v2/../another', 'listings_v2/a/b', 'listings_v2/',
+  'listings_v2/with space', 123, null,
+]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending',
+    withdrawDocs: [{ collection: 'listings_v2', path }],
+  }), /ERASURE_WITHDRAW_PATH_INVALID/);
+}
+assert.throws(() => buildAccountErasurePlan({
+  projectId, uid, status: 'pending',
+  withdrawDocs: [{ collection: 'demand_requests', path: 'listings_v2/l1' }],
+}), /ERASURE_WITHDRAW_PATH_INVALID/);
+const validWithdraw = buildAccountErasurePlan({
+  projectId, uid, status: 'pending',
+  withdrawDocs: [{ collection: 'demand_requests', path: 'demand_requests/q2' }],
+});
+assert.deepEqual(validWithdraw.withdraw_paths, ['demand_requests/q2']);
+
+// A malformed blocker or retention count is not evidence of zero residual
+// data. It must stop a destructive execution instead of being filtered out.
+for (const badCount of [-1, 1.5, Infinity, NaN, '2', null]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending',
+    retained: [{ collection: 'transactions_v2', field: 'seller_id', count: badCount }],
+  }), /ERASURE_RETAINED_COUNT_INVALID/);
+}
+for (const badBlocker of [
+  null, {}, { code: 'active_marketplace_transaction', collection: 'transactions_v2' },
+  { code: 'active_marketplace_transaction', collection: 'transactions_v2', id: 123 },
+]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending', blockers: [badBlocker],
+  }), /ERASURE_BLOCKER_INVALID/);
+}
+assert.equal(buildAccountErasurePlan({
+  projectId, uid, status: 'pending',
+  retained: [{ collection: 'chats', field: 'buyer_id', count: 0 }],
+}).retained_count, 0);
+
+// Blocker identities are tuples, never colon-joined strings: a caller can
+// otherwise collide two distinct reasons and under-report residual risk.
+const collision = buildAccountErasurePlan({
+  projectId, uid, status: 'pending',
+  blockers: [
+    { code: 'active:marketplace', collection: 'transactions_v2', id: 'tx-3', status: 'reserved' },
+    { code: 'active', collection: 'marketplace:transactions_v2', id: 'tx-3', status: 'disputed' },
+    { code: 'active:marketplace', collection: 'transactions_v2', id: 'tx-3', status: 'reserved' },
+  ],
+});
+assert.equal(collision.blockers.length, 2, 'distinct blocker tuples must survive delimiter collision');
+assert.equal(residualRiskSummary(collision).blocker_count, 2);
+assert.equal(collision.blocked, true);
+
+// Safe individual integers do not imply a safe sum: overflow must fail closed.
+assert.throws(() => buildAccountErasurePlan({
+  projectId, uid, status: 'pending',
+  retained: [
+    { collection: 'transactions_v2', field: 'buyer_id', count: Number.MAX_SAFE_INTEGER },
+    { collection: 'chats', field: 'buyer_id', count: 1 },
+  ],
+}), /ERASURE_RETAINED_TOTAL_INVALID/);
+
+// The pure planner must not accidentally accept a production project or a
+// string/number masquerading as a boolean apply flag, regardless of caller.
+for (const wrongProject of ['other-project', 'tutop-3a4f7', '', null, undefined]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId: wrongProject, uid, status: 'pending',
+  }), /ERASURE_PROJECT_NOT_ALLOWED/);
+}
+for (const malformedApply of ['false', 'true', 0, 1, null, {}, []]) {
+  assert.throws(() => buildAccountErasurePlan({
+    projectId, uid, status: 'pending', apply: malformedApply,
+  }), /ERASURE_APPLY_FLAG_INVALID/);
+}
+assert.equal(buildAccountErasurePlan({projectId, uid, status: 'pending', apply: false}).mode, 'dry-run');
+assert.equal(buildAccountErasurePlan({projectId, uid, status: 'pending', apply: true}).mode, 'apply');
 
 console.log('PASS clean account dry-run plan');
 console.log('PASS marketplace account dedupe/withdraw/retain plan');
@@ -73,3 +241,41 @@ console.log('PASS apply mode remains explicit');
 console.log('PASS closed deletion requests cannot be processed');
 console.log('PASS transaction/audit collections cannot be injected as withdrawals');
 console.log('Synthetic account erasure scenarios: PASS');
+
+const uniqueRetained = summarizeRetainedOperationalMatches([
+  { collection: 'reports', field: 'created_by', docs: [{path:'reports/a'},{path:'reports/b'}] },
+  { collection: 'reports', field: 'target_id', docs: [{path:'reports/b'},{path:'reports/c'}] },
+  { collection: 'notification_outbox', field: 'recipient_uid', docs: [{path:'notification_outbox/n1'}] },
+  { collection: 'audit_log', field: 'target_id', docs: [{path:'audit_log/log1'},{path:'audit_log/log2'}] },
+  { collection: 'audit_log', field: 'admin_uid', docs: [{path:'audit_log/log2'}] },
+  { collection: 'reports', field: 'target_id', docs: [{path:'reports/c'}] },
+]);
+assert.deepEqual(uniqueRetained, [
+  {collection:'audit_log',field:'admin_uid|target_id',count:2},
+  {collection:'notification_outbox',field:'recipient_uid',count:1},
+  {collection:'reports',field:'created_by|target_id',count:3},
+], 'report records found through author and target references must be counted once');
+const uniquePlan = buildAccountErasurePlan({
+  projectId, uid, status:'pending', retained: uniqueRetained,
+});
+assert.equal(uniquePlan.retained_count,6,'multi-field audit and report matches must not overcount retained records');
+for (const invalid of [
+  [{collection:'reports',field:'target_id',docs:[{path:'users/victim'}]}],
+  [{collection:'reports',field:'target_id',docs:[{path:'reports/a/child/b'}]}],
+  [{collection:'reports',field:'target_id',docs:[{}]}],
+  [{collection:'reports',field:'target_id',docs:null}],
+]) assert.throws(()=>summarizeRetainedOperationalMatches(invalid),
+  /ERASURE_RETAINED_MATCH/, 'malformed retained source must fail closed');
+const onlyObservedField = summarizeRetainedOperationalMatches([
+  { collection: 'audit_log', field: 'target_id', docs: [{ path: 'audit_log/one' }] },
+  { collection: 'audit_log', field: 'admin_uid', docs: [] },
+]);
+assert.deepEqual(onlyObservedField, [
+  { collection: 'audit_log', field: 'target_id', count: 1 },
+], 'an empty query must not be reported as an observed retention reference');
+assert.deepEqual(summarizeRetainedOperationalMatches([
+  { collection: 'audit_log', field: 'target_id', docs: [] },
+  { collection: 'audit_log', field: 'admin_uid', docs: [] },
+]), [], 'empty retained sources must not become false matches');
+console.log('PASS retained provenance reports only fields with observed matching documents');
+console.log('PASS retained audit target/admin and report author/target references are unique by document path');

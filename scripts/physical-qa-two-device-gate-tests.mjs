@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { validateTwoDeviceEvidence } from './physical-qa-two-device-gate.mjs';
+import { validateTwoDeviceEvidence, parseCanonicalEvidenceUtc } from './physical-qa-two-device-gate.mjs';
 
 const historical = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_CANDIDATE_0.9.json', 'utf8'));
 const exactSha = String(historical.build_commit_sha || '1'.repeat(40));
@@ -9,6 +9,8 @@ const candidate = {
   physical_release_candidate: true,
   candidate_status: 'active_exact_head',
   replacement_required: false,
+  // Only a synthetic signed candidate may pass the independent FCM fixture gate.
+  apk_cert_sha256: 'c'.repeat(64),
   build_commit_sha: exactSha,
   gate_commit_sha: exactSha,
   staging_smoke_commit_sha: exactSha,
@@ -31,14 +33,17 @@ const expected = {
 };
 const now = Date.parse('2026-09-07T04:30:00.000Z');
 const allPass = Object.fromEntries([
-  'install_boot','auth_identity','reinstall_identity','keyboard','android_back','lifecycle','safe_areas','rotation',
+  'install_boot','second_account_email_verification','auth_identity','reinstall_identity','topi_real_ai',
+  'notification_permission_activation','notification_token_registered','fcm_two_device_receive',
+  'fcm_two_device_tap_deep_link','account_switch_fcm_isolation',
+  'keyboard','android_back','lifecycle','safe_areas','rotation',
   'offline_reconnect','push_foreground','push_background','push_cold_start','push_deep_link','app_check_token_observed',
 ].map((key) => [key, 'pass']));
 
 function fcmFixture(slot, session, startedAt, completedAt) {
   return {
     schema: 'tutop.fcm-physical-fixture.v1',
-    candidate: { artifact_id: candidate.artifact_id, build_run_id: candidate.build_run_id, build_tree_sha: candidate.build_tree_sha, apk_sha256: candidate.apk_sha256 },
+    candidate: { artifact_id: candidate.artifact_id, build_run_id: candidate.build_run_id, build_commit_sha: candidate.build_commit_sha, build_tree_sha: candidate.build_tree_sha, apk_sha256: candidate.apk_sha256, apk_cert_sha256: candidate.apk_cert_sha256 },
     device_slot: slot,
     evidence_session_id: session,
     evidence_started_at: startedAt,
@@ -123,6 +128,21 @@ function bundle(slot, model, viewport, session, offset = 0) {
 const a = bundle('A', 'Model-A', '412x915', 'session-device-a');
 const b = bundle('B', 'Model-B', '360x800', 'session-device-b', -1_000);
 assert.equal(validateTwoDeviceEvidence([a, b], now, candidate).pass, true);
+const unsignedFixture = structuredClone(a);
+delete unsignedFixture.fcm_fixture_report.candidate.apk_cert_sha256;
+assert.equal(validateTwoDeviceEvidence([unsignedFixture, b], now, candidate).pass, false,
+  'FCM two-device evidence must include the exact signing certificate');
+const wrongSourceFixture = structuredClone(a);
+wrongSourceFixture.fcm_fixture_report.candidate.build_commit_sha = 'f'.repeat(40);
+assert.equal(validateTwoDeviceEvidence([wrongSourceFixture, b], now, candidate).pass, false,
+  'FCM two-device evidence must match the exact build commit');
+for (const mandatory of ["second_account_email_verification","topi_real_ai","notification_permission_activation","notification_token_registered","fcm_two_device_receive","fcm_two_device_tap_deep_link","account_switch_fcm_isolation"]) {
+  const omitted = structuredClone(a);
+  delete omitted.required_cases[mandatory];
+  assert.equal(validateTwoDeviceEvidence([omitted, b], now, candidate).pass, false,
+    `Device A missing ${mandatory} must remain blocked`);
+}
+
 
 assert.equal(validateTwoDeviceEvidence([a, { ...b, device: { ...b.device, model: a.device.model, viewport: a.device.viewport } }], now, candidate).pass, false);
 assert.equal(validateTwoDeviceEvidence([a, { ...b, evidence_session_id: a.evidence_session_id }], now, candidate).pass, false);
@@ -165,6 +185,40 @@ assert.equal(validateTwoDeviceEvidence([a, wrongGateBinding], now, candidate).pa
 const invalidCandidate = { ...candidate, staging_smoke_commit_sha: '0'.repeat(40) };
 assert.equal(validateTwoDeviceEvidence([a, b], now, invalidCandidate).pass, false);
 
+
+// Gregorian rollovers and non-UTC evidence timestamps must fail closed.
+for (const badTime of [
+  '2026-02-31T04:29:00Z',
+  '2026-09-07T04:29:00+00:00',
+  '2026-09-07T04:29:00',
+  '2026-09-07',
+  '2026-09-07T04:29:00Z ',
+]) {
+  assert.equal(Number.isNaN(parseCanonicalEvidenceUtc(badTime)), true,
+    'R6 must reject invalid/noncanonical timestamp: ' + badTime);
+}
+assert.equal(parseCanonicalEvidenceUtc('2026-09-07T04:29:00.000Z'),
+  Date.parse('2026-09-07T04:29:00.000Z'));
+
+// Before this fix the offsets below parsed within the existing session;
+// the other R6 evidence must not mask that inconsistent acceptance.
+const nonCanonicalCases = [
+  ['screenshot', copy => { copy.screenshots[0].captured_at =
+    copy.screenshots[0].captured_at.replace(/Z$/, '+00:00'); }],
+  ['per-device App Check', copy => { copy.app_check_evidence.observed_at =
+    copy.app_check_evidence.observed_at.replace(/Z$/, '+00:00'); }],
+  ['diagnostic event', copy => { copy.diagnostic_report.events[0].at =
+    copy.diagnostic_report.events[0].at.replace(/Z$/, '+00:00'); }],
+  ['session', copy => { copy.evidence_started_at =
+    copy.evidence_started_at.replace(/Z$/, '+00:00'); }],
+];
+for (const [name, modify] of nonCanonicalCases) {
+  const invalid = structuredClone(a);
+  modify(invalid);
+  assert.equal(validateTwoDeviceEvidence([invalid, b], now, candidate).pass, false,
+    'R6 must reject noncanonical UTC in ' + name);
+}
+
 const templateA = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_DEVICE_A_0.9.json', 'utf8'));
 const templateB = JSON.parse(fs.readFileSync('docs/PHYSICAL_QA_DEVICE_B_0.9.json', 'utf8'));
 assert.equal(validateTwoDeviceEvidence([templateA, templateB], now, candidate).pass, false);
@@ -174,4 +228,5 @@ console.log('PASS visual evidence, FCM session/window and per-device App Check b
 console.log('PASS evidence is bound to exact gate/staging/build candidate identity');
 console.log('PASS reversed, stale and out-of-order evidence sessions fail closed');
 console.log('PASS Device A/B templates remain blocked until real evidence exists');
+console.log('PASS impossible Gregorian and noncanonical UTC timestamps fail closed');
 console.log('Two-device Physical QA contract: PASS');

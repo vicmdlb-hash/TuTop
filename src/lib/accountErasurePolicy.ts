@@ -15,6 +15,7 @@ export const ACCOUNT_ERASURE_POLICY: ErasureCollectionRule[] = [
   { collection: 'notification_receipts', owner_field: 'owner_uid', disposition: 'delete', reason: 'Estado personal de lectura.' },
   { collection: 'favorites', owner_field: 'uid', disposition: 'delete', reason: 'Preferencia personal.' },
   { collection: 'saved_searches', owner_field: 'owner_uid', disposition: 'delete', reason: 'Preferencia/búsqueda personal.' },
+  { collection: 'user_blocks/*/targets', owner_field: 'blocker_uid|blocked_uid', disposition: 'delete', reason: 'Borrado paginado tanto de listas propias como de referencias a cuentas eliminadas en listas ajenas.' },
   { collection: 'wallets', disposition: 'delete', reason: 'Saldo interno UCoins vinculado a una cuenta eliminada.' },
   { collection: 'wallet_transactions', owner_field: 'user_id', disposition: 'delete', reason: 'Ledger beta interno sin valor monetario; no se conserva como identidad activa.' },
   { collection: 'verificationRequests', disposition: 'delete', reason: 'Evidencia privada de verificación cuando no existe retención activa.' },

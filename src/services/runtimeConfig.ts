@@ -65,6 +65,12 @@ export function assertRuntimeEnvironment(config: FirebaseRuntimeConfig) {
 
   const environment = expectedEnvironment();
   if (environment === 'staging' && config.projectId !== STAGING_PROJECT_ID) throw new Error('V2_STAGING_PROJECT_MISMATCH');
+  // The Android bundle must not pair a staging projectId with historical V1 client credentials.
+  // A mismatched API key may sign up against a different Firebase Auth project than Firestore.
+  if (environment === 'staging' &&
+      (!config.appId || config.appId === BUILT_IN_CONFIG.appId || config.apiKey === BUILT_IN_CONFIG.apiKey)) {
+    throw new Error('V2_STAGING_CLIENT_IDENTITY_MISMATCH');
+  }
   if (environment === 'production' && /(beta|staging|stage|dev|test|sandbox)/i.test(config.projectId)) throw new Error('V2_PRODUCTION_PROJECT_MISMATCH');
   if (environment && !['development', 'staging', 'production'].includes(environment)) throw new Error('INVALID_TUTOP_ENVIRONMENT');
   return config;

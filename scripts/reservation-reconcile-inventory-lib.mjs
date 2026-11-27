@@ -1,0 +1,58 @@
+// Credential-free preflight: a limit-sized runQuery result cannot prove
+// complete inventory. Use cursor pagination for full pages; never act on incomplete scans.
+const PROJECT = 'tutop-beta-vicmdlb-1356585881';
+const COLLECTIONS = new Set(['transactions_v2', 'listing_reservation_locks']);
+
+export function validateReconciliationInventoryPage(rows, { projectId, collectionId, limit } = {}) {
+  if (projectId !== PROJECT || !COLLECTIONS.has(collectionId)) throw new Error('RECONCILE_INVENTORY_SCOPE_INVALID');
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new Error('RECONCILE_INVENTORY_LIMIT_INVALID');
+  if (!Array.isArray(rows)) throw new Error('RECONCILE_INVENTORY_RESPONSE_INVALID');
+  const prefix = `projects/${projectId}/databases/(default)/documents/${collectionId}/`;
+  const seen = new Set();
+  const documents = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)
+        || Object.hasOwn(row, 'error')) throw new Error('RECONCILE_INVENTORY_ROW_INVALID');
+    // Cursor inventories must refuse Firestore offset omissions, even when
+    // the same response also contains an apparently valid document.
+    if (Object.hasOwn(row, 'skippedResults')
+        && (!Number.isSafeInteger(row.skippedResults) || row.skippedResults !== 0)) {
+      throw new Error('RECONCILE_INVENTORY_SKIPPED_RESULTS_UNSAFE');
+    }
+    if (!Object.hasOwn(row, 'document')) {
+      // Do not infer an exhaustive reservation scan from skippedResults=0
+      // or explainMetrics alone. Firestore's documented empty runQuery reply
+      // has a readTime; done=true is an explicit completion marker.
+      const hasReadTime = Object.hasOwn(row, 'readTime');
+      const validReadTime = hasReadTime && typeof row.readTime === 'string'
+        && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(row.readTime);
+      if ((hasReadTime && !validReadTime)
+          || (Object.hasOwn(row, 'done') && typeof row.done !== 'boolean')
+          || (!validReadTime && row.done !== true)) {
+        throw new Error('RECONCILE_INVENTORY_METADATA_INVALID');
+      }
+      continue;
+    }
+    const document = row.document;
+    const name = document?.name;
+    const id = typeof name === 'string' && name.startsWith(prefix) ? name.slice(prefix.length) : '';
+    if (!id || id.includes('/') || /[\u0000-\u001F\u007F]/.test(id)) throw new Error('RECONCILE_INVENTORY_PATH_INVALID');
+    // A malformed field map must not be decoded as {} by the reconciliation
+    // runner and misrepresented as a valid transactional inventory record.
+    if (!document.fields || typeof document.fields !== 'object'
+        || Array.isArray(document.fields)) throw new Error('RECONCILE_INVENTORY_FIELDS_INVALID');
+    if (seen.has(name)) throw new Error('RECONCILE_INVENTORY_DUPLICATE_DOCUMENT');
+    seen.add(name);
+    documents.push(document);
+  }
+  if (documents.length > limit) throw new Error('RECONCILE_INVENTORY_OVERFULL_PAGE');
+  return documents;
+}
+
+// Single-page callers may not claim completeness when the limit is reached.
+// The reservation runner uses validateReconciliationInventoryPage with cursors.
+export function assertCompleteReconciliationPage(rows, options = {}) {
+  const documents = validateReconciliationInventoryPage(rows, options);
+  if (documents.length >= options.limit) throw new Error('RECONCILE_INVENTORY_INCOMPLETE');
+  return documents;
+}

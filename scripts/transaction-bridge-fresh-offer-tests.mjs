@@ -22,7 +22,12 @@ assert.match(offers, /assertOfferNotExpired/);
 
 assert.match(retry, /getDocument<any>\(`offers\/\$\{expected\.id\}`\)/);
 assert.match(retry, /OFFER_MISMATCH/);
-assert.match(retry, /OFFER_EXPIRED/);
+// The retry backend now delegates expiry validation to the shared strict
+// parser. Do not require an obsolete inlined error string in that backend.
+assert.match(retry, /assertFreshOfferExpiry\(offer\.expires_at\)/);
+const strictExpiry = fs.readFileSync('src/lib/transactionRetry.ts', 'utf8');
+assert.match(strictExpiry, /OFFER_EXPIRY_INVALID/);
+assert.match(strictExpiry, /OFFER_EXPIRED/);
 assert.match(retry, /loadStoredOffer\(offer, 'pending'\)/);
 assert.match(retry, /loadStoredOffer\(offer, 'accepted'\)/);
 

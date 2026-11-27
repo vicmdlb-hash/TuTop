@@ -7,22 +7,29 @@ if (nationalSchemaEnabled()) {
     markNotificationRead: (notificationId: string) => {
       const state = useAppStore.getState();
       const notification = state.notifications.find((item) => item.id === notificationId);
+      // UI and native events may supply stale IDs from a previous account.
+      // Do not request a remote receipt for an ID absent from the active store.
+      if (!notification) return;
       useAppStore.setState((current) => ({
         notifications: current.notifications.map((item) => item.id === notificationId ? { ...item, read: true } : item),
       }));
       if (notification?.kind === 'message' && notification.chat_id) useAppStore.getState().markChatRead(notification.chat_id);
-      void pushBackend.markNotificationRead(notificationId).catch((error) => {
-        console.warn('[TuTop notification receipt]', error);
+      void pushBackend.markNotificationRead(notificationId).catch(() => {
+        // Remote errors can contain account IDs, request URLs or credentials.
+        // Never export the untrusted exception into console/QA telemetry.
+        console.warn('[TuTop notification receipt] sync failed');
       });
     },
     markAllNotificationsRead: () => {
       const state = useAppStore.getState();
       const unread = state.notifications.filter((item) => !item.read);
+      // Avoid an empty remote receipt request on already-read notifications.
+      if (!unread.length) return;
       const chatIds = [...new Set(unread.filter((item) => item.kind === 'message' && item.chat_id).map((item) => item.chat_id as string))];
       useAppStore.setState((current) => ({ notifications: current.notifications.map((item) => ({ ...item, read: true })) }));
       for (const chatId of chatIds) useAppStore.getState().markChatRead(chatId);
-      void pushBackend.markAllNotificationsRead(unread.map((item) => item.id)).catch((error) => {
-        console.warn('[TuTop notification receipts]', error);
+      void pushBackend.markAllNotificationsRead(unread.map((item) => item.id)).catch(() => {
+        console.warn('[TuTop notification receipts] sync failed');
       });
     },
   });

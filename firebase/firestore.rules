@@ -310,7 +310,7 @@ service cloud.firestore {
       allow create: if signedIn() && notSuspended()
         && request.resource.data.keys().hasOnly(['created_by','target_type','target_id','reason','status','created_at','updated_at'])
         && request.resource.data.created_by == request.auth.uid
-        && request.resource.data.target_type in ['product','user','chat']
+        && request.resource.data.target_type in ['product','user','chat','ai_response']
         && request.resource.data.target_id is string && request.resource.data.target_id.size() >= 2 && request.resource.data.target_id.size() <= 180
         && request.resource.data.reason is string && request.resource.data.reason.size() >= 3 && request.resource.data.reason.size() <= 500
         && (

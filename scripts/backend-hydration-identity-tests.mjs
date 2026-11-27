@@ -1,0 +1,529 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {isCurrentBackendHydration,isLiveAccountSnapshot} from '../src/lib/backendHydrationIdentity.ts';
+const A='synthetic-a', B='synthetic-b';
+assert.equal(isCurrentBackendHydration(A,A,A,3,3),true);
+for(const [expected,live,snapshot,startEpoch,currentEpoch] of [
+ [A,B,A,3,3],[A,A,B,3,3],[A,null,A,3,3],[A,A,A,3,4],
+ ['',A,A,3,3],[A,A,undefined,3,3],[A,A,A,-1,0],
+]) assert.equal(isCurrentBackendHydration(expected,live,snapshot,startEpoch,currentEpoch),false);
+// Real shared UID predicate: bootstrap A is allowed with A's live token;
+// A's completed request must never overwrite B or resurrect signed-out A.
+assert.equal(isLiveAccountSnapshot('',A,A),true);
+assert.equal(isLiveAccountSnapshot(A,A,A),true);
+for(const [storeUid,sessionUid,snapshotUid] of [
+  [B,B,A], [B,A,A], [A,B,B], [A,A,B],
+  ['',null,A], ['',undefined,A], [A,null,A],
+  ['',A,B], ['',A,''], ['', '',A],
+]) assert.equal(isLiveAccountSnapshot(storeUid,sessionUid,snapshotUid),false,
+  'stale or unauthenticated snapshot must not overwrite another account');
+const appStore = fs.readFileSync('src/store/useAppStore.ts','utf8');
+assert(appStore.includes("import { isLiveAccountSnapshot } from '../lib/backendHydrationIdentity';"));
+assert(appStore.includes('if (!isLiveAccountSnapshot(state.user.id, onlineBackend.session?.uid, snapshot.user.id)) return state;'));
+// Every optimistic rollback has an originating account; late A failures
+// cannot mutate the B view for a shared listing/chat on one device.
+for (const [start,end] of [
+  ['  updateProduct: (id, updates) => {','  removeProduct:'],
+  ['  sendMessage: (chatId, text) => {','  sendImageMessage:'],
+  ['  sendImageMessage: (chatId, imageUrl) => {','  markChatRead:'],
+  ['  markChatRead: (chatId) => {','  confirmDelivery:'],
+]) {
+  const section = appStore.split(start)[1]?.split(end)[0];
+  assert(section, `missing mutation ${start}`);
+  assert(section.includes('const actorUid = '), `missing actor snapshot ${start}`);
+  assert(section.includes('if (get().user.id !== actorUid) return;'), `unguarded late error ${start}`);
+  assert(section.indexOf('if (get().user.id !== actorUid) return;') < section.indexOf('reportSyncError(set, error);'),
+    `late error must not render into another account ${start}`);
+}
+// The legacy/base store is used outside the V2 connected bridge.
+// A failed old send must remove only its message, not restore the prior chat object.
+for(const [start,end] of [
+  ['  sendMessage: (chatId, text) => {','  sendImageMessage:'],
+  ['  sendImageMessage: (chatId, imageUrl) => {','  markChatRead:'],
+]) {
+  const section=appStore.split(start)[1]?.split(end)[0];
+  assert(section?.includes('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid'));
+  assert(section.includes('mensajes: item.mensajes.filter((candidate) => candidate.id !== message.id)'));
+  assert(!section.includes('item.id === chatId ? chat : item'), 'whole-chat rollback can lose later messages');
+}
+// An old failed mark-read must not replace the chat object or newer messages.
+const markRead=appStore.split('  markChatRead: (chatId) => {')[1]?.split('  confirmDelivery:')[0];
+assert(markRead);
+assert(markRead.includes('const mutationKey = `${actorUid}:${chatId}`;'));
+assert(markRead.includes('chatReadMutationVersion.get(mutationKey) !== version'));
+assert(markRead.includes('{ ...chat, sin_leer: before.sin_leer }'));
+assert(!markRead.includes('chat.id === chatId ? before : chat'), 'whole-chat read rollback discards new messages');
+// Confirmation failures must not resurrect an older chat object or another account.
+const confirm=appStore.split('  confirmDelivery: (chatId) => {')[1]?.split('  submitReview:')[0];
+assert(confirm?.includes('const actorUid = state.user.id;'));
+assert(confirm.includes('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid'));
+assert(confirm.includes('if (get().user.id !== actorUid) return;'));
+assert(confirm.includes('item.confirmaciones_entrega === confirmations'));
+assert(confirm.includes('entrega_confirmada: chat.entrega_confirmada'));
+assert(!confirm.includes('item.id === chatId ? chat : item'), 'failed confirmation must preserve later chat messages');
+// Reviews must be participant-only and stale A errors must never affect B.
+const review=appStore.split('  submitReview: (chatId, calificacion, comentario) => {')[1]?.split('  bidProduct:')[0];
+assert(review?.includes('const actorUid = state.user.id;'));
+assert(review.includes('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid'));
+assert(review.includes('if (get().user.id !== actorUid) return;'));
+assert(review.includes('current.reviews.filter((item) => item.id !== review.id)'));
+// Creating a product/chat in A cannot display its async error or rollback B.
+for(const [start,end] of [
+  ['  addProduct: (product) => {','  publishProduct:'],
+  ['  addChat: (chat) => {','  updateChat:'],
+  ['  contactProduct: (productId) => {','  openChat:'],
+]) {
+  const section=appStore.split(start)[1]?.split(end)[0];
+  assert(section?.includes('const actorUid = '), `actor missing ${start}`);
+  assert(section.includes('if (get().user.id !== actorUid) return;'), `late A callback is unsafe: ${start}`);
+}
+const addChat=appStore.split('  addChat: (chat) => {')[1]?.split('  updateChat:')[0];
+assert(addChat.includes('chat.comprador_id !== actorUid && chat.vendedor_id !== actorUid'));
+const contact=appStore.split('  contactProduct: (productId) => {')[1]?.split('  openChat:')[0];
+assert(contact.includes('if (!actorUid || !product || product.vendedor_id === actorUid'));
+// Failed product mutations must never roll back a newer edit on the same listing.
+const productEdit=appStore.split('  updateProduct: (id, updates) => {')[1]?.split('  removeProduct:')[0];
+assert(appStore.includes('const productMutationVersion = new Map<string, number>();'));
+assert(productEdit?.includes('const mutationKey = `${actorUid}:${id}`;'));
+assert(productEdit.includes('productMutationVersion.set(mutationKey, version)'));
+assert(productEdit.includes('if (get().user.id !== actorUid) return;'));
+assert(productEdit.includes('if (productMutationVersion.get(mutationKey) !== version) return;'));
+assert(productEdit.indexOf('productMutationVersion.get(mutationKey) !== version') < productEdit.indexOf('if (before) set('));
+// Late publish/bid responses may settle, but must not show A's error on B.
+for(const [start,end] of [
+  ['  publishProduct: async (product, bidAmount = 0) => {','  updateProduct:'],
+  ['  bidProduct: async (productId, amount) => {','  toggleFavorite:'],
+]) {
+  const section=appStore.split(start)[1]?.split(end)[0];
+  assert(section?.includes('const actorUid = '), `missing actor ${start}`);
+  assert(section.includes('if (get().user.id === actorUid) reportSyncError(set, error);'), `late error after session switch ${start}`);
+  assert(section.includes('return get().user.id === actorUid;'), `late success after session switch ${start}`);
+}
+// A's successful callback may resolve after B signs in. Prevent the callback
+// from loading (and then applying) B's snapshot, even if hydrateOnline itself
+// checks that the returned snapshot belongs to the current session.
+for(const [start,end] of [
+  ['  publishProduct: async (product, bidAmount = 0) => {','  updateProduct:'],
+  ['  sendMessage: (chatId, text) => {','  sendImageMessage:'],
+  ['  sendImageMessage: (chatId, imageUrl) => {','  markChatRead:'],
+  ['  confirmDelivery: (chatId) => {','  submitReview:'],
+  ['  submitReview: (chatId, calificacion, comentario) => {','  bidProduct:'],
+  ['  bidProduct: async (productId, amount) => {','  toggleFavorite:'],
+]) {
+  const section=appStore.split(start)[1]?.split(end)[0];
+  assert(section, `missing async reload ${start}`);
+  const reload=section.indexOf('const snapshot = await onlineBackend.loadSnapshot();');
+  const hydrate=section.indexOf('get().hydrateOnline(snapshot);',reload);
+  assert(reload>=0 && hydrate>reload, `missing guarded reload ${start}`);
+  assert(section.lastIndexOf('if (get().user.id !== actorUid)',reload)>=0, `old account can reload B ${start}`);
+  assert(section.slice(reload,hydrate).includes('if (get().user.id !== actorUid) return'), `old account can hydrate B ${start}`);
+}
+// Regression for a silent Firebase UID replacement while account A still
+// occupies the store. Without clearing A first, the store correctly rejects
+// B's snapshot, but BackendGate could keep rendering A after authenticating B.
+assert.equal(isLiveAccountSnapshot(A,B,B), false, 'old A view must reject B snapshot');
+assert.equal(isLiveAccountSnapshot('',B,B), true, 'empty store may safely hydrate verified B');
+const gateSource = fs.readFileSync('src/components/BackendGate.tsx', 'utf8');
+const replacementStart = gateSource.indexOf("expectedUid = onlineBackend.session?.uid || '';");
+const replacementEnd = gateSource.indexOf('const localIdentity = verifiedEmailBetaAuth.readLocalStatus();', replacementStart);
+assert(replacementStart >= 0 && replacementEnd > replacementStart, 'UID handoff guard must run before Auth migration and hydration');
+const handoff = gateSource.slice(replacementStart, replacementEnd);
+assert.match(handoff, /if \(renderedUid && renderedUid !== expectedUid\) \{\s*clearOnline\(\);/);
+assert.match(handoff, /clearOnline\(\);\s*setLoading\(true\);\s*setAuthenticated\(false\);/);
+const syncBody = gateSource.slice(replacementStart, gateSource.indexOf('hydrateOnline(snapshot);', replacementEnd));
+assert(syncBody.indexOf('const renderedUid = useAppStore.getState().user.id;') >= 0);
+assert(syncBody.indexOf('clearOnline();', syncBody.indexOf('const renderedUid')) >= 0,
+  'B snapshot must never be rendered on top of A state');
+assert.equal(isLiveAccountSnapshot(A,A,A), true, 'same-UID refresh must keep its data');
+console.log('PASS silent A->B Auth replacement clears A UI before B hydration; same-UID refresh preserved');
+
+const source=fs.readFileSync('src/components/BackendGate.tsx','utf8');
+assert.match(source,/const expectedEpoch = authEpoch\.current/);
+assert.match(source,/const snapshot = await onlineBackend\.loadSnapshot\(\);[\s\S]*if \(!stillCurrent\(snapshot\.user\.id\)\) return;[\s\S]*hydrateOnline\(snapshot\)/);
+assert.match(source,/const verified = await verifiedEmailBetaAuth\.refreshVerificationStatus\(\);\s*if \(!stillCurrent\(expectedUid\)\) return;/);
+assert.match(source,/authEpoch\.current \+= 1;[\s\S]*const currentUid/);
+assert.match(source,/syncQueued\.current = true/);
+assert.match(source,/syncQueued\.current = false;[\s\S]*Promise\.resolve\(\)\.then\(\(\) => sync\(true\)\)/);
+
+// Backend-level account isolation, independent from mounted React hydrators.
+// All Firestore read results and seller-name lookups may outlive logout,
+// A→B, and same UID re-login with a new credential witness.
+const listingBackend = fs.readFileSync('src/services/canonicalListingsBackend.ts','utf8');
+const sessionHelper = listingBackend.split('function assertListingReadSessionCurrent(')[1]?.split('function hasValue(',1)[0];
+assert(sessionHelper?.includes('assertFirebaseRequestSessionCurrent(requestSession, client.currentSession,'),
+  'listing read helper must check the original and current request session');
+assert(sessionHelper.includes('new FirebaseRestClient(getFirebaseConfig()).currentSession'),
+  'listing read helper must also check persisted current session');
+const readSections = [
+  ['loadMine(', 'loadMarketplaceProducts(', 'const documents = await client.runQuery', 'return documents;'],
+  ['loadMarketplaceProducts(', 'loadNearbyProducts(', 'const products = await productsForDocuments', 'return products;'],
+  ['loadNearbyProducts(', 'updateProduct(', 'const products = await productsForDocuments', 'nearbyCache.set(cacheKey'],
+];
+for (const [start, end, awaited, completion] of readSections) {
+  const section = listingBackend.split('  async ' + start)[1]?.split('  async ' + end)[0];
+  assert(section?.includes('const requestSession = client.currentSession;'), 'missing read session witness: ' + start);
+  const awaitIndex = section.indexOf(awaited);
+  const checkIndex = section.indexOf('assertListingReadSessionCurrent(client, requestSession);');
+  const completeIndex = section.indexOf(completion);
+  assert(awaitIndex >= 0 && checkIndex > awaitIndex && completeIndex > checkIndex,
+    'stale listing data must be rejected after the final await and before return/cache: ' + start);
+}
+
+console.log('PASS stale Firebase snapshot A cannot hydrate UI for B or after logout; queued B retry is not silently dropped');
+
+
+// SYNTHETIC LISTING READ-SESSION INTEGRATION. Execute actual compiled backend
+// against deferred Firestore reads, without Firebase network or real identities.
+const { compileTypescriptFixture } = await import('./typescript-fixture-compiler.mjs');
+const { runInNewContext } = await import('node:vm');
+const { assertFirebaseRequestSessionCurrent, sameFirebaseSession } =
+  await import('../src/lib/firebaseSharedSessionGuard.ts');
+const compiledListings = compileTypescriptFixture('src/services/canonicalListingsBackend.ts');
+const fakeA = { uid: 'synthetic-a', idToken: 'synthetic-a-token', refreshToken: 'synthetic-a-refresh' };
+const fakeB = { uid: 'synthetic-b', idToken: 'synthetic-b-token', refreshToken: 'synthetic-b-refresh' };
+const fakeRelogin = { ...fakeA, idToken: 'synthetic-a-token-new', refreshToken: 'synthetic-a-refresh-new' };
+let liveSession = fakeA;
+const pendingListingReads = [];
+class SyntheticFirestoreClient {
+  constructor() { this.currentSession = liveSession; }
+  runQuery() { return new Promise((resolve) => pendingListingReads.push(resolve)); }
+}
+const deps = {
+  '../lib/marketplaceGovernance.ts': {
+    categorySafetyRequirements: () => ({ required: [], forbiddenPublic: [] }),
+    classifyMarketplaceItem: () => ({ classification: 'allowed', reasons: [] }),
+  },
+  '../lib/listingSchemaV2.ts': { listingV2HasNoLegacyDescriptionPacking: () => true, validCanonicalVideoUri: () => true },
+  '../lib/universityNetwork.ts': { CAMPUSES: [], FACULTIES: [], INSTITUTIONS: [] },
+  '../lib/productAssistant.ts': { MARKETPLACE_CATEGORIES: [], normalizeCategory: (v) => v },
+  '../lib/nearbyMarketplace.ts': { validNearbyGeoCell: () => true, validListingApproxLocationAttributes: () => true },
+  '../lib/firebaseSharedSessionGuard': { assertFirebaseRequestSessionCurrent, sameFirebaseSession },
+  '../lib/firebaseSharedSessionGuard.ts': { assertFirebaseRequestSessionCurrent, sameFirebaseSession },
+  './firebaseRest.ts': { FirebaseRestClient: SyntheticFirestoreClient },
+  './nationalBackend.ts': { nationalSchemaEnabled: () => true },
+  './rateLimit.ts': { commitWithRateLimit: async () => {} },
+  './runtimeConfig.ts': { getFirebaseConfig: () => ({}) },
+};
+const exportsForListing = {};
+runInNewContext(compiledListings, {
+  exports: exportsForListing, module: { exports: exportsForListing },
+  require(specifier) {
+    assert(Object.hasOwn(deps, specifier), 'unexpected real I/O import: ' + specifier);
+    return deps[specifier];
+  },
+  Date, Math, Promise, Map, Set, Number, String, JSON, console,
+}, { timeout: 3500 });
+const syntheticListings = exportsForListing.canonicalListingsBackend;
+assert(syntheticListings, 'compiled canonical listings methods must be available');
+function resolveListingReads(expected) {
+  assert.equal(pendingListingReads.length, expected, 'fixture should query only expected Firestore reads');
+  pendingListingReads.splice(0).forEach((resolve) => resolve([]));
+}
+const staleMine = syntheticListings.loadMine();
+resolveListingReads(1);
+liveSession = fakeB;
+await assert.rejects(staleMine, /AUTH_SESSION_CHANGED/, 'A private listings cannot return after B signs in');
+
+liveSession = fakeA;
+const staleMarket = syntheticListings.loadMarketplaceProducts();
+resolveListingReads(2); // national approved query and current seller's private listings
+liveSession = fakeRelogin; // same UID does not make the old request valid
+await assert.rejects(staleMarket, /AUTH_SESSION_CHANGED/, 'A re-login must reject an old market snapshot');
+
+liveSession = fakeA;
+const staleNearby = syntheticListings.loadNearbyProducts({geoCells:['g1:90:81']});
+resolveListingReads(2); // approved listings and own private listings
+liveSession = fakeB;
+await assert.rejects(staleNearby, /AUTH_SESSION_CHANGED/, 'stale nearby results must not populate the cache');
+liveSession = fakeRelogin;
+const newNearby = syntheticListings.loadNearbyProducts({geoCells:['g1:90:81']});
+resolveListingReads(2); // stale A result was not cached
+assert.equal((await newNearby).length, 0);
+const sameSessionCacheHit = await syntheticListings.loadNearbyProducts({geoCells:['g1:90:81']});
+assert.equal(sameSessionCacheHit.length, 0);
+assert.equal(pendingListingReads.length,0,'same authenticated session may reuse its Nearby cache');
+liveSession = fakeA;
+const freshSessionMiss = syntheticListings.loadNearbyProducts({geoCells:['g1:90:81']});
+resolveListingReads(2); // same UID, different credentials: cache must miss
+assert.equal((await freshSessionMiss).length,0);
+
+console.log('PASS listing backend read results fail closed before returning/caching after A→B or A→logout→A');
+console.log('PASS synthetic deferred Firestore reads reject old A sessions and Nearby cache is session-scoped');
+
+// SYNTHETIC HYDRATION SELECTION CONTRACT: execute the actual Zustand store
+// implementation against a memory-only test store, with no real backend.
+// Selected A chat/product, read flags and filters must not follow account B;
+// remoderation and revocation must close stale visible detail overlays.
+const { canViewerOpenListing } = await import('../src/lib/publicDiscovery.ts');
+let currentStore;
+const fakeCreate = init => {
+  const set = patch => {
+    const part = typeof patch === 'function' ? patch(currentStore) : patch;
+    currentStore = { ...currentStore, ...part };
+  };
+  const get = () => currentStore;
+  currentStore = init(set, get);
+  const hook = () => currentStore;
+  hook.getState = get;
+  hook.setState = set;
+  return hook;
+};
+const fakeBackend = { session: { uid: 'synthetic-A' } };
+const mockStoreModule = { exports: {} };
+runInNewContext(compileTypescriptFixture('src/store/useAppStore.ts'), {
+  module: mockStoreModule, exports: mockStoreModule.exports,
+  require(id) {
+    const deps = {
+      'zustand': { create: fakeCreate },
+      '../lib/productAssistant': { sellerLevelFor: () => 'Novato' },
+      '../services/onlineBackend': { onlineBackend: fakeBackend },
+      '../lib/feedback': { feedbackMessage: () => '' },
+      '../lib/publicDiscovery': { canViewerOpenListing },
+      '../lib/backendHydrationIdentity': { isLiveAccountSnapshot },
+      '../lib/firebaseSharedSessionGuard': { sameFirebaseSession },
+      '../lib/syncErrorPrivacy': {
+        safeSyncFailureNotice: () =>
+          'No pudimos sincronizar TuTop. Comprueba tu conexión e inténtalo de nuevo.',
+      },
+      '../services/nationalBackend': { nationalSchemaEnabled: () => true },
+    };
+    assert(Object.hasOwn(deps, id), 'Unexpected synthetic store dependency: ' + id);
+    return deps[id];
+  },
+  Date, Map, Set, Math, Number, JSON, String, Promise, console,
+}, { timeout: 3500 });
+const syntheticStore = mockStoreModule.exports.useAppStore;
+assert(syntheticStore, 'compiled real app store must export useAppStore');
+const testUser = uid => ({ id: uid, facultad: 'Faculty-' + uid });
+const testProduct = (id, status = 'approved') => ({
+  id, vendedor_id: 'seller', moderation_status: status, estado: 'Activo',
+});
+const testChat = (id, buyer) => ({ id, comprador_id: buyer, vendedor_id: 'seller' });
+const testNote = (id, read = false) => ({ id, read, kind: 'offer' });
+const testSnapshot = (uid, products = [], chats = [], notifications = []) => ({
+  user: testUser(uid), products, chats, notifications, reviews: [], transactions: [],
+  favorites: [], isAdmin: false,
+});
+syntheticStore.getState().setUser(testUser('synthetic-A'));
+syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-A',
+  [testProduct('product-A')], [testChat('chat-A', 'synthetic-A')],
+  [testNote('shared-notice')]));
+syntheticStore.setState({
+  selectedProductId: 'product-A', activeChatId: 'chat-A',
+  notifications: [testNote('shared-notice', true)],
+});
+syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-A',
+  [testProduct('product-A')], [testChat('chat-A', 'synthetic-A')],
+  [testNote('shared-notice')]));
+assert.equal(syntheticStore.getState().selectedProductId, 'product-A');
+assert.equal(syntheticStore.getState().activeChatId, 'chat-A');
+assert.equal(syntheticStore.getState().notifications[0].read, true,
+  'a still-authenticated account may retain its locally read notification');
+syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-A',
+  [testProduct('product-A', 'pending')], [], [testNote('shared-notice')]));
+assert.equal(syntheticStore.getState().selectedProductId, null,
+  'a remoderated listing may not remain selected after a new snapshot');
+assert.equal(syntheticStore.getState().activeChatId, null,
+  'a revoked chat may not remain open after an account-owned snapshot');
+syntheticStore.setState({
+  selectedProductId: 'product-A', activeChatId: 'chat-A',
+  notifications: [testNote('shared-notice', true)],
+  products: [testProduct('product-A')], chats: [testChat('chat-A', 'synthetic-A')],
+});
+syntheticStore.getState().setUser(testUser('synthetic-B'));
+assert.deepEqual([
+  syntheticStore.getState().products.length, syntheticStore.getState().chats.length,
+  syntheticStore.getState().notifications.length,
+  syntheticStore.getState().selectedProductId,
+  syntheticStore.getState().activeChatId,
+], [0, 0, 0, null, null], 'owner switch clears A personal cache and navigation immediately');
+fakeBackend.session = { uid: 'synthetic-B' };
+syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-B',
+  [], [], [testNote('shared-notice')]));
+assert.equal(syntheticStore.getState().notifications[0].read, false,
+  'reused notification IDs from A cannot mark B notifications read');
+// A stale action or notification must not open an A chat after B signs in,
+// even when it bypasses the native push router's own membership checks.
+syntheticStore.getState().openChat('chat-A');
+assert.equal(syntheticStore.getState().activeChatId, null,
+  'opening foreign or absent chat must fail closed');
+syntheticStore.getState().hydrateOnline(testSnapshot('synthetic-B', [],
+  [testChat('chat-B', 'synthetic-B')], []));
+syntheticStore.getState().openChat('chat-B');
+assert.equal(syntheticStore.getState().activeChatId, 'chat-B',
+  'legitimate owned B chat remains navigable');
+syntheticStore.getState().openChat('chat-A');
+assert.equal(syntheticStore.getState().activeChatId, 'chat-B',
+  'foreign deep link must not replace the valid B view');
+syntheticStore.setState({ selectedProductId: 'keep' });
+syntheticStore.getState().setUser({ ...testUser('synthetic-B'), nombre: 'New name' });
+assert.equal(syntheticStore.getState().selectedProductId, 'keep',
+  'same owner profile edits must not erase in-progress local navigation');
+console.log('PASS synthetic real Zustand hydration: remoderation, revoked chat and A-to-B personal state are fail-closed');
+
+// SAME-UID RELOGIN REGRESSION: a prior login's rejected optimistic mutation
+// must not roll back the newly authenticated login, even when UID is unchanged.
+// Use the actual compiled store with deferred synthetic backend failures.
+const sessionB = serial => ({
+  uid: 'synthetic-B', idToken: 'synthetic-id-' + serial,
+  refreshToken: 'synthetic-refresh-' + serial,
+});
+fakeBackend.session = sessionB('old');
+const pendingRollbacks = {};
+fakeBackend.toggleFavorite = () => new Promise((_, reject) => { pendingRollbacks.favorite = reject; });
+fakeBackend.updateProduct = () => new Promise((_, reject) => { pendingRollbacks.product = reject; });
+fakeBackend.markChatRead = () => new Promise((_, reject) => { pendingRollbacks.read = reject; });
+syntheticStore.setState({
+  favorites: [], syncError: null,
+  products: [{ ...testProduct('B-product'), titulo: 'Original', vendedor_id: 'synthetic-B' }],
+  chats: [{ ...testChat('B-chat', 'synthetic-B'), sin_leer: 2 }],
+});
+syntheticStore.getState().toggleFavorite('B-product');
+syntheticStore.getState().updateProduct('B-product', { titulo: 'Edited old session' });
+syntheticStore.getState().markChatRead('B-chat');
+assert.equal(syntheticStore.getState().favorites.includes('B-product'), true);
+assert.equal(syntheticStore.getState().chats[0].sin_leer, 0);
+assert.equal(syntheticStore.getState().products[0].titulo, 'Edited old session');
+fakeBackend.session = sessionB('new');
+syntheticStore.setState({
+  favorites: ['B-product'],
+  products: [{ ...testProduct('B-product'), titulo: 'New authenticated session', vendedor_id: 'synthetic-B' }],
+  chats: [{ ...testChat('B-chat', 'synthetic-B'), sin_leer: 5 }],
+});
+pendingRollbacks.favorite(new Error('SYNTHETIC_OLD_LOGIN_OFFLINE'));
+pendingRollbacks.product(new Error('SYNTHETIC_OLD_LOGIN_OFFLINE'));
+pendingRollbacks.read(new Error('SYNTHETIC_OLD_LOGIN_OFFLINE'));
+await Promise.resolve(); await Promise.resolve();
+assert.deepEqual(syntheticStore.getState().favorites, ['B-product'],
+  'old same-UID login cannot roll back new-login favorites');
+assert.equal(syntheticStore.getState().products[0].titulo, 'New authenticated session',
+  'old same-UID failed product update cannot roll back new-login product');
+assert.equal(syntheticStore.getState().chats[0].sin_leer, 5,
+  'old same-UID failed chat read cannot roll back new-login unread counter');
+assert.equal(syntheticStore.getState().syncError, null,
+  'old same-UID login failure cannot show a stale error in the current login');
+console.log('PASS same-UID relogin fences optimistic favorite, product and chat-read rollbacks');
+
+// Same UID, different Firebase refresh token: old create attempts can fail
+// *after* the new login contains the same product/chat identifier. They must
+// never delete the new login's legitimate view or report its old errors.
+fakeBackend.session = sessionB('create-old');
+let rejectOldProductCreate;
+const rejectOldChatCreates = [];
+fakeBackend.createProduct = () => new Promise((_, reject) => { rejectOldProductCreate = reject; });
+fakeBackend.createChat = () => new Promise((_, reject) => rejectOldChatCreates.push(reject));
+const sellerListing = { ...testProduct('seller-listing'), vendedor_id: 'other-seller', vendedor_nombre: 'Demo' };
+syntheticStore.setState({ products: [sellerListing], chats: [], syncError: null });
+syntheticStore.getState().addProduct({ ...testProduct('new-B-product'), vendedor_id: 'synthetic-B' });
+syntheticStore.getState().addChat(testChat('new-B-chat', 'synthetic-B'));
+const contactId = syntheticStore.getState().contactProduct('seller-listing');
+assert.equal(contactId, 'chat-synthetic-B-seller-listing');
+assert.equal(rejectOldChatCreates.length, 2);
+fakeBackend.session = sessionB('create-new');
+syntheticStore.setState({
+  products: [sellerListing, { ...testProduct('new-B-product'), titulo: 'New session listing', vendedor_id: 'synthetic-B' }],
+  chats: [testChat('new-B-chat', 'synthetic-B'), {
+    ...testChat(contactId, 'synthetic-B'), producto_id: 'seller-listing',
+  }],
+  activeChatId: contactId,
+  syncError: null,
+});
+rejectOldProductCreate(new Error('SYNTHETIC_OLD_CREATE'));
+for (const reject of rejectOldChatCreates) reject(new Error('SYNTHETIC_OLD_CREATE'));
+await Promise.resolve(); await Promise.resolve();
+assert(syntheticStore.getState().products.some(p => p.id === 'new-B-product'
+  && p.titulo === 'New session listing'), 'old product creation may not remove a new-login same-ID product');
+assert(syntheticStore.getState().chats.some(c => c.id === contactId),
+  'old contactProduct rejection may not remove a new-login same-ID chat');
+assert.equal(syntheticStore.getState().activeChatId, contactId,
+  'old contactProduct rejection may not close the new-login active chat');
+assert.equal(syntheticStore.getState().syncError, null,
+  'old create failures cannot surface under the reauthenticated account');
+console.log('PASS same-UID relogin fences stale create-product, create-chat and contact-product effects');
+
+// Same-UID relogin must fence every legacy asynchronous store callback, not
+// only optimistic product creation. No network, OS, device or Firebase used.
+fakeBackend.session = sessionB('old-actions');
+const pendingMessageFailures = [];
+let rejectOldConfirmation, rejectOldReview;
+fakeBackend.sendMessage = () => new Promise((_, reject) => pendingMessageFailures.push(reject));
+fakeBackend.confirmDelivery = () => new Promise((_, reject) => { rejectOldConfirmation = reject; });
+fakeBackend.submitReview = () => new Promise((_, reject) => { rejectOldReview = reject; });
+const ownedChat = (id, extra = {}) => ({
+  ...testChat(id, 'synthetic-B'), mensajes: [], sin_leer: 0,
+  confirmaciones_entrega: { comprador: false, vendedor: false },
+  entrega_confirmada: false, entrega_estado: 'negociando', ...extra,
+});
+syntheticStore.setState({
+  chats: [
+    ownedChat('B-text'), ownedChat('B-image'),
+    ownedChat('B-confirm'),
+    ownedChat('B-review', { entrega_confirmada: true }),
+  ],
+  reviews: [], syncError: null,
+});
+syntheticStore.getState().sendMessage('B-text', 'hello synthetic');
+syntheticStore.getState().sendImageMessage('B-image', 'data:image/png;base64,AAAA');
+syntheticStore.getState().confirmDelivery('B-confirm');
+assert.equal(syntheticStore.getState().submitReview('B-review', 5, 'synthetic review'), true);
+assert.equal(pendingMessageFailures.length, 2);
+const oldTextMessage = syntheticStore.getState().chats.find(c => c.id === 'B-text').mensajes[0];
+const oldImageMessage = syntheticStore.getState().chats.find(c => c.id === 'B-image').mensajes[0];
+const oldReview = syntheticStore.getState().reviews[0];
+fakeBackend.session = sessionB('new-actions');
+syntheticStore.setState({
+  chats: [
+    ownedChat('B-text', { mensajes: [oldTextMessage] }),
+    ownedChat('B-image', { mensajes: [oldImageMessage] }),
+    ownedChat('B-confirm', { entrega_estado: 'completed-new' }),
+    ownedChat('B-review', { entrega_confirmada: true }),
+  ],
+  reviews: [oldReview], syncError: null,
+});
+for (const reject of pendingMessageFailures) reject(new Error('SYNTHETIC_OLD_ACTION'));
+rejectOldConfirmation(new Error('SYNTHETIC_OLD_ACTION'));
+rejectOldReview(new Error('SYNTHETIC_OLD_ACTION'));
+await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+assert.equal(syntheticStore.getState().chats.find(c => c.id === 'B-text').mensajes.length, 1,
+  'old-login failed send must not remove a newly hydrated same-ID message');
+assert.equal(syntheticStore.getState().chats.find(c => c.id === 'B-image').mensajes.length, 1,
+  'old-login failed image send must not remove newly hydrated message');
+assert.equal(syntheticStore.getState().chats.find(c => c.id === 'B-confirm').entrega_estado, 'completed-new',
+  'old-login failed delivery must not alter reauthenticated transaction state');
+assert.equal(syntheticStore.getState().reviews.length, 1,
+  'old-login failed review must not remove a new-login same-ID review');
+assert.equal(syntheticStore.getState().syncError, null,
+  'old-login message/delivery/review failures must not surface in newer login');
+
+// Publishing and bidding are async result-returning operations. After the
+// first awaited write settles, the old login must return false, not reload
+// the new session or issue a second commercial write.
+let finishOldPublish;
+fakeBackend.createProduct = () => new Promise(resolve => { finishOldPublish = resolve; });
+let reloadCalls = 0, bidCalls = 0;
+fakeBackend.loadSnapshot = async () => { reloadCalls++; return testSnapshot('synthetic-B'); };
+fakeBackend.bidProduct = () => { bidCalls++; return Promise.resolve(); };
+fakeBackend.session = sessionB('publish-old');
+const oldPublishPromise = syntheticStore.getState().publishProduct(
+  { ...testProduct('B-publish-old'), vendedor_id: 'synthetic-B' }, 1,
+);
+fakeBackend.session = sessionB('publish-new');
+finishOldPublish();
+assert.equal(await oldPublishPromise, false,
+  'old-login published action must not continue to bid or load new login');
+assert.equal(reloadCalls, 0);
+assert.equal(bidCalls, 0);
+
+let finishOldBid;
+fakeBackend.bidProduct = () => new Promise(resolve => { bidCalls++; finishOldBid = resolve; });
+syntheticStore.setState({ products: [sellerListing], syncError: null });
+fakeBackend.session = sessionB('bid-old');
+const oldBidPromise = syntheticStore.getState().bidProduct('seller-listing', 5);
+fakeBackend.session = sessionB('bid-new');
+finishOldBid();
+assert.equal(await oldBidPromise, false,
+  'old-login bidding action must not refresh new login or report success');
+assert.equal(reloadCalls, 0, 'no old-login callback may fetch the new-login snapshot');
+console.log('PASS same-UID relogin fences message, image, delivery, review, publish and bid callbacks');
+
+

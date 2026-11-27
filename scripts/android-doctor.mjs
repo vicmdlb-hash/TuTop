@@ -11,8 +11,16 @@ function walk(dir) {
   if (!fs.existsSync(dir)) return;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory() && !['.gradle', 'build'].includes(entry.name)) walk(full);
-    else if (/\.(gradle|kts)$/.test(entry.name)) scan.push(fs.readFileSync(full, 'utf8'));
+    // Ignore directories, including the real Gradle cache named ".gradle".
+    // The old else-if read ".gradle" as a file and raised EISDIR on Windows.
+    if (entry.isDirectory()) {
+      if (!['.gradle', 'build'].includes(entry.name)) walk(full);
+      continue;
+    }
+    // Never read a directory/symlink, even if its name ends in ".gradle".
+    if (entry.isFile() && /\.(gradle|kts)$/.test(entry.name)) {
+      scan.push(fs.readFileSync(full, 'utf8'));
+    }
   }
 }
 walk(android);

@@ -1,3 +1,4 @@
+import { trustedAgeBandFromServerRecord, type AgeBand } from '../lib/guardianCapabilities.ts';
 import { DEFAULT_NOTIFICATION_PREFERENCES, normalizeNotificationPreferences, type NotificationPreferences } from '../lib/notificationPreferences.ts';
 import { FirebaseRestClient } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
@@ -42,6 +43,17 @@ async function readJson(response: Response) {
 }
 
 export const nationalUserSettings = {
+  async readTrustedAgeBand(): Promise<AgeBand> {
+    // Owner-only read from a collection clients cannot write. Absence, expiry,
+    // revoked or malformed proof means unknown. This is status, NOT authority.
+    const firebase = client();
+    const session = requireSession(firebase);
+    const ownerUid = session.uid;
+    const proof = await firebase.getDocument<Record<string, unknown>>(`age_proofs_v2/${ownerUid}`);
+    if (firebase.currentSession?.uid !== ownerUid) return 'unknown';
+    return trustedAgeBandFromServerRecord(ownerUid, proof?.data || null, Date.now());
+  },
+
   async loadNotificationPreferences(): Promise<NotificationPreferences> {
     const firebase = client();
     const session = requireSession(firebase);

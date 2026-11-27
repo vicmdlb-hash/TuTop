@@ -114,8 +114,9 @@ assert.match(onboarding, /buildV2InitialAccountDocuments/);
 assert.match(onboarding, /client\.commit/);
 assert.match(onboarding, /V2_REGISTRATION_IDENTITY_RECHECK_FAILED/);
 assert.match(onboarding, /installV2AtomicRegistrationBridge/);
-assert.match(prepareAndroid, /staging-app-registration-smoke\.mjs/);
-assert.match(prepareAndroid, /reset-staging-accounts\.mjs/);
+assert.match(prepareAndroid, /selectExistingStagingAndroidApp/);
+assert.match(prepareAndroid, /validateExistingStagingAndroidConfig/);
+assert.doesNotMatch(prepareAndroid, /staging-app-registration-smoke\.mjs|reset-staging-accounts\.mjs|DELETE_ALL_BETA_ACCOUNTS/);
 assert.match(registrationSmoke, /PlayStation 5 registro smoke/);
 assert.match(registrationSmoke, /cuenta recién registrada no pudo publicar/);
 

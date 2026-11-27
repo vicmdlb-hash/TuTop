@@ -4,9 +4,13 @@ import assert from 'node:assert/strict';
 const chat = fs.readFileSync('src/components/ChatConversation.tsx', 'utf8');
 const canonical = fs.readFileSync('src/services/canonicalOffersBackend.ts', 'utf8');
 
-for (const guard of ['SELF_OFFER_DENIED', 'PARENT_OFFER_MISMATCH', 'OFFER_NOT_PENDING', 'OFFER_EXPIRED', 'assertOfferableListing']) {
+for (const guard of ['SELF_OFFER_DENIED', 'PARENT_OFFER_MISMATCH', 'OFFER_NOT_PENDING', 'assertOfferableListing']) {
   assert.match(canonical, new RegExp(guard));
 }
+const sharedExpiry = fs.readFileSync('src/lib/transactionRetry.ts', 'utf8');
+assert.match(canonical, /assertFreshOfferExpiry\(offer\.expires_at\)/);
+assert.match(sharedExpiry, /throw new Error\('OFFER_EXPIRED'\)/);
+assert.match(sharedExpiry, /throw new Error\('OFFER_EXPIRY_INVALID'\)/);
 assert.match(canonical, /async listOffersForChat\(chatId: string, force = false\)/);
 assert.match(chat, /canonicalOffersBackend\.listOffersForChat\(chatId/);
 assert.match(chat, /canonicalOffersBackend\.createOffer\(/);

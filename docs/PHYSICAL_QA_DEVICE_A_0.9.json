@@ -30,6 +30,13 @@
   "required_cases": {
     "install_boot": "pending",
     "auth_identity": "pending",
+    "second_account_email_verification": "pending",
+    "topi_real_ai": "pending",
+    "notification_permission_activation": "pending",
+    "notification_token_registered": "pending",
+    "fcm_two_device_receive": "pending",
+    "fcm_two_device_tap_deep_link": "pending",
+    "account_switch_fcm_isolation": "pending",
     "reinstall_identity": "pending",
     "keyboard": "pending",
     "android_back": "pending",

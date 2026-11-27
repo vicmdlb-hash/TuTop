@@ -1,6 +1,7 @@
 import type { AdminPrincipal, AdminRole, ModerationCaseKind } from '../lib/marketplaceGovernance.ts';
 import { FirebaseRestClient } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
+import { requireModerationCaseTransition, requireNoShowClaimDecision } from '../lib/institutionalModeration.ts';
 import { getFirebaseConfig } from './runtimeConfig.ts';
 
 export type AdminContext = AdminPrincipal & { role: AdminRole };
@@ -18,8 +19,12 @@ function normalizeRole(value: unknown): AdminRole {
   throw new Error('ADMIN_ROLE_INVALID');
 }
 
-function patchWrite(firebase: FirebaseRestClient, path: string, data: Record<string, unknown>) {
-  return { update: firebase.encodeDocumentForWrite(path, data), updateMask: { fieldPaths: Object.keys(data) } };
+function patchWrite(firebase: FirebaseRestClient, path: string, data: Record<string, unknown>, expectedUpdateTime?: string) {
+  return {
+    update: firebase.encodeDocumentForWrite(path, data),
+    updateMask: { fieldPaths: Object.keys(data) },
+    ...(expectedUpdateTime ? { currentDocument: { updateTime: expectedUpdateTime } } : {}),
+  };
 }
 
 function createWrite(firebase: FirebaseRestClient, path: string, data: Record<string, unknown>) {
@@ -63,6 +68,7 @@ async function auditedPatch(input: {
   targetType: string;
   targetId: string;
   institutionId?: string;
+  expectedUpdateTime?: string;
 }) {
   const firebase = client();
   const admin = await scopedAdminBackend.context();
@@ -78,7 +84,7 @@ async function auditedPatch(input: {
     created_at: at,
   };
   await firebase.commit([
-    patchWrite(firebase, input.path, { ...input.patch, updated_at: at }),
+    patchWrite(firebase, input.path, { ...input.patch, updated_at: at }, input.expectedUpdateTime),
     createWrite(firebase, `audit_log/${auditId(input.action, input.targetId)}`, audit),
   ]);
 }
@@ -127,6 +133,7 @@ export const scopedAdminBackend = {
   async reports(limit = 100) {
     const firebase = client();
     const admin = await this.context();
+    if (admin.role === 'institution_moderator' && !admin.institution_id?.trim()) throw new Error('INSTITUTION_SCOPE_REQUIRED');
     const filters = admin.role === 'institution_moderator'
       ? [{ field: 'institution_id', op: 'EQUAL' as const, value: admin.institution_id! }]
       : [];
@@ -138,6 +145,7 @@ export const scopedAdminBackend = {
     const firebase = client();
     const admin = await this.context();
     if (admin.role === 'verification_reviewer' || admin.role === 'support') throw new Error('ROLE_SCOPE_DENIED');
+    if (admin.role === 'institution_moderator' && !admin.institution_id?.trim()) throw new Error('INSTITUTION_SCOPE_REQUIRED');
     const filters = admin.role === 'institution_moderator'
       ? [{ field: 'institution_id', op: 'EQUAL' as const, value: admin.institution_id! }]
       : [];
@@ -147,35 +155,41 @@ export const scopedAdminBackend = {
   async auditLog(limit = 100) {
     const firebase = client();
     const admin = await this.context();
-    if (admin.role === 'institution_moderator' && admin.institution_id) {
+    if (admin.role === 'institution_moderator') {
+      if (!admin.institution_id?.trim()) throw new Error('INSTITUTION_SCOPE_REQUIRED');
       return firebase.runQuery<any>('audit_log', [{ field: 'institution_id', op: 'EQUAL', value: admin.institution_id }], [{ field: 'created_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
     }
     if (admin.role === 'verification_reviewer' || admin.role === 'support') return [];
     return firebase.runQuery<any>('audit_log', [], [{ field: 'created_at', direction: 'DESCENDING' }], Math.max(1, Math.min(200, limit)));
   },
 
-  async moderateListing(listingId: string, status: 'approved' | 'rejected', institutionId?: string) {
+  async moderateListing(listingId: string, status: 'approved' | 'rejected', _institutionId?: string) {
     const firebase = client();
     const admin = await this.context();
     if (!canModerateListings(admin)) throw new Error('ROLE_SCOPE_DENIED');
+    if (!listingId || listingId.includes('/') || listingId.length > 180) throw new Error('LISTING_ID_INVALID');
     const listing = await firebase.getDocument<any>(`listings_v2/${listingId}`);
     if (!listing) throw new Error('LISTING_NOT_FOUND');
     const listingInstitution = String(listing.data.institution_id || '');
-    if (admin.role === 'institution_moderator' && admin.institution_id !== listingInstitution) throw new Error('INSTITUTION_SCOPE_DENIED');
+    if (admin.role === 'institution_moderator'
+      && (!admin.institution_id || admin.institution_id !== listingInstitution)) throw new Error('INSTITUTION_SCOPE_DENIED');
     if (listing.data.moderation_status !== 'pending') throw new Error('LISTING_NOT_PENDING');
+    if (!listing.updateTime) throw new Error('LISTING_VERSION_UNVERIFIED');
     await auditedPatch({
       path: `listings_v2/${listingId}`,
       patch: { moderation_status: status },
       action: `listing_${status}`,
       targetType: 'listing',
       targetId: listingId,
-      institutionId: institutionId || listingInstitution || undefined,
+      institutionId: listingInstitution || undefined,
+      expectedUpdateTime: listing.updateTime,
     });
   },
 
   async updateAccountDeletionRequest(uid: string, status: 'processing' | 'rejected') {
     const admin = await this.context();
     if (!canProcessAccountRequests(admin)) throw new Error('ROLE_SCOPE_DENIED');
+    if (!uid || uid.includes('/') || uid.length > 180) throw new Error('ACCOUNT_DELETION_UID_INVALID');
     const firebase = client();
     const current = await firebase.getDocument<any>(`account_deletion_requests/${uid}`);
     if (!current) throw new Error('ACCOUNT_DELETION_REQUEST_NOT_FOUND');
@@ -186,24 +200,74 @@ export const scopedAdminBackend = {
         ? ['rejected']
         : [];
     if (!allowed.includes(status)) throw new Error('ACCOUNT_DELETION_INVALID_TRANSITION');
+    if (!current.updateTime) throw new Error('ACCOUNT_DELETION_VERSION_UNVERIFIED');
     await auditedPatch({
       path: `account_deletion_requests/${uid}`,
       patch: { status },
       action: `account_deletion_${status}`,
       targetType: 'account_deletion_request',
       targetId: uid,
+      expectedUpdateTime: current.updateTime,
     });
   },
 
-  async resolveModerationCase(caseId: string, status: 'reviewing' | 'resolved' | 'dismissed', institutionId?: string) {
-    await auditedPatch({ path: `moderation_cases/${caseId}`, patch: { status }, action: `moderation_case_${status}`, targetType: 'moderation_case', targetId: caseId, institutionId });
+  async resolveModerationCase(caseId: string, status: 'reviewing' | 'resolved' | 'dismissed', _institutionId?: string) {
+    const firebase = client();
+    const admin = await this.context();
+    if (!caseId || caseId.includes('/') || caseId.length > 180) throw new Error('MODERATION_CASE_ID_INVALID');
+    const current = await firebase.getDocument<any>(`moderation_cases/${caseId}`);
+    if (!current) throw new Error('MODERATION_CASE_NOT_FOUND');
+    // Never trust the institution supplied by a UI caller. Verify the current
+    // stored case, its allowed role/transition and its updateTime before commit.
+    const institutionId = requireModerationCaseTransition(admin, current.data, status);
+    if (!current.updateTime) throw new Error('MODERATION_CASE_VERSION_UNVERIFIED');
+    await auditedPatch({
+      path: `moderation_cases/${caseId}`, patch: { status },
+      action: `moderation_case_${status}`, targetType: 'moderation_case',
+      targetId: caseId, institutionId, expectedUpdateTime: current.updateTime,
+    });
   },
 
-  async resolveReport(reportId: string, status: 'reviewing' | 'resolved' | 'dismissed', institutionId?: string) {
-    await auditedPatch({ path: `reports/${reportId}`, patch: { status }, action: `report_${status}`, targetType: 'report', targetId: reportId, institutionId });
+  async resolveReport(reportId: string, status: 'reviewing' | 'resolved' | 'dismissed', _institutionId?: string) {
+    const firebase = client();
+    const admin = await this.context();
+    if (admin.role === 'verification_reviewer' || admin.role === 'support') throw new Error('ROLE_SCOPE_DENIED');
+    if (!reportId || reportId.includes('/') || reportId.length > 180) throw new Error('REPORT_ID_INVALID');
+    const current = await firebase.getDocument<any>(`reports/${reportId}`);
+    if (!current) throw new Error('REPORT_NOT_FOUND');
+    const reportInstitution = String(current.data.institution_id || '');
+    if (admin.role === 'institution_moderator'
+      && (!admin.institution_id || admin.institution_id !== reportInstitution)) {
+      throw new Error('INSTITUTION_SCOPE_DENIED');
+    }
+    const previous = String(current.data.status || '');
+    if (!['open', 'reviewing'].includes(previous) || (previous === 'reviewing' && status === 'reviewing')) {
+      throw new Error('REPORT_INVALID_TRANSITION');
+    }
+    // Never trust a caller-supplied institution for audit routing; snapshot
+    // updateTime prevents two reviewers from silently overwriting each other.
+    if (!current.updateTime) throw new Error('REPORT_VERSION_UNVERIFIED');
+    await auditedPatch({
+      path: `reports/${reportId}`, patch: { status }, action: `report_${status}`,
+      targetType: 'report', targetId: reportId,
+      institutionId: reportInstitution || undefined,
+      expectedUpdateTime: current.updateTime,
+    });
   },
 
-  async resolveNoShowClaim(claimId: string, status: 'upheld' | 'dismissed', institutionId: string) {
-    await auditedPatch({ path: `transaction_outcome_claims/${claimId}`, patch: { status }, action: `no_show_${status}`, targetType: 'transaction_outcome_claim', targetId: claimId, institutionId });
+  async resolveNoShowClaim(claimId: string, status: 'upheld' | 'dismissed', _institutionId: string) {
+    const firebase = client();
+    const admin = await this.context();
+    if (!claimId || claimId.includes('/') || claimId.length > 180) throw new Error('NO_SHOW_CLAIM_ID_INVALID');
+    const current = await firebase.getDocument<any>(`transaction_outcome_claims/${claimId}`);
+    if (!current) throw new Error('NO_SHOW_CLAIM_NOT_FOUND');
+    // The case's stored institution is authoritative, not a UI-supplied value.
+    const institutionId = requireNoShowClaimDecision(admin, current.data, status);
+    if (!current.updateTime) throw new Error('NO_SHOW_CLAIM_VERSION_UNVERIFIED');
+    await auditedPatch({
+      path: `transaction_outcome_claims/${claimId}`, patch: { status },
+      action: `no_show_${status}`, targetType: 'transaction_outcome_claim',
+      targetId: claimId, institutionId, expectedUpdateTime: current.updateTime,
+    });
   },
 };

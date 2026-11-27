@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { FirebaseSessionLifecycle, isTerminalFirebaseRefreshFailure } from '../src/lib/firebaseSessionLifecycle.ts';
+import { assertFirebaseRequestSessionCurrent } from '../src/lib/firebaseSharedSessionGuard.ts';
 
 const sessionA = { uid: 'uid-a', marker: 'session-a' };
 const sessionARefreshed = { uid: 'uid-a', marker: 'session-a-refreshed' };
@@ -132,4 +133,27 @@ console.log('PASS latest-started account replacement wins out-of-order completio
 console.log('PASS stale refresh cannot overwrite a newly authenticated account');
 console.log('PASS stale failed login cannot replace a newer successful identity');
 console.log('PASS runtime bridge installs shared session lifecycle at bootstrap');
+
+// Firestore REST must not dispatch or consume a response after exact-session loss.
+const activeRequest = { uid: 'uid-a', idToken: 'token-a', refreshToken: 'refresh-a' };
+const switchedAccount = { uid: 'uid-b', idToken: 'token-b', refreshToken: 'refresh-b' };
+const sameUidNewLogin = { uid: 'uid-a', idToken: 'token-new', refreshToken: 'refresh-new' };
+assert.doesNotThrow(() => assertFirebaseRequestSessionCurrent(activeRequest, activeRequest, activeRequest));
+for (const changed of [switchedAccount, sameUidNewLogin, null]) {
+  assert.throws(() => assertFirebaseRequestSessionCurrent(activeRequest, changed, changed), /AUTH_SESSION_CHANGED/);
+  assert.throws(() => assertFirebaseRequestSessionCurrent(activeRequest, activeRequest, changed), /AUTH_SESSION_CHANGED/);
+}
+assert.throws(() => assertFirebaseRequestSessionCurrent(null, activeRequest, activeRequest), /AUTH_SESSION_CHANGED/);
+
+const firestoreRestSource = fs.readFileSync('src/services/firebaseRest.ts', 'utf8');
+const guardedFirestoreMethod = firestoreRestSource.split('private async firestoreFetch(')[1]?.split('async getDocument<')[0] || '';
+assert.match(guardedFirestoreMethod, /const requestSession = this\.session/);
+assert.match(guardedFirestoreMethod, /requestSession\.idToken !== token/);
+assert.match(guardedFirestoreMethod, /const assertCurrent = \(\) => assertFirebaseRequestSessionCurrent/);
+assert.equal((guardedFirestoreMethod.match(/assertCurrent\(\);/g) || []).length, 4, 'before dispatch, after attestation wait, before and after body parsing');
+assert(guardedFirestoreMethod.indexOf('assertCurrent();', guardedFirestoreMethod.indexOf('getNativeAppCheckToken')) < guardedFirestoreMethod.indexOf('firebaseFetch(url'), 'attestation wait must be followed by an exact-session guard before dispatch');
+assert(guardedFirestoreMethod.lastIndexOf('assertCurrent();') > guardedFirestoreMethod.indexOf('await readJson(response)'), 'late response body must not escape session guard');
+console.log('PASS Firestore exact-session A->B and A->A relogin fail closed in request guard');
+console.log('PASS Firestore request enforces pre-dispatch and post-response identity checks');
+
 console.log('Firebase session hardening tests: PASS');

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Clock3, FileKey2, Flag, MessageCircleWarning, RefreshCw, ShieldAlert, ShieldCheck, Store, UserRound, XCircle } from 'lucide-react';
-import type { ModerationCaseKind } from '../lib/marketplaceGovernance';
+import { canModerateCase, type ModerationCaseKind } from '../lib/marketplaceGovernance';
 import { scopedAdminBackend, type AdminContext } from '../services/scopedAdminBackend';
 
 type QueueKey = 'credential' | 'product' | 'user' | 'possible_scam' | 'chat' | 'appeal' | 'urgent';
@@ -30,6 +30,7 @@ export default function ScopedModerationDashboard() {
   const [context, setContext] = useState<AdminContext | null>(null);
   const [cases, setCases] = useState<AdminDoc[]>([]);
   const [reports, setReports] = useState<AdminDoc[]>([]);
+  const [reportView, setReportView] = useState<'all' | 'ai_response'>('all');
   const [claims, setClaims] = useState<AdminDoc[]>([]);
   const [audit, setAudit] = useState<AdminDoc[]>([]);
   const [queue, setQueue] = useState<QueueKey>('urgent');
@@ -42,16 +43,29 @@ export default function ScopedModerationDashboard() {
     try {
       const admin = await scopedAdminBackend.context();
       setContext(admin);
+      // Never report an unavailable security queue as an empty verified queue.
+      // Keep successful sections visible while naming exactly which reads failed.
+      const failedSections: string[] = [];
+      // Verification and support roles are not entitled to reports/no-show.
+      // Skip deliberately inaccessible queues: forbidden != network failure.
+      const canReadIncidentQueues = admin.role !== 'verification_reviewer' && admin.role !== 'support';
       const [caseDocs, reportDocs, claimDocs, auditDocs] = await Promise.all([
-        scopedAdminBackend.moderationCases(undefined, 200).catch(() => []),
-        scopedAdminBackend.reports(200).catch(() => []),
-        scopedAdminBackend.noShowClaims(200).catch(() => []),
-        scopedAdminBackend.auditLog(80).catch(() => []),
+        scopedAdminBackend.moderationCases(undefined, 200).catch(() => { failedSections.push('casos'); return []; }),
+        canReadIncidentQueues
+          ? scopedAdminBackend.reports(200).catch(() => { failedSections.push('reportes'); return []; })
+          : Promise.resolve([]),
+        canReadIncidentQueues
+          ? scopedAdminBackend.noShowClaims(200).catch(() => { failedSections.push('reclamos no-show'); return []; })
+          : Promise.resolve([]),
+        canReadIncidentQueues
+          ? scopedAdminBackend.auditLog(80).catch(() => { failedSections.push('auditoría'); return []; })
+          : Promise.resolve([]),
       ]);
       setCases(caseDocs as AdminDoc[]);
       setReports(reportDocs as AdminDoc[]);
       setClaims(claimDocs as AdminDoc[]);
       setAudit(auditDocs as AdminDoc[]);
+      if (failedSections.length) setError(`Consulta incompleta: ${failedSections.join(', ')}. Actualiza para verificar esos datos.`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally { setLoading(false); }
@@ -65,6 +79,14 @@ export default function ScopedModerationDashboard() {
     if (queue === 'urgent') return [...source, ...cases.filter((item) => item.data.priority === 'urgent' && !source.some((candidate) => candidate.id === item.id))];
     return source;
   }, [cases, queue]);
+
+  // AI reports use the same existing role-scoped backend and audited status
+  // transitions. Filtering here grants no new read or write permissions.
+  const activeReports = reports.filter((item) => ['open', 'reviewing'].includes(String(item.data.status)));
+  const invalidReportCount = reports.filter((item) => !['open', 'reviewing', 'resolved', 'dismissed'].includes(String(item.data.status))).length;
+  const visibleReports = activeReports.filter((item) =>
+    reportView === 'all' || item.data.target_type === 'ai_response');
+  const openAiReportCount = activeReports.filter((item) => item.data.target_type === 'ai_response').length;
 
   const queueCount = (key: QueueKey) => {
     const meta = queues.find((item) => item.key === key)!;
@@ -88,7 +110,7 @@ export default function ScopedModerationDashboard() {
         </div>
 
         {context?.role === 'institution_moderator' && <div className="mt-4 rounded-2xl border border-sky-400/15 bg-sky-400/[0.05] p-4 text-sm text-sky-100/70"><ShieldCheck className="mr-2 inline h-4 w-4 text-sky-300"/>Tu sesión está limitada por Rules y consultas a <strong>{context.institution_id}</strong>. No se cargan casos de otras universidades.</div>}
-        {error && <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/[0.06] p-4 text-sm text-rose-200"><AlertTriangle className="mr-2 inline h-4 w-4"/>{error}</div>}
+        {error && <div role="alert" className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/[0.06] p-4 text-sm text-rose-200"><AlertTriangle className="mr-2 inline h-4 w-4"/>{error}</div>}
 
         <div className="mt-6 flex gap-2 overflow-x-auto pb-2">
           {queues.map((item) => <button key={item.key} onClick={() => setQueue(item.key)} className={`whitespace-nowrap rounded-xl px-3 py-2 text-xs font-black ${queue === item.key ? 'bg-violet-500 text-white' : 'border border-white/[0.07] bg-[#0b111c] text-slate-400'}`}>{item.label} <span className="ml-1 opacity-70">{queueCount(item.key)}</span></button>)}
@@ -98,12 +120,18 @@ export default function ScopedModerationDashboard() {
           <section className="rounded-3xl border border-white/[0.07] bg-[#0b111c] p-4 sm:p-5">
             <div className="flex items-center gap-2"><QueueIcon queue={queue}/><h2 className="font-black">{queues.find((item) => item.key === queue)?.label}</h2><span className="ml-auto text-xs text-slate-600">{visibleCases.length} casos</span></div>
             <div className="mt-4 space-y-3">
-              {visibleCases.length ? visibleCases.map((item) => <CaseCard key={item.id} item={item} busy={busy === item.id} onAction={(status) => void act(item.id, () => scopedAdminBackend.resolveModerationCase(item.id, status, item.data.institution_id))}/>) : <Empty text={loading ? 'Consultando Firestore…' : 'No hay casos en esta cola.'}/>}            
+              {visibleCases.length ? visibleCases.map((item) => <CaseCard key={item.id} item={item} busy={busy === item.id} canDecide={!!context && canModerateCase(context, { id: item.id, kind: item.data.kind as ModerationCaseKind, institution_id: item.data.institution_id, priority: item.data.priority || 'normal', status: item.data.status || 'open' })} onAction={(status) => void act(item.id, () => scopedAdminBackend.resolveModerationCase(item.id, status, item.data.institution_id))}/>) : <Empty text={loading ? 'Consultando Firestore…' : error ? 'No se pudo verificar la cola completa; revisa el aviso y vuelve a actualizar.' : 'No hay casos en esta cola.'}/>}            
             </div>
           </section>
 
           <div className="space-y-5">
-            <section className="rounded-3xl border border-white/[0.07] bg-[#0b111c] p-4 sm:p-5"><div className="flex items-center gap-2"><Flag className="h-4 w-4 text-amber-300"/><h2 className="font-black">Reportes</h2><span className="ml-auto text-xs text-slate-600">{reports.filter((r) => r.data.status === 'open').length} abiertos</span></div><div className="mt-3 max-h-80 space-y-2 overflow-y-auto">{reports.filter((r) => !['resolved','dismissed'].includes(r.data.status)).slice(0,20).map((item) => <div key={item.id} className="rounded-xl border border-white/[0.06] bg-black/10 p-3"><p className="text-xs font-bold">{item.data.target_type} · {item.data.target_id}</p><p className="mt-1 text-xs text-slate-500">{item.data.reason}</p><div className="mt-2 flex gap-2"><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveReport(item.id,'resolved',item.data.institution_id))}>Resolver</SmallButton><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveReport(item.id,'dismissed',item.data.institution_id))}>Descartar</SmallButton></div></div>)}{!reports.length && <Empty text="Sin reportes visibles para tu alcance."/>}</div></section>
+            <section className="rounded-3xl border border-white/[0.07] bg-[#0b111c] p-4 sm:p-5"><div className="flex items-center gap-2"><Flag className="h-4 w-4 text-amber-300"/><h2 className="font-black">Reportes</h2><span className="ml-auto text-xs text-slate-600">{activeReports.length} pendientes</span></div>
+            <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filtrar reportes">
+              <button type="button" onClick={() => setReportView('all')} aria-pressed={reportView === 'all'} className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold ${reportView === 'all' ? 'bg-violet-500 text-white' : 'border border-white/10 text-slate-400'}`}>Todos ({activeReports.length})</button>
+              <button type="button" onClick={() => setReportView('ai_response')} aria-pressed={reportView === 'ai_response'} className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold ${reportView === 'ai_response' ? 'bg-violet-500 text-white' : 'border border-white/10 text-slate-400'}`}>Respuestas de Topi ({openAiReportCount})</button>
+            </div>
+            {invalidReportCount > 0 && <p role="alert" className="mt-2 text-xs text-amber-200">Hay {invalidReportCount} reporte(s) con estado no reconocido; las decisiones permanecen bloqueadas.</p>}
+            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">{visibleReports.slice(0,20).map((item) => <div key={item.id} className="rounded-xl border border-white/[0.06] bg-black/10 p-3"><p className="text-xs font-bold">{item.data.target_type === 'ai_response' ? 'Respuesta de Topi' : item.data.target_type} · {item.data.target_id}</p><p className="mt-1 text-xs text-slate-500">{item.data.reason}</p><div className="mt-2 flex gap-2">{item.data.status === 'open' && <SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveReport(item.id,'reviewing',item.data.institution_id))}>Tomar caso</SmallButton>}<SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveReport(item.id,'resolved',item.data.institution_id))}>Resolver</SmallButton><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveReport(item.id,'dismissed',item.data.institution_id))}>Descartar</SmallButton></div></div>)}{!visibleReports.length && <Empty text="No hay reportes pendientes en este filtro para tu alcance."/>}</div></section>
 
             <section className="rounded-3xl border border-white/[0.07] bg-[#0b111c] p-4 sm:p-5"><div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-rose-300"/><h2 className="font-black">No-show</h2></div><div className="mt-3 space-y-2">{claims.filter((item) => item.data.status === 'open').slice(0,12).map((item) => <div key={item.id} className="rounded-xl border border-white/[0.06] bg-black/10 p-3"><p className="text-xs font-bold">{item.data.kind} · {item.data.transaction_id}</p><p className="mt-1 text-xs text-slate-500">{item.data.reason || 'Sin nota adicional'}</p><div className="mt-2 flex gap-2"><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveNoShowClaim(item.id,'upheld',String(item.data.institution_id)))}>Confirmar no-show</SmallButton><SmallButton disabled={busy===item.id} onClick={() => void act(item.id, () => scopedAdminBackend.resolveNoShowClaim(item.id,'dismissed',String(item.data.institution_id)))}>Descartar</SmallButton></div></div>)}{!claims.some((item)=>item.data.status==='open') && <Empty text="Sin reclamos de no-show abiertos."/>}</div></section>
 
@@ -124,10 +152,11 @@ function QueueIcon({ queue }: { queue: QueueKey }) {
   return <ShieldAlert className={className}/>;
 }
 
-function CaseCard({ item, busy, onAction }: { item: AdminDoc; busy: boolean; onAction: (status: 'reviewing'|'resolved'|'dismissed') => void }) {
-  const status = String(item.data.status || 'open');
+function CaseCard({ item, busy, canDecide, onAction }: { item: AdminDoc; busy: boolean; canDecide: boolean; onAction: (status: 'reviewing'|'resolved'|'dismissed') => void }) {
+  const status = String(item.data.status || 'unknown');
   const closed = status === 'resolved' || status === 'dismissed';
-  return <article className="rounded-2xl border border-white/[0.06] bg-[#080d16] p-4"><div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${item.data.priority === 'urgent' ? 'bg-rose-500/15 text-rose-300' : item.data.priority === 'high' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/[0.05] text-slate-500'}`}>{item.data.priority || 'normal'}</span><span className="text-[10px] font-bold uppercase text-violet-300">{item.data.kind}</span><span className="text-[10px] text-slate-600">{item.data.institution_id || 'global'}</span></div><p className="mt-2 text-sm font-bold">{item.data.target_type || 'caso'} · {item.data.target_id || item.id}</p>{item.data.reason && <p className="mt-1 text-xs leading-5 text-slate-500">{item.data.reason}</p>}</div><span className="rounded-full border border-white/[0.07] px-2 py-1 text-[9px] font-black text-slate-500">{status}</span></div>{!closed && <div className="mt-3 flex flex-wrap gap-2"><SmallButton disabled={busy} onClick={() => onAction('reviewing')}>Tomar caso</SmallButton><button disabled={busy} onClick={() => onAction('resolved')} className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1.5 text-[10px] font-black text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5"/>Resolver</button><button disabled={busy} onClick={() => onAction('dismissed')} className="inline-flex items-center gap-1 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-black text-rose-300"><XCircle className="h-3.5 w-3.5"/>Descartar</button></div>}</article>;
+  const actionable = status === 'open' || status === 'reviewing';
+  return <article className="rounded-2xl border border-white/[0.06] bg-[#080d16] p-4"><div className="flex flex-wrap items-start gap-2"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${item.data.priority === 'urgent' ? 'bg-rose-500/15 text-rose-300' : item.data.priority === 'high' ? 'bg-amber-500/15 text-amber-300' : 'bg-white/[0.05] text-slate-500'}`}>{item.data.priority || 'normal'}</span><span className="text-[10px] font-bold uppercase text-violet-300">{item.data.kind}</span><span className="text-[10px] text-slate-600">{item.data.institution_id || 'global'}</span></div><p className="mt-2 text-sm font-bold">{item.data.target_type || 'caso'} · {item.data.target_id || item.id}</p>{item.data.reason && <p className="mt-1 text-xs leading-5 text-slate-500">{item.data.reason}</p>}</div><span className="rounded-full border border-white/[0.07] px-2 py-1 text-[9px] font-black text-slate-500">{status}</span></div>{actionable && canDecide && <div className="mt-3 flex flex-wrap gap-2">{status === 'open' && <SmallButton disabled={busy} onClick={() => onAction('reviewing')}>Tomar caso</SmallButton>}<button disabled={busy} onClick={() => onAction('resolved')} className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1.5 text-[10px] font-black text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5"/>Resolver</button><button disabled={busy} onClick={() => onAction('dismissed')} className="inline-flex items-center gap-1 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-black text-rose-300"><XCircle className="h-3.5 w-3.5"/>Descartar</button></div>}{actionable && !canDecide && <p className="mt-3 text-xs text-amber-200/70">Solo lectura: tu rol no puede decidir este caso.</p>}{!actionable && !closed && <p role="alert" className="mt-3 text-xs text-amber-200">Estado no verificable; no hay acciones disponibles.</p>}</article>;
 }
 
 function SmallButton({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled?: boolean }) { return <button disabled={disabled} onClick={onClick} className="rounded-lg border border-white/[0.07] bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-black text-slate-300 disabled:opacity-40">{children}</button>; }

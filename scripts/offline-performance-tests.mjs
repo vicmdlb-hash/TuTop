@@ -47,3 +47,67 @@ console.log('PASS PII, chat content and auth secrets are forbidden offline');
 console.log('PASS low-data network profile reduces feed work and image preloading');
 console.log('PASS pagination and retry budgets are explicit');
 console.log('Offline/performance contracts: PASS');
+
+
+// R262/R274: run the real worker in an isolated VM; no browser storage or network.
+const { readFileSync } = await import('node:fs');
+const { runInNewContext } = await import('node:vm');
+const workerSource = readFileSync('public/sw.js', 'utf8');
+const handlers = new Map();
+const cacheNames = new Set(['tutop-shell-v1','unrelated-app-cache']);
+let skipCount=0, claimCount=0;
+const deleted=[];
+runInNewContext(workerSource,{
+  self:{
+    addEventListener:(name,fn)=>{assert(!handlers.has(name));handlers.set(name,fn);},
+    skipWaiting:async()=>{skipCount++;},
+    clients:{claim:async()=>{claimCount++;}},
+  },
+  caches:{
+    delete:async name=>{deleted.push(name);return cacheNames.delete(name);},
+    open:()=>assert.fail('worker must not open caches'),
+    keys:()=>assert.fail('worker must not enumerate or sweep caches'),
+    match:()=>assert.fail('worker must not serve cached data'),
+  },
+  fetch:()=>assert.fail('worker must not intercept network requests'),
+});
+const lifecycle=async name=>{
+  let pending;
+  assert(handlers.has(name));
+  handlers.get(name)({waitUntil:p=>{assert.equal(pending,undefined);pending=p;}});
+  assert(pending);await pending;
+};
+await lifecycle('install');
+assert.equal(skipCount,1);assert.deepEqual(deleted,[]);
+await lifecycle('activate');
+assert.equal(claimCount,1);assert.deepEqual(deleted,['tutop-shell-v1']);
+assert(cacheNames.has('unrelated-app-cache'));assert(!cacheNames.has('tutop-shell-v1'));
+assert.equal(handlers.has('fetch'),false);
+for(const request of [
+  {method:'GET',url:'https://tutop.invalid/api/private'},
+  {method:'GET',url:'https://tutop.invalid/auth-action?oobCode=synthetic'},
+  {method:'GET',url:'https://tutop.invalid.example.invalid/api'},
+  {method:'GET',url:'https://tutop.invalid/tutop-icon.svg'},
+  {method:'POST',url:'https://tutop.invalid/api/private'},
+]){
+  // No fetch listener: all request classes keep browser-native network behavior.
+  let intercepts=0;
+  handlers.get('fetch')?.({request,respondWith:()=>{intercepts++;}});
+  assert.equal(intercepts,0);
+}
+const mainSource=readFileSync('src/main.tsx','utf8');
+const registerBlock=mainSource.match(/    const registerWorker = [^\n]+\n    if \(document\.readyState === 'complete'\) registerWorker\(\);\n    else window\.addEventListener\('load', registerWorker, \{ once: true \}\);/);
+assert(registerBlock,'registration block missing');
+assert.match(mainSource,/if \('serviceWorker' in navigator && import\.meta\.env\.PROD\)/);
+for(const readyState of ['complete','loading','interactive']){
+  let calls=0,listener;
+  runInNewContext(registerBlock[0],{
+    navigator:{serviceWorker:{register:async url=>{assert.equal(url,'/sw.js');calls++;}}},
+    document:{readyState},
+    window:{addEventListener:(name,fn,opts)=>{assert.equal(name,'load');assert.equal(opts.once,true);assert.equal(listener,undefined);listener=fn;}},
+    console:{warn:()=>assert.fail('unexpected registration failure')},
+  });
+  if(readyState==='complete'){assert.equal(listener,undefined);assert.equal(calls,1);}
+  else{assert.equal(calls,0);assert(listener);listener();assert.equal(calls,1);}
+}
+console.log('PASS synthetic PWA worker network-only lifecycle and late-load registration');

@@ -1,6 +1,14 @@
-# TuTop Build120 — Physical acceptance runbook
+# TuTop Build120 — Historical physical acceptance runbook (DO NOT REUSE)
 
-Status: **READY FOR PHYSICAL QA / DEVICE A NOT TESTED**.
+Status: **OBSOLETE / HISTORICAL PHYSICAL FAILURE — NOT AN ACTIVE QA CANDIDATE**.
+
+> **STOP: NO instalar, reetiquetar ni dar por aceptado Build120.** La fuente autoritativa
+> `docs/PHYSICAL_QA_CANDIDATE_0.9.json` lo marca `obsolete_physical_fail` y
+> `replacement_required=true`. Este instructivo se conserva para procedencia
+> y análisis causal de fallos, NO como autorización de APK físico. Un candidato
+> posterior requiere un nuevo source SHA, APK SHA-256, certificación y aprobación
+> del control en `docs/NEXT_CANDIDATE_SIGNING_BINDING.md`. QA R6 permanece **0/2**.
+> NUNCA reutilizar los hashes/firma de Build120 para autorizar una nueva beta.
 
 ## Exact candidate
 - PR #107 / Build120
@@ -16,7 +24,7 @@ Status: **READY FOR PHYSICAL QA / DEVICE A NOT TESTED**.
 
 Issue #20 remains the physical SSOT. CI/staging PASS is not physical PASS.
 
-## Before installation
+## Historical pre-installation steps — NOT AUTHORIZED for Build120
 1. Verify the APK SHA-256 matches exactly.
 2. Record installation mode: upgrade / clean / reinstall.
 3. Start a new Build120 evidence session. Do not copy Build118/Build119 PASS/FAIL values.

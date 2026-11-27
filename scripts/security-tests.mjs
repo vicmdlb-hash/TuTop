@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const firestore = fs.readFileSync('firebase/firestore.rules', 'utf8');
+const read = (path) => fs.readFileSync(path, 'utf8').replace(/\r\n?/g, '\n');
+const firestore = read('firebase/firestore.rules');
 const firebaseConfig = JSON.parse(fs.readFileSync('firebase.json', 'utf8'));
-const backend = fs.readFileSync('src/services/onlineBackend.ts', 'utf8');
-const runtime = fs.readFileSync('src/services/runtimeConfig.ts', 'utf8');
-const firebaseRest = fs.readFileSync('src/services/firebaseRest.ts', 'utf8');
+const backend = read('src/services/onlineBackend.ts');
+const runtime = read('src/services/runtimeConfig.ts');
+const firebaseRest = read('src/services/firebaseRest.ts');
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
@@ -113,12 +114,17 @@ test('config cliente Firebase puede venir integrada sin incluir credenciales pri
   assert.ok(!runtime.includes('client_email'));
 });
 
-test('registro puede reparar Auth huérfano sin borrar cuentas existentes', () => {
-  const registerBlock = backend.slice(backend.indexOf('async register('), backend.indexOf('async login('));
+test('registro recupera identidad existente sin borrar Auth después de un commit ambiguo', () => {
+  const registerBlock = backend.slice(backend.indexOf('async register('), backend.indexOf('async ensureMarketplaceCatalog('));
   assert.ok(registerBlock.includes('/EMAIL_EXISTS/i'));
   assert.ok(registerBlock.includes('signInWithPhonePassword'));
-  assert.ok(registerBlock.includes('createdAuthIdentity'));
-  assert.ok(registerBlock.includes('if (createdAuthIdentity)'));
+  assert.ok(registerBlock.includes('await this.createInitialAccount(session, profile)'));
+  assert.ok(registerBlock.includes('client.signOut();\n      throw error;'));
+  assert.ok(registerBlock.includes('await this.ensureMarketplaceCatalog().catch(() => undefined)'));
+  assert.ok(!registerBlock.includes('deleteAuthAccount('), 'ambiguous account creation must not delete Firebase Auth');
+  assert.ok(!registerBlock.includes('createdAuthIdentity'), 'do not assume a rollback is safe for a fresh Auth identity');
+  assert.ok(firebaseRest.includes("throw new Error('ACCOUNT_ERASURE_TRUSTED_PROCESSOR_REQUIRED')"));
+  assert.ok(!firebaseRest.includes("authRequest('accounts:delete'"), 'client must not bypass trusted server account erasure');
 });
 
 test('sesión Firebase queda aislada por projectId', () => {

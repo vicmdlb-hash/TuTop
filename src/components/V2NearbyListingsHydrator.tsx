@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { getCachedApproxLocation, nearbyGeoCells, NEARBY_LOCATION_EVENT, type ApproxLocation } from '../lib/nearbyMarketplace';
+import { getCachedApproxLocation, nearbyGeoCells, NEARBY_LOCATION_EVENT, NEARBY_LOCATION_CLEARED_EVENT, type ApproxLocation, type ScopedApproxLocationEvent } from '../lib/nearbyMarketplace';
 import { canonicalListingsBackend } from '../services/canonicalListingsBackend';
 import { useAppStore } from '../store/useAppStore';
 import type { Product } from '../types';
@@ -14,7 +14,9 @@ function mergeProducts(current: Product[], nearby: Product[]) {
   const byId = new Map<string, Product>();
   for (const product of [...nearby, ...current]) {
     const previous = byId.get(product.id);
-    if (!previous || timestamp(product) >= timestamp(previous)) byId.set(product.id, product);
+    // A newly fetched Nearby row wins a timestamp tie; a stale local row
+    // cannot overwrite its moderation status when updated_at did not change.
+    if (!previous || timestamp(product) > timestamp(previous)) byId.set(product.id, product);
   }
   return [...byId.values()];
 }
@@ -23,18 +25,57 @@ export default function V2NearbyListingsHydrator() {
   useEffect(() => {
     let active = true;
     let requestSerial = 0;
+    // Comparing only the UID misses a fast A -> B -> A session change.
+    // Invalidate every pending Nearby request as soon as the live owner changes.
+    let currentOwnerUid = useAppStore.getState().user.id;
+    // Track only records introduced by Nearby. Base records remain authoritative.
+    let baseProductIds = new Set(useAppStore.getState().products.map((product) => product.id));
+    let nearbyInjectedIds = new Set<string>();
+    const unsubscribeOwner = useAppStore.subscribe((state) => {
+      if (state.user.id === currentOwnerUid) return;
+      currentOwnerUid = state.user.id;
+      // The store's normal setUser() clears products on an account switch,
+      // but other session bridges can update the owner independently. Never
+      // retain an old owner's Nearby-only listings in that interim state.
+      requestSerial += 1;
+      const retained = state.products.filter((product) =>
+        !nearbyInjectedIds.has(product.id) || baseProductIds.has(product.id)
+      );
+      const evicted = retained.length !== state.products.length;
+      baseProductIds.clear();
+      nearbyInjectedIds.clear();
+      if (evicted) useAppStore.setState({ products: retained });
+    });
 
     const hydrate = async (location: ApproxLocation, force = false) => {
       const serial = ++requestSerial;
+      const requestUid = useAppStore.getState().user.id;
+      if (!requestUid) return;
       const cells = nearbyGeoCells(location);
       if (!cells.length) return;
       try {
         const nearby = await canonicalListingsBackend.loadNearbyProducts({ geoCells: cells, limitPerCell: 10, force });
-        if (!active || serial !== requestSerial) return;
+        if (!active || serial !== requestSerial || useAppStore.getState().user.id !== requestUid) return;
         const current = useAppStore.getState().products;
-        useAppStore.setState({ products: mergeProducts(current, nearby) });
+        const currentNearbyIds = new Set(nearby.map((product) => product.id));
+        // A refreshed approved-only query may omit a newly moderated/deleted item.
+        // Evict previous Nearby-only IDs without erasing authoritative base products.
+        const retained = current.filter((product) =>
+          !nearbyInjectedIds.has(product.id) || currentNearbyIds.has(product.id) || baseProductIds.has(product.id)
+        );
+        nearbyInjectedIds = new Set([...currentNearbyIds].filter((id) => !baseProductIds.has(id)));
+        useAppStore.setState({ products: mergeProducts(retained, nearby) });
       } catch {
-        // Nearby is additive. Existing campus/city/national snapshot remains usable.
+        // A failed refresh cannot prove previously injected Nearby-only rows
+        // are still approved. Evict those rows, but preserve base catalog rows.
+        // Ignore obsolete A/B sessions and older overlapping requests.
+        if (!active || serial !== requestSerial || useAppStore.getState().user.id !== requestUid) return;
+        if (!nearbyInjectedIds.size) return;
+        const retained = useAppStore.getState().products.filter((product) =>
+          !nearbyInjectedIds.has(product.id) || baseProductIds.has(product.id)
+        );
+        nearbyInjectedIds.clear();
+        useAppStore.setState({ products: retained });
       }
     };
 
@@ -46,16 +87,40 @@ export default function V2NearbyListingsHydrator() {
     hydrateCached();
 
     const onLocation = (event: Event) => {
-      const location = (event as CustomEvent<ApproxLocation>).detail;
-      if (location) void hydrate(location);
+      const location = (event as CustomEvent<ScopedApproxLocationEvent>).detail;
+      if (!location?.owner_uid || location.owner_uid !== useAppStore.getState().user.id) return;
+      void hydrate(location);
     };
     window.addEventListener(NEARBY_LOCATION_EVENT, onLocation);
-    const onBaseHydrated = () => hydrateCached(true);
+    const onLocationCleared = (event: Event) => {
+      const clearedOwnerUid = (event as CustomEvent<{ owner_uid: string | null }>).detail?.owner_uid;
+      if (clearedOwnerUid && clearedOwnerUid !== useAppStore.getState().user.id) return;
+      // A location revocation invalidates a pending Nearby response, even
+      // when no products were injected yet. Preserve authoritative base data.
+      requestSerial += 1;
+      if (!nearbyInjectedIds.size) return;
+      const retained = useAppStore.getState().products.filter((product) =>
+        !nearbyInjectedIds.has(product.id) || baseProductIds.has(product.id)
+      );
+      nearbyInjectedIds.clear();
+      useAppStore.setState({ products: retained });
+    };
+    window.addEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
+    const onBaseHydrated = () => {
+      // A fresh authoritative base snapshot invalidates outstanding Nearby
+      // responses even when location consent/cache is absent and no refetch runs.
+      requestSerial += 1;
+      baseProductIds = new Set(useAppStore.getState().products.map((product) => product.id));
+      nearbyInjectedIds.clear();
+      hydrateCached(true);
+    };
     window.addEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, onBaseHydrated);
     return () => {
       active = false;
       requestSerial += 1;
+      unsubscribeOwner();
       window.removeEventListener(NEARBY_LOCATION_EVENT, onLocation);
+      window.removeEventListener(NEARBY_LOCATION_CLEARED_EVENT, onLocationCleared);
       window.removeEventListener(V2_LISTINGS_BASE_HYDRATED_EVENT, onBaseHydrated);
     };
   }, []);

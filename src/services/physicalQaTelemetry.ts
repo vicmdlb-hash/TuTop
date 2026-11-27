@@ -4,6 +4,7 @@ import { nationalSchemaEnabled } from './nationalBackend';
 import { onlineBackend } from './onlineBackend';
 import { getFirebaseConfig } from './runtimeConfig';
 import { useAppStore } from '../store/useAppStore';
+import { sanitizePhysicalQaEvent, sanitizePhysicalQaHistory } from '../lib/physicalQaEventPrivacy';
 
 const LOG_KEY = 'tutop.physical-qa.events.v1';
 const MAX_EVENTS = 120;
@@ -32,16 +33,22 @@ function sanitize(value: unknown) {
 
 function readEvents(): QaEvent[] {
   try {
-    const parsed = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed.slice(-MAX_EVENTS) : [];
+    const raw = localStorage.getItem(LOG_KEY);
+    if (!raw) return [];
+    const events = sanitizePhysicalQaHistory(JSON.parse(raw)).slice(-MAX_EVENTS);
+    // Scrub historical telemetry on the device before it reaches QA exports or UI.
+    const safeRaw = JSON.stringify(events);
+    if (raw !== safeRaw) localStorage.setItem(LOG_KEY, safeRaw);
+    return events;
   } catch {
+    try { localStorage.removeItem(LOG_KEY); } catch { /* best-effort */ }
     return [];
   }
 }
 
 export function qaEvent(kind: string, detail?: unknown) {
   if (typeof window === 'undefined') return;
-  const events = [...readEvents(), { at: new Date().toISOString(), kind: sanitize(kind).slice(0, 64), ...(detail === undefined ? {} : { detail: sanitize(detail) }) }].slice(-MAX_EVENTS);
+  const events = [...readEvents(), { at: new Date().toISOString(), ...sanitizePhysicalQaEvent(kind, detail) }].slice(-MAX_EVENTS);
   try { localStorage.setItem(LOG_KEY, JSON.stringify(events)); } catch { /* diagnostics must never break the app */ }
 }
 
@@ -139,8 +146,8 @@ export function installPhysicalQaTelemetry() {
   });
   window.addEventListener('resize', () => qaEvent('viewport_resize', `${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio || 1}`));
   document.addEventListener('visibilitychange', () => qaEvent('visibility', document.visibilityState));
-  window.addEventListener('error', (event) => qaEvent('window_error', event.message || 'unknown'));
-  window.addEventListener('unhandledrejection', (event) => qaEvent('unhandled_rejection', event.reason instanceof Error ? event.reason.message : event.reason));
+  window.addEventListener('error', () => qaEvent('window_error'));
+  window.addEventListener('unhandledrejection', () => qaEvent('unhandled_rejection'));
   window.addEventListener('tutop:native-notification', ((event: CustomEvent<any>) => {
     const detail = event.detail || {};
     const source = detail.source === 'action' ? 'push_action' : 'push_received';

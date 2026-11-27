@@ -78,12 +78,13 @@ assert.match(hostedStagingWorkflow, /workflow_dispatch:/);
 assert.doesNotMatch(hostedStagingWorkflow, /\n\s+push:/);
 assert.match(hostedStagingWorkflow, /runs-on: ubuntu-24\.04/);
 
-// Regression for build-91: before Android assembly, staging preparation must
-// prove an app-like new account can publish immediately and then wipe old beta
-// users/data exactly once. This runs in the authoritative exact-SHA pipeline.
-assert.match(prepareAndroid, /staging-app-registration-smoke\.mjs/);
-assert.match(prepareAndroid, /reset-staging-accounts\.mjs/);
-assert.match(prepareAndroid, /DELETE_ALL_BETA_ACCOUNTS/);
+// A connected Android build must only READ its already-registered Firebase config;
+// historical beta account resets require separate explicit reviewed authorization.
+assert.match(prepareAndroid, /selectExistingStagingAndroidApp/);
+assert.match(prepareAndroid, /validateExistingStagingAndroidConfig/);
+assert.match(prepareAndroid, /method:'GET'/);
+assert.doesNotMatch(prepareAndroid, /reset-staging-accounts|staging-app-registration-smoke|DELETE_ALL_BETA_ACCOUNTS/);
+assert.doesNotMatch(prepareAndroid, /method:'POST'|method:'PATCH'|method:'DELETE'/);
 assert.match(registrationSmoke, /buildV2InitialAccountDocuments/);
 assert.match(registrationSmoke, /institution_id/);
 assert.match(registrationSmoke, /campus_id/);
@@ -102,7 +103,8 @@ assert.match(nativeDevice, /permissions: \['coarseLocation'\]/);
 
 assert.match(nativeAI, /gemini-3\.8-flash/);
 assert.match(nativeAI, /gemini-3\.5-flash-lite/);
-assert.match(nativeAI, /isPrivatePhysicalQaBuild/);
+assert.match(nativeAI, /function appCheckRequired\(\)/);
+assert.doesNotMatch(nativeAI, /isPrivatePhysicalQaBuild/);
 assert.match(appCheck, /play-integrity/);
 assert.doesNotMatch(appCheck, /debugToken:\s*['"][A-Za-z0-9_-]{12,}['"]/);
 

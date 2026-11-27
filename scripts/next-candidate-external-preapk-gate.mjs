@@ -1,4 +1,5 @@
 import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';
+import { validateApkVersionCode, validateApkVersionName } from './apk-badging-version-identity.mjs';
 
 const PROJECT='tutop-beta-vicmdlb-1356585881';
 const PACKAGE='mx.tutop.app';
@@ -16,6 +17,8 @@ const extractedSourceSha=required('TUTOP_NEXT_CANDIDATE_SOURCE_SHA');
 if(!/^[0-9a-f]{40}$/.test(extractedSourceSha)) throw new Error('EXTRACTED_SOURCE_SHA_INVALID');
 if(extractedSourceSha!==sourceSha) throw new Error('CANDIDATE_SOURCE_SHA_MISMATCH');
 const apkSha256=apk(required('TUTOP_NEXT_CANDIDATE_APK_SHA256'));
+const versionCode=validateApkVersionCode(required('TUTOP_NEXT_CANDIDATE_APK_VERSION_CODE'));
+const versionName=validateApkVersionName(required('TUTOP_NEXT_CANDIDATE_APK_VERSION_NAME'));
 
 const token=await firebaseCiAccessToken();
 const headers={Authorization:`Bearer ${token}`,'X-Goog-User-Project':PROJECT};
@@ -30,6 +33,9 @@ const auth=await get(`https://identitytoolkit.googleapis.com/admin/v2/projects/$
 const callback=String(auth?.notification?.sendEmail?.callbackUri||'').trim();
 let callbackUrl=null;try{callbackUrl=callback?new URL(callback):null;}catch{}
 if(!callbackUrl) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_MISSING');
+if(callbackUrl.protocol!=='https:' || callbackUrl.username || callbackUrl.password) {
+  throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_INSECURE_URL');
+}
 
 const customHandler=['/auth-action.html','/auth-action'].includes(callbackUrl.pathname);
 const firebaseDefaultHandler=callbackUrl.pathname==='/__/auth/action'
@@ -37,12 +43,16 @@ const firebaseDefaultHandler=callbackUrl.pathname==='/__/auth/action'
 const handlerMode=customHandler ? 'TUTOP_CUSTOM' : firebaseDefaultHandler ? 'FIREBASE_DEFAULT_MANAGED' : 'UNKNOWN';
 if(handlerMode==='UNKNOWN') throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_UNRECOGNIZED');
 
+if(callbackUrl.port||callbackUrl.search||callbackUrl.hash) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_NONCANONICAL_URL');
+const domains=Array.isArray(auth?.authorizedDomains)?auth.authorizedDomains.map(String):[];
+if(!domains.includes(callbackUrl.hostname)) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_DOMAIN_NOT_AUTHORIZED');
+
 let hardenedCustomHandler=false;
 if(firebaseDefaultHandler){
   console.log('INFO AUTH_EMAIL_HANDLER_MODE=FIREBASE_DEFAULT_MANAGED; supported Firebase default handler. TuTop in-app same-UID paste-link recovery + verification auto-refresh remain required source contracts.');
 }
 if(customHandler){
-  const handlerResponse=await fetch(callbackUrl.toString(), { redirect:'error', headers:{'Cache-Control':'no-cache'} });
+  const handlerResponse=await fetch(callbackUrl.toString(), { method:'GET', redirect:'error', signal:AbortSignal.timeout(20000), headers:{'Cache-Control':'no-cache'} });
   const handlerText=await handlerResponse.text();
   if(!handlerResponse.ok) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_REACHABLE');
   if(!/Acción de cuenta TuTop/i.test(handlerText) || !/auth-action\.js/i.test(handlerText)) {
@@ -61,9 +71,6 @@ if(customHandler){
   hardenedCustomHandler=true;
 }
 
-const domains=Array.isArray(auth?.authorizedDomains)?auth.authorizedDomains.map(String):[];
-if(!domains.includes(callbackUrl.hostname)) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_DOMAIN_NOT_AUTHORIZED');
-
 const apps=await get(`https://firebase.googleapis.com/v1beta1/projects/${PROJECT}/androidApps?pageSize=100`);
 const app=(apps.apps||[]).find(x=>x.packageName===PACKAGE&&x.state!=='DELETED');
 if(!app?.name) throw new Error('STAGING_ANDROID_APP_REQUIRED');
@@ -81,6 +88,9 @@ console.log(JSON.stringify({
   package:PACKAGE,
   source_sha:sourceSha,
   apk_sha256:apkSha256,
+  apk_version_code:versionCode,
+  apk_version_name:versionName,
+  install_compatibility:'UNVERIFIED_REQUIRE_DEVICE_INVENTORY',
   auth_handler_mode:handlerMode,
   auth_callback_origin:callbackUrl.origin,
   auth_callback_path:callbackUrl.pathname,

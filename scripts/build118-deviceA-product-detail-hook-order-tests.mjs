@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const source=fs.readFileSync('src/components/ProductDetail.tsx','utf8');
+const source=fs.readFileSync('src/components/ProductDetail.tsx','utf8').replace(/\r\n?/g, '\n');
 const productGuard=source.indexOf('if (!product) return null;');
 assert(productGuard>0,'ProductDetail must retain a null-product render guard');
 

@@ -1,5 +1,7 @@
 import { FirebaseRestClient, type AuthSession, type FirestoreDocument } from './firebaseRest';
+import { sameFirebaseSession } from '../lib/firebaseSharedSessionGuard';
 import { getFirebaseConfig } from './runtimeConfig';
+import { nextReportRateBucket, type ReportRateBucket } from '../lib/reportRateBudget';
 import { MARKETPLACE_CATEGORIES, VALID_MEETING_POINTS, normalizeCategory, sellerLevelFor } from '../lib/productAssistant';
 import type { AppNotification, Chat, Product, Review, User, WalletTransaction } from '../types';
 
@@ -30,8 +32,27 @@ function weekId(date = new Date()) {
 function nowIso() { return new Date().toISOString(); }
 function v2SnapshotMode() { return String(import.meta.env.VITE_TUTOP_SCHEMA_V2 || '').toLowerCase() === 'true'; }
 
+// Legacy-only projection: unknown/malformed stock is never magically one unit.
+function legacySaleableStock(value: unknown) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 && value <= 99 ? value : 0;
+}
+
+function legacySaleablePrice(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0.01 && value <= 1_000_000;
+}
+
 function asProduct(doc: FirestoreDocument<any>): Product {
   const data = doc.data || {};
+  const stock = legacySaleableStock(data.stock);
+  const priced = legacySaleablePrice(data.precio_mxn);
+  const knownStatus = ['Activo', 'Reservado', 'Pausado', 'Vendido', 'Agotado', 'Archivado'].includes(data.estado)
+    ? data.estado : 'Pausado';
+  // Invalid legacy inventory, price, or status must not become a public active offer.
+  const estado = (!stock || !priced) && knownStatus === 'Activo' ? 'Pausado' : knownStatus;
+  const availability = stock > 0 && priced && estado === 'Activo'
+    ? data.availability_status === undefined || data.availability_status === 'available'
+      ? 'available' : data.availability_status === 'reserved' ? 'reserved' : 'unverified'
+    : 'unverified';
   return {
     id: doc.id,
     vendedor_id: String(data.vendedor_id || data.seller_id || ''),
@@ -40,14 +61,15 @@ function asProduct(doc: FirestoreDocument<any>): Product {
     vendedor_verificado: Boolean(data.vendedor_verificado),
     titulo: String(data.titulo || ''),
     descripcion: data.descripcion ? String(data.descripcion) : undefined,
-    precio_mxn: Number(data.precio_mxn || 0),
-    stock: Math.max(1, Number(data.stock || 1)),
+    precio_mxn: priced ? data.precio_mxn : 0,
+    stock,
+    availability_status: availability,
     categoria: normalizeCategory(String(data.categoria || 'Otros')),
     facultad: String(data.facultad || 'Comunidad universitaria'),
     punto_encuentro: data.punto_encuentro,
     imagen_url: String(data.imagen_url || (Array.isArray(data.imagenes_url) ? data.imagenes_url[0] : '') || ''),
     imagenes_url: Array.isArray(data.imagenes_url) ? data.imagenes_url.map(String).slice(0, 4) : undefined,
-    estado: data.estado || 'Activo',
+    estado,
     es_top: false,
     jerarquia_top: 0,
     puja_ucoins: 0,
@@ -81,13 +103,11 @@ export class TuTopOnlineBackend {
   async register(phone: string, password: string, profile: { nombre: string; facultad: string }) {
     const client = this.getClient();
     let session: AuthSession;
-    let createdAuthIdentity = true;
     try {
       session = await client.registerWithPhonePassword(phone, password);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!/EMAIL_EXISTS/i.test(message)) throw error;
-      createdAuthIdentity = false;
       session = await client.signInWithPhonePassword(phone, password);
       const existingProfile = await client.getDocument<any>(`users/${session.uid}`);
       if (existingProfile) {
@@ -96,14 +116,18 @@ export class TuTopOnlineBackend {
       }
     }
     try {
+      // A Firestore commit may have SUCCEEDED even when its response was lost.
+      // Deleting the newly created Auth user here would orphan the profile,
+      // wallet and other committed documents. Keep the identity for an
+      // explicit sign-in or reviewed recovery instead of destructive rollback.
       await this.createInitialAccount(session, profile);
-      await this.ensureMarketplaceCatalog();
     } catch (error) {
-      if (createdAuthIdentity) {
-        try { await client.deleteAuthAccount(); } catch { client.signOut(); }
-      } else client.signOut();
+      client.signOut();
       throw error;
     }
+    // Shared catalog bootstrap is optional and must not roll back an otherwise
+    // committed account. A subsequent signed-in refresh may try it again.
+    await this.ensureMarketplaceCatalog().catch(() => undefined);
     return session;
   }
 
@@ -397,6 +421,10 @@ export class TuTopOnlineBackend {
     const client = this.getClient();
     const uid = client.currentSession?.uid;
     if (!uid || product.vendedor_id !== uid) throw new Error('No puedes publicar por otra cuenta.');
+    if (!legacySaleablePrice(product.precio_mxn)) throw new Error('LISTING_PRICE_INVALID');
+    // Keep a missing historical optional stock default; reject explicit zero/NaN.
+    const stock = product.stock === undefined ? 1 : legacySaleableStock(product.stock);
+    if (!stock) throw new Error('LISTING_QUANTITY_INVALID');
     await client.setDocument(`products/${product.id}`, {
       vendedor_id: uid,
       vendedor_nombre: product.vendedor_nombre,
@@ -404,7 +432,7 @@ export class TuTopOnlineBackend {
       titulo: product.titulo,
       descripcion: product.descripcion || '',
       precio_mxn: product.precio_mxn,
-      stock: product.stock || 1,
+      stock,
       categoria: product.categoria,
       facultad: product.facultad,
       punto_encuentro: product.punto_encuentro,
@@ -418,11 +446,26 @@ export class TuTopOnlineBackend {
   }
 
   async updateProduct(productId: string, updates: Partial<Product>) {
+    const client = this.getClient();
+    const requestSession = client.currentSession;
+    if (!requestSession?.uid) throw new Error('AUTH_REQUIRED');
+    if (updates.stock !== undefined && !legacySaleableStock(updates.stock))
+      throw new Error('LISTING_QUANTITY_INVALID');
+    if (updates.precio_mxn !== undefined && !legacySaleablePrice(updates.precio_mxn))
+      throw new Error('LISTING_PRICE_INVALID');
     const allowed = ['titulo', 'descripcion', 'precio_mxn', 'stock', 'categoria', 'facultad', 'punto_encuentro', 'imagen_url', 'imagenes_url', 'estado'] as const;
     const data: Record<string, unknown> = {};
     for (const key of allowed) if (updates[key] !== undefined) data[key] = updates[key];
     data.updated_at = nowIso();
-    await this.getClient().setDocument(`products/${productId}`, data, { merge: true });
+    const snapshot = await client.getDocument<any>(`products/${productId}`);
+    if (!snapshot) throw new Error('LISTING_NOT_FOUND');
+    if (String(snapshot.data.vendedor_id || snapshot.data.seller_id || '') !== requestSession.uid)
+      throw new Error('SELLER_REQUIRED');
+    // A same-UID login after logout is still a different session; refuse stale edits.
+    if (!sameFirebaseSession(requestSession, client.currentSession)) throw new Error('AUTH_SESSION_CHANGED');
+    if (!snapshot.updateTime) throw new Error('LISTING_VERSION_REQUIRED');
+    // Firestore REST also validates the persisted session before sending the write.
+    await client.setDocument(`products/${productId}`, data, { merge: true, updateTime: snapshot.updateTime });
   }
 
   async createChat(chat: Chat) {
@@ -461,6 +504,7 @@ export class TuTopOnlineBackend {
       { update: client.encodeDocumentForWrite(`chats/${chatId}/messages/${messageId}`, messageData), currentDocument: { exists: false } },
       { update: client.encodeDocumentForWrite(`chats/${chatId}`, { updated_at: createdAt, last_message: lastMessage.slice(0, 180), last_message_at: createdAt }), updateMask: { fieldPaths: ['updated_at', 'last_message', 'last_message_at'] } },
     ]);
+    return messageId;
   }
 
   async markChatRead(chatId: string) {
@@ -587,12 +631,32 @@ export class TuTopOnlineBackend {
     }
   }
 
-  async submitReport(targetType: 'product' | 'user' | 'chat', targetId: string, reason: string) {
+  async submitReport(targetType: 'product' | 'user' | 'chat' | 'ai_response', targetId: string, reason: string) {
     const client = this.getClient();
     const uid = client.currentSession?.uid;
     if (!uid) throw new Error('AUTH_REQUIRED');
+    const cleanTarget = targetId.trim();
+    const cleanReason = reason.trim().slice(0, 500);
+    if (cleanTarget.length < 2 || cleanTarget.length > 180 || cleanReason.length < 3) throw new Error('REPORT_INPUT_INVALID');
     const reportId = id('report');
-    await client.setDocument(`reports/${reportId}`, { created_by: uid, target_type: targetType, target_id: targetId, reason: reason.trim().slice(0, 500), status: 'open', created_at: nowIso(), updated_at: nowIso() }, { exists: false });
+    const at = nowIso();
+    const report = { created_by: uid, target_type: targetType, target_id: cleanTarget, reason: cleanReason, status: 'open', created_at: at, updated_at: at };
+    if (!v2SnapshotMode()) {
+      if (client.currentSession?.uid !== uid) throw new Error('SESSION_CHANGED');
+      await client.setDocument(`reports/${reportId}`, report, { exists: false });
+      return reportId;
+    }
+    // V2 Rules require the counter and report to be committed atomically.
+    const bucketPath = `rate_limits/${uid}-report_create`;
+    const previous = await client.getDocument<ReportRateBucket>(bucketPath);
+    if (client.currentSession?.uid !== uid) throw new Error('SESSION_CHANGED');
+    if (previous && !previous.updateTime) throw new Error('REPORT_RATE_VERSION_REQUIRED');
+    const next = nextReportRateBucket(uid, at, previous?.data || null);
+    await client.commit([
+      { update: client.encodeDocumentForWrite(`reports/${reportId}`, report), currentDocument: { exists: false } },
+      { update: client.encodeDocumentForWrite(bucketPath, next),
+        currentDocument: previous ? { updateTime: previous.updateTime } : { exists: false } },
+    ]);
     return reportId;
   }
 }

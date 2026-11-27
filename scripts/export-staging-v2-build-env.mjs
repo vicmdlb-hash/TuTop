@@ -30,6 +30,13 @@ const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 if (!config.apiKey || !config.projectId || !config.appId) stop('config web Firebase incompleta.');
 if (config.projectId === historicalProject) stop('V2 build no puede apuntar al Firebase histórico.');
 if (config.projectId !== expectedProject) stop(`V2 staging project mismatch: ${config.projectId}`);
+// A valid staging projectId alone is insufficient: the APK may still embed V1 Auth API identity.
+// Read the legacy fallback solely for comparison; never print either client identifier.
+const legacySource = fs.readFileSync('src/services/runtimeConfig.ts', 'utf8');
+const legacyApiKey = legacySource.match(/apiKey: '([^']+)'/)?.[1];
+const legacyAppId = legacySource.match(/appId: '([^']+)'/)?.[1];
+if (!legacyApiKey || !legacyAppId) stop('V2_HISTORICAL_CLIENT_IDENTITY_UNAVAILABLE');
+if (config.apiKey === legacyApiKey || config.appId === legacyAppId) stop('V2_STAGING_CLIENT_IDENTITY_MISMATCH');
 if (!/^0\.9\.(?:1|2)-beta\.\d+$/.test(version)) stop(`versión beta inesperada: ${version}`);
 
 const appCheckRequired = String(process.env.TUTOP_AI_APP_CHECK_REQUIRED || 'true').trim().toLowerCase() !== 'false';

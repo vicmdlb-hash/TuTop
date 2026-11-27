@@ -1,0 +1,424 @@
+import fs from 'node:fs';
+
+// This is a DEMO-ONLY strict candidate. Never update firebase.v2.json or
+// production/staging with this artifact. The current real-user migration and
+// trusted issuance service have NOT been implemented.
+if (process.env.GCLOUD_PROJECT !== 'demo-tutop-post120-rules'
+  || process.env.FIREBASE_PROJECT_ID !== 'demo-tutop-post120-rules') {
+  throw new Error('GUARDIAN_DEMO_ONLY_PROJECT_REQUIRED');
+}
+const inputPath = 'firebase/firestore.v2.generated.rules';
+const outputPath = 'firebase/firestore.v2.guardian-demo.rules';
+let rules = fs.readFileSync(inputPath, 'utf8');
+// The V2 preparation pipeline migrated offers and chats to listings_v2.
+// Refuse stale legacy product rules; a demo must never reintroduce them.
+if (rules.includes('productDoc(') || !rules.includes('    function listingDoc(')) {
+  throw new Error('GUARDIAN_DEMO_CANONICAL_LISTING_RULES_REQUIRED');
+}
+
+function exactlyOne(scope, token, name) {
+  const count = scope.split(token).length - 1;
+  if (count !== 1) throw new Error('GUARDIAN_DEMO_MARKER_DRIFT ' + name + ': ' + count);
+}
+
+const signedIn = '    function signedIn() { return request.auth != null; }';
+exactlyOne(rules, signedIn, 'signedIn');
+const helpers = `
+    // The data below MUST come from an authenticated privileged issuer.
+    // Firestore clients cannot write the proof collections (base V2 Rules).
+    // Field mapping to the pure TS policy: expires_at -> expiresAtMs.
+    function guardianAgeDoc(uid) {
+      return /databases/$(database)/documents/age_proofs_v2/$(uid);
+    }
+    function guardianGrantDoc(uid) {
+      return /databases/$(database)/documents/guardian_grants_v2/$(uid);
+    }
+    function guardianAgeDataAllowed(uid, acceptedBands, proof) {
+      return proof.keys().hasAll(['subjectUid','band','issuer','revoked','expires_at'])
+        && proof.subjectUid == uid
+        && proof.issuer == 'trusted_server'
+        && proof.revoked == false
+        && proof.expires_at is timestamp
+        && proof.expires_at > request.time
+        && proof.band in acceptedBands;
+    }
+    function guardianAgeAllowed(uid, acceptedBands) {
+      // A non-existent or malformed trusted proof fails closed on get().
+      // Avoid a second exists() lookup; the V2 social rule set already
+      // approaches the 1,000-expression / access-call limits.
+      return signedIn() && uid is string
+        && guardianAgeDataAllowed(uid, acceptedBands, get(guardianAgeDoc(uid)).data);
+    }
+    function guardianVerifiedAge(uid) {
+      return guardianAgeAllowed(uid, ['under_13','teen_13_17','adult']);
+    }
+    function guardianAdultOrTeen(uid, cap) {
+      // The demo must not authorize teenage social commerce by age alone.
+      let proof = get(guardianAgeDoc(uid)).data;
+      return signedIn() && uid is string
+        && guardianAgeDataAllowed(uid, ['adult','teen_13_17'], proof)
+        && (proof.band == 'adult' || guardianValidGrant(uid, cap, proof));
+    }
+    function guardianPairCapabilityAllowed(firstUid, secondUid, cap) {
+      // Evaluate the two participants in one function so Firestore can reuse
+      // both proof snapshots and avoid repeating signed-in/type predicates.
+      // This is logically identical to two guardianAdultOrTeen checks: every
+      // teen still needs a current capability-specific trusted grant and every
+      // malformed, missing, expired or revoked proof fails closed.
+      let firstProof = get(guardianAgeDoc(firstUid)).data;
+      let secondProof = get(guardianAgeDoc(secondUid)).data;
+      return signedIn()
+        && firstUid is string && secondUid is string
+        && firstUid != secondUid
+        && guardianAgeDataAllowed(firstUid, ['adult','teen_13_17'], firstProof)
+        && guardianAgeDataAllowed(secondUid, ['adult','teen_13_17'], secondProof)
+        && (firstProof.band == 'adult' || guardianValidGrant(firstUid, cap, firstProof))
+        && (secondProof.band == 'adult' || guardianValidGrant(secondUid, cap, secondProof));
+    }
+    function guardianValidGrant(uid, cap, ageProof) {
+      // DEMO architecture trial: server owns a single atomic age+guardian
+      // proof at age_proofs_v2/{uid}. Revocation updates this very document;
+      // legacy guardian_grants_v2 is NOT authoritative in this candidate.
+      // Reuses the age document already evaluated by the parent guard,
+      // avoiding an independent grant read at the offer write budget boundary.
+      // Not usable in production until trusted issuance and migrations exist.
+      let proof = ageProof.guardian;
+      return proof.keys().hasAll([
+          'childUid','guardianUid','issuer','active','consentVersion',
+          'approvedCapabilities','expires_at'
+        ])
+        && proof.childUid == uid
+        && proof.guardianUid is string
+        && proof.guardianUid.size() > 0
+        && proof.guardianUid != uid
+        && proof.issuer == 'trusted_server'
+        && proof.active == true
+        && proof.consentVersion is string
+        && proof.consentVersion.size() > 0
+        && proof.expires_at is timestamp
+        && proof.expires_at > request.time
+        && proof.approvedCapabilities is list
+        && cap in proof.approvedCapabilities;
+    }
+    // An already-read chat snapshot can carry server-managed pair admission.
+    // The client chat create allowlist excludes these fields; client updates
+    // cannot touch them. A trusted backend MUST issue and revoke them.
+    // This does not yet validate that service or its revocation propagation.
+    function guardianPairReady(chat) {
+      return chat.keys().hasAll([
+          'buyer_id','seller_id','participants',
+          'guardian_pair_vetted','guardian_pair_issued_at',
+          'guardian_pair_expires_at','guardian_pair_revoked'
+        ])
+        && chat.guardian_pair_vetted == true
+        && chat.guardian_pair_revoked == false
+        && chat.guardian_pair_issued_at is timestamp
+        && chat.guardian_pair_issued_at <= request.time
+        && chat.guardian_pair_expires_at is timestamp
+        && chat.guardian_pair_expires_at > request.time
+        // No cached permission can outlive five minutes without trusted refresh.
+        // This bounds stale authorization; it is NOT instant revocation.
+        && chat.guardian_pair_expires_at <= chat.guardian_pair_issued_at + duration.value(5, 'm')
+        && chat.buyer_id is string && chat.seller_id is string
+        && chat.buyer_id != chat.seller_id
+        && chat.participants is list
+        && chat.participants.size() == 2
+        && chat.participants.hasAll([chat.buyer_id, chat.seller_id]);
+    }
+    function guardianChatReady(chatId) {
+      return guardianPairReady(chatDoc(chatId).data);
+    }
+    // Cache canonical offer listing and chat for the guardian DEMO only.
+    // Keep all moderation, availability, reservation-lock and pairing checks.
+    function guardianOfferLinksValid(data) {
+      let listing = listingDoc(data.listing_id).data;
+      let chat = chatDoc(data.chat_id).data;
+      return listing.seller_id == data.seller_id
+        && listing.status == 'active'
+        && listing.moderation_status == 'approved'
+        && (!('availability_status' in listing) || listing.availability_status == 'available')
+        && !exists(/databases/$(database)/documents/listing_reservation_locks/$(data.listing_id))
+        && data.listing_id == chat.product_id
+        && data.buyer_id == chat.buyer_id
+        && data.seller_id == chat.seller_id
+        // R102: a linked chat is not a trusted admission merely because
+        // its buyer/seller and listing IDs match. Reject stale/revoked/
+        // unvetted pair authority before any offer is written (DEMO only).
+        && guardianPairReady(chat);
+    }
+    // DEMO-ONLY: consent lives in the same server-written atomic age record.
+    // A client checkbox and an independent legacy consent document do not
+    // authorize UGC. Version and guardian epoch must be current.
+    function guardianUgcConsentReady(uid, ageProof) {
+      return ageProof.keys().hasAll(['ugc'])
+        && ageProof.ugc is map
+        && ageProof.ugc.keys().hasAll([
+          'subjectUid','issuer','rulesVersion','granted','revoked','expires_at'
+        ])
+        && ageProof.ugc.subjectUid == uid
+        && ageProof.ugc.issuer == 'trusted_server'
+        && ageProof.ugc.rulesVersion == 'ugc-beta-draft-2026-11-14-v1'
+        && ageProof.ugc.granted == true
+        && ageProof.ugc.revoked == false
+        && ageProof.ugc.expires_at is timestamp
+        && ageProof.ugc.expires_at > request.time
+        && (ageProof.band == 'adult'
+          || (ageProof.keys().hasAll(['guardian'])
+            && ageProof.guardian is map
+            && ageProof.guardian.keys().hasAll(['consentVersion'])
+            && ageProof.ugc.keys().hasAll(['guardianConsentVersion'])
+            && ageProof.ugc.guardianConsentVersion == ageProof.guardian.consentVersion));
+    }
+    function guardianCanPublish(uid) {
+      // One age proof read, then one grant read only for the under13 branch.
+      let proof = get(guardianAgeDoc(uid)).data;
+      return signedIn() && uid is string
+        && guardianAgeDataAllowed(uid, ['adult','teen_13_17','under_13'], proof)
+        && (proof.band == 'adult'
+          || guardianValidGrant(uid, 'publish_listing', proof))
+        && guardianUgcConsentReady(uid, proof);
+    }
+`;
+rules = rules.replace(signedIn, signedIn + helpers);
+
+function guardSection(start, end, old, guard, name) {
+  const first = rules.indexOf(start);
+  const last = rules.indexOf(end, first + start.length);
+  if (first < 0 || last < 0 || rules.indexOf(start, first + 1) >= 0) {
+    throw new Error('GUARDIAN_DEMO_SECTION_DRIFT ' + name);
+  }
+  const section = rules.slice(first, last);
+  // Generated V2 inserts other top-level collections inside broad intervals;
+  // restrict the mutation to the first target match body, never a neighbour.
+  const nextRoot = section.indexOf('\n    match /', start.length);
+  const scoped = nextRoot < 0 ? section : section.slice(0, nextRoot);
+  // Some generated transactions contain separate update alternatives. Guard
+  // every matching allow statement, not just the first one (OR semantics).
+  const matches = scoped.split(old).length - 1;
+  if (matches < 1 || matches > 6) throw new Error('GUARDIAN_DEMO_WRITE_DRIFT ' + name + ': ' + matches);
+  // Wrap the WHOLE original predicate before AND-ing a guardian check.
+  // Without parentheses, "participant || moderator && guardian" would let
+  // participants bypass revocation because && binds tighter than ||.
+  const parsed = old.match(/^(allow (?:create|update|read|create, update): if )([^\n]+)$/);
+  if (!parsed) throw new Error('GUARDIAN_DEMO_UNSAFE_PREDICATE ' + name);
+  const safeStatement = parsed[1] + '(' + parsed[2] + ') && (' + guard + ')';
+  const guarded = scoped.split(old).join(safeStatement);
+  rules = rules.slice(0, first) + guarded + section.slice(scoped.length) + rules.slice(last);
+}
+
+guardSection('    match /listings_v2/{listingId} {', '    match /offers/{offerId} {',
+  'allow create: if signedIn() && notSuspended()',
+  'guardianCanPublish(request.auth.uid)', 'listing create');
+// Read old conversations only when their server-vetted pair grant is live.
+// Moderator access remains explicitly separate for abuse/safety review.
+guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
+  'allow read: if signedIn() && (request.auth.uid in resource.data.participants || canReadCommercePrivate())',
+  '(canReadCommercePrivate() || guardianPairReady(resource.data))', 'chat read');
+guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
+  'allow create: if signedIn() && notSuspended()',
+  `guardianPairCapabilityAllowed(request.auth.uid, request.resource.data.seller_id, 'direct_chat')`,
+  'chat create');
+guardSection('    match /chats/{chatId} {', '    match /listings_v2/{listingId} {',
+  'allow update: if participant(chatId) && notSuspended()',
+  'guardianPairReady(resource.data)',
+  'chat update');
+guardSection('      match /messages/{messageId} {', '      match /confirmations/{uid} {',
+  'allow read: if participant(chatId) || canReadCommercePrivate()',
+  '(canReadCommercePrivate() || guardianChatReady(chatId))', 'message read');
+guardSection('      match /messages/{messageId} {', '      match /confirmations/{uid} {',
+  'allow create: if participant(chatId) && notSuspended()',
+  'guardianChatReady(chatId)',
+  'message create');
+// Reads of chat receipts remain private after a chat is revoked; writes of
+// delivery confirmations and read status must also require an active grant.
+guardSection('      match /confirmations/{uid} {', '      match /reads/{uid} {',
+  'allow read: if participant(chatId) || canReadCommercePrivate()',
+  '(canReadCommercePrivate() || guardianChatReady(chatId))', 'confirmation read');
+guardSection('      match /confirmations/{uid} {', '      match /reads/{uid} {',
+  'allow create: if participant(chatId) && owner(uid) && notSuspended()',
+  'guardianChatReady(chatId)', 'confirmation create');
+guardSection('      match /reads/{uid} {', '    match /listings_v2/{listingId} {',
+  'allow read: if participant(chatId) || canReadCommercePrivate()',
+  '(canReadCommercePrivate() || guardianChatReady(chatId))', 'read receipt read');
+guardSection('      match /reads/{uid} {', '    match /listings_v2/{listingId} {',
+  'allow create, update: if participant(chatId) && owner(uid) && notSuspended()',
+  'guardianChatReady(chatId)', 'read receipt writes');
+
+guardSection('    match /offers/{offerId} {', '    match /transactions_v2/{transactionId} {',
+  'allow create: if signedIn() && notSuspended()',
+  `guardianPairCapabilityAllowed(request.resource.data.buyer_id, request.resource.data.seller_id, 'make_offer')`,
+  'offer create');
+guardSection('    match /offers/{offerId} {', '    match /transactions_v2/{transactionId} {',
+  'allow update: if signedIn() && notSuspended()',
+  `guardianPairCapabilityAllowed(resource.data.buyer_id, resource.data.seller_id, 'make_offer')`,
+  'offer update');
+guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_requests/{requestId} {',
+  'allow create: if signedIn() && notSuspended()',
+  `guardianPairCapabilityAllowed(request.resource.data.buyer_id, request.resource.data.seller_id, 'make_offer')`,
+  'transaction create');
+guardSection('    match /transactions_v2/{transactionId} {', '    match /demand_requests/{requestId} {',
+  'allow update: if signedIn() && notSuspended()',
+  `guardianPairCapabilityAllowed(resource.data.buyer_id, resource.data.seller_id, 'make_offer')`,
+  'transaction update');
+
+// Keep authorization identical while reusing product/chat snapshots in the
+// source-only guardian-demo offer-create path (not deployed V2 Rules).
+const originalOfferLinks = "        && listingDoc(request.resource.data.listing_id).data.seller_id == request.resource.data.seller_id\n        && listingDoc(request.resource.data.listing_id).data.status == 'active'\n        && listingDoc(request.resource.data.listing_id).data.moderation_status == 'approved'\n        && (!('availability_status' in listingDoc(request.resource.data.listing_id).data) || listingDoc(request.resource.data.listing_id).data.availability_status == 'available')\n        && !exists(/databases/$(database)/documents/listing_reservation_locks/$(request.resource.data.listing_id))\n        && request.resource.data.listing_id == chatDoc(request.resource.data.chat_id).data.product_id\n        && request.resource.data.buyer_id == chatDoc(request.resource.data.chat_id).data.buyer_id\n        && request.resource.data.seller_id == chatDoc(request.resource.data.chat_id).data.seller_id";
+exactlyOne(rules, originalOfferLinks, 'offer create repeated reads');
+rules = rules.replace(originalOfferLinks,
+  '        && guardianOfferLinksValid(request.resource.data)');
+
+// DEMO-ONLY: preserve the FULL canonical listing-create predicate byte-for-byte
+// apart from replacing repeated request.resource.data dereferences with a
+// single function parameter. This changes no permission or trust condition.
+// Firebase limits whole-request rule evaluation to 1,000 expressions; the
+// positive minor-with-guardian publication paths hit that ceiling.
+const listingMatch = '    match /listings_v2/{listingId} {';
+const createPrefix = '      allow create: if ';
+const updatePrefix = '      allow update: if ';
+exactlyOne(rules, listingMatch, 'single canonical listings V2 match');
+const listingStart = rules.indexOf(listingMatch);
+const createStart = rules.indexOf(createPrefix, listingStart + listingMatch.length);
+const updateStart = rules.indexOf(updatePrefix, createStart + createPrefix.length);
+if (createStart < 0 || updateStart < 0 || createStart > listingStart + 1200) {
+  throw new Error('GUARDIAN_DEMO_LISTING_CREATE_DRIFT');
+}
+const originalListingCreate = rules.slice(createStart + createPrefix.length, updateStart).trimEnd();
+if (!originalListingCreate.endsWith(';')) {
+  throw new Error('GUARDIAN_DEMO_LISTING_CREATE_TERMINATOR_DRIFT');
+}
+const originalListingPredicate = originalListingCreate.slice(0, -1).trimEnd();
+if (!originalListingPredicate.includes('guardianCanPublish(request.auth.uid)')
+  || !originalListingPredicate.includes('commerceAccountEligible(request.auth.uid)')
+  || !originalListingPredicate.includes('validUniversityMetadata(request.resource.data)')
+  || originalListingPredicate.includes('listingData')) {
+  throw new Error('GUARDIAN_DEMO_LISTING_AUTHORITY_DRIFT');
+}
+const cachedListingPredicate = originalListingPredicate.replaceAll('request.resource.data', 'listingData');
+if (cachedListingPredicate === originalListingPredicate
+  || cachedListingPredicate.replaceAll('listingData', 'request.resource.data') !== originalListingPredicate) {
+  throw new Error('GUARDIAN_DEMO_LISTING_PREDICATE_EQUIVALENCE_FAILED');
+}
+rules = rules.slice(0, createStart)
+  + createPrefix + 'guardianListingCreateCached(request.resource.data);\n'
+  + rules.slice(updateStart);
+const cachedListingFunction = '    function guardianListingCreateCached(listingData) {\n'
+  + '      return ' + cachedListingPredicate + ';\n'
+  + '    }\n';
+const newListingStart = rules.indexOf(listingMatch);
+rules = rules.slice(0, newListingStart) + cachedListingFunction + rules.slice(newListingStart);
+console.log('GUARDIAN_LISTING_CREATE_CACHED_EQUIVALENT: source round-trip verified, no rule bypass');
+
+// DEMO-ONLY: cache the offer request payload in the base predicate without
+// duplicating canonical listing/chat reads already in guardianOfferLinksValid. The
+// capability-specific dual trusted age/guardian checks AND canonical
+// moderation/reservation-lock check remain mandatory direct allow clauses.
+// Round-trip source assertions prevent accidentally dropping a predicate.
+const offerMatch = '    match /offers/{offerId} {';
+exactlyOne(rules, offerMatch, 'single canonical offer match');
+const offerStart = rules.indexOf(offerMatch);
+const offerCreateStart = rules.indexOf(createPrefix, offerStart + offerMatch.length);
+const offerUpdateStart = rules.indexOf(updatePrefix, offerCreateStart + createPrefix.length);
+if (offerCreateStart < 0 || offerUpdateStart < 0
+  || offerCreateStart > offerStart + 1200) {
+  throw new Error('GUARDIAN_DEMO_OFFER_CREATE_DRIFT');
+}
+const originalOfferCreate = rules.slice(offerCreateStart + createPrefix.length, offerUpdateStart).trimEnd();
+if (!originalOfferCreate.endsWith(';')) throw new Error('GUARDIAN_DEMO_OFFER_CREATE_TERMINATOR_DRIFT');
+const originalOfferPredicate = originalOfferCreate.slice(0, -1).trimEnd();
+const pairCall = "guardianPairCapabilityAllowed(request.resource.data.buyer_id, request.resource.data.seller_id, 'make_offer')";
+const linkCall = 'guardianOfferLinksValid(request.resource.data)';
+const pairSegment = ' && (' + pairCall + ')';
+const linkSegment = '\n        && ' + linkCall;
+if (originalOfferPredicate.split(pairSegment).length !== 2
+  || originalOfferPredicate.split(linkSegment).length !== 2
+  || !originalOfferPredicate.includes('commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)')
+) {
+  throw new Error('GUARDIAN_DEMO_OFFER_GUARD_DRIFT');
+}
+const offerBasePredicate = originalOfferPredicate.replace(pairSegment, '').replace(linkSegment, '');
+const cachedOfferBase = offerBasePredicate.replaceAll('request.resource.data', 'offerData');
+const offerRestored = cachedOfferBase.replaceAll('offerData', 'request.resource.data');
+if (offerRestored !== offerBasePredicate || cachedOfferBase === offerBasePredicate) {
+  throw new Error('GUARDIAN_DEMO_OFFER_PREDICATE_EQUIVALENCE_FAILED');
+}
+rules = rules.slice(0, offerCreateStart)
+  + createPrefix + '(' + pairCall + ') && (' + linkCall + ')'
+  + ' && guardianOfferCreateBaseCached(request.resource.data);\n'
+  + rules.slice(offerUpdateStart);
+const offerHelper = '    function guardianOfferCreateBaseCached(offerData) {\n'
+  + '      return ' + cachedOfferBase + ';\n'
+  + '    }\n';
+const newOfferStart = rules.indexOf(offerMatch);
+rules = rules.slice(0, newOfferStart) + offerHelper + rules.slice(newOfferStart);
+console.log('GUARDIAN_OFFER_CREATE_CACHED_EQUIVALENT: all predicates restored, reservation lock retained');
+
+// R289: cache chat-create request data and its canonical listing snapshot.
+// This is demo-only, and the original complete predicate must round-trip.
+const chatMatch = '    match /chats/{chatId} {';
+exactlyOne(rules, chatMatch, 'single canonical chat match');
+const chatStart = rules.indexOf(chatMatch);
+const chatCreateStart = rules.indexOf(createPrefix, chatStart + chatMatch.length);
+const chatUpdateStart = rules.indexOf(updatePrefix, chatCreateStart + createPrefix.length);
+if (chatCreateStart < 0 || chatUpdateStart < 0 || chatCreateStart > chatStart + 1200)
+  throw new Error('GUARDIAN_DEMO_CHAT_CREATE_DRIFT');
+const originalChatCreate = rules.slice(chatCreateStart + createPrefix.length, chatUpdateStart).trimEnd();
+if (!originalChatCreate.endsWith(';')) throw new Error('GUARDIAN_DEMO_CHAT_CREATE_TERMINATOR_DRIFT');
+const originalChatPredicate = originalChatCreate.slice(0, -1).trimEnd();
+const listingRead = 'listingDoc(chatData.product_id).data';
+if (!originalChatPredicate.includes("guardianPairCapabilityAllowed(request.auth.uid, request.resource.data.seller_id, 'direct_chat')")
+  || !originalChatPredicate.includes('usersUnblocked(request.resource.data.buyer_id, request.resource.data.seller_id)')
+  || !originalChatPredicate.includes("rateLimitConsumed('chat_create')")
+  || !originalChatPredicate.includes('commerceAccountsEligible(request.resource.data.buyer_id, request.resource.data.seller_id)'))
+  throw new Error('GUARDIAN_DEMO_CHAT_AUTHORITY_DRIFT');
+const cachedChatData = originalChatPredicate.replaceAll('request.resource.data', 'chatData');
+if (cachedChatData.split(listingRead).length !== 4 || cachedChatData.includes('chatListing'))
+  throw new Error('GUARDIAN_DEMO_CHAT_LISTING_DRIFT');
+const cachedChat = cachedChatData.replaceAll(listingRead, 'chatListing');
+if (cachedChat.replaceAll('chatListing', listingRead).replaceAll('chatData', 'request.resource.data') !== originalChatPredicate)
+  throw new Error('GUARDIAN_DEMO_CHAT_PREDICATE_EQUIVALENCE_FAILED');
+rules = rules.slice(0, chatCreateStart)
+  + createPrefix + 'guardianChatCreateCached(chatId, request.resource.data);\n'
+  + rules.slice(chatUpdateStart);
+const cachedChatHelper = '    function guardianChatCreateCached(chatId, chatData) {\n'
+  + '      let chatListing = listingDoc(chatData.product_id).data;\n'
+  + '      return ' + cachedChat + ';\n    }\n';
+const newChatStart = rules.indexOf(chatMatch);
+rules = rules.slice(0, newChatStart) + cachedChatHelper + rules.slice(newChatStart);
+
+// Evaluate the same three mandatory offer predicates in base-first order.
+// This is a budget experiment, not a waiver of any condition. The bilateral
+// block and atomic counter checks run before age and link reads.
+const oldOfferOrder = createPrefix + '(' + pairCall + ') && (' + linkCall + ')'
+  + ' && guardianOfferCreateBaseCached(request.resource.data);';
+const newOfferOrder = createPrefix + 'guardianOfferCreateBaseCached(request.resource.data)'
+  + ' && (' + pairCall + ') && (' + linkCall + ');';
+exactlyOne(rules, oldOfferOrder, 'offer conjunction order');
+rules = rules.replace(oldOfferOrder, newOfferOrder);
+console.log('GUARDIAN_CHAT_CREATE_CACHED_EQUIVALENT: all predicates restored; offer conjunction reordered');
+
+// Minimal DEMO-ONLY diagnostic isolates proof verification from marketplace
+// payload/rate/participant preconditions; it is never part of default V2.
+const catchAll = '    match /{document=**} { allow read, write: if false; }';
+exactlyOne(rules, catchAll, 'catchall');
+rules = rules.replace(catchAll, `    match /guardian_demo_probe/{uid} {
+      allow create: if owner(uid) && guardianAdultOrTeen(uid, 'direct_chat');
+      allow read, update, delete: if false;
+    }
+    // DEMO-ONLY isolated diagnostic: permit only an authenticated owner whose
+    // pair has NO user-block record in either direction. Do not add to V2.
+    match /guardian_user_block_probe/{uid} {
+      allow create: if owner(uid) && usersUnblocked(uid, 'seller');
+      allow read, update, delete: if false;
+    }
+    // DEMO-ONLY positive/negative control for the EXACT atomic offer counter.
+    // Uses the unchanged offerRateLimitConsumed() helper from V2; this probe
+    // never authorizes real offers or deployable security rules.
+    match /guardian_offer_rate_probe/{uid} {
+      allow create: if owner(uid) && offerRateLimitConsumed();
+      allow read, update, delete: if false;
+    }
+` + catchAll);
+
+fs.writeFileSync(outputPath, rules);
+console.log('GUARDIAN_DEMO_RULES_PREPARED; no deploy; strict migration probe only');

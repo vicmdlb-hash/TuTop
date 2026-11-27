@@ -2,6 +2,8 @@ import { categorySafetyRequirements, classifyMarketplaceItem } from '../lib/mark
 import { listingV2HasNoLegacyDescriptionPacking, validCanonicalVideoUri, type CanonicalListingV2, type ListingDeliveryMethod } from '../lib/listingSchemaV2.ts';
 import { CAMPUSES, FACULTIES, INSTITUTIONS } from '../lib/universityNetwork.ts';
 import { MARKETPLACE_CATEGORIES, normalizeCategory } from '../lib/productAssistant.ts';
+import { validNearbyGeoCell, validListingApproxLocationAttributes } from '../lib/nearbyMarketplace.ts';
+import { assertFirebaseRequestSessionCurrent, sameFirebaseSession, type FirebaseSessionIdentity } from '../lib/firebaseSharedSessionGuard';
 import type { DeliveryMethod, MeetingPoint, Product, ProductCategory, ProductStatus } from '../types/index.ts';
 import { FirebaseRestClient, type FirestoreDocument, type QueryFilter } from './firebaseRest.ts';
 import { nationalSchemaEnabled } from './nationalBackend.ts';
@@ -12,7 +14,8 @@ const SELLER_NAME_CACHE_TTL_MS = 10 * 60_000;
 const NEARBY_CACHE_TTL_MS = 60_000;
 const sellerNameCache = new Map<string, { name: string; expiresAt: number }>();
 const sellerNameInflight = new Map<string, Promise<string>>();
-const nearbyCache = new Map<string, { products: Product[]; expiresAt: number }>();
+// Only reuse a private Nearby snapshot within the exact authenticated session.
+const nearbyCache = new Map<string, { products: Product[]; expiresAt: number; session: FirebaseSessionIdentity }>();
 
 function localId() {
   const random = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -29,6 +32,13 @@ function getClient() {
   const client = new FirebaseRestClient(getFirebaseConfig());
   if (!client.currentSession?.uid) throw new Error('AUTH_REQUIRED');
   return client;
+}
+
+// A read can outlive logout, A→B, or A→logout→A even when individual
+// Firestore calls were authenticated. Never return/cache old private listings.
+function assertListingReadSessionCurrent(client: FirebaseRestClient, requestSession: FirebaseSessionIdentity | null) {
+  assertFirebaseRequestSessionCurrent(requestSession, client.currentSession,
+    new FirebaseRestClient(getFirebaseConfig()).currentSession);
 }
 
 function hasValue(value: unknown) {
@@ -49,14 +59,17 @@ function legacyStatus(status: CanonicalListingV2['status']): ProductStatus {
   if (status === 'paused') return 'Pausado';
   if (status === 'sold_out') return 'Vendido';
   if (status === 'archived') return 'Archivado';
-  return 'Activo';
+  // Unrecognized or absent lifecycle is NOT an active public listing.
+  return status === 'active' ? 'Activo' : 'Pausado';
 }
 
 function canonicalStatus(status: ProductStatus): CanonicalListingV2['status'] {
   if (status === 'Pausado') return 'paused';
   if (status === 'Vendido' || status === 'Agotado') return 'sold_out';
   if (status === 'Archivado') return 'archived';
-  return 'active';
+  // Preserve legacy 'Reservado' transaction compatibility, but reject every
+  // unknown runtime status instead of silently publishing it as active.
+  return status === 'Activo' || status === 'Reservado' ? 'active' : 'paused';
 }
 
 function legacyDelivery(method: ListingDeliveryMethod): DeliveryMethod {
@@ -94,6 +107,7 @@ async function sellerNameFor(client: FirebaseRestClient, uid: string) {
 
 export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListingV2>, sellerName = 'Estudiante'): Product {
   const data = doc.data;
+  const validPrice = typeof data.price_mxn === 'number' && Number.isFinite(data.price_mxn) && data.price_mxn >= 0;
   const photos = Array.isArray(data.photo_urls) ? data.photo_urls.filter(Boolean).slice(0, 4) : [];
   const videos = Array.isArray(data.video_urls) ? data.video_urls.filter(validCanonicalVideoUri).slice(0, 1) : [];
   const product: Product & { video_urls?: string[] } = {
@@ -102,9 +116,9 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     vendedor_nombre: sellerName,
     titulo: data.title,
     descripcion: data.description || undefined,
-    precio_mxn: Number(data.price_mxn || 0),
+    precio_mxn: validPrice ? data.price_mxn : 0,
     precio_negociable: data.negotiable,
-    stock: Math.max(1, Number(data.quantity || 1)),
+    stock: Number.isSafeInteger(data.quantity) && data.quantity >= 1 && data.quantity <= 99 ? data.quantity : 0,
     categoria: categoryLabel(data.category_id),
     subcategoria: data.subcategory_id,
     condicion: data.condition as Product['condicion'],
@@ -118,15 +132,17 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
     career_id: data.career_id,
     visibility_scope: data.visibility_scope,
     listing_kind: 'offer',
-    moderation_status: data.moderation_status === 'flagged' ? 'review' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
-    availability_status: data.availability_status === 'reserved' ? 'reserved' : 'available',
+    moderation_status: data.moderation_status === 'flagged' ? 'flagged' : data.moderation_status === 'approved' ? 'approved' : data.moderation_status === 'rejected' ? 'rejected' : 'pending',
+    // Invalid/null remote availability is not consent to display a listing as offerable.
+    // Only missing legacy V2 availability remains available for backwards compatibility.
+    availability_status: !Number.isSafeInteger(data.quantity) || data.quantity < 1 || data.quantity > 99 || !validPrice ? 'unverified' : data.availability_status === 'available' || data.availability_status === undefined ? 'available' : data.availability_status === 'reserved' ? 'reserved' : 'unverified',
     punto_encuentro: 'Coordinar por Chat' as MeetingPoint,
     metodos_entrega: data.delivery_methods.map(legacyDelivery),
     shipping_available: data.shipping_available,
     imagen_url: photos[0] || '',
     imagenes_url: photos,
     ...(videos.length ? { video_urls: videos } : {}),
-    estado: legacyStatus(data.status),
+    estado: validPrice ? legacyStatus(data.status) : 'Pausado',
     es_top: false,
     jerarquia_top: 0,
     puja_ucoins: 0,
@@ -139,6 +155,7 @@ export function canonicalListingToProduct(doc: FirestoreDocument<CanonicalListin
 
 export function validateCanonicalListingPolicy(listing: CanonicalListingV2, category: ProductCategory) {
   if (!listingV2HasNoLegacyDescriptionPacking(listing)) throw new Error('LISTING_V2_SCHEMA_INCOMPLETE');
+  if (!validListingApproxLocationAttributes(listing.attributes)) throw new Error('LISTING_APPROX_LOCATION_UNSAFE');
   if (listing.title.trim().length < 2 || listing.title.length > 120) throw new Error('LISTING_TITLE_INVALID');
   if (!Number.isFinite(listing.price_mxn) || listing.price_mxn < 0.01 || listing.price_mxn > 1_000_000) throw new Error('LISTING_PRICE_INVALID');
   if (!Number.isInteger(listing.quantity) || listing.quantity < 1 || listing.quantity > 99) throw new Error('LISTING_QUANTITY_INVALID');
@@ -175,7 +192,7 @@ async function productsForDocuments(client: FirebaseRestClient, docs: FirestoreD
   return docs
     .map((doc) => canonicalListingToProduct(doc, names.get(doc.data.seller_id) || 'Estudiante'))
     .sort((a, b) => {
-      const availability = Number(a.availability_status === 'reserved') - Number(b.availability_status === 'reserved');
+      const availability = Number(a.availability_status !== 'available') - Number(b.availability_status !== 'available');
       if (availability) return availability;
       return Date.parse(b.updated_at || b.fecha_creacion) - Date.parse(a.updated_at || a.fecha_creacion);
     });
@@ -211,6 +228,11 @@ export function buildCanonicalListingCreateWrite(
 
 export const canonicalListingsBackend = {
   async create(listing: CanonicalListingV2, category: ProductCategory, operationId?: string) {
+    // Schema-only migration: national listings without campus can be modeled,
+    // but never sent to Firebase before signed dual-factor Rules are proven.
+    if (!listing.institution_id || !listing.campus_id) {
+      throw new Error('NATIONAL_RULES_AND_PHONE_PROOF_NOT_READY');
+    }
     const client = getClient();
     const uid = client.currentSession!.uid;
     if (listing.seller_id !== uid) throw new Error('SELLER_MISMATCH');
@@ -249,12 +271,16 @@ export const canonicalListingsBackend = {
 
   async loadMine(limit = 50) {
     const client = getClient();
-    const uid = client.currentSession!.uid;
-    return client.runQuery<CanonicalListingV2>('listings_v2', [{ field: 'seller_id', op: 'EQUAL', value: uid }], [{ field: 'updated_at', direction: 'DESCENDING' }], Math.max(1, Math.min(100, limit)));
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
+    const documents = await client.runQuery<CanonicalListingV2>('listings_v2', [{ field: 'seller_id', op: 'EQUAL', value: uid }], [{ field: 'updated_at', direction: 'DESCENDING' }], Math.max(1, Math.min(100, limit)));
+    assertListingReadSessionCurrent(client, requestSession);
+    return documents;
   },
 
   async loadMarketplaceProducts(input: { campusId?: string; institutionId?: string; cityId?: string; limitPerScope?: number } = {}) {
     const client = getClient();
+    const requestSession = client.currentSession;
     const limit = Math.max(5, Math.min(50, input.limitPerScope || 30));
     const queries: Array<Promise<FirestoreDocument<CanonicalListingV2>[]>> = [];
     if (input.campusId) queries.push(queryApproved(client, 'campus_id', input.campusId, limit));
@@ -265,18 +291,22 @@ export const canonicalListingsBackend = {
     const [sets, mine] = await Promise.all([Promise.all(queries), minePromise]);
     const byId = new Map<string, FirestoreDocument<CanonicalListingV2>>();
     for (const doc of [...sets.flat(), ...mine]) byId.set(doc.id, doc);
-    return productsForDocuments(client, [...byId.values()]);
+    const products = await productsForDocuments(client, [...byId.values()]);
+    assertListingReadSessionCurrent(client, requestSession);
+    return products;
   },
 
   async loadNearbyProducts(input: { geoCells: string[]; limitPerCell?: number; force?: boolean }) {
-    const cells = [...new Set(input.geoCells.filter((cell) => /^g1:\d+:\d+$/.test(cell)))].slice(0, 9).sort();
+    const cells = [...new Set(input.geoCells.filter(validNearbyGeoCell))].slice(0, 9).sort();
     if (!cells.length) return [] as Product[];
     const limit = Math.max(4, Math.min(15, input.limitPerCell || 10));
     const client = getClient();
-    const uid = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
     const cacheKey = `${uid}#${cells.join('|')}#${limit}`;
     const cached = nearbyCache.get(cacheKey);
-    if (!input.force && cached && cached.expiresAt > Date.now()) return cached.products;
+    if (!input.force && cached && cached.expiresAt > Date.now()
+      && sameFirebaseSession(cached.session, requestSession)) return cached.products;
 
     const approvedPromise = Promise.all(cells.map((cell) => queryApproved(client, 'attributes.geo_cell', cell, limit)));
     const minePromise = this.loadMine(Math.min(50, Math.max(limit * 3, 20)));
@@ -289,14 +319,17 @@ export const canonicalListingsBackend = {
     const byId = new Map<string, FirestoreDocument<CanonicalListingV2>>();
     for (const doc of [...sets.flat(), ...ownNearby]) byId.set(doc.id, doc);
     const products = await productsForDocuments(client, [...byId.values()]);
-    nearbyCache.set(cacheKey, { products, expiresAt: Date.now() + NEARBY_CACHE_TTL_MS });
+    assertListingReadSessionCurrent(client, requestSession);
+    nearbyCache.set(cacheKey, { products, expiresAt: Date.now() + NEARBY_CACHE_TTL_MS, session: requestSession! });
     return products;
   },
 
   async updateProduct(listingId: string, updates: Partial<Product>) {
     const client = getClient();
-    const uid = client.currentSession!.uid;
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
     const first = await client.getDocument<CanonicalListingV2>(`listings_v2/${listingId}`);
+    assertListingReadSessionCurrent(client, requestSession);
     if (!first) throw new Error('LISTING_NOT_FOUND');
     if (first.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
 
@@ -304,8 +337,18 @@ export const canonicalListingsBackend = {
     let contentChanged = false;
     if (updates.titulo !== undefined) { patch.title = updates.titulo.trim().slice(0, 120); contentChanged = true; }
     if (updates.descripcion !== undefined) { patch.description = updates.descripcion.trim().slice(0, 3000); contentChanged = true; }
-    if (updates.precio_mxn !== undefined) patch.price_mxn = Math.max(0, Math.min(1_000_000, Number(updates.precio_mxn)));
-    if (updates.stock !== undefined) patch.quantity = Math.max(1, Math.min(99, Math.round(Number(updates.stock))));
+    // An edit must not silently turn zero stock, a fractional amount or malformed
+    // input into a valid sale. Validate the supplied value before the Firestore write.
+    if (updates.precio_mxn !== undefined) {
+      if (typeof updates.precio_mxn !== 'number' || !Number.isFinite(updates.precio_mxn)
+        || updates.precio_mxn < 0.01 || updates.precio_mxn > 1_000_000) throw new Error('LISTING_PRICE_INVALID');
+      patch.price_mxn = updates.precio_mxn;
+    }
+    if (updates.stock !== undefined) {
+      if (typeof updates.stock !== 'number' || !Number.isSafeInteger(updates.stock)
+        || updates.stock < 1 || updates.stock > 99) throw new Error('LISTING_QUANTITY_INVALID');
+      patch.quantity = updates.stock;
+    }
     if (updates.categoria !== undefined) { patch.category_id = slug(updates.categoria); contentChanged = true; }
     if (updates.condicion !== undefined) { patch.condition = updates.condicion; contentChanged = true; }
     if (updates.attributes !== undefined) { patch.attributes = updates.attributes; contentChanged = true; }
@@ -315,12 +358,14 @@ export const canonicalListingsBackend = {
     if (contentChanged) patch.moderation_status = 'pending';
 
     const writeAgainst = async (snapshot: FirestoreDocument<CanonicalListingV2>) => {
+      // The initial or retried read may outlive logout, A→B or A→logout→A.
+      assertListingReadSessionCurrent(client, requestSession);
       if (snapshot.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
+      if (!snapshot.updateTime) throw new Error('LISTING_VERSION_REQUIRED');
       const next = { ...snapshot.data, ...patch, updated_at: new Date().toISOString() } as CanonicalListingV2;
       validateCanonicalListingPolicy(next, updates.categoria || categoryLabel(snapshot.data.category_id));
       await client.setDocument(`listings_v2/${listingId}`, patch, {
-        merge: true,
-        ...(snapshot.updateTime ? { updateTime: snapshot.updateTime } : {}),
+        merge: true, updateTime: snapshot.updateTime,
       });
     };
 
@@ -338,7 +383,18 @@ export const canonicalListingsBackend = {
 
   async setStatus(listingId: string, status: CanonicalListingV2['status']) {
     const client = getClient();
-    await client.setDocument(`listings_v2/${listingId}`, { status, updated_at: new Date() }, { merge: true });
+    const requestSession = client.currentSession;
+    const uid = requestSession!.uid;
+    // A stale or wrong-owner UI action must never prepare a status write.
+    const existing = await client.getDocument<CanonicalListingV2>(`listings_v2/${listingId}`);
+    if (!existing) throw new Error('LISTING_NOT_FOUND');
+    if (existing.data.seller_id !== uid) throw new Error('SELLER_REQUIRED');
+    // Same UID is insufficient: A -> logout -> A is a new session.
+    assertFirebaseRequestSessionCurrent(requestSession, client.currentSession,
+      new FirebaseRestClient(getFirebaseConfig()).currentSession);
+    if (!existing.updateTime) throw new Error('LISTING_VERSION_REQUIRED');
+    await client.setDocument(`listings_v2/${listingId}`, { status, updated_at: new Date() },
+      { merge: true, updateTime: existing.updateTime });
     nearbyCache.clear();
   },
 };

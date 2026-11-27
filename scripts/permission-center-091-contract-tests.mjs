@@ -21,15 +21,18 @@ assert.match(permissions, /enableNativePushNotifications/);
 assert.match(permissions, /navigator\.mediaDevices\.getUserMedia/);
 assert.match(permissions, /for \(const track of stream\?\.getTracks\(\) \|\| \[\]\) track\.stop\(\)/,
   'browser camera/mic probes must release media tracks immediately');
-assert.match(permissions, /no tu domicilio exacto/i);
+assert.match(permissions, /ubicación aproximada \(~1 km\)/i);
+assert.match(permissions, /Publicar no la solicita automáticamente/i);
 assert.match(permissions, /audio no se guarda ni se sube/i);
-assert.match(component, /Tú decides cuándo activarlos/);
-assert.match(component, /Ubicación, cámara, micrófono y notificaciones/);
+assert.match(component, /Comprueba lo que realmente puede usar TuTop/);
+assert.match(component, /No todo funciona como un permiso clásico/);
 assert.match(app, /import PermissionSettings/);
 assert.match(app, /<PermissionSettings \/>/);
 assert.match(nearby, /Math\.round\(value \* 100\) \/ 100/);
 assert.match(device, /camera\.getPhoto/);
-assert.doesNotMatch(device, /camera\.takePhoto/);
+assert.match(device, /camera\.takePhoto/, 'Camera 8.1+ uses system camera activity');
+assert.match(device, /camera\.chooseFromGallery/, 'Gallery uses the system photo picker');
+assert.match(device, /saveToGallery: false/, 'Camera must not save to gallery by default');
 assert.match(voice, /RECORD_AUDIO/);
 assert.match(voice, /SpeechRecognizer/);
 assert.match(voice, /requestPermissionForAlias/);
@@ -40,8 +43,13 @@ for (const permission of ['ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'CAM
 assert.match(native, /ACCESS_BACKGROUND_LOCATION/);
 assert.match(native, /READ_EXTERNAL_STORAGE/);
 assert.match(native, /WRITE_EXTERNAL_STORAGE/);
-assert.match(native, /android:allowBackup=\\"false\\"/);
-assert.match(native, /android:usesCleartextTraffic=\\"false\\"/);
+assert.match(native, /android:allowBackup="false"/);
+assert.match(native, /allowBackup debe quedar desactivado/, 'native hardening must fail closed if backups remain enabled');
+assert.match(native, /android:usesCleartextTraffic="false"/);
+assert.match(native, /cleartext traffic debe quedar desactivado/, 'native hardening must fail closed if plaintext traffic remains enabled');
+assert.match(native, /TuTop 0\.9\.2 no debe pedir ubicación precisa/, 'precise location cannot be requested');
+assert.match(native, /TuTop no debe declarar ubicación en segundo plano/, 'background location cannot be requested');
+assert.match(native, /TuTop no debe recuperar permisos legacy de almacenamiento/, 'legacy storage cannot be requested');
 
 console.log('PASS TuTop 0.9.1 exposes native-aware location/camera/microphone/notification controls');
 console.log('PASS Android camera uses system Camera 8 getPhoto while Topi voice requests RECORD_AUDIO only on demand');

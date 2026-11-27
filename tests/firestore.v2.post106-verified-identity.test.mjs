@@ -136,8 +136,18 @@ test('post106 permite bootstrap inicial de cuenta antes de verificar email sin a
     operation_id: welcomeId,
     created_at: at,
   });
+  // Match the FIVE-document atomic write performed by verifiedEmailBetaAuth.register().
+  batch.set(doc(db, `auth_status/${uid}`), {
+    uid,
+    email_verified: false,
+    auth_mode: 'email_password_verified_beta',
+    last_client_code: 'EMAIL_VERIFICATION_PENDING',
+    last_seen_at: at,
+  });
   await assertSucceeds(batch.commit());
   await assertSucceeds(getDoc(doc(db, `user_private/${uid}`)));
+  const authStatus = await assertSucceeds(getDoc(doc(db, `auth_status/${uid}`)));
+  if (authStatus.data()?.email_verified !== false) throw new Error('EMAIL_STATUS_PENDING_NOT_PERSISTED');
   await assertFails(publicationBatch(db, uid, 'bootstrap-must-stay-blocked', [photo(1)]).commit());
 });
 

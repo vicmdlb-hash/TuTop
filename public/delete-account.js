@@ -1,3 +1,7 @@
+import { trustedWebDeletionStatus } from './deletion-completion-proof.js';
+import { deletionJsonRequest } from './deletion-request-timeout.js';
+
+const EXPECTED_PROJECT = 'tutop-beta-vicmdlb-1356585881';
 const CONFIG_URL = '/tutop-web-config.json';
 const AUTH_BASE = 'https://identitytoolkit.googleapis.com/v1';
 const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1';
@@ -5,6 +9,7 @@ const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1';
 const state = {
   config: null,
   session: null,
+  busy: false,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -25,13 +30,17 @@ function setStatus(message, tone = 'neutral') {
 }
 
 function setBusy(busy) {
-  loginButton.disabled = busy;
-  requestButton.disabled = busy || !state.session || !confirmInput.checked;
-  logoutButton.disabled = busy || !state.session;
+  state.busy = Boolean(busy);
+  loginButton.disabled = state.busy;
+  requestButton.disabled = state.busy || !state.session || !confirmInput.checked;
+  logoutButton.disabled = state.busy || !state.session;
+  confirmInput.disabled = state.busy;
 }
 
 function clearSession() {
   state.session = null;
+  // Do not leave the previous owner's email visible on a shared device.
+  emailInput.value = '';
   passwordInput.value = '';
   accountEmail.textContent = '';
   accountPanel.hidden = true;
@@ -40,29 +49,17 @@ function clearSession() {
   setBusy(false);
 }
 
-async function readJson(response) {
-  const text = await response.text();
-  let data = {};
-  if (text) {
-    try { data = JSON.parse(text); } catch { data = {}; }
-  }
-  if (!response.ok) {
-    const error = new Error('REMOTE_REQUEST_FAILED');
-    error.status = response.status;
-    error.remoteStatus = data?.error?.status || '';
-    throw error;
-  }
-  return data;
-}
-
 async function loadConfig() {
-  const response = await fetch(CONFIG_URL, {
+  const { data: config } = await deletionJsonRequest(CONFIG_URL, {
     method: 'GET',
     cache: 'no-store',
     credentials: 'same-origin',
   });
-  const config = await readJson(response);
   if (!config?.apiKey || !config?.projectId || !config?.appId) throw new Error('WEB_CONFIG_INCOMPLETE');
+  // This private-beta deletion resource must not sign users into a wrong
+  // Firebase project if public hosting config is stale or misdirected.
+  if (config.projectId !== EXPECTED_PROJECT || config.environment !== 'staging')
+    throw new Error('WEB_STAGING_CONFIG_REQUIRED');
   state.config = {
     apiKey: String(config.apiKey),
     projectId: String(config.projectId),
@@ -74,12 +71,12 @@ async function loadConfig() {
 
 async function authRequest(endpoint, body) {
   if (!state.config?.apiKey) throw new Error('WEB_CONFIG_NOT_READY');
-  const response = await fetch(`${AUTH_BASE}/${endpoint}?key=${encodeURIComponent(state.config.apiKey)}`, {
+  const { data } = await deletionJsonRequest(`${AUTH_BASE}/${endpoint}?key=${encodeURIComponent(state.config.apiKey)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  return readJson(response);
+  return data;
 }
 
 async function signIn(email, password) {
@@ -119,18 +116,16 @@ function requestDocumentUrl() {
 }
 
 function decodeStatus(document) {
-  const value = document?.fields?.status?.stringValue;
-  return typeof value === 'string' && value ? value : 'unknown';
+  return trustedWebDeletionStatus(document);
 }
 
 async function readDeletionRequest() {
-  const response = await fetch(requestDocumentUrl(), {
+  const { status, data } = await deletionJsonRequest(requestDocumentUrl(), {
     method: 'GET',
     headers: authHeaders(),
     cache: 'no-store',
-  });
-  if (response.status === 404) return null;
-  return readJson(response);
+  }, { acceptNotFound: true });
+  return status === 404 ? null : data;
 }
 
 async function createDeletionRequest() {
@@ -139,7 +134,8 @@ async function createDeletionRequest() {
   if (!projectId || !uid) throw new Error('REQUEST_CONTEXT_MISSING');
 
   const name = `projects/${projectId}/databases/(default)/documents/account_deletion_requests/${uid}`;
-  const response = await fetch(
+  try {
+    await deletionJsonRequest(
     `${FIRESTORE_BASE}/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:commit`,
     {
       method: 'POST',
@@ -161,12 +157,50 @@ async function createDeletionRequest() {
         }],
       }),
     },
-  );
+    );
+  } catch (error) {
+    // A timeout may mean the server committed the request. Read first; never
+    // replay a non-idempotent write automatically or declare it unregistered.
+    const existing = await readDeletionRequest().catch(() => null);
+    if (existing) return existing;
+    throw error;
+  }
+  return readDeletionRequest();
+}
 
-  if (!response.ok) {
-    const racedExisting = await readDeletionRequest().catch(() => null);
-    if (racedExisting) return racedExisting;
-    await readJson(response);
+// Reopening a rejected request updates the same record under a version guard.
+// Prior rejection audit/history is NOT proven by this client path; separate
+// trusted audit retention must be verified before declaring compliance.
+// Ambiguous timeouts get a fresh status read, never an automatic replay.
+async function renewRejectedDeletionRequest(existing) {
+  const uid = state.session?.uid;
+  const projectId = state.config?.projectId;
+  if (!uid || !projectId) throw new Error('REQUEST_CONTEXT_MISSING');
+  const name = `projects/${projectId}/databases/(default)/documents/account_deletion_requests/${uid}`;
+  if (decodeStatus(existing) !== 'rejected'
+    || existing?.name !== name
+    || typeof existing.updateTime !== 'string') throw new Error('REQUEST_NOT_RENEWABLE');
+  try {
+    await deletionJsonRequest(
+      `${FIRESTORE_BASE}/projects/${encodeURIComponent(projectId)}/databases/(default)/documents:commit`,
+      {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ writes: [{
+          update: { name, fields: { status: { stringValue: 'pending' } } },
+          updateMask: { fieldPaths: ['status'] },
+          updateTransforms: [
+            { fieldPath: 'requested_at', setToServerValue: 'REQUEST_TIME' },
+            { fieldPath: 'updated_at', setToServerValue: 'REQUEST_TIME' },
+          ],
+          currentDocument: { updateTime: existing.updateTime },
+        }] }),
+      },
+    );
+  } catch (error) {
+    const latest = await readDeletionRequest().catch(() => null);
+    if (latest && decodeStatus(latest) !== 'rejected') return latest;
+    throw error;
   }
   return readDeletionRequest();
 }
@@ -174,8 +208,9 @@ async function createDeletionRequest() {
 function statusMessage(status) {
   if (status === 'pending') return 'Solicitud registrada. Estado: pendiente. Solicitar no significa que la cuenta ya esté eliminada.';
   if (status === 'processing') return 'Tu solicitud está en procesamiento. La eliminación todavía no se declara completada.';
-  if (status === 'completed') return 'El sistema registra la eliminación como completada por el proceso confiable de TuTop.';
-  if (status === 'rejected') return 'La solicitud aparece como rechazada. No se ha declarado una eliminación completada.';
+  if (status === 'completed') return 'El registro contiene evidencia de finalización del proceso confiable. Esto no sustituye la comprobación independiente de Firebase Authentication.';
+  if (status === 'completion-unverified') return 'El registro indica completada, pero faltan evidencias verificables del procesamiento. La eliminación no puede darse por confirmada desde este recurso.';
+  if (status === 'rejected') return 'La solicitud fue rechazada. Si todavía deseas eliminar tu cuenta, confirma nuevamente para presentar otra solicitud. La eliminación no se ha realizado.';
   return 'Existe una solicitud, pero su estado no puede mostrarse de forma confiable. No se ha declarado una eliminación completada.';
 }
 
@@ -192,6 +227,7 @@ async function refreshRequestStatus() {
 
 loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (state.busy) return;
   setBusy(true);
   setStatus('Validando tu cuenta TuTop…');
   try {
@@ -201,7 +237,13 @@ loginForm.addEventListener('submit', async (event) => {
     accountEmail.textContent = state.session.email;
     loginForm.hidden = true;
     accountPanel.hidden = false;
-    await refreshRequestStatus();
+    try {
+      await refreshRequestStatus();
+    } catch {
+      // A Firestore outage after successful Auth is not a sign-in failure.
+      // Keep the authenticated session available for a fresh status read.
+      setStatus('La sesión se inició, pero no pudimos consultar el estado de eliminación. Vuelve a consultar antes de intentar registrar una solicitud.', 'error');
+    }
   } catch {
     clearSession();
     setStatus('No pudimos autenticar esta cuenta. Revisa tus datos o inténtalo de nuevo más tarde.', 'error');
@@ -210,18 +252,24 @@ loginForm.addEventListener('submit', async (event) => {
   }
 });
 
-confirmInput.addEventListener('change', () => setBusy(false));
+confirmInput.addEventListener('change', () => setBusy(state.busy));
 
 requestButton.addEventListener('click', async () => {
-  if (!state.session || !confirmInput.checked) return;
+  if (state.busy || !state.session || !confirmInput.checked) return;
   setBusy(true);
   setStatus('Registrando tu solicitud…');
   try {
     const existing = await readDeletionRequest();
-    const document = existing || await createDeletionRequest();
-    setStatus(statusMessage(decodeStatus(document)), 'success');
+    const document = existing && decodeStatus(existing) === 'rejected'
+      ? await renewRejectedDeletionRequest(existing)
+      : existing || await createDeletionRequest();
+    const status = decodeStatus(document);
+    // A recorded request is successful, but unknown/unverified completion is not.
+    const tone = status === 'completion-unverified' ? 'error'
+      : status === 'pending' || status === 'completed' ? 'success' : 'neutral';
+    setStatus(statusMessage(status), tone);
   } catch {
-    setStatus('No pudimos registrar la solicitud desde este flujo. No se ha eliminado tu cuenta ni se ha marcado como completada.', 'error');
+    setStatus('No pudimos confirmar si se registró la solicitud. Consulta su estado antes de volver a intentar. Esta pantalla no marca eliminaciones como completadas.', 'error');
   } finally {
     setBusy(false);
   }
@@ -233,8 +281,16 @@ logoutButton.addEventListener('click', () => {
 });
 
 loadConfig()
-  .then(() => setStatus('Inicia sesión con tu cuenta TuTop para consultar o solicitar la eliminación.'))
+  .then(() => {
+    // A slow initial config response must not replace an in-progress sign-in
+    // or an authenticated account's deletion-request status.
+    if (!state.busy && !state.session)
+      setStatus('Inicia sesión con tu cuenta TuTop para consultar o solicitar la eliminación.');
+  })
   .catch(() => {
+    // A later successful config load may already have authenticated the user.
+    // Never disable that valid session because an earlier boot request failed.
+    if (state.busy || state.session || state.config) return;
     setStatus('Este recurso todavía no tiene una configuración de release válida. No se puede iniciar una solicitud.', 'error');
     loginButton.disabled = true;
   });

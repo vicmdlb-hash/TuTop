@@ -32,6 +32,27 @@ test('owner crea solicitud pending y terceros no pueden leerla ni modificarla', 
   await assertFails(updateDoc(ref, { status: 'processing', updated_at: now() }));
 });
 
+test('owner puede re-solicitar tras rechazo sin alterar identidad ni completar desde cliente', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'account_deletion_requests/alice'), {
+      uid: 'alice', status: 'rejected', requested_at: now(), updated_at: now(),
+    });
+  });
+  const owner = verifiedContext(env, 'alice').firestore();
+  const stranger = verifiedContext(env, 'bob').firestore();
+  const path = 'account_deletion_requests/alice';
+  const ref = doc(owner, path);
+  const reRequest = { status: 'pending', requested_at: now(), updated_at: now() };
+  await assertFails(updateDoc(doc(stranger, path), reRequest));
+  await assertFails(updateDoc(ref, { status: 'processing', requested_at: now(), updated_at: now() }));
+  await assertFails(updateDoc(ref, { status: 'completed', requested_at: now(), updated_at: now() }));
+  await assertFails(updateDoc(ref, { uid: 'bob', ...reRequest }));
+  await assertSucceeds(updateDoc(ref, reRequest));
+  const after = await getDoc(ref);
+  if (after.data()?.status !== 'pending') throw new Error('OWNER_RE_REQUEST_STATUS_INVALID');
+  await assertFails(updateDoc(ref, reRequest));
+});
+
 test('support puede iniciar procesamiento pero no declarar completed desde cliente', async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), 'account_deletion_requests/alice'), { uid: 'alice', status: 'pending', requested_at: now(), updated_at: now() });
@@ -77,4 +98,33 @@ test('moderator general no hereda permisos de privacidad de soporte', async () =
   const moderator = verifiedContext(env, 'moderator').firestore();
   await assertFails(getDoc(doc(moderator, 'account_deletion_requests/alice')));
   await assertFails(updateDoc(doc(moderator, 'account_deletion_requests/alice'), { status: 'processing', updated_at: now() }));
+});
+
+test('solicitud de borrado bloquea nuevas operaciones y rechazo rehabilita la admision', async () => {
+  const alice = verifiedContext(env, 'alice').firestore();
+  const support = verifiedContext(env, 'support').firestore();
+  const deletionRef = doc(alice, 'account_deletion_requests/alice');
+  const savedSearchRef = doc(alice, 'saved_searches/search-after-deletion-request');
+  const savedSearch = () => ({
+    owner_uid: 'alice',
+    query: 'apuntes',
+    visibility_scope: 'campus',
+    notifications_enabled: false,
+    created_at: now(),
+    updated_at: now(),
+  });
+
+  await assertSucceeds(setDoc(deletionRef, {
+    uid: 'alice',
+    status: 'pending',
+    requested_at: now(),
+    updated_at: now(),
+  }));
+  await assertFails(setDoc(savedSearchRef, savedSearch()));
+
+  await assertSucceeds(updateDoc(
+    doc(support, 'account_deletion_requests/alice'),
+    { status: 'rejected', updated_at: now() },
+  ));
+  await assertSucceeds(setDoc(savedSearchRef, savedSearch()));
 });
