@@ -6,6 +6,8 @@ import { compileTypescriptFixture } from './typescript-fixture-compiler.mjs';
 import './native-notification-router-account-switch-integration-tests.mjs';
 import { canApplyNativeNotificationSnapshot, canRouteNativeNotification } from '../src/lib/nativeNotificationSessionGuard.ts';
 import { isCurrentPushSession } from '../src/lib/pushBackendSessionWitness.ts';
+import { planNativePushCleanup, validPushCleanupVersion } from '../src/lib/nativePushCleanupLedger.ts';
+import * as pushTokenCreateFirst from '../src/lib/pushTokenCreateFirst.ts';
 import { fcmDataForNotification } from './fcm-payload-lib.mjs';
 import { currentTokenOwnerRecords, eligibleRecipientTargets, isPermanentFcmTokenError, supersededActiveTokenRecords, assertCompleteFcmInventory, fcmTokenCleanupPrecondition } from './fcm-token-ownership-lib.mjs';
 
@@ -90,6 +92,11 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
   let failReceiptQuery = false;
   let switchOnReceiptFailure = false;
   const actualReceiptWrites = [];
+  const deviceWrites = [];
+  const version = '2026-11-26T23:00:00.123456Z';
+  let deviceVersion = version;
+  let deviceEvents = [];
+  let missingDeviceVersion = false;
   class FakeFirebaseClient {
     get currentSession() { return canonical; }
     readStoredSession() { return canonical; }
@@ -112,7 +119,13 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
       }
       return [];
     }
-    async setDocument(path, payload) {
+    async setDocument(path, payload, options) {
+      if (path.startsWith('device_tokens/')) {
+        deviceEvents.push('write');
+        deviceWrites.push({ path, payload, options });
+        if (options?.updateTime && options.updateTime !== deviceVersion) throw Error('FAILED_PRECONDITION');
+        return missingDeviceVersion ? {} : { updateTime: deviceVersion };
+      }
       if (path.startsWith('notification_receipts/')) actualReceiptWrites.push({ path, payload });
       if (switchDuringWrite) canonical = { uid:'B', refreshToken:'b-r2' };
     }
@@ -120,11 +133,8 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
   const imports = {
     '../lib/notificationProjection': { appNotificationKindFromOutbox: () => 'system' },
     '../lib/pushBackendSessionWitness': { isCurrentPushSession },
-    '../lib/pushTokenCreateFirst': {
-      createFirstPushTokenDocument: async () => {},
-      normalizePushTokenIdentity: (token,platform) => ({ token,platform }),
-      normalizePushAppVersion: (x) => x,
-    },
+    '../lib/nativePushCleanupLedger': { planNativePushCleanup, validPushCleanupVersion },
+    '../lib/pushTokenCreateFirst': pushTokenCreateFirst,
     './firebaseRest': { FirebaseRestClient: FakeFirebaseClient },
     './nationalBackend': { nationalSchemaEnabled: () => true },
     './runtimeConfig': { getFirebaseConfig: () => ({}) },
@@ -213,7 +223,34 @@ const backendSource=fs.readFileSync('src/services/pushBackend.ts','utf8').replac
     /PUSH_OWNER_SESSION_CHANGED/,
     'a receipt query that outlives account A must still fail as changed owner');
   switchOnReceiptFailure = false;
-  canonical = { uid:'A',refreshToken:'a-r1' };
+  canonical = { uid:'synthetic-A',refreshToken:'synthetic-session' };
+  const deviceBackend = newModule.exports.pushBackend;
+  const token = 'synthetic-fcm-token-abcdefghijklmnopqrstuvwxyz';
+  const hooks = {
+    beforeWrite: () => deviceEvents.push('intent'),
+    confirmed: (_id, receipt) => { assert.equal(receipt, version); deviceEvents.push('receipt'); },
+  };
+  const id = await deviceBackend.registerDeviceToken(token, 'android', '0.9.2-beta.0', () => true, hooks);
+  assert.deepEqual(deviceEvents,['intent','write','receipt']);
+  const receipt = { id, attempt:'attempt_01', updateTime:version };
+  await deviceBackend.deactivateConfirmedNativeRecord(receipt, () => true);
+  assert.equal(deviceWrites.at(-1).options.updateTime,version);
+  assert.equal(deviceWrites.at(-1).options.exists,undefined);
+  assert.equal(deviceWrites.at(-1).payload.active,false);
+  deviceVersion='2026-11-26T23:01:00Z';
+  await assert.rejects(deviceBackend.deactivateConfirmedNativeRecord(receipt, () => true),/FAILED_PRECONDITION/);
+  const writesAfterConflict=deviceWrites.length;
+  await assert.rejects(deviceBackend.deactivateConfirmedNativeRecord(receipt, () => false),/PUSH_OWNER_SESSION_CHANGED/);
+  await assert.rejects(deviceBackend.deactivateConfirmedNativeRecord({...receipt,updateTime:null}, () => true),/RECEIPT_INVALID/);
+  canonical={uid:'synthetic-B',refreshToken:'synthetic-session-B'};
+  await assert.rejects(deviceBackend.deactivateConfirmedNativeRecord(receipt, () => true),/RECEIPT_INVALID/);
+  assert.equal(deviceWrites.length,writesAfterConflict,'stale owner, action, or receipt cannot write');
+  canonical={uid:'synthetic-A',refreshToken:'synthetic-session'};
+  missingDeviceVersion=true;
+  deviceEvents=[];
+  await deviceBackend.registerDeviceToken(token,'android','0.9.2-beta.0',()=>true,hooks);
+  assert.deepEqual(deviceEvents,['intent','write'],'unknown response must not synthesize a receipt');
+  console.log('PASS actual pushBackend synthetic exact-version cleanup and receipt ordering');
 }
 
 const notificationRead=backendSource.slice(backendSource.indexOf('async loadTrustedNotifications('),backendSource.indexOf('async markNotificationRead('));
