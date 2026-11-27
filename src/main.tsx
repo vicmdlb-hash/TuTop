@@ -26,7 +26,9 @@ async function bootstrap() {
   createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>);
 
   if ('serviceWorker' in navigator && import.meta.env.PROD) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch((error) => console.warn('Service worker no disponible', error)));
+    const registerWorker = () => { void navigator.serviceWorker.register('/sw.js').catch((error) => console.warn('Service worker no disponible', error)); };
+    if (document.readyState === 'complete') registerWorker();
+    else window.addEventListener('load', registerWorker, { once: true });
   }
 }
 
