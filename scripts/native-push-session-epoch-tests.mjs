@@ -479,3 +479,46 @@ console.log('PASS native token reconciliation epoch: outdated cleanup preserves 
 console.log('PASS synthetic native logout: pre-await quarantine, absent plugin, deletion failure, marker readback failure');
 
 console.log('PASS synthetic native push owner epoch guard, delayed callback and backend CAS pre-write contracts');
+
+
+// R288/R292: durable, exact-version cleanup intent. Pure fake storage only.
+const { createNativePushCleanupLedger, planNativePushCleanup } = await import('../src/lib/nativePushCleanupLedger.ts');
+{
+  const entries=new Map();
+  const storage={getItem:key=>entries.get(key)??null,setItem:(key,value)=>entries.set(key,value)};
+  const uid='synthetic-A', other='synthetic-B';
+  const id=(owner,n)=>owner+'-android-'+n.toString(16).padStart(20,'0');
+  const a=id(uid,1), b=id(uid,2), attempt='attempt_01', newer='attempt_02';
+  const version='2026-11-26T23:00:00.123456Z';
+  const ledger=createNativePushCleanupLedger(storage,uid);
+  ledger.begin(a,attempt);
+  assert.equal(createNativePushCleanupLedger(storage,uid).read()[0].updateTime,null,'unknown write survives restart');
+  assert.throws(()=>planNativePushCleanup(uid,ledger.read()[0]),/RECEIPT_INVALID/);
+  assert.throws(()=>ledger.begin(a,attempt),/ATTEMPT_REUSED/);
+  assert.deepEqual(createNativePushCleanupLedger(storage,other).read(),[]);
+  assert.throws(()=>ledger.begin(id(other,1),attempt),/INTENT_INVALID/);
+  assert.throws(()=>ledger.begin(uid+'-android-../x',attempt),/INTENT_INVALID/);
+  assert.throws(()=>ledger.confirm(a,attempt,'2026-02-31T00:00:00Z'),/RECEIPT_INVALID/);
+  ledger.confirm(a,attempt,version);
+  const old=ledger.read()[0];
+  assert.deepEqual(planNativePushCleanup(uid,old),{path:'device_tokens/'+a,options:{merge:true,updateTime:version}});
+  assert.throws(()=>planNativePushCleanup(other,old),/RECEIPT_INVALID/);
+  ledger.begin(a,newer);
+  assert.throws(()=>ledger.confirm(a,attempt,version),/INTENT_STALE/);
+  assert.throws(()=>ledger.acknowledge(old),/INTENT_STALE/);
+  assert.equal(ledger.read()[0].updateTime,null);
+  ledger.confirm(a,newer,version);
+  ledger.begin(b,attempt);
+  const confirmed=ledger.read().find(e=>e.id===a);
+  assert.throws(()=>ledger.confirm(a,newer,'2026-11-26T23:01:00Z'),/RECEIPT_CONFLICT/);
+  ledger.acknowledge(confirmed);
+  assert.deepEqual(ledger.read(),[{id:b,attempt,updateTime:null}],'only exact confirmed record removed');
+  for(let i=3;i<=17;i++)ledger.begin(id(uid,i),attempt);
+  assert.throws(()=>ledger.begin(id(uid,18),attempt),/LEDGER_FULL/);
+  assert.equal(ledger.read().length,16);
+  assert.throws(()=>createNativePushCleanupLedger({getItem:()=>null,setItem:()=>{}},uid).begin(a,attempt),/LEDGER_READBACK/);
+  assert.throws(()=>createNativePushCleanupLedger({getItem:()=>null,setItem:()=>{throw Error('quota');}},uid).begin(a,attempt),/quota/);
+  entries.set('tutop.push.cleanup.v1.'+uid,JSON.stringify([{id:id(other,1),attempt,updateTime:version}]));
+  assert.throws(()=>ledger.read(),/LEDGER_INVALID/);
+  console.log('PASS native push cleanup intent ledger and exact-version CAS planning');
+}

@@ -1,5 +1,6 @@
 import { appNotificationKindFromOutbox } from '../lib/notificationProjection';
 import { isCurrentPushSession } from '../lib/pushBackendSessionWitness';
+import { planNativePushCleanup, validPushCleanupVersion, type PushCleanupEntry } from '../lib/nativePushCleanupLedger';
 import { createFirstPushTokenDocument, normalizePushTokenIdentity, normalizePushAppVersion } from '../lib/pushTokenCreateFirst';
 import type { AppNotification } from '../types';
 import { FirebaseRestClient, type AuthSession } from './firebaseRest';
@@ -42,9 +43,24 @@ async function receiptId(uid: string, notificationId: string) {
 }
 
 export const pushBackend = {
+  // Exact-version cleanup cannot overwrite a newer registration. The caller
+  // must provide a current owner/action fence and a previously confirmed write.
+  async deactivateConfirmedNativeRecord(entry: PushCleanupEntry, isOriginalSession: () => boolean) {
+    const client = getClient();
+    const uid = client.currentSession!.uid;
+    const assertOwner = currentPushOwnerGuard(client);
+    const plan = planNativePushCleanup(uid, entry);
+    assertOwner();
+    if (!isOriginalSession()) throw Error('PUSH_OWNER_SESSION_CHANGED');
+    await client.setDocument(plan.path, { active: false, updated_at: new Date().toISOString() }, plan.options);
+    assertOwner();
+    if (!isOriginalSession()) throw Error('PUSH_OWNER_SESSION_CHANGED');
+  },
+
   async registerDeviceToken(
     token: string, platform: PushPlatform, appVersion: string,
     isOriginalSession?: () => boolean,
+    cleanupReceipt?: { beforeWrite: (id: string) => void; confirmed: (id: string, updateTime: string) => void },
   ) {
     const client = getClient();
     const uid = client.currentSession!.uid;
@@ -69,11 +85,23 @@ export const pushBackend = {
       created_at: now,
       updated_at: now,
     };
+    // Optional cleanup receipt hooks: persist intent before ANY remote write.
+    // Keep the exact response version, not a later GET that may belong to
+    // another registration. No receipt on a failed/ambiguous write.
+    assertOwner();
+    cleanupReceipt?.beforeWrite(id);
+    let committedVersion: unknown;
     await createFirstPushTokenDocument(
-      (record, options) => client.setDocument(`device_tokens/${id}`, record, options),
+      async (record, options) => {
+        const result = await client.setDocument(`device_tokens/${id}`, record, options);
+        committedVersion = result?.updateTime;
+        return result;
+      },
       payload,
       assertOwner,
     );
+    assertOwner();
+    if (cleanupReceipt && validPushCleanupVersion(committedVersion)) cleanupReceipt.confirmed(id, committedVersion);
     return id;
   },
 
