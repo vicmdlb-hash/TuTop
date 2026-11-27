@@ -316,30 +316,56 @@ export async function enableNativePushNotifications() {
   if (!messaging?.requestPermissions || !messaging?.getToken) {
     return { enabled: false, permission: 'unavailable' as PushPermission, reason: 'plugin-unavailable' as PushRegistrationReason };
   }
-  // Only a direct user action may clear the stored per-owner opt-out.
-  const uid = verifiedEmailBetaAuth.readSessionIdentity()?.uid || '';
-  if (!uid || !setNativePushOptOut(uid, false)) {
+  // Bind the entire explicit opt-in to its original identity and generation.
+  const original = verifiedEmailBetaAuth.readSessionIdentity();
+  const uid = original?.uid || '';
+  if (!uid || !original?.refreshToken || !setNativePushOptOut(uid, false)) {
     return { enabled: false, permission: await nativePushPermission(), reason: 'preference-storage-unavailable' as PushRegistrationReason };
   }
   pushRegistrationEpoch += 1;
-  await initializeNativeFirebaseSecurity();
+  const witness = { ...original, generation: verifiedEmailBetaAuth.sessionGeneration(), epoch: pushRegistrationEpoch };
+  // Identity-only fence permits cleanup of a quarantined token; it MUST NOT
+  // authorize registration. The full quarantine-aware guard is required below.
+  const sameAction = () => matchesNativePushSession(witness, verifiedEmailBetaAuth.readSessionIdentity(),
+    verifiedEmailBetaAuth.sessionGeneration(), pushRegistrationEpoch, false);
+  const stale = { enabled: false, permission: 'unavailable' as PushPermission, reason: 'ownership-reconciliation-pending' as PushRegistrationReason, ownershipReconciliationPending: true };
+  if (!sameAction()) return stale;
+  // Do not invoke automatic startup registration from this explicit action.
+  // Initialize only prerequisites, then register once with the original witness.
+  installPushOwnershipRetryListener();
+  try {
+    await initializeNativeAppCheck();
+    if (!sameAction()) return stale;
+    await installMessagingListeners(messaging);
+    if (!sameAction()) return stale;
+  } catch (error) {
+    if (!sameAction()) return stale;
+    return { enabled: false, permission: 'unavailable' as PushPermission, reason: classifyPushFailure(error), ownershipReconciliationPending: pendingPushOwnershipReset() };
+  }
   let permission = await nativePushPermission();
+  if (!sameAction()) return stale;
   if (permission !== 'granted') {
     try {
       const result = await messaging.requestPermissions();
+      if (!sameAction()) return stale;
       permission = String(result?.receive || 'denied') as PushPermission;
     } catch (error) {
-      return { enabled: false, permission, reason: classifyPushFailure(error), ownershipReconciliationPending: false };
+      if (!sameAction()) return stale;
+      return { enabled: false, permission, reason: classifyPushFailure(error), ownershipReconciliationPending: pendingPushOwnershipReset() };
     }
   }
   if (permission !== 'granted') {
-    return { enabled: false, permission, reason: 'permission-not-granted' as PushRegistrationReason, ownershipReconciliationPending: false };
+    return { enabled: false, permission, reason: 'permission-not-granted' as PushRegistrationReason, ownershipReconciliationPending: pendingPushOwnershipReset() };
   }
+  if (!sameAction()) return stale;
   const ownership = await reconcilePendingPushOwnershipReset();
+  if (!sameAction()) return stale;
   if (ownership.pending) {
     return { enabled: false, permission, reason: 'ownership-reconciliation-pending' as PushRegistrationReason, ownershipReconciliationPending: true };
   }
-  const health = await syncGrantedPushTokenHealth();
+  if (!isCurrentPushSession(witness)) return stale;
+  const health = await syncGrantedPushTokenHealth(witness);
+  if (!isCurrentPushSession(witness)) return stale;
   return { enabled: health.registered, permission, reason: health.reason, ownershipReconciliationPending: false };
 }
 

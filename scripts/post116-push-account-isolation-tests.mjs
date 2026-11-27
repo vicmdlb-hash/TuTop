@@ -422,3 +422,49 @@ assert.match(router, /canApplyNativeNotificationSnapshot\(/, 'live async handler
 assert.doesNotMatch(router, /if \(!intended\) return true/, 'legacy unaddressed notification fallback forbidden');
 
 console.log('PASS push account isolation: logout quarantine + current-token owner + trusted stale-owner cleanup + recipient UID routing guard + generic notification body');
+
+
+// R278/R279: execute the actual opt-in body with the real session matcher
+// and synthetic native prerequisites; no Android plugin or Firebase access.
+const { matchesNativePushSession } = await import('../src/lib/nativePushSessionGuard.ts');
+const enableSource = native.slice(native.indexOf('export async function enableNativePushNotifications()'),
+  native.indexOf('export async function disableNativePushNotifications()'))
+  .replace('export async','async').replaceAll(' as PushPermission','').replaceAll(' as PushRegistrationReason','');
+assert(!enableSource.includes('await initializeNativeFirebaseSecurity()'));
+for (const scenario of ['normal','quarantine-recovered','quarantine-persisted','app-check','listeners','permission','prompt','reconcile','sync','same-uid-relogin','prompt-rejection-switch','epoch-change','denied','already-granted']) {
+  let owner='A', generation=1, refreshToken='synthetic-A', pending=scenario.startsWith('quarantine');
+  let bumpEpoch, calls=[], prompts=0;
+  const change=point=>{
+    if(scenario===point){owner='B';generation++;refreshToken='synthetic-B';}
+    if(scenario==='same-uid-relogin'&&point==='prompt'){generation++;refreshToken='synthetic-A2';}
+    if(scenario==='epoch-change'&&point==='prompt')bumpEpoch();
+  };
+  const deps={
+    isNativeFirebaseRuntime:()=>true,
+    capacitorPlugin:()=>({getToken:()=>assert.fail('direct token access forbidden'),requestPermissions:async()=>{
+      prompts++;change('prompt');
+      if(scenario==='prompt-rejection-switch'){owner='B';generation++;refreshToken='synthetic-B';throw Error('synthetic');}
+      return {receive:scenario==='denied'?'denied':'granted'};
+    }}),
+    verifiedEmailBetaAuth:{readSessionIdentity:()=>({uid:owner,refreshToken}),sessionGeneration:()=>generation},
+    setNativePushOptOut:()=>true,
+    initializeNativeAppCheck:async()=>{change('app-check');},
+    installMessagingListeners:async()=>{change('listeners');},
+    installPushOwnershipRetryListener:()=>{},
+    nativePushPermission:async()=>{change('permission');return scenario==='already-granted'?'granted':'prompt';},
+    reconcilePendingPushOwnershipReset:async()=>{change('reconcile');if(scenario==='quarantine-recovered')pending=false;return {pending};},
+    syncGrantedPushTokenHealth:async witness=>{assert.equal(witness.uid,'A');assert(!pending);calls.push(owner);change('sync');return {registered:true,reason:'registered'};},
+    matchesNativePushSession, classifyPushFailure:()=> 'token-registration-failed',
+    pendingPushOwnershipReset:()=>pending, bindEpoch:fn=>{bumpEpoch=fn;},
+  };
+  const result=await new Function(...Object.keys(deps),
+    'let pushRegistrationEpoch=0;bindEpoch(()=>pushRegistrationEpoch++);'+
+    'const isCurrentPushSession=w=>matchesNativePushSession(w,verifiedEmailBetaAuth.readSessionIdentity(),verifiedEmailBetaAuth.sessionGeneration(),pushRegistrationEpoch,pendingPushOwnershipReset());\n'+
+    enableSource+'\nreturn enableNativePushNotifications();')(...Object.values(deps));
+  const success=['normal','quarantine-recovered','already-granted'].includes(scenario);
+  assert.equal(result.enabled,success,scenario);
+  assert(!calls.includes('B'),scenario);
+  assert.equal(calls.length,success||scenario==='sync'?1:0,scenario);
+  if(scenario==='already-granted')assert.equal(prompts,0);
+}
+console.log('PASS synthetic explicit FCM opt-in original session and quarantine fences (14 cases)');
