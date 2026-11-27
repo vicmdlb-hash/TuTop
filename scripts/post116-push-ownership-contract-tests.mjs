@@ -6,7 +6,8 @@ const gate = fs.readFileSync('src/components/BackendGate.tsx','utf8');
 const permissions = fs.readFileSync('src/components/PermissionSettings.tsx','utf8');
 
 assert.match(native, /export async function prepareNativePushForAccountSignOut\(\)/);
-assert.match(native, /pushBackend\.unregisterDeviceToken\(token, 'android'\)/);
+assert.match(native, /pushBackend\.deactivateConfirmedNativeRecord\(entry, isCurrent\)/);
+assert.match(native, /retireNativePushReceipts\(original.uid, sameCleanup\)/);
 assert.match(native, /messaging\.deleteToken\(\)/);
 assert.match(native, /initialization = null/);
 assert.match(native, /bounded\(/);

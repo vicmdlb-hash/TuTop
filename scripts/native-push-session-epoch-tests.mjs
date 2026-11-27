@@ -249,10 +249,10 @@ assert(disable.includes('if (!isSameOwner()) return false;'), 'late token cleanu
  // may succeed while server retirement is unknown; opt-out still persists.
  const disableCode = disable.replace(/^export /, '');
  for (const scenario of [
-   { token: 'synthetic-token', serverFails: false, deleteFails: false, expected: true, calls: 1 },
-   { token: 'synthetic-token', serverFails: true, deleteFails: false, expected: false, calls: 1 },
-   { token: '', serverFails: false, deleteFails: false, expected: false, calls: 0 },
-   { token: 'synthetic-token', serverFails: false, deleteFails: true, expected: false, calls: 1 },
+   { receipt: true, serverFails: false, deleteFails: false, expected: true },
+   { receipt: true, serverFails: true, deleteFails: false, expected: false },
+   { receipt: false, serverFails: false, deleteFails: false, expected: false },
+   { receipt: true, serverFails: false, deleteFails: true, expected: false },
  ]) {
    let optedOut = false, serverCalls = 0, deleteCalls = 0;
    const ctx = {
@@ -264,20 +264,22 @@ assert(disable.includes('if (!isSameOwner()) return false;'), 'late token cleanu
      },
      setNativePushOptOut: () => { optedOut = true; return true; },
      capacitorPlugin: () => ({
-       getToken: async () => ({ token: scenario.token }),
+       getToken: () => assert.fail('disable must not mint or obtain a token'),
        deleteToken: async () => { deleteCalls++; if (scenario.deleteFails) throw Error('synthetic'); },
      }),
      queueNativePushOperation: async (guard, operation) => {
        assert(guard()); return operation();
      },
-     pushBackend: { unregisterDeviceToken: async () => {
+     retireNativePushReceipts: async () => {
        serverCalls++; if (scenario.serverFails) throw Error('synthetic');
-     } },
+       return scenario.receipt;
+     },
+     bounded: (promise, _ms, fallback) => Promise.resolve(promise).catch(() => fallback),
    };
    const runDisable = vm.runInNewContext(disableCode + '\n disableNativePushNotifications', ctx);
    assert.equal(await runDisable(), scenario.expected);
    assert.equal(optedOut, true);
-   assert.equal(serverCalls, scenario.calls);
+   assert.equal(serverCalls, 1);
    assert.equal(deleteCalls, 1, 'native deletion is attempted even when server cleanup fails or is unknown');
  }
  console.log('PASS disable native push: no false server acknowledgement');
@@ -351,7 +353,7 @@ console.log('PASS native initialization epoch: obsolete App Check completion can
 
 
 // Exercise the actual (TypeScript-free) sign-out function in a synthetic VM.
-// The marker must be durable before getToken awaits, including when the native
+// The marker must be durable before receipt retirement awaits, including when the native
 // plugin is temporarily missing. Never access Firebase or a physical device.
 const signOutCode = native.slice(native.indexOf('export async function prepareNativePushForAccountSignOut()'))
   .replace(/^export /, '').replace('null as any', 'null');
@@ -364,7 +366,7 @@ const makeSyntheticResetStorage = (failRemoval = false) => {
     removeItem: key => { if (failRemoval) throw new Error('synthetic-blocked-remove'); entries.delete(key); },
   } };
 };
-const syntheticSignOut = (plugin, resetGuard) => {
+const syntheticSignOut = (plugin, resetGuard, retire = async () => true) => {
   const context = {
     pushRegistrationEpoch: 0, initialization: null,
     isNativeFirebaseRuntime: () => true,
@@ -374,7 +376,7 @@ const syntheticSignOut = (plugin, resetGuard) => {
     verifiedEmailBetaAuth: { readSessionIdentity: () => same, sessionGeneration: () => 3 },
     matchesNativePushSession, queueNativePushOperation: createNativePushOperationQueue(),
     needsNativePushOwnershipReset,
-    pushBackend: { unregisterDeviceToken: async () => undefined },
+    retireNativePushReceipts: retire,
     bounded: (promise, _ms, fallback) => Promise.resolve(promise).catch(() => fallback),
   };
   return vm.runInNewContext(signOutCode + '\nprepareNativePushForAccountSignOut', context)();
@@ -390,14 +392,14 @@ assert.equal(offlinePluginStorage.entries.get('tutop.synthetic-push-reset'), '1'
 
 const interruptedStorage = makeSyntheticResetStorage();
 const interruptedReset = makeResetGuard(interruptedStorage.storage);
-let resolveNativeToken;
-const delayedToken = new Promise(resolve => { resolveNativeToken = resolve; });
+let resolveRetirement;
+const delayedRetirement = new Promise(resolve => { resolveRetirement = resolve; });
 const pendingLogout = syntheticSignOut({
-  getToken: () => delayedToken, deleteToken: async () => undefined,
-}, interruptedReset);
+  getToken: () => assert.fail('sign-out must not mint or obtain a token'), deleteToken: async () => undefined,
+}, interruptedReset, () => delayedRetirement);
 assert.equal(interruptedStorage.entries.get('tutop.synthetic-push-reset'), '1',
-  'owner reset marker MUST persist synchronously before getToken resolves');
-resolveNativeToken({ token: 'synthetic-token-abcdefghijklmnopqrstuvwxyz' });
+  'owner reset marker MUST persist synchronously before server retirement resolves');
+resolveRetirement(true);
 const completedLogout = await pendingLogout;
 assert.equal(completedLogout.tokenDeleted, true);
 assert.equal(completedLogout.ownershipResetQueued, false);
@@ -437,7 +439,7 @@ const sharedContext = {
   verifiedEmailBetaAuth: { readSessionIdentity: () => same, sessionGeneration: () => 3 },
   matchesNativePushSession, queueNativePushOperation: createNativePushOperationQueue(),
   needsNativePushOwnershipReset,
-  pushBackend: { unregisterDeviceToken: async () => undefined },
+  retireNativePushReceipts: async () => true,
   bounded: (promise, _ms, fallback) => Promise.resolve(promise).catch(() => fallback),
 };
 const sharedSignOut = vm.runInNewContext(
@@ -559,4 +561,71 @@ const { createNativePushCleanupLedger, planNativePushCleanup } = await import('.
   entries.set('tutop.push.cleanup.v1.'+uid,JSON.stringify([{id:id(other,1),attempt,updateTime:version}]));
   assert.throws(()=>ledger.read(),/LEDGER_INVALID/);
   console.log('PASS native push cleanup intent ledger and exact-version CAS planning');
+}
+
+// R300: real native runtime helper contracts using fake storage and backend only.
+const receiptRuntimeSource = native.slice(native.indexOf('async function registerToken('),
+  native.indexOf('export async function nativePushPermission('))
+  .replace('token: string, witness: PushSessionWitness', 'token, witness')
+  .replace('uid: string, isCurrent: () => boolean', 'uid, isCurrent');
+assert(!disable.includes('messaging.getToken('));
+assert(!signout.includes('messaging.getToken('));
+{
+  const map = new Map();
+  const uid = 'synthetic-A', id = uid + '-android-' + '1'.repeat(20);
+  const token = 'synthetic-fcm-token-abcdefghijklmnopqrstuvwxyz';
+  const version = '2026-11-26T23:00:00.123456Z';
+  let current = true, optOut = false, mode = 'normal', writes = 0, retirements = 0, seed = 0;
+  const storage = {getItem:key=>map.get(key)??null,setItem:(key,value)=>map.set(key,value)};
+  const backend = {
+    registerDeviceToken: async (value, platform, app, guard, hooks) => {
+      assert(guard()); assert.equal(value, token); assert.equal(platform, 'android');
+      hooks.beforeWrite(id);
+      assert.equal(createNativePushCleanupLedger(storage,uid).read()[0].updateTime, null);
+      writes++;
+      if (mode === 'switch') { current = false; throw Error('synthetic session change'); }
+      if (mode !== 'missing') hooks.confirmed(id,version);
+    },
+    deactivateConfirmedNativeRecord: async (entry,guard) => {
+      assert(guard()); assert.equal(entry.id,id); assert.equal(entry.updateTime,version);
+      retirements++;
+      if (mode === 'conflict') throw Error('synthetic CAS conflict');
+    },
+  };
+  const ctx = {
+    isCurrentPushSession:()=>current, nativePushOptedOut:()=>optOut,
+    queueNativePushBackendOperation:createNativePushOperationQueue(),
+    createNativePushCleanupLedger, localStorage:storage, pushBackend:backend,
+    crypto:{getRandomValues:array=>array.fill(++seed)}, appVersion:()=> '0.9.2-beta.0',
+  };
+  const runtime=vm.runInNewContext(receiptRuntimeSource+'\n({registerToken,retireNativePushReceipts})',ctx);
+  const ledger=createNativePushCleanupLedger(storage,uid);
+  await runtime.registerToken(token,{uid});
+  assert.equal(writes,1); assert.equal(ledger.read()[0].updateTime,version);
+  assert(!JSON.stringify([...map]).includes(token),'no raw token at rest');
+  mode='conflict';
+  assert.equal(await runtime.retireNativePushReceipts(uid,()=>current),false);
+  assert.equal(ledger.read()[0].updateTime,version);
+  mode='normal';
+  assert.equal(await runtime.retireNativePushReceipts(uid,()=>current),true);
+  assert.equal(ledger.read().length,0);
+  assert.equal(await runtime.retireNativePushReceipts(uid,()=>current),false,'legacy/no receipt remains unknown');
+  mode='missing';
+  await assert.rejects(runtime.registerToken(token,{uid}),/RECEIPT_UNCONFIRMED/);
+  assert.equal(ledger.read()[0].updateTime,null);
+  const previousRetirements=retirements;
+  assert.equal(await runtime.retireNativePushReceipts(uid,()=>current),false);
+  assert.equal(retirements,previousRetirements,'unknown receipt must not authorize a remote write');
+  mode='switch';
+  await assert.rejects(runtime.registerToken(token,{uid}),/synthetic session change/);
+  assert.equal(ledger.read()[0].updateTime,null);
+  const previousWrites=writes;
+  await assert.rejects(runtime.registerToken(token,{uid}),/PUSH_OWNER_SESSION_CHANGED/);
+  current=true;optOut=true;
+  await assert.rejects(runtime.registerToken(token,{uid}),/PUSH_OWNER_SESSION_CHANGED/);
+  optOut=false;mode='normal';
+  ctx.localStorage={getItem:()=>null,setItem:()=>{throw Error('synthetic quota');}};
+  await assert.rejects(runtime.registerToken(token,{uid}),/synthetic quota/);
+  assert.equal(writes,previousWrites,'storage failure and stale session cannot write remote');
+  console.log('PASS native runtime receipt lifecycle: durable intent, exact CAS, conflict, unknown, opt-out, storage failure');
 }

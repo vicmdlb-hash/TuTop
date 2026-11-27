@@ -412,7 +412,7 @@ assert.match(native, /recipient_uid: String\(data\.recipient_uid \|\| ''\)/);
 assert.match(native, /PENDING_PUSH_OWNERSHIP_RESET_KEY/);
 assert.match(native, /if \(pendingPushOwnershipReset\(\) \|\| nativePushOptedOut\(\)\) return;/,
   'stale FCM events must be blocked by pending owner reset OR user opt-out');
-assert.match(native, /pushBackend\.unregisterDeviceToken\(token, 'android'\)/);
+assert.match(native, /pushBackend\.deactivateConfirmedNativeRecord\(entry, isCurrent\)/);
 assert.match(native, /messaging\.deleteToken\(\)/);
 
 assert.match(gate, /await prepareNativePushForAccountSignOut/);
@@ -529,7 +529,7 @@ const { createNativePushOperationQueue } = await import('../src/lib/nativePushSe
 }
 const signoutSource=native.slice(native.indexOf('export async function prepareNativePushForAccountSignOut()'))
   .replace('export async','async').replace('null as any','null');
-for(const scenario of ['normal','switch-during-get','switch-during-unregister','same-uid-relogin','get-empty','delete-failure','no-owner']){
+for(const scenario of ['normal','switch-before-retire','switch-during-retire','same-uid-relogin','no-receipt','delete-failure','no-owner']){
   let owner=scenario==='no-owner'?null:'A',generation=1,refreshToken='synthetic-A',pending=false;
   const calls=[];
   const change=()=>{owner='B';generation++;refreshToken='synthetic-B';};
@@ -537,12 +537,16 @@ for(const scenario of ['normal','switch-during-get','switch-during-unregister','
     isNativeFirebaseRuntime:()=>true,
     setPendingPushOwnershipReset:value=>{pending=value;return true;},
     pendingPushOwnershipReset:()=>pending,
-    capacitorPlugin:()=>({getToken:async()=>{calls.push('get:'+owner);
-      if(scenario==='switch-during-get')change();
+    capacitorPlugin:()=>({getToken:()=>assert.fail('sign-out must not obtain a token'),
+      deleteToken:async()=>{calls.push('delete:'+owner);if(scenario==='delete-failure')throw Error('synthetic');}}),
+    retireNativePushReceipts:async(uid,guard)=>{
+      if(scenario==='switch-before-retire')change();
       if(scenario==='same-uid-relogin'){generation++;refreshToken='synthetic-A2';}
-      return scenario==='get-empty'?null:{token:'synthetic-fcm'};
-    },deleteToken:async()=>{calls.push('delete:'+owner);if(scenario==='delete-failure')throw Error('synthetic');}}),
-    pushBackend:{unregisterDeviceToken:async()=>{calls.push('unregister:'+owner);if(scenario==='switch-during-unregister')change();}},
+      if(!guard())return false;
+      calls.push('retire:'+owner);
+      if(scenario==='switch-during-retire')change();
+      return scenario!=='no-receipt' && guard();
+    },
     bounded:async(p,_ms,fallback)=>{try{return await p;}catch{return fallback;}},
     needsNativePushOwnershipReset:tokenDeleted=>!tokenDeleted,
     verifiedEmailBetaAuth:{readSessionIdentity:()=>owner?{uid:owner,refreshToken}:null,sessionGeneration:()=>generation},
@@ -550,11 +554,12 @@ for(const scenario of ['normal','switch-during-get','switch-during-unregister','
   };
   const result=await new Function(...Object.keys(deps),
     'let pushRegistrationEpoch=0,initialization=null;\n'+signoutSource+'\nreturn prepareNativePushForAccountSignOut();')(...Object.values(deps));
-  assert(!calls.some(x=>/^(delete|unregister):(B|null)$/.test(x)),scenario);
-  if(scenario==='same-uid-relogin')assert.deepEqual(calls,['get:A']);
-  const queued=!['normal','get-empty'].includes(scenario);
+  assert(!calls.some(x=>/^(delete|retire):(B|null)$/.test(x)),scenario);
+  if(scenario==='same-uid-relogin')assert.deepEqual(calls,[]);
+  const queued=!['normal','no-receipt'].includes(scenario);
   assert.equal(result.ownershipResetQueued,queued,scenario);
   assert.equal(pending,queued,scenario);
 }
-assert.equal((native.match(/queueNativePushOperation\(/g)||[]).length,6,'all six native get/delete operations must use shared queue');
+assert.equal((native.match(/queueNativePushOperation\(/g)||[]).length,4,'all four remaining native get/delete operations must use shared queue');
+assert(!signoutSource.includes('messaging.getToken('),'signout must not mint or obtain a native token');
 console.log('PASS synthetic native FCM queue and sign-out owner fences (7 sign-out cases)');

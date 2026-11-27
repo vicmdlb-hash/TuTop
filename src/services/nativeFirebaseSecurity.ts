@@ -2,6 +2,7 @@ import { pushBackend } from './pushBackend';
 import { verifiedEmailBetaAuth } from './verifiedEmailBetaAuth';
 import { createNativePushOperationQueue, matchesNativePushSession, needsNativePushOwnershipReset, nativePushReconciliationStillPending, type PushSessionWitness } from '../lib/nativePushSessionGuard';
 import { isNativePushOptedOut, setNativePushOptOut } from '../lib/nativePushOptOut';
+import { createNativePushCleanupLedger } from '../lib/nativePushCleanupLedger';
 import { initializeNativeAppCheck, isNativeFirebaseRuntime } from './nativeAppCheckToken';
 
 type CapacitorPlugin = Record<string, (...args: any[]) => Promise<any>>;
@@ -39,6 +40,9 @@ let ownershipRetryInstalled = false;
 // A logout or native disable immediately invalidates all earlier registration work.
 let pushRegistrationEpoch = 0;
 const queueNativePushOperation = createNativePushOperationQueue();
+// Server receipt operations serialize separately: a slow network must not hold
+// the native deleteToken queue hostage during bounded sign-out.
+const queueNativePushBackendOperation = createNativePushOperationQueue();
 const PENDING_PUSH_OWNERSHIP_RESET_KEY = 'tutop.push.pending-owner-reset.v1';
 
 function nativePushOptedOut() {
@@ -130,10 +134,44 @@ function isCurrentPushSession(witness: PushSessionWitness) {
   );
 }
 async function registerToken(token: string, witness: PushSessionWitness) {
-  if (!isCurrentPushSession(witness)) throw new Error('PUSH_OWNER_SESSION_CHANGED');
+  const current = () => isCurrentPushSession(witness) && !nativePushOptedOut();
+  if (!current()) throw new Error('PUSH_OWNER_SESSION_CHANGED');
   const clean = token.trim();
   if (clean.length < 20 || clean.length > 4096) throw new Error('INVALID_PUSH_TOKEN');
-  await pushBackend.registerDeviceToken(clean, 'android', appVersion(), () => isCurrentPushSession(witness));
+  await queueNativePushBackendOperation(current, async () => {
+    const ledger = createNativePushCleanupLedger(localStorage, witness.uid);
+    const attempt = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+    let confirmed = false;
+    await pushBackend.registerDeviceToken(clean, 'android', appVersion(), current, {
+      beforeWrite: id => ledger.begin(id, attempt),
+      confirmed: (id, updateTime) => { ledger.confirm(id, attempt, updateTime); confirmed = true; },
+    });
+    if (!current() || !confirmed) throw new Error('PUSH_CLEANUP_RECEIPT_UNCONFIRMED');
+  });
+}
+
+async function retireNativePushReceipts(uid: string, isCurrent: () => boolean) {
+  return queueNativePushBackendOperation(isCurrent, async () => {
+    const ledger = createNativePushCleanupLedger(localStorage, uid);
+    const entries = ledger.read();
+    // Empty ledger may represent a legacy installation. Never claim a remote
+    // deactivation without a confirmed receipt, nor mint a token to find it.
+    let allConfirmed = entries.length > 0;
+    for (const entry of entries) {
+      if (!isCurrent()) return false;
+      if (entry.updateTime === null) { allConfirmed = false; continue; }
+      try {
+        await pushBackend.deactivateConfirmedNativeRecord(entry, isCurrent);
+        if (!isCurrent()) return false;
+        ledger.acknowledge(entry);
+      } catch {
+        // Conflict/unknown outcome remains durable. Never GET a newer version
+        // or fall back to an unconditional or exists-only deactivation.
+        allConfirmed = false;
+      }
+    }
+    return allConfirmed && isCurrent();
+  });
 }
 
 export async function nativePushPermission(): Promise<PushPermission> {
@@ -384,17 +422,13 @@ export async function disableNativePushNotifications() {
       && verifiedEmailBetaAuth.sessionGeneration() === generation && pushRegistrationEpoch === disableEpoch;
   };
   const messaging = capacitorPlugin('FirebaseMessaging');
-  if (!messaging?.getToken || !messaging?.deleteToken) return false;
+  const serverDeactivated = await bounded(retireNativePushReceipts(owner.uid, isSameOwner), 1_500, false);
+  if (!isSameOwner()) return false;
+  if (!messaging?.deleteToken) return false;
   try {
-    const result = await queueNativePushOperation(isSameOwner, () => messaging.getToken());
-    if (!isSameOwner()) return false;
-    const token = String(result?.token || '').trim();
-    // Local token deletion alone is not an acknowledged server deactivation.
-    // Keep opt-out persisted and still attempt native deletion after a server failure.
-    const serverDeactivated = token ? await pushBackend.unregisterDeviceToken(token, 'android').then(() => true, () => false) : false;
-    if (!isSameOwner()) return false;
-    await queueNativePushOperation(isSameOwner, () => messaging.deleteToken());
-    return serverDeactivated && isSameOwner();
+    // Local deletion is still attempted when remote retirement is unknown.
+    const tokenDeleted = await bounded(queueNativePushOperation(isSameOwner, () => messaging.deleteToken()).then(() => true), 1_500, false);
+    return serverDeactivated && tokenDeleted && isSameOwner();
   } catch {
     return false;
   }
@@ -433,27 +467,12 @@ export async function prepareNativePushForAccountSignOut() {
   // registration of a still-owned token under the next signed-in UID.
   setPendingPushOwnershipReset(true);
   const messaging = capacitorPlugin('FirebaseMessaging');
-  if (!sameCleanup() || !messaging?.getToken) return { serverDeactivated: false, tokenDeleted: false, ownershipResetQueued: true };
+  if (!sameCleanup() || !original?.uid) return { serverDeactivated: false, tokenDeleted: false, ownershipResetQueued: true };
 
-  let token = '';
-  try {
-    const result = await bounded(queueNativePushOperation(() => sameCleanup() && pendingPushOwnershipReset(), () => messaging.getToken()), 1_500, null as any);
-    token = String(result?.token || '').trim();
-  } catch {
-    token = '';
-  }
-
-  let serverDeactivated = false;
-  if (token && sameCleanup()) {
-    serverDeactivated = await bounded(
-      pushBackend.unregisterDeviceToken(token, 'android').then(() => true),
-      1_500,
-      false,
-    );
-  }
+  const serverDeactivated = await bounded(retireNativePushReceipts(original.uid, sameCleanup), 1_500, false);
 
   let tokenDeleted = false;
-  if (messaging.deleteToken && sameCleanup()) {
+  if (messaging?.deleteToken && sameCleanup()) {
     tokenDeleted = await bounded(
       queueNativePushOperation(() => sameCleanup() && pendingPushOwnershipReset(), () => messaging.deleteToken()).then(() => true),
       1_500,
