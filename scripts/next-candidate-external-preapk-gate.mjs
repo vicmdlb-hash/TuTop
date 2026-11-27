@@ -43,12 +43,16 @@ const firebaseDefaultHandler=callbackUrl.pathname==='/__/auth/action'
 const handlerMode=customHandler ? 'TUTOP_CUSTOM' : firebaseDefaultHandler ? 'FIREBASE_DEFAULT_MANAGED' : 'UNKNOWN';
 if(handlerMode==='UNKNOWN') throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_UNRECOGNIZED');
 
+if(callbackUrl.port||callbackUrl.search||callbackUrl.hash) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_NONCANONICAL_URL');
+const domains=Array.isArray(auth?.authorizedDomains)?auth.authorizedDomains.map(String):[];
+if(!domains.includes(callbackUrl.hostname)) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_DOMAIN_NOT_AUTHORIZED');
+
 let hardenedCustomHandler=false;
 if(firebaseDefaultHandler){
   console.log('INFO AUTH_EMAIL_HANDLER_MODE=FIREBASE_DEFAULT_MANAGED; supported Firebase default handler. TuTop in-app same-UID paste-link recovery + verification auto-refresh remain required source contracts.');
 }
 if(customHandler){
-  const handlerResponse=await fetch(callbackUrl.toString(), { redirect:'error', headers:{'Cache-Control':'no-cache'} });
+  const handlerResponse=await fetch(callbackUrl.toString(), { method:'GET', redirect:'error', signal:AbortSignal.timeout(20000), headers:{'Cache-Control':'no-cache'} });
   const handlerText=await handlerResponse.text();
   if(!handlerResponse.ok) throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_NOT_REACHABLE');
   if(!/Acción de cuenta TuTop/i.test(handlerText) || !/auth-action\.js/i.test(handlerText)) {
@@ -66,9 +70,6 @@ if(customHandler){
   if(contentTypeOptions!=='nosniff') throw new Error('NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_TYPE_UNSAFE');
   hardenedCustomHandler=true;
 }
-
-const domains=Array.isArray(auth?.authorizedDomains)?auth.authorizedDomains.map(String):[];
-if(!domains.includes(callbackUrl.hostname)) throw new Error('NEXT_CANDIDATE_AUTH_HANDLER_DOMAIN_NOT_AUTHORIZED');
 
 const apps=await get(`https://firebase.googleapis.com/v1beta1/projects/${PROJECT}/androidApps?pageSize=100`);
 const app=(apps.apps||[]).find(x=>x.packageName===PACKAGE&&x.state!=='DELETED');

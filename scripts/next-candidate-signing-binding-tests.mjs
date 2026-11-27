@@ -112,3 +112,60 @@ console.log('PASS exact source SHA + TuTop package + signed APK identity are ext
 console.log('PASS exact SHA-1 API-key and SHA-256 Firebase bindings require extraction source continuity + exact APK identity + explicit ACK');
 console.log('PASS pre-promotion external gate requires the same source/artifact provenance chain');
 console.log('PASS no private signing key is introduced by the source-only preparation');
+
+
+// R259: actual pre-promotion gate with mocked network and native WHATWG URL.
+// No Firebase calls, real credentials, APKs or publication.
+assert.ok(external.indexOf('NEXT_CANDIDATE_AUTH_HANDLER_DOMAIN_NOT_AUTHORIZED') < external.indexOf('fetch(callbackUrl.toString()'));
+const tokenImport="import { firebaseCiAccessToken } from './firebase-ci-auth.mjs';";
+const versionImport="import { validateApkVersionCode, validateApkVersionName } from './apk-badging-version-identity.mjs';";
+assert.equal(external.split(tokenImport).length,2);
+assert.equal(external.split(versionImport).length,2);
+const injected=external.replace(tokenImport,"const { firebaseCiAccessToken, fetch, process, console, validateApkVersionCode, validateApkVersionName }=globalThis.__tutopExternalGateFixture;").replace(versionImport,"");
+const project='tutop-beta-vicmdlb-1356585881';
+const customHost='example.invalid';
+const cert='A'.repeat(64);
+let fixtureSequence=0;
+async function handlerCase(callback,domains,error,handlerCalls,options={}){
+  const calls=[],output=[];
+  const env={GITHUB_ACTIONS:'true',GITHUB_REF_NAME:'candidate/tutop-121-post120-physical-repair',TUTOP_FIREBASE_PROJECT_ID:project,GITHUB_SHA:'a'.repeat(40),TUTOP_NEXT_CANDIDATE_SOURCE_SHA:'a'.repeat(40),TUTOP_NEXT_CANDIDATE_APK_SHA256:'b'.repeat(64),TUTOP_NEXT_CANDIDATE_APK_VERSION_CODE:'90200',TUTOP_NEXT_CANDIDATE_APK_VERSION_NAME:'0.9.2-beta.0',TUTOP_EXPECTED_ANDROID_CERT_SHA256:cert};
+  const json=body=>({ok:true,status:200,text:async()=>JSON.stringify(body)});
+  const previous=globalThis.__tutopExternalGateFixture;
+  globalThis.__tutopExternalGateFixture={
+    firebaseCiAccessToken:async()=> 'synthetic',process:{env},console:{log:x=>output.push(x)},validateApkVersionCode,validateApkVersionName,
+    fetch:async(url,opts)=>{
+      if(url.startsWith('https://identitytoolkit.googleapis.com/'))return json({notification:{sendEmail:{callbackUri:callback}},authorizedDomains:domains});
+      if(url.startsWith('https://firebase.googleapis.com/')){
+        if(url.endsWith('/sha'))return json({certificates:options.noCert?[]:[{certType:'SHA_256',shaHash:cert}]});
+        return json({apps:[{packageName:'mx.tutop.app',state:'ACTIVE',name:'projects/'+project+'/androidApps/synthetic'}]});
+      }
+      calls.push(url);
+      assert.equal(opts.method,'GET');assert.equal(opts.redirect,'error');assert(opts.signal instanceof AbortSignal);
+      assert.equal(opts.headers.Authorization,undefined);
+      return {ok:true,text:async()=>options.badContent?'invalid':'Acción de cuenta TuTop auth-action.js',headers:{get:key=>({'cache-control':options.badCache?'public':'no-store','x-frame-options':'DENY','referrer-policy':'no-referrer','permissions-policy':'camera=(), microphone=(), geolocation=()','x-content-type-options':'nosniff'})[key]}};
+    },
+  };
+  try{
+    const run=()=>import('data:text/javascript;base64,'+Buffer.from(injected+'\n// fixture '+(++fixtureSequence)).toString('base64'));
+    if(error){await assert.rejects(run,e=>e.message===error);assert(!output.some(x=>String(x).startsWith('PASS')));}
+    else{await run();assert(output.some(x=>String(x).startsWith('PASS')));}
+    assert.equal(calls.length,handlerCalls);
+  }finally{
+    if(previous===undefined)delete globalThis.__tutopExternalGateFixture;
+    else globalThis.__tutopExternalGateFixture=previous;
+  }
+}
+const custom='https://'+customHost+'/auth-action.html';
+await handlerCase(custom,[customHost],null,1);
+await handlerCase('https://'+project+'.firebaseapp.com/__/auth/action',[project+'.firebaseapp.com'],null,0);
+await handlerCase(custom,['other.invalid'],'NEXT_CANDIDATE_AUTH_HANDLER_DOMAIN_NOT_AUTHORIZED',0);
+await handlerCase(custom,[],'NEXT_CANDIDATE_AUTH_HANDLER_DOMAIN_NOT_AUTHORIZED',0);
+for(const url of [custom+'?x=1',custom+'#fragment','https://'+customHost+':8443/auth-action.html']){
+  await handlerCase(url,[customHost],'NEXT_CANDIDATE_AUTH_HANDLER_NONCANONICAL_URL',0);
+}
+await handlerCase('http://'+customHost+'/auth-action.html',[customHost],'NEXT_CANDIDATE_AUTH_HANDLER_INSECURE_URL',0);
+await handlerCase('https://user@'+customHost+'/auth-action.html',[customHost],'NEXT_CANDIDATE_AUTH_HANDLER_INSECURE_URL',0);
+await handlerCase(custom,[customHost],'NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CACHE_UNSAFE',1,{badCache:true});
+await handlerCase(custom,[customHost],'NEXT_CANDIDATE_AUTH_CUSTOM_HANDLER_CONTENT_MISMATCH',1,{badContent:true});
+await handlerCase(custom,[customHost],'NEXT_CANDIDATE_EXACT_ANDROID_SHA256_NOT_REGISTERED',1,{noCert:true});
+console.log('PASS synthetic callback URL authorization before network access');
