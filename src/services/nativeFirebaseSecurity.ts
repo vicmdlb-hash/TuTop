@@ -389,10 +389,12 @@ export async function disableNativePushNotifications() {
     const result = await queueNativePushOperation(isSameOwner, () => messaging.getToken());
     if (!isSameOwner()) return false;
     const token = String(result?.token || '').trim();
-    if (token) await pushBackend.unregisterDeviceToken(token, 'android').catch(() => undefined);
+    // Local token deletion alone is not an acknowledged server deactivation.
+    // Keep opt-out persisted and still attempt native deletion after a server failure.
+    const serverDeactivated = token ? await pushBackend.unregisterDeviceToken(token, 'android').then(() => true, () => false) : false;
     if (!isSameOwner()) return false;
     await queueNativePushOperation(isSameOwner, () => messaging.deleteToken());
-    return isSameOwner();
+    return serverDeactivated && isSameOwner();
   } catch {
     return false;
   }

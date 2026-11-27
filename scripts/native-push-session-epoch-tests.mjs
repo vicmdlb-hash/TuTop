@@ -244,6 +244,44 @@ assert(enable.includes('pushRegistrationEpoch += 1;'));
 assert(disable.includes('setNativePushOptOut(owner.uid, true)'), 'disable must persist opt-out before touching native token');
 assert(disable.indexOf('setNativePushOptOut(owner.uid, true)') < disable.indexOf('pushRegistrationEpoch += 1;'));
 assert(disable.includes('if (!isSameOwner()) return false;'), 'late token cleanup must reject new owner');
+
+ // Exercise real disable function, not just a static marker. A local delete
+ // may succeed while server retirement is unknown; opt-out still persists.
+ const disableCode = disable.replace(/^export /, '');
+ for (const scenario of [
+   { token: 'synthetic-token', serverFails: false, deleteFails: false, expected: true, calls: 1 },
+   { token: 'synthetic-token', serverFails: true, deleteFails: false, expected: false, calls: 1 },
+   { token: '', serverFails: false, deleteFails: false, expected: false, calls: 0 },
+   { token: 'synthetic-token', serverFails: false, deleteFails: true, expected: false, calls: 1 },
+ ]) {
+   let optedOut = false, serverCalls = 0, deleteCalls = 0;
+   const ctx = {
+     pushRegistrationEpoch: 0,
+     isNativeFirebaseRuntime: () => true,
+     verifiedEmailBetaAuth: {
+       readSessionIdentity: () => ({ uid: 'synthetic-owner', refreshToken: 'synthetic-refresh' }),
+       sessionGeneration: () => 1,
+     },
+     setNativePushOptOut: () => { optedOut = true; return true; },
+     capacitorPlugin: () => ({
+       getToken: async () => ({ token: scenario.token }),
+       deleteToken: async () => { deleteCalls++; if (scenario.deleteFails) throw Error('synthetic'); },
+     }),
+     queueNativePushOperation: async (guard, operation) => {
+       assert(guard()); return operation();
+     },
+     pushBackend: { unregisterDeviceToken: async () => {
+       serverCalls++; if (scenario.serverFails) throw Error('synthetic');
+     } },
+   };
+   const runDisable = vm.runInNewContext(disableCode + '\n disableNativePushNotifications', ctx);
+   assert.equal(await runDisable(), scenario.expected);
+   assert.equal(optedOut, true);
+   assert.equal(serverCalls, scenario.calls);
+   assert.equal(deleteCalls, 1, 'native deletion is attempted even when server cleanup fails or is unknown');
+ }
+ console.log('PASS disable native push: no false server acknowledgement');
+
 const permissionUI = fs.readFileSync('src/components/PermissionSettings.tsx','utf8');
 const deviceHealthUI = fs.readFileSync('src/components/DeviceHealthPanel.tsx','utf8');
 assert(permissionUI.includes("reason === 'user-opted-out'"));
