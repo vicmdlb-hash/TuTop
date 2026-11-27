@@ -468,3 +468,56 @@ for (const scenario of ['normal','quarantine-recovered','quarantine-persisted','
   if(scenario==='already-granted')assert.equal(prompts,0);
 }
 console.log('PASS synthetic explicit FCM opt-in original session and quarantine fences (14 cases)');
+
+
+// R254/R282: exercise the real process-local serialization primitive.
+const { createNativePushOperationQueue } = await import('../src/lib/nativePushSessionGuard.ts');
+{
+  const queue=createNativePushOperationQueue(), order=[];
+  let release, started;
+  const startedPromise=new Promise(resolve=>{started=resolve;});
+  const gate=new Promise(resolve=>{release=resolve;});
+  const first=queue(()=>true,async()=>{order.push('delete-A-start');started();await gate;order.push('delete-A-end');});
+  await startedPromise;
+  const observed=await Promise.race([first.then(()=>true),Promise.resolve(false)]);
+  assert.equal(observed,false,'observer timeout must not release actual native lock');
+  const stale=queue(()=>false,async()=>{assert.fail('stale queued operation executed');});
+  const staleRejected=assert.rejects(stale,/PUSH_OWNER_SESSION_CHANGED/);
+  const second=queue(()=>true,async()=>{order.push('get-B');return 'B';});
+  await Promise.resolve();assert.deepEqual(order,['delete-A-start']);
+  release();await first;await staleRejected;assert.equal(await second,'B');
+  assert.deepEqual(order,['delete-A-start','delete-A-end','get-B']);
+  await assert.rejects(queue(()=>true,async()=>{throw Error('synthetic failure');}),/synthetic failure/);
+  assert.equal(await queue(()=>true,async()=>42),42,'failed operation does not poison queue');
+}
+const signoutSource=native.slice(native.indexOf('export async function prepareNativePushForAccountSignOut()'))
+  .replace('export async','async').replace('null as any','null');
+for(const scenario of ['normal','switch-during-get','switch-during-unregister','same-uid-relogin','get-empty','delete-failure','no-owner']){
+  let owner=scenario==='no-owner'?null:'A',generation=1,refreshToken='synthetic-A',pending=false;
+  const calls=[];
+  const change=()=>{owner='B';generation++;refreshToken='synthetic-B';};
+  const deps={
+    isNativeFirebaseRuntime:()=>true,
+    setPendingPushOwnershipReset:value=>{pending=value;return true;},
+    pendingPushOwnershipReset:()=>pending,
+    capacitorPlugin:()=>({getToken:async()=>{calls.push('get:'+owner);
+      if(scenario==='switch-during-get')change();
+      if(scenario==='same-uid-relogin'){generation++;refreshToken='synthetic-A2';}
+      return scenario==='get-empty'?null:{token:'synthetic-fcm'};
+    },deleteToken:async()=>{calls.push('delete:'+owner);if(scenario==='delete-failure')throw Error('synthetic');}}),
+    pushBackend:{unregisterDeviceToken:async()=>{calls.push('unregister:'+owner);if(scenario==='switch-during-unregister')change();}},
+    bounded:async(p,_ms,fallback)=>{try{return await p;}catch{return fallback;}},
+    needsNativePushOwnershipReset:tokenDeleted=>!tokenDeleted,
+    verifiedEmailBetaAuth:{readSessionIdentity:()=>owner?{uid:owner,refreshToken}:null,sessionGeneration:()=>generation},
+    matchesNativePushSession,queueNativePushOperation:createNativePushOperationQueue(),
+  };
+  const result=await new Function(...Object.keys(deps),
+    'let pushRegistrationEpoch=0,initialization=null;\n'+signoutSource+'\nreturn prepareNativePushForAccountSignOut();')(...Object.values(deps));
+  assert(!calls.some(x=>/^(delete|unregister):(B|null)$/.test(x)),scenario);
+  if(scenario==='same-uid-relogin')assert.deepEqual(calls,['get:A']);
+  const queued=!['normal','get-empty'].includes(scenario);
+  assert.equal(result.ownershipResetQueued,queued,scenario);
+  assert.equal(pending,queued,scenario);
+}
+assert.equal((native.match(/queueNativePushOperation\(/g)||[]).length,6,'all six native get/delete operations must use shared queue');
+console.log('PASS synthetic native FCM queue and sign-out owner fences (7 sign-out cases)');

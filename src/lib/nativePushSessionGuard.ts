@@ -20,3 +20,17 @@ export function needsNativePushOwnershipReset(tokenDeleted: boolean): boolean {
 export function nativePushReconciliationStillPending(tokenDeleted: boolean, resetCleared: boolean): boolean {
   return !tokenDeleted || !resetCleared;
 }
+
+// All native token operations share a single process-local queue. A caller
+// timing out must not release the lock while the native promise is unsettled.
+export function createNativePushOperationQueue() {
+  let tail: Promise<void> = Promise.resolve();
+  return function enqueue<T>(isCurrent: () => boolean, operation: () => Promise<T>): Promise<T> {
+    const task = tail.then(async () => {
+      if (!isCurrent()) throw new Error('PUSH_OWNER_SESSION_CHANGED');
+      return await operation();
+    });
+    tail = task.then(() => undefined, () => undefined);
+    return task;
+  };
+}

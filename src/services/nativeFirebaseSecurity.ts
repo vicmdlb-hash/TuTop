@@ -1,6 +1,6 @@
 import { pushBackend } from './pushBackend';
 import { verifiedEmailBetaAuth } from './verifiedEmailBetaAuth';
-import { matchesNativePushSession, needsNativePushOwnershipReset, nativePushReconciliationStillPending, type PushSessionWitness } from '../lib/nativePushSessionGuard';
+import { createNativePushOperationQueue, matchesNativePushSession, needsNativePushOwnershipReset, nativePushReconciliationStillPending, type PushSessionWitness } from '../lib/nativePushSessionGuard';
 import { isNativePushOptedOut, setNativePushOptOut } from '../lib/nativePushOptOut';
 import { initializeNativeAppCheck, isNativeFirebaseRuntime } from './nativeAppCheckToken';
 
@@ -38,6 +38,7 @@ let listenerInstallation: Promise<void> | null = null;
 let ownershipRetryInstalled = false;
 // A logout or native disable immediately invalidates all earlier registration work.
 let pushRegistrationEpoch = 0;
+const queueNativePushOperation = createNativePushOperationQueue();
 const PENDING_PUSH_OWNERSHIP_RESET_KEY = 'tutop.push.pending-owner-reset.v1';
 
 function nativePushOptedOut() {
@@ -203,7 +204,7 @@ async function syncGrantedPushTokenHealth(
   if (permission !== 'granted') return { registered: false, reason: 'permission-not-granted' };
   if (!isCurrentPushSession(witness)) return denied;
   let result: any;
-  try { result = await messaging.getToken(); }
+  try { result = await queueNativePushOperation(() => isCurrentPushSession(witness) && !nativePushOptedOut(), () => messaging.getToken()); }
   catch (error) { return { registered: false, reason: classifyPushFailure(error) }; }
   // A delayed getToken from account A must not register as B after logout.
   if (!isCurrentPushSession(witness)) return denied;
@@ -230,7 +231,7 @@ async function reconcilePendingPushOwnershipReset() {
   if (!messaging?.deleteToken) return { pending: true, tokenDeleted: false };
 
   const tokenDeleted = await bounded(
-    messaging.deleteToken().then(() => true),
+    queueNativePushOperation(() => cleanupEpoch === pushRegistrationEpoch && pendingPushOwnershipReset(), () => messaging.deleteToken()).then(() => true),
     1_500,
     false,
   );
@@ -376,20 +377,21 @@ export async function disableNativePushNotifications() {
   // Invalidate queued tokenReceived callbacks before native token deletion.
   pushRegistrationEpoch += 1;
   const generation = verifiedEmailBetaAuth.sessionGeneration();
+  const disableEpoch = pushRegistrationEpoch;
   const isSameOwner = () => {
     const live = verifiedEmailBetaAuth.readSessionIdentity();
     return live?.uid === owner.uid && live?.refreshToken === owner.refreshToken
-      && verifiedEmailBetaAuth.sessionGeneration() === generation;
+      && verifiedEmailBetaAuth.sessionGeneration() === generation && pushRegistrationEpoch === disableEpoch;
   };
   const messaging = capacitorPlugin('FirebaseMessaging');
   if (!messaging?.getToken || !messaging?.deleteToken) return false;
   try {
-    const result = await messaging.getToken();
+    const result = await queueNativePushOperation(isSameOwner, () => messaging.getToken());
     if (!isSameOwner()) return false;
     const token = String(result?.token || '').trim();
     if (token) await pushBackend.unregisterDeviceToken(token, 'android').catch(() => undefined);
     if (!isSameOwner()) return false;
-    await messaging.deleteToken();
+    await queueNativePushOperation(isSameOwner, () => messaging.deleteToken());
     return isSameOwner();
   } catch {
     return false;
@@ -418,6 +420,10 @@ export async function prepareNativePushForAccountSignOut() {
   initialization = null;
   // Another logout or explicit opt-in can supersede an in-flight cleanup.
   const cleanupEpoch = pushRegistrationEpoch;
+  const original = verifiedEmailBetaAuth.readSessionIdentity();
+  const generation = verifiedEmailBetaAuth.sessionGeneration();
+  const sameCleanup = () => matchesNativePushSession(original && { ...original, generation, epoch: cleanupEpoch },
+    verifiedEmailBetaAuth.readSessionIdentity(), verifiedEmailBetaAuth.sessionGeneration(), pushRegistrationEpoch, false);
   if (!isNativeFirebaseRuntime()) return { serverDeactivated: false, tokenDeleted: false };
 
   // Persist the previous owner's token quarantine BEFORE any async work.
@@ -425,18 +431,18 @@ export async function prepareNativePushForAccountSignOut() {
   // registration of a still-owned token under the next signed-in UID.
   setPendingPushOwnershipReset(true);
   const messaging = capacitorPlugin('FirebaseMessaging');
-  if (!messaging?.getToken) return { serverDeactivated: false, tokenDeleted: false, ownershipResetQueued: true };
+  if (!sameCleanup() || !messaging?.getToken) return { serverDeactivated: false, tokenDeleted: false, ownershipResetQueued: true };
 
   let token = '';
   try {
-    const result = await bounded(messaging.getToken(), 1_500, null as any);
+    const result = await bounded(queueNativePushOperation(() => sameCleanup() && pendingPushOwnershipReset(), () => messaging.getToken()), 1_500, null as any);
     token = String(result?.token || '').trim();
   } catch {
     token = '';
   }
 
   let serverDeactivated = false;
-  if (token) {
+  if (token && sameCleanup()) {
     serverDeactivated = await bounded(
       pushBackend.unregisterDeviceToken(token, 'android').then(() => true),
       1_500,
@@ -445,9 +451,9 @@ export async function prepareNativePushForAccountSignOut() {
   }
 
   let tokenDeleted = false;
-  if (messaging.deleteToken) {
+  if (messaging.deleteToken && sameCleanup()) {
     tokenDeleted = await bounded(
-      messaging.deleteToken().then(() => true),
+      queueNativePushOperation(() => sameCleanup() && pendingPushOwnershipReset(), () => messaging.deleteToken()).then(() => true),
       1_500,
       false,
     );
@@ -457,7 +463,7 @@ export async function prepareNativePushForAccountSignOut() {
   // deleteToken failed, keep the quarantine before a different UID logs in.
   // A stale cleanup must not clear a newer session's quarantine marker.
   const ownershipResetQueued = needsNativePushOwnershipReset(tokenDeleted)
-    || cleanupEpoch !== pushRegistrationEpoch
+    || !sameCleanup()
     || !setPendingPushOwnershipReset(false);
 
   if (cleanupEpoch === pushRegistrationEpoch) initialization = null;
